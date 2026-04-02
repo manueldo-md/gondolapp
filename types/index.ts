@@ -1,7 +1,7 @@
 // ── TIPOS GLOBALES DEL DOMINIO DE GONDOLAPP ──────────────────────────────────
 
 // Umbral de nitidez para blur detection (varianza del Laplaciano)
-export const BLUR_THRESHOLD = 100
+export const BLUR_THRESHOLD = 800
 
 export type TipoActor = 'gondolero' | 'fixer' | 'distribuidora' | 'marca' | 'admin'
 

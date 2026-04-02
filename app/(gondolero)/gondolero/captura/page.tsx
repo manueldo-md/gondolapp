@@ -37,7 +37,7 @@ const CAMPANA_CACHE_PREFIX = 'campana_cache_'
 // ── Blur detection ────────────────────────────────────────────────────────────
 const BLUR_THRESHOLD = typeof window !== 'undefined' &&
   /Android|iPhone|iPad/i.test(navigator.userAgent)
-  ? 500  // móvil — cámaras más nítidas generan scores más altos
+  ? 800  // móvil — calibrado con datos reales
   : 50   // desktop
 
 function calcularBlurScore(imageData: ImageData): number {
@@ -765,11 +765,6 @@ function CapturaContent() {
             <div>
               <p className="font-semibold text-amber-900 text-base">La foto puede estar borrosa</p>
               <p className="text-sm text-amber-700 mt-0.5">¿Querés tomarla de nuevo?</p>
-              {blurScore !== null && (
-                <p className="text-xs text-amber-600 mt-1 font-mono">
-                  Score de nitidez: {Math.round(blurScore)} (mínimo: {BLUR_THRESHOLD})
-                </p>
-              )}
             </div>
           </div>
           <div className="flex flex-col gap-2.5">
@@ -1082,12 +1077,6 @@ function CapturaContent() {
                   />
                 </div>
               </div>
-            )}
-
-            {blurScore !== null && (
-              <p className="text-xs text-gray-400 text-center font-mono">
-                Nitidez de la foto: {Math.round(blurScore)}
-              </p>
             )}
 
             <button
