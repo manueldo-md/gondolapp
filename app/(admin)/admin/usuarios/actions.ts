@@ -80,19 +80,40 @@ export async function editarPerfilAdmin(
     celular?: string
     distri_id?: string | null
     marca_id?: string | null
+    razon_social?: string | null
+    cuit?: string | null
   }
 ): Promise<{ error?: string }> {
   const admin = await getAdmin()
+
+  // Actualizar profile
   const { error } = await admin
     .from('profiles')
     .update({
-      nombre:   datos.nombre.trim(),
-      celular:  datos.celular?.trim() || null,
+      nombre:    datos.nombre.trim(),
+      celular:   datos.celular?.trim() || null,
       distri_id: datos.distri_id || null,
       marca_id:  datos.marca_id  || null,
     })
     .eq('id', userId)
   if (error) return { error: error.message }
+
+  // Actualizar entidad distribuidora si corresponde
+  if (datos.distri_id && (datos.razon_social !== undefined || datos.cuit !== undefined)) {
+    const entityUpdate: Record<string, unknown> = {}
+    if (datos.razon_social !== undefined) entityUpdate.razon_social = datos.razon_social?.trim() || null
+    if (datos.cuit !== undefined) entityUpdate.cuit = datos.cuit?.trim() || null
+    await admin.from('distribuidoras').update(entityUpdate).eq('id', datos.distri_id)
+  }
+
+  // Actualizar entidad marca si corresponde
+  if (datos.marca_id && (datos.razon_social !== undefined || datos.cuit !== undefined)) {
+    const entityUpdate: Record<string, unknown> = {}
+    if (datos.razon_social !== undefined) entityUpdate.razon_social = datos.razon_social?.trim() || null
+    if (datos.cuit !== undefined) entityUpdate.cuit = datos.cuit?.trim() || null
+    await admin.from('marcas').update(entityUpdate).eq('id', datos.marca_id)
+  }
+
   revalidatePath('/admin/usuarios')
   return {}
 }

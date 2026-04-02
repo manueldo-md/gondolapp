@@ -25,6 +25,8 @@ interface UsuarioData {
   activo: boolean
   distri_id: string | null
   marca_id: string | null
+  razon_social?: string | null
+  cuit?: string | null
 }
 
 type ModalType = null | 'password' | 'editar' | 'eliminar' | 'rol'
@@ -146,11 +148,13 @@ export function AccionesUsuario({
 
   // Editar perfil
   const [editForm, setEditForm] = useState({
-    nombre:   usuario.nombre ?? '',
-    celular:  usuario.celular ?? '',
-    distri_id: usuario.distri_id ?? '',
-    marca_id:  usuario.marca_id ?? '',
-    tipo_actor: usuario.tipo_actor,
+    nombre:       usuario.nombre ?? '',
+    celular:      usuario.celular ?? '',
+    distri_id:    usuario.distri_id ?? '',
+    marca_id:     usuario.marca_id ?? '',
+    tipo_actor:   usuario.tipo_actor,
+    razon_social: usuario.razon_social ?? '',
+    cuit:         usuario.cuit ?? '',
   })
   const [editError, setEditError] = useState<string | null>(null)
 
@@ -159,10 +163,12 @@ export function AccionesUsuario({
     if (!editForm.nombre.trim()) { setEditError('El nombre es obligatorio.'); return }
     startTransition(async () => {
       const res = await editarPerfilAdmin(usuario.id, {
-        nombre:    editForm.nombre,
-        celular:   editForm.celular,
-        distri_id: editForm.distri_id || null,
-        marca_id:  editForm.marca_id  || null,
+        nombre:       editForm.nombre,
+        celular:      editForm.celular,
+        distri_id:    editForm.distri_id || null,
+        marca_id:     editForm.marca_id  || null,
+        razon_social: editForm.razon_social || null,
+        cuit:         editForm.cuit || null,
       })
       if (res.error) { setEditError(res.error); return }
       closeModal()
@@ -388,6 +394,36 @@ export function AccionesUsuario({
                   ))}
                 </select>
               </div>
+            )}
+            {(editForm.tipo_actor === 'distribuidora' || editForm.tipo_actor === 'marca') && (
+              <>
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">
+                    Datos de la empresa
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Razón social</label>
+                  <input
+                    type="text"
+                    value={editForm.razon_social}
+                    onChange={e => setEditForm(f => ({ ...f, razon_social: e.target.value }))}
+                    placeholder="Nombre legal de la empresa"
+                    className={INPUT}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">CUIT</label>
+                  <input
+                    type="text"
+                    value={editForm.cuit}
+                    onChange={e => setEditForm(f => ({ ...f, cuit: e.target.value }))}
+                    placeholder="30-12345678-9"
+                    className={INPUT}
+                    inputMode="numeric"
+                  />
+                </div>
+              </>
             )}
             {editError && <p className="text-red-600 text-xs">{editError}</p>}
           </div>

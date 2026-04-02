@@ -38,8 +38,8 @@ export default async function UsuariosPage({
     .from('profiles')
     .select(`
       id, nombre, celular, tipo_actor, nivel, puntos_disponibles, created_at, distri_id, marca_id,
-      distri:distribuidoras(razon_social),
-      marca:marcas(razon_social)
+      distri:distribuidoras(razon_social, cuit),
+      marca:marcas(razon_social, cuit)
     `)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -68,13 +68,19 @@ export default async function UsuariosPage({
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const lista = ((profiles ?? []) as any[]).map(p => ({
-    ...p,
-    email:        emailMap[p.id] ?? '',
-    activo:       !bannedMap[p.id],
-    distri_nombre: Array.isArray(p.distri) ? p.distri[0]?.razon_social : p.distri?.razon_social,
-    marca_nombre:  Array.isArray(p.marca)  ? p.marca[0]?.razon_social  : p.marca?.razon_social,
-  }))
+  const lista = ((profiles ?? []) as any[]).map(p => {
+    const distriData = Array.isArray(p.distri) ? p.distri[0] : p.distri
+    const marcaData  = Array.isArray(p.marca)  ? p.marca[0]  : p.marca
+    return {
+      ...p,
+      email:          emailMap[p.id] ?? '',
+      activo:         !bannedMap[p.id],
+      distri_nombre:  distriData?.razon_social ?? null,
+      distri_cuit:    distriData?.cuit ?? null,
+      marca_nombre:   marcaData?.razon_social ?? null,
+      marca_cuit:     marcaData?.cuit ?? null,
+    }
+  })
 
   const TIPOS: Array<{ value: string; label: string }> = [
     { value: 'todos',         label: `Todos (${lista.length})` },
@@ -169,6 +175,8 @@ export default async function UsuariosPage({
                         activo:       u.activo,
                         distri_id:    u.distri_id,
                         marca_id:     u.marca_id,
+                        razon_social: u.distri_nombre ?? u.marca_nombre,
+                        cuit:         u.distri_cuit ?? u.marca_cuit,
                       }}
                       distribuidoras={(distribuidoras ?? []) as { id: string; razon_social: string }[]}
                       marcas={(marcas ?? []) as { id: string; razon_social: string }[]}
