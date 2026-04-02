@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutGrid, CheckSquare, User } from 'lucide-react'
+import { LayoutGrid, CheckSquare, BarChart2, User } from 'lucide-react'
 
 const TABS = [
-  { href: '/gondolero/campanas', label: 'Campañas', icon: LayoutGrid },
-  { href: '/gondolero/misiones', label: 'Misiones',  icon: CheckSquare },
-  { href: '/gondolero/perfil',   label: 'Perfil',    icon: User },
+  { href: '/gondolero/campanas',  label: 'Campañas',  icon: LayoutGrid  },
+  { href: '/gondolero/misiones',  label: 'Misiones',  icon: CheckSquare },
+  { href: '/gondolero/actividad', label: 'Actividad', icon: BarChart2   },
+  { href: '/gondolero/perfil',    label: 'Perfil',    icon: User        },
 ]
 
 export function GondoleroNav({ unreadCount }: { unreadCount: number }) {
@@ -18,7 +19,7 @@ export function GondoleroNav({ unreadCount }: { unreadCount: number }) {
       <div className="flex items-stretch max-w-lg mx-auto">
         {TABS.map(({ href, label, icon: Icon }) => {
           const activo = pathname.startsWith(href)
-          const esPerfil = href === '/gondolero/perfil'
+          const esActividad = href === '/gondolero/actividad'
           return (
             <Link
               key={href}
@@ -29,7 +30,7 @@ export function GondoleroNav({ unreadCount }: { unreadCount: number }) {
             >
               <div className="relative">
                 <Icon size={22} strokeWidth={activo ? 2.5 : 1.8} />
-                {esPerfil && unreadCount > 0 && (
+                {esActividad && unreadCount > 0 && (
                   <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>

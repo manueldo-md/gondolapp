@@ -67,6 +67,7 @@ export async function solicitarCanje(premio: TipoPremio) {
     .eq('id', user.id)
 
   revalidatePath('/gondolero/perfil')
+  revalidatePath('/gondolero/actividad')
   return { ok: true }
 }
 
@@ -87,7 +88,6 @@ export async function actualizarPerfil({ nombre, celular }: { nombre: string; ce
     .eq('id', user.id)
 
   revalidatePath('/gondolero/perfil')
-  revalidatePath('/gondolero/perfil/editar')
 }
 
 export async function actualizarZonasGondolero(zonaIds: string[]) {
@@ -112,6 +112,7 @@ export async function actualizarZonasGondolero(zonaIds: string[]) {
 
   revalidatePath('/gondolero/perfil')
   revalidatePath('/gondolero/campanas')
+  revalidatePath('/gondolero/actividad')
 }
 
 export async function marcarNotificacionesLeidas(gondoleroId: string) {
@@ -128,4 +129,5 @@ export async function marcarNotificacionesLeidas(gondoleroId: string) {
     .eq('leida', false)
 
   revalidatePath('/gondolero/perfil')
+  revalidatePath('/gondolero/actividad')
 }
