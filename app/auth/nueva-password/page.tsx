@@ -1,193 +1,138 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 export default function NuevaPasswordPage() {
   const supabase = createClient()
   const router = useRouter()
-
   const [tokenValido, setTokenValido] = useState(false)
-  const [tokenExpirado, setTokenExpirado] = useState(false)
+  const [cargando, setCargando] = useState(true)
   const [password, setPassword] = useState('')
   const [confirmar, setConfirmar] = useState('')
-  const [mostrarPassword, setMostrarPassword] = useState(false)
-  const [mostrarConfirm, setMostrarConfirm] = useState(false)
-  const [cargando, setCargando] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [exito, setExito] = useState(false)
 
   useEffect(() => {
-    // Escuchar el evento PASSWORD_RECOVERY que Supabase dispara
-    // cuando detecta un token de recuperación válido en el hash de la URL
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setTokenValido(true)
+    // Supabase procesa el hash automáticamente
+    // y dispara el evento PASSWORD_RECOVERY
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setTokenValido(true)
+          setCargando(false)
+        } else if (event === 'SIGNED_IN' && session) {
+          // También puede venir como SIGNED_IN
+          setTokenValido(true)
+          setCargando(false)
+        }
       }
-    })
+    )
 
-    // Si el token es inválido o expirado, PASSWORD_RECOVERY nunca se dispara.
-    // Después de 4 segundos sin recibirlo, mostrar el estado de error.
+    // Timeout por si el evento no llega
     const timeout = setTimeout(() => {
-      setTokenValido(prev => {
-        if (!prev) setTokenExpirado(true)
-        return prev
-      })
-    }, 4000)
+      setCargando(false)
+    }, 3000)
 
     return () => {
       subscription.unsubscribe()
       clearTimeout(timeout)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supabase])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
+  const handleGuardar = async () => {
     if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.')
+      setError('La contraseña debe tener al menos 6 caracteres')
       return
     }
     if (password !== confirmar) {
-      setError('Las contraseñas no coinciden.')
+      setError('Las contraseñas no coinciden')
       return
     }
 
-    setCargando(true)
-
-    const { error: err } = await supabase.auth.updateUser({ password })
+    const { error: err } = await supabase.auth.updateUser({
+      password
+    })
 
     if (err) {
-      setError('No se pudo actualizar la contraseña. Intentá de nuevo.')
-      setCargando(false)
+      setError('No se pudo actualizar la contraseña. Pedí un nuevo link.')
       return
     }
 
-    // El middleware redirige al panel correcto según tipo_actor
-    router.push('/')
-    router.refresh()
+    setExito(true)
+    setTimeout(() => router.push('/'), 2000)
   }
 
-  // ── Token expirado / inválido ──────────────────────────────────────────────
-  if (tokenExpirado) {
-    return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-4 py-12">
-        <div className="w-full max-w-sm space-y-5">
-          <div className="text-center mb-2">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gondo-verde-400 rounded-2xl mb-4">
-              <span className="text-white text-2xl font-bold">G</span>
-            </div>
-          </div>
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-5 text-center">
-            <p className="text-red-800 font-semibold text-sm mb-1">Link expirado o inválido</p>
-            <p className="text-red-600 text-sm">
-              El link expiró o ya fue usado. Pedí uno nuevo.
-            </p>
-          </div>
-          <a
-            href="/auth/recuperar"
-            className="block w-full py-3 text-center bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-colors min-h-touch"
-          >
-            Pedir nuevo link
-          </a>
-          <a
-            href="/auth"
-            className="block w-full py-2 text-center text-gray-500 text-sm hover:text-gray-700 transition-colors"
-          >
-            ← Volver al login
-          </a>
-        </div>
+  if (cargando) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-gray-500">Verificando...</p>
+    </div>
+  )
+
+  if (exito) return (
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="text-center">
+        <div className="text-4xl mb-4">✅</div>
+        <h2 className="text-xl font-semibold mb-2">¡Contraseña actualizada!</h2>
+        <p className="text-gray-500">Redirigiendo...</p>
       </div>
-    )
-  }
+    </div>
+  )
 
-  // ── Loading mientras se verifica el token ─────────────────────────────────
-  if (!tokenValido) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-gondo-verde-400 border-t-transparent rounded-full animate-spin" />
+  if (!tokenValido) return (
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="text-center max-w-sm">
+        <div className="text-4xl mb-4">⏱️</div>
+        <h2 className="text-xl font-semibold mb-2">Link expirado o inválido</h2>
+        <p className="text-gray-500 mb-6">
+          El link expiró o ya fue usado. Pedí uno nuevo.
+        </p>
+        <a
+          href="/auth/recuperar"
+          className="block w-full py-3 bg-green-600 text-white font-medium rounded-xl text-center"
+        >
+          Pedir nuevo link
+        </a>
       </div>
-    )
-  }
+    </div>
+  )
 
-  // ── Formulario de nueva contraseña ────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
+        <h1 className="text-2xl font-bold mb-2">Nueva contraseña</h1>
+        <p className="text-gray-500 mb-6">
+          Elegí una contraseña segura de al menos 6 caracteres.
+        </p>
 
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gondo-verde-400 rounded-2xl mb-4">
-            <span className="text-white text-2xl font-bold">G</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Nueva contraseña</h1>
-          <p className="text-gray-500 text-sm mt-1">Elegí una contraseña segura</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Nueva contraseña
-            </label>
-            <div className="relative">
-              <input
-                type={mostrarPassword ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
-                className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
-                autoComplete="new-password"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setMostrarPassword(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                {mostrarPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Confirmar contraseña
-            </label>
-            <div className="relative">
-              <input
-                type={mostrarConfirm ? 'text' : 'password'}
-                value={confirmar}
-                onChange={e => setConfirmar(e.target.value)}
-                placeholder="Repetí tu contraseña"
-                className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
-                autoComplete="new-password"
-              />
-              <button
-                type="button"
-                onClick={() => setMostrarConfirm(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                {mostrarConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
+        <div className="space-y-4">
+          <input
+            type="password"
+            placeholder="Nueva contraseña"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-green-400"
+          />
+          <input
+            type="password"
+            placeholder="Confirmar contraseña"
+            value={confirmar}
+            onChange={e => setConfirmar(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-green-400"
+          />
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
-              {error}
-            </div>
+            <p className="text-red-600 text-sm">{error}</p>
           )}
 
           <button
-            type="submit"
-            disabled={cargando}
-            className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
+            onClick={handleGuardar}
+            className="w-full py-3 bg-green-600 text-white font-medium rounded-xl"
           >
-            {cargando ? 'Guardando...' : 'Guardar nueva contraseña'}
+            Guardar nueva contraseña
           </button>
-        </form>
-
+        </div>
       </div>
     </div>
   )
