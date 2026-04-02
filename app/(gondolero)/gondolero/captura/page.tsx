@@ -353,8 +353,8 @@ function CapturaContent() {
       if (!navigator.onLine) {
         // Encolar para cuando haya conexión
         const reader = new FileReader()
-        reader.onload = () => {
-          encolar({
+        reader.onload = async () => {
+          await encolar({
             campanaId: campana.id,
             bloqueId,
             comercioId: comercio.id,
@@ -365,6 +365,7 @@ function CapturaContent() {
             precio: precio ? parseFloat(precio) : null,
             deviceId: getDeviceId(),
             timestamp: timestampDispositivo,
+            puntosAcreditar: campana.puntos_por_foto,
           })
           setPuntosGanados(campana.puntos_por_foto)
           setPaso('exito')

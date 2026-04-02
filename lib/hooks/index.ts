@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { get, set } from 'idb-keyval'
 
 // ── useGPS ────────────────────────────────────────────────────────────────────
 
@@ -82,33 +83,25 @@ export interface UploadPendiente {
   precio: number | null
   deviceId: string
   timestamp: string
+  puntosAcreditar: number
 }
 
 const QUEUE_KEY = 'gondolapp_upload_queue'
 
 export function useOfflineQueue() {
-  const encolar = useCallback((item: Omit<UploadPendiente, 'id'>) => {
-    try {
-      const stored = localStorage.getItem(QUEUE_KEY)
-      const queue: UploadPendiente[] = stored ? JSON.parse(stored) : []
-      queue.push({ ...item, id: `${Date.now()}_${Math.random().toString(36).slice(2)}` })
-      localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
-    } catch { /* localStorage puede fallar en modo privado */ }
+  const encolar = useCallback(async (item: Omit<UploadPendiente, 'id'>) => {
+    const queue: UploadPendiente[] = (await get(QUEUE_KEY)) ?? []
+    queue.push({ ...item, id: `${Date.now()}_${Math.random().toString(36).slice(2)}` })
+    await set(QUEUE_KEY, queue)
   }, [])
 
-  const obtenerPendientes = useCallback((): UploadPendiente[] => {
-    try {
-      const stored = localStorage.getItem(QUEUE_KEY)
-      return stored ? JSON.parse(stored) : []
-    } catch { return [] }
+  const obtenerPendientes = useCallback(async (): Promise<UploadPendiente[]> => {
+    return (await get(QUEUE_KEY)) ?? []
   }, [])
 
-  const eliminar = useCallback((id: string) => {
-    try {
-      const stored = localStorage.getItem(QUEUE_KEY)
-      const queue: UploadPendiente[] = stored ? JSON.parse(stored) : []
-      localStorage.setItem(QUEUE_KEY, JSON.stringify(queue.filter(i => i.id !== id)))
-    } catch { /* ignore */ }
+  const eliminar = useCallback(async (id: string) => {
+    const queue: UploadPendiente[] = (await get(QUEUE_KEY)) ?? []
+    await set(QUEUE_KEY, queue.filter(i => i.id !== id))
   }, [])
 
   return { encolar, obtenerPendientes, eliminar }
