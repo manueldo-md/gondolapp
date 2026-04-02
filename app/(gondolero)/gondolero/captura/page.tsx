@@ -34,46 +34,48 @@ const COMERCIOS_CACHE_KEY = 'comercios_cache'
 const COMERCIOS_PENDIENTES_KEY = 'comercios_pendientes'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
-const BLUR_THRESHOLD = 100
+const BLUR_THRESHOLD = 50
 
-function getGray(data: Uint8ClampedArray, width: number, x: number, y: number): number {
-  const idx = (y * width + x) * 4
-  return 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]
+function calcularBlurScore(imageData: ImageData): number {
+  const { data, width, height } = imageData
+  let sum = 0, count = 0
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const idx   = (y * width + x) * 4
+      const tIdx  = ((y - 1) * width + x) * 4
+      const bIdx  = ((y + 1) * width + x) * 4
+      const lIdx  = (y * width + (x - 1)) * 4
+      const rIdx  = (y * width + (x + 1)) * 4
+      const gray   = 0.299 * data[idx]  + 0.587 * data[idx  + 1] + 0.114 * data[idx  + 2]
+      const top    = 0.299 * data[tIdx] + 0.587 * data[tIdx + 1] + 0.114 * data[tIdx + 2]
+      const bottom = 0.299 * data[bIdx] + 0.587 * data[bIdx + 1] + 0.114 * data[bIdx + 2]
+      const left   = 0.299 * data[lIdx] + 0.587 * data[lIdx + 1] + 0.114 * data[lIdx + 2]
+      const right  = 0.299 * data[rIdx] + 0.587 * data[rIdx + 1] + 0.114 * data[rIdx + 2]
+      const laplacian = 4 * gray - top - bottom - left - right
+      sum += laplacian * laplacian
+      count++
+    }
+  }
+  return sum / count
 }
 
-function calcularBlurScore(blob: Blob): Promise<number> {
+function calcularBlur(blob: Blob): Promise<number> {
   return new Promise(resolve => {
     const img = new window.Image()
-    const objectUrl = URL.createObjectURL(blob)
+    const url = URL.createObjectURL(blob)
     img.onload = () => {
-      URL.revokeObjectURL(objectUrl)
       const canvas = document.createElement('canvas')
-      const scale = Math.min(300 / img.width, 300 / img.height, 1)
+      const scale = Math.min(200 / img.width, 200 / img.height)
       canvas.width  = Math.max(3, Math.floor(img.width  * scale))
       canvas.height = Math.max(3, Math.floor(img.height * scale))
       const ctx = canvas.getContext('2d')!
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-      const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      let sum = 0, sumSq = 0, count = 0
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          const idx = (y * width + x) * 4
-          const gray    = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]
-          const top     = getGray(data, width, x,     y - 1)
-          const bottom  = getGray(data, width, x,     y + 1)
-          const left    = getGray(data, width, x - 1, y)
-          const right   = getGray(data, width, x + 1, y)
-          const laplacian = Math.abs(4 * gray - top - bottom - left - right)
-          sum   += laplacian
-          sumSq += laplacian * laplacian
-          count++
-        }
-      }
-      const mean = sum / count
-      resolve((sumSq / count) - mean * mean)
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      resolve(calcularBlurScore(imageData))
     }
-    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(999) }
-    img.src = objectUrl
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(999) }
+    img.src = url
   })
 }
 
@@ -615,20 +617,20 @@ function CapturaContent() {
   if (paso === 'camara') {
     return (
       <PasoCamara
-        onCaptura={(blob, previewUrl) => {
+        onCaptura={async (blob, previewUrl) => {
           setFotoBlob(blob)
           setFotoPreview(previewUrl)
-          calcularBlurScore(blob).then(score => {
-            setBlurScore(score)
-            if (score < BLUR_THRESHOLD) {
-              setPaso('blur-advertencia')
-            } else if (campana?.tipoContenido === 'ninguno') {
-              setDeclaracion('producto_presente')
-              setPaso('confirmacion')
-            } else {
-              setPaso('declaracion')
-            }
-          })
+          const score = await calcularBlur(blob)
+          console.log('Blur score:', score, 'Threshold:', BLUR_THRESHOLD)
+          setBlurScore(score)
+          if (score < BLUR_THRESHOLD) {
+            setPaso('blur-advertencia')
+          } else if (campana?.tipoContenido === 'ninguno') {
+            setDeclaracion('producto_presente')
+            setPaso('confirmacion')
+          } else {
+            setPaso('declaracion')
+          }
         }}
         onVolver={() => setPaso('gps')}
       />
