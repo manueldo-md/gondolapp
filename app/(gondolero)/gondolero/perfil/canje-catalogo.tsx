@@ -47,7 +47,7 @@ export function CanjeCatalogo({
       if (result?.error) {
         setErrorMsg(result.error)
       } else {
-        setExito(`¡Canje solicitado! El equipo lo procesa en 48hs.`)
+        setExito(`¡Canje solicitado! Lo procesamos en 48hs hábiles.`)
       }
       setSeleccionado(null)
     })
@@ -56,28 +56,37 @@ export function CanjeCatalogo({
   return (
     <div className="space-y-2">
       {PREMIOS.map(p => {
-        const bloqueado = (p.soloProRequired && nivel !== 'pro') || puntosDisponibles < p.puntos
+        const bloqueadoPro = p.soloProRequired && nivel !== 'pro'
+        const faltanPuntos = puntosDisponibles < p.puntos
+        const bloqueado = bloqueadoPro || faltanPuntos
         return (
           <button
             key={p.tipo}
             onClick={() => handleSeleccionar(p)}
             disabled={bloqueado || isPending}
-            className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border text-left transition-colors min-h-touch ${
+            className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border text-left transition-colors min-h-[44px] ${
               bloqueado
-                ? 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'
+                ? 'bg-gray-50 border-gray-100 cursor-not-allowed'
                 : 'bg-white border-gray-200 hover:border-gondo-verde-400 active:bg-gondo-verde-50'
             }`}
           >
             <div className="flex items-center gap-3">
-              <span className="text-2xl">{p.emoji}</span>
+              <span className={`text-2xl ${bloqueado ? 'opacity-50' : ''}`}>{p.emoji}</span>
               <div>
-                <p className="text-sm font-semibold text-gray-900">{p.label}</p>
-                {p.soloProRequired && nivel !== 'pro' && (
+                <p className={`text-sm font-semibold ${bloqueado ? 'text-gray-400' : 'text-gray-900'}`}>
+                  {p.label}
+                </p>
+                {bloqueadoPro && (
                   <p className="text-xs text-gray-400">Solo nivel Pro</p>
+                )}
+                {faltanPuntos && !bloqueadoPro && (
+                  <p className="text-xs text-gray-400">
+                    Te faltan {(p.puntos - puntosDisponibles).toLocaleString('es-AR')} puntos
+                  </p>
                 )}
               </div>
             </div>
-            <span className={`text-sm font-bold ${bloqueado ? 'text-gray-400' : 'text-gondo-verde-400'}`}>
+            <span className={`text-sm font-bold ${bloqueado ? 'text-gray-300' : 'text-gondo-verde-400'}`}>
               {p.puntos.toLocaleString('es-AR')} pts
             </span>
           </button>
