@@ -29,7 +29,7 @@ export default async function FotosAdminPage({
   let query = admin
     .from('fotos')
     .select(`
-      id, url, estado, declaracion, puntos_otorgados, created_at,
+      id, url, storage_path, estado, declaracion, puntos_otorgados, created_at,
       gondolero:profiles!gondolero_id(nombre),
       comercio:comercios(nombre),
       campana:campanas(nombre)
@@ -40,15 +40,26 @@ export default async function FotosAdminPage({
   if (filtroEstado !== 'todos') query = query.eq('estado', filtroEstado)
   if (searchParams.campana) query = query.eq('campana_id', searchParams.campana)
 
-  const { data: fotosRaw } = await query
+  const { data: fotosRaw, error: fotosError } = await query
+  if (fotosError) console.error('[admin/fotos] query error:', fotosError.message)
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fotos = (fotosRaw ?? []) as any[]
+  console.log(`[admin/fotos] found ${fotos.length} fotos, filtro=${filtroEstado}`)
 
-  // Generate signed URLs
+  // Generate signed URLs usando storage_path (no la URL pública)
   const signed = await Promise.all(
     fotos.map(async f => {
-      const { data } = await admin.storage.from('fotos-gondola').createSignedUrl(f.url, 3600)
-      return { id: f.id, signedUrl: data?.signedUrl ?? null }
+      const path: string | null = f.storage_path ?? null
+      if (!path) {
+        console.warn(`[admin/fotos] foto ${f.id} sin storage_path, usando url directo`)
+        return { id: f.id, signedUrl: f.url ?? null }
+      }
+      const { data, error } = await admin.storage
+        .from('fotos-gondola')
+        .createSignedUrl(path, 3600)
+      if (error) console.warn(`[admin/fotos] signedUrl error para ${f.id}:`, error.message)
+      return { id: f.id, signedUrl: data?.signedUrl ?? f.url ?? null }
     })
   )
   const signedMap: Record<string, string | null> = {}

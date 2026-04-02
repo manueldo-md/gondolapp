@@ -2,6 +2,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoActor } from '@/types'
 import { CambiarRolBtn } from './cambiar-rol-btn'
+import { NuevoUsuarioModal } from './nuevo-usuario-modal'
 
 function adminClient() {
   return createAdminClient(
@@ -49,6 +50,12 @@ export default async function UsuariosPage({
 
   const { data: profiles } = await query
 
+  // Distribuidoras y marcas para el modal de nuevo usuario
+  const [{ data: distribuidoras }, { data: marcas }] = await Promise.all([
+    admin.from('distribuidoras').select('id, razon_social').order('razon_social'),
+    admin.from('marcas').select('id, razon_social').order('razon_social'),
+  ])
+
   // Obtener emails de auth
   const { data: { users: authUsers } } = await admin.auth.admin.listUsers({ perPage: 1000 })
   const emailMap: Record<string, string> = {}
@@ -72,9 +79,15 @@ export default async function UsuariosPage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Usuarios</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{lista.length} usuarios</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Usuarios</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{lista.length} usuarios</p>
+        </div>
+        <NuevoUsuarioModal
+          distribuidoras={(distribuidoras ?? []) as { id: string; razon_social: string }[]}
+          marcas={(marcas ?? []) as { id: string; razon_social: string }[]}
+        />
       </div>
 
       {/* Filtros */}
