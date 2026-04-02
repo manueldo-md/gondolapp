@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { PackageX, Store, Megaphone, UserX } from 'lucide-react'
 import { diasRestantes, calcularPorcentaje, tiempoRelativo } from '@/lib/utils'
 import { IgnorarAlertaBoton } from './ignorar-alerta-boton'
+import { AlertasEnPausa } from './alertas-en-pausa'
+import type { AlertaIgnoradaConNombre } from './alertas-en-pausa'
 
 function makeAdmin() {
   return createAdminClient(
@@ -46,18 +48,53 @@ export default async function AlertasPage() {
   // ── Alertas ignoradas activas ─────────────────────────────────────────────
   const { data: ignoradasRaw } = await (admin as any)
     .from('alertas_ignoradas')
-    .select('referencia_id, tipo')
+    .select('id, tipo, referencia_id, ignorada_hasta')
     .eq('distri_id', distriId)
     .gt('ignorada_hasta', new Date().toISOString())
+    .order('ignorada_hasta', { ascending: true })
 
   const ignoradasMap = new Map<string, Set<string>>()
   for (const i of ignoradasRaw ?? []) {
-    const row = i as { referencia_id: string; tipo: string }
+    const row = i as { id: string; referencia_id: string; tipo: string; ignorada_hasta: string }
     if (!ignoradasMap.has(row.tipo)) ignoradasMap.set(row.tipo, new Set())
     ignoradasMap.get(row.tipo)!.add(row.referencia_id)
   }
   function esIgnorada(tipo: string, id: string) {
     return ignoradasMap.get(tipo)?.has(id) ?? false
+  }
+
+  // Alertas en pausa (excluye las marcadas como permanentes con 2099)
+  const PERMANENTE = '2099-01-01'
+  interface PausadaItem { id: string; tipo: string; referenciaId: string; ignoradaHasta: string }
+  const pausadasRaw: PausadaItem[] = (ignoradasRaw ?? [])
+    .filter((i: any) => (i.ignorada_hasta as string) < PERMANENTE)
+    .map((i: any) => ({ id: i.id as string, tipo: i.tipo as string, referenciaId: i.referencia_id as string, ignoradaHasta: i.ignorada_hasta as string }))
+
+  let alertasEnPausa: AlertaIgnoradaConNombre[] = []
+  if (pausadasRaw.length > 0) {
+    const comercioRefIds  = pausadasRaw.filter(p => p.tipo === 'quiebre_stock' || p.tipo === 'sin_visita').map(p => p.referenciaId)
+    const campanaRefIds   = pausadasRaw.filter(p => p.tipo === 'campana_riesgo').map(p => p.referenciaId)
+    const gondoleroRefIds = pausadasRaw.filter(p => p.tipo === 'gondolero_inactivo').map(p => p.referenciaId)
+
+    const [comRes, camRes, gonRes] = await Promise.all([
+      comercioRefIds.length  > 0 ? admin.from('comercios').select('id, nombre').in('id', comercioRefIds)  : Promise.resolve({ data: [] }),
+      campanaRefIds.length   > 0 ? admin.from('campanas').select('id, nombre').in('id', campanaRefIds)    : Promise.resolve({ data: [] }),
+      gondoleroRefIds.length > 0 ? admin.from('profiles').select('id, nombre, alias').in('id', gondoleroRefIds) : Promise.resolve({ data: [] }),
+    ])
+
+    const comMap = new Map((comRes.data ?? []).map((c: any) => [c.id, c.nombre as string]))
+    const camMap = new Map((camRes.data ?? []).map((c: any) => [c.id, c.nombre as string]))
+    const gonMap = new Map((gonRes.data ?? []).map((g: any) => [g.id, (g.alias ?? g.nombre ?? 'Gondolero') as string]))
+
+    alertasEnPausa = pausadasRaw.map(p => ({
+      id:            p.id,
+      tipo:          p.tipo,
+      ignoradaHasta: p.ignoradaHasta,
+      nombre:
+        p.tipo === 'campana_riesgo'     ? (camMap.get(p.referenciaId) ?? 'Campaña') :
+        p.tipo === 'gondolero_inactivo' ? (gonMap.get(p.referenciaId) ?? 'Gondolero') :
+        (comMap.get(p.referenciaId) ?? 'Comercio'),
+    }))
   }
 
   // ── TIPO 1: Quiebre de stock ───────────────────────────────────────────────
@@ -351,6 +388,9 @@ export default async function AlertasPage() {
           ))
         )}
       </AlertSection>
+
+      {/* ── Alertas en pausa ── */}
+      <AlertasEnPausa alertas={alertasEnPausa} />
 
     </div>
   )

@@ -51,3 +51,43 @@ export async function ignorarAlerta(tipo: string, referenciaId: string) {
   revalidatePath('/distribuidora/alertas')
   return { ok: true }
 }
+
+export async function reactivarAlerta(id: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autorizado' }
+
+  const admin = makeAdmin()
+  const { error } = await (admin as any)
+    .from('alertas_ignoradas')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('[reactivarAlerta] DB error:', error.message, { id })
+    return { error: error.message }
+  }
+
+  revalidatePath('/distribuidora/alertas')
+  return { ok: true }
+}
+
+export async function eliminarAlertaDefinitivo(id: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autorizado' }
+
+  const admin = makeAdmin()
+  const { error } = await (admin as any)
+    .from('alertas_ignoradas')
+    .update({ ignorada_hasta: '2099-01-01T00:00:00Z' })
+    .eq('id', id)
+
+  if (error) {
+    console.error('[eliminarAlertaDefinitivo] DB error:', error.message, { id })
+    return { error: error.message }
+  }
+
+  revalidatePath('/distribuidora/alertas')
+  return { ok: true }
+}
