@@ -21,7 +21,7 @@ import { registrarFoto, subirFoto, asegurarBloqueGenerico } from './actions'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'declaracion' | 'confirmacion' | 'exito'
+type Paso = 'comercio' | 'gps' | 'camara' | 'declaracion' | 'confirmacion' | 'exito' | 'exito-offline'
 type Declaracion = 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
 
 interface ComercioRow {
@@ -350,31 +350,6 @@ function CapturaContent() {
       const lat = gps.posicion?.lat ?? 0
       const lng = gps.posicion?.lng ?? 0
 
-      if (!navigator.onLine) {
-        // Encolar para cuando haya conexión
-        const reader = new FileReader()
-        reader.onload = async () => {
-          await encolar({
-            campanaId: campana.id,
-            bloqueId,
-            comercioId: comercio.id,
-            storagePath,
-            fotoBase64: reader.result as string,
-            lat, lng,
-            declaracion: declaracionFinal!,
-            precio: precio ? parseFloat(precio) : null,
-            deviceId: getDeviceId(),
-            timestamp: timestampDispositivo,
-            puntosAcreditar: campana.puntos_por_foto,
-          })
-          setPuntosGanados(campana.puntos_por_foto)
-          setPaso('exito')
-          setEnviando(false)
-        }
-        reader.readAsDataURL(blob)
-        return
-      }
-
       // Subir foto a Storage vía Server Action (service role bypasea RLS)
       const formData = new FormData()
       formData.append('foto', new File([blob], 'foto.jpg', { type: 'image/jpeg' }))
@@ -399,6 +374,43 @@ function CapturaContent() {
       setPuntosGanados(result.puntos)
       setPaso('exito')
     } catch (err) {
+      const esErrorRed = !navigator.onLine ||
+        (err instanceof Error && (
+          err.message.includes('fetch') ||
+          err.message.includes('network') ||
+          err.message.includes('Failed')
+        ))
+
+      if (esErrorRed && fotoBlob) {
+        // Encolar silenciosamente para sincronizar cuando haya conexión
+        const bloqueId = campana.primerBloqueId ?? ''
+        const storagePath = generarPathFoto(campana.id, getDeviceId())
+        const timestampDispositivo = new Date().toISOString()
+        const lat = gps.posicion?.lat ?? 0
+        const lng = gps.posicion?.lng ?? 0
+
+        const reader = new FileReader()
+        reader.onload = async () => {
+          await encolar({
+            campanaId: campana.id,
+            bloqueId,
+            comercioId: comercio.id,
+            storagePath,
+            fotoBase64: reader.result as string,
+            lat, lng,
+            declaracion: declaracionFinal!,
+            precio: precio ? parseFloat(precio) : null,
+            deviceId: getDeviceId(),
+            timestamp: timestampDispositivo,
+            puntosAcreditar: campana.puntos_por_foto,
+          })
+          setPaso('exito-offline')
+          setEnviando(false)
+        }
+        reader.readAsDataURL(fotoBlob)
+        return
+      }
+
       setErrorGlobal(err instanceof Error ? err.message : 'Error al enviar la foto.')
     } finally {
       setEnviando(false)
@@ -504,6 +516,42 @@ function CapturaContent() {
     )
   }
 
+  // ── ÉXITO OFFLINE ────────────────────────────────────────────────────────────
+  if (paso === 'exito-offline') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen px-6 bg-white gap-6 text-center">
+        <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center text-4xl">
+          ✈️
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Foto guardada</h1>
+          <p className="text-gray-500 text-sm max-w-xs">
+            No hay conexión. La foto se va a subir automáticamente cuando vuelva el internet.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <button
+            onClick={() => {
+              setFotoBlob(null); setFotoPreview(null)
+              setDeclaracion(null); setPrecio('')
+              setComercio(null); setBusqueda('')
+              setPaso('comercio')
+            }}
+            className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
+          >
+            Capturar otra foto
+          </button>
+          <button
+            onClick={() => router.push('/gondolero/misiones')}
+            className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl min-h-touch"
+          >
+            Ir a mis misiones
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
   const PASOS_LABEL = ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar']
@@ -520,12 +568,13 @@ function CapturaContent() {
               if (paso === 'comercio') router.back()
               else {
                 const prev: Record<Paso, Paso> = {
-                  comercio:     'comercio',
-                  gps:          'comercio',
-                  camara:       'gps',
-                  declaracion:  'camara',
-                  confirmacion: campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
-                  exito:        'confirmacion',
+                  comercio:       'comercio',
+                  gps:            'comercio',
+                  camara:         'gps',
+                  declaracion:    'camara',
+                  confirmacion:   campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
+                  exito:          'confirmacion',
+                  'exito-offline':'confirmacion',
                 }
                 setPaso(prev[paso])
               }
