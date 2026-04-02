@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
+import { SwRegistrar } from '@/components/sw-registrar'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
@@ -53,6 +54,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
       </head>
       <body className="font-sans antialiased bg-gray-50">
+        <SwRegistrar />
         {children}
       </body>
     </html>

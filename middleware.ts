@@ -9,6 +9,7 @@ const RUTAS_PUBLICAS = [
   '/auth/error',
   '/auth/recuperar',
   '/auth/nueva-password',
+  '/offline',
 ]
 
 // Destino por tipo de actor después del login
