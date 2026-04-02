@@ -52,6 +52,7 @@ function AuthContent() {
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [otpInput, setOtpInput] = useState('')
+  const [distribuidoras, setDistribuidoras] = useState<{ id: string; razon_social: string }[]>([])
 
   const formLogin = useForm<LoginForm>({
     resolver: zodResolver(schemaLogin),
@@ -63,6 +64,17 @@ function AuthContent() {
   })
 
   const tipoActorSeleccionado = formRegistro.watch('tipo_actor')
+
+  // Cargar distribuidoras cuando se selecciona gondolero
+  useEffect(() => {
+    if (tipoActorSeleccionado !== 'gondolero') return
+    supabase
+      .from('distribuidoras')
+      .select('id, razon_social')
+      .eq('validada', true)
+      .order('razon_social')
+      .then(({ data }) => setDistribuidoras(data ?? []))
+  }, [tipoActorSeleccionado]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-submit al completar 6 dígitos
   useEffect(() => {
@@ -117,6 +129,7 @@ function AuthContent() {
           tipo_actor: data.tipo_actor,
           nombre: data.nombre,
           celular: data.celular || null,
+          distri_id: data.distri_id || null,
         },
       },
     })
@@ -334,6 +347,24 @@ function AuthContent() {
                     {formRegistro.formState.errors.celular.message}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Distribuidora — solo gondoleros */}
+            {tipoActorSeleccionado === 'gondolero' && distribuidoras.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  ¿Para qué distribuidora trabajás? <span className="text-gray-400 font-normal">(opcional)</span>
+                </label>
+                <select
+                  {...formRegistro.register('distri_id')}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base bg-white"
+                >
+                  <option value="">Sin distribuidora</option>
+                  {distribuidoras.map(d => (
+                    <option key={d.id} value={d.id}>{d.razon_social}</option>
+                  ))}
+                </select>
               </div>
             )}
 

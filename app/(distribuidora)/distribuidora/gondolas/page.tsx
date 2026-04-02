@@ -136,6 +136,23 @@ export default async function GondolasPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
+  // Obtener distri_id del usuario actual
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('distri_id')
+    .eq('id', user.id)
+    .single()
+
+  const distriId = profile?.distri_id ?? null
+
+  // Gondoleros vinculados a esta distribuidora
+  const { data: gondoleros } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('distri_id', distriId ?? '')
+
+  const gondoleroIds = (gondoleros ?? []).map((g: { id: string }) => g.id)
+
   const { data, error } = await admin
     .from('fotos')
     .select(`
@@ -145,6 +162,7 @@ export default async function GondolasPage() {
       campana:campanas    ( nombre, tipo )
     `)
     .eq('estado', 'pendiente')
+    .in('gondolero_id', gondoleroIds.length > 0 ? gondoleroIds : [''])
     .order('created_at', { ascending: false })
     .limit(100)
 

@@ -6,6 +6,7 @@ import { Camera } from 'lucide-react'
 import { formatearFechaHora } from '@/lib/utils'
 import type { EstadoFoto, DeclaracionFoto, TipoCampana } from '@/types'
 import { GondolasFilter } from './gondolas-filter'
+import { MarcaFotoAcciones } from './foto-acciones'
 
 interface FotoRow {
   id: string
@@ -207,6 +208,7 @@ export default async function GondolasPage({
                 <p className="text-[10px] text-gray-400">
                   {formatearFechaHora(f.created_at)}
                 </p>
+                <MarcaFotoAcciones fotoId={f.id} estado={f.estado} />
               </div>
             </div>
           ))}
