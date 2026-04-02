@@ -6,6 +6,7 @@ import { tiempoRelativo, formatearPuntos, calcularPorcentaje } from '@/lib/utils
 import type { NivelGondolero } from '@/types'
 import { CanjeCatalogo } from './canje-catalogo'
 import { LogoutButton } from './logout-button'
+import { marcarNotificacionesLeidas } from './actions'
 
 // ── Constantes de nivel ───────────────────────────────────────────────────────
 
@@ -88,7 +89,18 @@ export default async function PerfilPage() {
     (comerciosData ?? []).map((f: { comercio_id: string | null }) => f.comercio_id).filter(Boolean)
   ).size
 
-  // 7. Nombre de distribuidora si está vinculado
+  // 7. Últimas 10 notificaciones
+  const { data: notificaciones } = await admin
+    .from('notificaciones')
+    .select('id, tipo, titulo, mensaje, leida, created_at')
+    .eq('gondolero_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  // Marcar todas como leídas (fire-and-forget, no bloquea render)
+  void marcarNotificacionesLeidas(user.id)
+
+  // 8. Nombre de distribuidora si está vinculado
   let distriNombre: string | null = null
   if (profile?.distri_id) {
     const { data: distri } = await admin
@@ -214,7 +226,42 @@ export default async function PerfilPage() {
           <CanjeCatalogo puntosDisponibles={puntosDisponibles} nivel={nivel} />
         </div>
 
-        {/* ── SECCIÓN 5 — Historial de movimientos ─────────────────────────── */}
+        {/* ── SECCIÓN 5 — Notificaciones ───────────────────────────────────── */}
+        {(notificaciones?.length ?? 0) > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Notificaciones</h2>
+            <div className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-50 overflow-hidden">
+              {(notificaciones ?? []).map((n: {
+                id: string
+                tipo: string
+                titulo: string
+                mensaje: string | null
+                leida: boolean
+                created_at: string
+              }) => (
+                <div
+                  key={n.id}
+                  className={`px-4 py-3 ${!n.leida ? 'bg-green-50' : ''}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className={`text-sm font-semibold ${!n.leida ? 'text-green-800' : 'text-gray-800'}`}>
+                      {n.titulo}
+                    </p>
+                    {!n.leida && (
+                      <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 mt-1.5" />
+                    )}
+                  </div>
+                  {n.mensaje && (
+                    <p className="text-xs text-gray-500 mt-0.5">{n.mensaje}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">{tiempoRelativo(n.created_at)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── SECCIÓN 6 — Historial de movimientos ──────────────────────────── */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Últimos movimientos</h2>
           {(movimientos?.length ?? 0) === 0 ? (
@@ -282,7 +329,21 @@ export default async function PerfilPage() {
           </div>
         )}
 
-        {/* ── SECCIÓN 7 — Footer ───────────────────────────────────────────── */}
+        {/* ── SECCIÓN 8 — Mi cuenta ────────────────────────────────────────── */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Mi cuenta</h2>
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <a
+              href="/gondolero/perfil/editar"
+              className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-sm text-gray-800">Editar perfil</span>
+              <span className="text-gray-400 text-sm">→</span>
+            </a>
+          </div>
+        </div>
+
+        {/* ── SECCIÓN 9 — Footer ───────────────────────────────────────────── */}
         <div className="space-y-3 pt-2">
           <LogoutButton />
           <p className="text-center text-[11px] text-gray-300">GondolApp v1.0</p>

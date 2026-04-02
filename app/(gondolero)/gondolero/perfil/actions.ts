@@ -69,3 +69,39 @@ export async function solicitarCanje(premio: TipoPremio) {
   revalidatePath('/gondolero/perfil')
   return { ok: true }
 }
+
+export async function actualizarPerfil({ nombre, celular }: { nombre: string; celular?: string }) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  await admin
+    .from('profiles')
+    .update({ nombre: nombre.trim(), celular: celular?.trim() || null })
+    .eq('id', user.id)
+
+  revalidatePath('/gondolero/perfil')
+  revalidatePath('/gondolero/perfil/editar')
+}
+
+export async function marcarNotificacionesLeidas(gondoleroId: string) {
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  await admin
+    .from('notificaciones')
+    .update({ leida: true })
+    .eq('gondolero_id', gondoleroId)
+    .eq('leida', false)
+
+  revalidatePath('/gondolero/perfil')
+}

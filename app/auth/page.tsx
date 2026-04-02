@@ -249,6 +249,13 @@ function AuthContent() {
               {cargando ? 'Ingresando...' : 'Entrar'}
             </button>
 
+            <a
+              href="/auth/recuperar"
+              className="block w-full py-1 text-center text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              ¿Olvidaste tu contraseña?
+            </a>
+
             <button
               type="button"
               onClick={() => { setError(null); setFase('bienvenida') }}

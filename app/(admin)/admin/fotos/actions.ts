@@ -21,7 +21,7 @@ export async function aprobarFotoAdmin(fotoId: string) {
 
   const { data: fotoRaw } = await admin
     .from('fotos')
-    .select('gondolero_id, campana_id, campana:campanas(puntos_por_foto, comercios_relevados)')
+    .select('gondolero_id, campana_id, campana:campanas(puntos_por_foto, comercios_relevados, nombre), comercio:comercios(nombre)')
     .eq('id', fotoId)
     .single()
 
@@ -48,6 +48,15 @@ export async function aprobarFotoAdmin(fotoId: string) {
         p_monto: puntosPorFoto,
       })
     }
+
+    // Notificación: foto aprobada
+    await admin.from('notificaciones').insert({
+      gondolero_id: foto.gondolero_id,
+      tipo:         'foto_aprobada',
+      titulo:       '¡Foto aprobada! ✅',
+      mensaje:      `Tu foto en ${foto?.comercio?.nombre ?? 'el comercio'} fue aprobada. +${puntosPorFoto} puntos`,
+      campana_id:   foto.campana_id,
+    })
 
     await admin.rpc('incrementar_fotos_aprobadas', { p_gondolero_id: foto.gondolero_id })
 
@@ -77,6 +86,13 @@ export async function aprobarFotoAdmin(fotoId: string) {
           concepto:     `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
           campana_id:   foto.campana_id,
         })
+        await admin.from('notificaciones').insert({
+          gondolero_id: foto.gondolero_id,
+          tipo:         'nivel_subido',
+          titulo:       `¡Subiste al nivel ${nuevoNivel.toUpperCase()}! 🎉`,
+          mensaje:      `Alcanzaste el nivel ${nuevoNivel} en GondolApp. ¡Seguí así!`,
+          campana_id:   foto.campana_id,
+        })
       }
     }
   }
@@ -86,6 +102,26 @@ export async function aprobarFotoAdmin(fotoId: string) {
 
 export async function rechazarFotoAdmin(fotoId: string) {
   const admin = await getAdmin()
+
+  const { data: fotoRaw } = await admin
+    .from('fotos')
+    .select('gondolero_id, campana_id, comercio:comercios(nombre)')
+    .eq('id', fotoId)
+    .single()
+
   await admin.from('fotos').update({ estado: 'rechazada', puntos_otorgados: 0 }).eq('id', fotoId)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const foto = fotoRaw as any
+  if (foto?.gondolero_id) {
+    await admin.from('notificaciones').insert({
+      gondolero_id: foto.gondolero_id,
+      tipo:         'foto_rechazada',
+      titulo:       'Foto no aprobada ❌',
+      mensaje:      `Tu foto en ${foto?.comercio?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
+      campana_id:   foto.campana_id,
+    })
+  }
+
   revalidatePath('/admin/fotos')
 }

@@ -23,7 +23,7 @@ export async function aprobarFotoMarca(fotoId: string) {
   // 1. Obtener la foto con datos de la campaña en una sola query
   const { data: foto, error: fotoError } = await admin
     .from('fotos')
-    .select('*, campanas(puntos_por_foto, nombre, comercios_relevados, min_comercios_para_cobrar)')
+    .select('*, campanas(puntos_por_foto, nombre, comercios_relevados, min_comercios_para_cobrar), comercios(nombre)')
     .eq('id', fotoId)
     .single()
 
@@ -34,6 +34,8 @@ export async function aprobarFotoMarca(fotoId: string) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const campana = (foto as any).campanas
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const comercio = (foto as any).comercios
 
   // 2. Aprobar la foto y registrar puntos_otorgados
   await admin
@@ -79,6 +81,15 @@ export async function aprobarFotoMarca(fotoId: string) {
     console.error('Error RPC incrementar_fotos_aprobadas:', rpcFotosError)
   }
 
+  // 5b. Notificación: foto aprobada
+  await admin.from('notificaciones').insert({
+    gondolero_id: foto.gondolero_id,
+    tipo:         'foto_aprobada',
+    titulo:       '¡Foto aprobada! ✅',
+    mensaje:      `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. +${campana.puntos_por_foto} puntos`,
+    campana_id:   foto.campana_id,
+  })
+
   // 6. Verificar subida de nivel
   const { data: profileNivel } = await admin
     .from('profiles')
@@ -103,6 +114,13 @@ export async function aprobarFotoMarca(fotoId: string) {
         tipo:         'credito',
         monto:        0,
         concepto:     `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
+        campana_id:   foto.campana_id,
+      })
+      await admin.from('notificaciones').insert({
+        gondolero_id: foto.gondolero_id,
+        tipo:         'nivel_subido',
+        titulo:       `¡Subiste al nivel ${nuevoNivel.toUpperCase()}! 🎉`,
+        mensaje:      `Alcanzaste el nivel ${nuevoNivel} en GondolApp. ¡Seguí así!`,
         campana_id:   foto.campana_id,
       })
     }
@@ -152,12 +170,32 @@ export async function rechazarFotoMarca(fotoId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const { error } = await adminClient()
+  const admin = adminClient()
+
+  const { data: fotoRaw } = await admin
+    .from('fotos')
+    .select('gondolero_id, campana_id, comercios(nombre)')
+    .eq('id', fotoId)
+    .single()
+
+  const { error } = await admin
     .from('fotos')
     .update({ estado: 'rechazada' })
     .eq('id', fotoId)
 
   if (error) throw new Error('No se pudo rechazar la foto: ' + error.message)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const foto = fotoRaw as any
+  if (foto?.gondolero_id) {
+    await admin.from('notificaciones').insert({
+      gondolero_id: foto.gondolero_id,
+      tipo:         'foto_rechazada',
+      titulo:       'Foto no aprobada ❌',
+      mensaje:      `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
+      campana_id:   foto.campana_id,
+    })
+  }
 
   revalidatePath('/marca/gondolas')
 }
