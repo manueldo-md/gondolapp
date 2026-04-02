@@ -765,7 +765,7 @@ function CapturaContent() {
             <div>
               <p className="font-semibold text-amber-900 text-base">La foto puede estar borrosa</p>
               <p className="text-sm text-amber-700 mt-0.5">¿Querés tomarla de nuevo?</p>
-              {process.env.NODE_ENV === 'development' && blurScore !== null && (
+              {blurScore !== null && (
                 <p className="text-xs text-amber-600 mt-1 font-mono">
                   Score de nitidez: {Math.round(blurScore)} (mínimo: {BLUR_THRESHOLD})
                 </p>
@@ -1082,6 +1082,12 @@ function CapturaContent() {
                   />
                 </div>
               </div>
+            )}
+
+            {blurScore !== null && (
+              <p className="text-xs text-gray-400 text-center font-mono">
+                Nitidez de la foto: {Math.round(blurScore)}
+              </p>
             )}
 
             <button
