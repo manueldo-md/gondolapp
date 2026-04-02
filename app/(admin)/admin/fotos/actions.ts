@@ -34,18 +34,51 @@ export async function aprobarFotoAdmin(fotoId: string) {
     puntos_otorgados: puntosPorFoto,
   }).eq('id', fotoId)
 
-  if (foto?.gondolero_id && puntosPorFoto > 0) {
-    await admin.from('movimientos_puntos').insert({
-      gondolero_id: foto.gondolero_id,
-      tipo: 'credito',
-      monto: puntosPorFoto,
-      concepto: 'Foto aprobada (admin)',
-      campana_id: foto.campana_id,
-    })
-    await admin.rpc('incrementar_puntos', {
-      p_gondolero_id: foto.gondolero_id,
-      p_monto: puntosPorFoto,
-    })
+  if (foto?.gondolero_id) {
+    if (puntosPorFoto > 0) {
+      await admin.from('movimientos_puntos').insert({
+        gondolero_id: foto.gondolero_id,
+        tipo: 'credito',
+        monto: puntosPorFoto,
+        concepto: 'Foto aprobada (admin)',
+        campana_id: foto.campana_id,
+      })
+      await admin.rpc('incrementar_puntos', {
+        p_gondolero_id: foto.gondolero_id,
+        p_monto: puntosPorFoto,
+      })
+    }
+
+    await admin.rpc('incrementar_fotos_aprobadas', { p_gondolero_id: foto.gondolero_id })
+
+    // Verificar subida de nivel
+    const { data: profileNivel } = await admin
+      .from('profiles')
+      .select('fotos_aprobadas, nivel')
+      .eq('id', foto.gondolero_id)
+      .single()
+
+    if (profileNivel) {
+      const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
+      let nuevoNivel = profileNivel.nivel
+
+      if (fotosAprobadas >= 100 && profileNivel.nivel !== 'pro') {
+        nuevoNivel = 'pro'
+      } else if (fotosAprobadas >= 50 && profileNivel.nivel === 'casual') {
+        nuevoNivel = 'activo'
+      }
+
+      if (nuevoNivel !== profileNivel.nivel) {
+        await admin.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
+        await admin.from('movimientos_puntos').insert({
+          gondolero_id: foto.gondolero_id,
+          tipo:         'credito',
+          monto:        0,
+          concepto:     `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
+          campana_id:   foto.campana_id,
+        })
+      }
+    }
   }
 
   revalidatePath('/admin/fotos')

@@ -79,6 +79,35 @@ export async function aprobarFotoMarca(fotoId: string) {
     console.error('Error RPC incrementar_fotos_aprobadas:', rpcFotosError)
   }
 
+  // 6. Verificar subida de nivel
+  const { data: profileNivel } = await admin
+    .from('profiles')
+    .select('fotos_aprobadas, nivel')
+    .eq('id', foto.gondolero_id)
+    .single()
+
+  if (profileNivel) {
+    const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
+    let nuevoNivel = profileNivel.nivel
+
+    if (fotosAprobadas >= 100 && profileNivel.nivel !== 'pro') {
+      nuevoNivel = 'pro'
+    } else if (fotosAprobadas >= 50 && profileNivel.nivel === 'casual') {
+      nuevoNivel = 'activo'
+    }
+
+    if (nuevoNivel !== profileNivel.nivel) {
+      await admin.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
+      await admin.from('movimientos_puntos').insert({
+        gondolero_id: foto.gondolero_id,
+        tipo:         'credito',
+        monto:        0,
+        concepto:     `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
+        campana_id:   foto.campana_id,
+      })
+    }
+  }
+
   // 6. Actualizar participación del gondolero
   const { data: part } = await admin
     .from('participaciones')
