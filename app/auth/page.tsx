@@ -66,7 +66,7 @@ function AuthContent() {
 
   // Auto-submit al completar 6 dígitos
   useEffect(() => {
-    if (otpInput.length === 6) {
+    if (otpInput.length === 8) {
       handleVerificarOTP()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,7 +132,7 @@ function AuthContent() {
 
   // ── VERIFICAR OTP ─────────────────────────────────────────────────────────
   const handleVerificarOTP = async () => {
-    if (otpInput.length !== 6 || cargando) return
+    if (otpInput.length !== 8 || cargando) return
     setCargando(true)
     setError(null)
 
@@ -377,9 +377,9 @@ function AuthContent() {
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              maxLength={6}
+              maxLength={8}
               value={otpInput}
-              onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 8))}
               placeholder="000000"
               className="w-full px-4 py-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-center text-3xl font-mono tracking-widest"
               autoComplete="one-time-code"
@@ -395,7 +395,7 @@ function AuthContent() {
 
             <button
               onClick={handleVerificarOTP}
-              disabled={otpInput.length !== 6 || cargando}
+              disabled={otpInput.length !== 8 || cargando}
               className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
             >
               {cargando ? 'Verificando...' : 'Entrar →'}
