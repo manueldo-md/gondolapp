@@ -88,7 +88,7 @@ function AuthContent() {
       email: data.email,
       options: {
         shouldCreateUser: false,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: undefined,
       },
     })
 
@@ -114,7 +114,7 @@ function AuthContent() {
       email: data.email,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: undefined,
         data: {
           tipo_actor: data.tipo_actor,
           nombre: data.nombre,
