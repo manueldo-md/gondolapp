@@ -206,11 +206,11 @@ export default async function AlertasPage() {
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{q.nombre}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  No encontrado {q.veces} {q.veces === 1 ? 'vez' : 'veces'} · última vez {tiempoRelativo(q.ultimaVez)}
+                  Producto no encontrado {q.veces} {q.veces === 1 ? 'vez' : 'veces'} · última vez {tiempoRelativo(q.ultimaVez)}
                 </p>
               </div>
               <Link
-                href="/distribuidora/gondolas"
+                href={`/distribuidora/gondolas?comercio_id=${q.comercioId}&declaracion=producto_no_encontrado`}
                 className="ml-3 shrink-0 text-xs font-semibold text-gondo-amber-400 hover:underline"
               >
                 Ver fotos

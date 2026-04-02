@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle2, Clock, MapPin, User } from 'lucide-react'
+import { CheckCircle2, Clock, MapPin, User, X } from 'lucide-react'
 import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoAcciones } from './foto-acciones'
@@ -30,8 +30,8 @@ interface FotoPendiente extends FotoPendienteRaw {
 // ── Helpers visuales ──────────────────────────────────────────────────────────
 
 const DECL_LABEL: Record<DeclaracionFoto, string> = {
-  producto_presente:      'Presente',
-  producto_no_encontrado: 'No encontrado',
+  producto_presente:      'Producto presente',
+  producto_no_encontrado: 'Producto no encontrado',
   solo_competencia:       'Solo competencia',
 }
 
@@ -124,7 +124,11 @@ function FotoCard({ foto }: { foto: FotoPendiente & { campana_id: string } }) {
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
-export default async function GondolasPage() {
+export default async function GondolasPage({
+  searchParams,
+}: {
+  searchParams: { comercio_id?: string; declaracion?: string; estado?: string }
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -160,7 +164,24 @@ export default async function GondolasPage() {
 
   const campanaIds = (campanasDistri ?? []).map((c: { id: string }) => c.id)
 
-  // Fotos donde gondolero es de la distri OR la campaña pertenece a la distri
+  // ── Filtros activos ────────────────────────────────────────────────────────
+  const comercioIdFiltro  = searchParams.comercio_id ?? null
+  const declaracionFiltro = searchParams.declaracion  ?? null
+  const estadoFiltro      = searchParams.estado       ?? null
+  const tieneFilters      = !!(comercioIdFiltro || declaracionFiltro || estadoFiltro)
+
+  // Nombre del comercio filtrado (para el banner)
+  let comercioNombreFiltro: string | null = null
+  if (comercioIdFiltro) {
+    const { data: com } = await admin
+      .from('comercios')
+      .select('nombre')
+      .eq('id', comercioIdFiltro)
+      .single()
+    comercioNombreFiltro = com?.nombre ?? null
+  }
+
+  // ── Query principal ────────────────────────────────────────────────────────
   const hayGondoleros = gondoleroIds.length > 0
   const hayCampanas   = campanaIds.length > 0
 
@@ -172,10 +193,21 @@ export default async function GondolasPage() {
       comercio:comercios  ( nombre, direccion ),
       campana:campanas    ( nombre, tipo )
     `)
-    .eq('estado', 'pendiente')
     .order('created_at', { ascending: false })
     .limit(100)
 
+  // Estado: default 'pendiente' solo si no hay ningún filtro activo
+  if (estadoFiltro) {
+    query = query.eq('estado', estadoFiltro)
+  } else if (!tieneFilters) {
+    query = query.eq('estado', 'pendiente')
+  }
+
+  // Filtros opcionales
+  if (comercioIdFiltro) query = query.eq('comercio_id', comercioIdFiltro)
+  if (declaracionFiltro) query = query.eq('declaracion', declaracionFiltro)
+
+  // Filtro de distribuidora (gondoleroIds OR campanaIds)
   if (hayGondoleros && hayCampanas) {
     query = query.or(
       `gondolero_id.in.(${gondoleroIds.join(',')}),campana_id.in.(${campanaIds.join(',')})`
@@ -185,13 +217,12 @@ export default async function GondolasPage() {
   } else if (hayCampanas) {
     query = query.in('campana_id', campanaIds)
   } else {
-    // Sin gondoleros ni campañas → no hay fotos
     query = query.in('gondolero_id', [''])
   }
 
   const { data, error } = await query
 
-  if (error) console.error('Error fetching fotos pendientes:', error.message)
+  if (error) console.error('Error fetching fotos:', error.message)
 
   const fotosRaw = (data as FotoPendienteRaw[] | null) ?? []
 
@@ -206,27 +237,75 @@ export default async function GondolasPage() {
     })
   )
 
+  // Título dinámico según filtros
+  const titulo = tieneFilters
+    ? comercioNombreFiltro
+      ? `Fotos de ${comercioNombreFiltro}`
+      : 'Fotos filtradas'
+    : 'Fotos pendientes'
+
+  const subtitulo = tieneFilters
+    ? `${fotos.length} foto${fotos.length !== 1 ? 's' : ''} encontrada${fotos.length !== 1 ? 's' : ''}`
+    : fotos.length === 0
+      ? 'No hay fotos pendientes de revisión'
+      : `${fotos.length} foto${fotos.length !== 1 ? 's' : ''} esperando revisión`
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Fotos pendientes</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {fotos.length === 0
-              ? 'No hay fotos pendientes de revisión'
-              : `${fotos.length} foto${fotos.length !== 1 ? 's' : ''} esperando revisión`
-            }
-          </p>
+          <h2 className="text-xl font-bold text-gray-900">{titulo}</h2>
+          <p className="text-sm text-gray-500 mt-0.5">{subtitulo}</p>
         </div>
       </div>
+
+      {/* Banner de filtros activos */}
+      {tieneFilters && (
+        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5">
+          <p className="text-sm text-amber-800">
+            {comercioNombreFiltro
+              ? `Filtrando fotos de ${comercioNombreFiltro}`
+              : 'Filtros activos'}
+            {declaracionFiltro && (
+              <span className="ml-1.5 font-medium">
+                · {DECL_LABEL[declaracionFiltro as DeclaracionFoto] ?? declaracionFiltro}
+              </span>
+            )}
+            {estadoFiltro && (
+              <span className="ml-1.5 font-medium capitalize">· {estadoFiltro}</span>
+            )}
+          </p>
+          <Link
+            href="/distribuidora/gondolas"
+            className="ml-3 text-amber-600 hover:text-amber-900 transition-colors shrink-0"
+            title="Limpiar filtros"
+          >
+            <X size={16} />
+          </Link>
+        </div>
+      )}
 
       {fotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
             <CheckCircle2 size={28} className="text-gray-300" />
           </div>
-          <h3 className="text-base font-semibold text-gray-700 mb-1">Todo al día</h3>
-          <p className="text-sm text-gray-400">No hay fotos pendientes de revisión.</p>
+          <h3 className="text-base font-semibold text-gray-700 mb-1">
+            {tieneFilters ? 'Sin resultados' : 'Todo al día'}
+          </h3>
+          <p className="text-sm text-gray-400">
+            {tieneFilters
+              ? 'No hay fotos que coincidan con estos filtros.'
+              : 'No hay fotos pendientes de revisión.'}
+          </p>
+          {tieneFilters && (
+            <Link
+              href="/distribuidora/gondolas"
+              className="mt-3 text-sm text-gondo-amber-400 font-medium hover:underline"
+            >
+              Ver todas las fotos pendientes
+            </Link>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
