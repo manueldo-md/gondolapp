@@ -163,7 +163,19 @@ export default async function GondolasPage() {
 
   const gondoleroIds = (gondoleros ?? []).map((g: { id: string }) => g.id)
 
-  const { data, error } = await admin
+  // Campañas propias de esta distribuidora
+  const { data: campanasDistri } = await admin
+    .from('campanas')
+    .select('id')
+    .eq('distri_id', distriId ?? '')
+
+  const campanaIds = (campanasDistri ?? []).map((c: { id: string }) => c.id)
+
+  // Fotos donde gondolero es de la distri OR la campaña pertenece a la distri
+  const hayGondoleros = gondoleroIds.length > 0
+  const hayCampanas   = campanaIds.length > 0
+
+  let query = admin
     .from('fotos')
     .select(`
       id, url, storage_path, declaracion, precio_detectado, created_at, campana_id,
@@ -172,9 +184,23 @@ export default async function GondolasPage() {
       campana:campanas    ( nombre, tipo )
     `)
     .eq('estado', 'pendiente')
-    .in('gondolero_id', gondoleroIds.length > 0 ? gondoleroIds : [''])
     .order('created_at', { ascending: false })
     .limit(100)
+
+  if (hayGondoleros && hayCampanas) {
+    query = query.or(
+      `gondolero_id.in.(${gondoleroIds.join(',')}),campana_id.in.(${campanaIds.join(',')})`
+    )
+  } else if (hayGondoleros) {
+    query = query.in('gondolero_id', gondoleroIds)
+  } else if (hayCampanas) {
+    query = query.in('campana_id', campanaIds)
+  } else {
+    // Sin gondoleros ni campañas → no hay fotos
+    query = query.in('gondolero_id', [''])
+  }
+
+  const { data, error } = await query
 
   if (error) console.error('Error fetching fotos pendientes:', error.message)
 

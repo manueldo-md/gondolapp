@@ -308,7 +308,6 @@ function CapturaContent() {
         .from('comercios')
         .select('id, nombre, direccion, lat, lng, tipo')
         .ilike('nombre', `%${busqueda}%`)
-        .eq('validado', true)
         .limit(10)
         .then(({ data }) => {
           setComercios((data as ComercioRow[]) ?? [])
