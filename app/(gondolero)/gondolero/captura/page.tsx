@@ -590,7 +590,7 @@ function CapturaContent() {
                   No encontramos &quot;{busqueda}&quot; en el mapa
                 </p>
                 <button
-                  onClick={() => router.push(`/gondolero/comercios/nuevo?nombre=${busqueda}`)}
+                  onClick={() => router.push(`/gondolero/comercios/nuevo?nombre=${encodeURIComponent(busqueda)}&campana=${campanaId}`)}
                   className="px-4 py-2 border border-gondo-verde-400 text-gondo-verde-400 rounded-xl text-sm font-semibold"
                 >
                   + Agregar comercio nuevo
