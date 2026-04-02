@@ -6,7 +6,7 @@ import { tiempoRelativo, formatearPuntos, calcularPorcentaje } from '@/lib/utils
 import type { NivelGondolero } from '@/types'
 import { CanjeCatalogo } from './canje-catalogo'
 import { LogoutButton } from './logout-button'
-import { marcarNotificacionesLeidas } from './actions'
+import { MarcarNotificacionesLeidas } from './marcar-leidas'
 
 // ── Constantes de nivel ───────────────────────────────────────────────────────
 
@@ -97,9 +97,6 @@ export default async function PerfilPage() {
     .order('created_at', { ascending: false })
     .limit(10)
 
-  // Marcar todas como leídas (fire-and-forget, no bloquea render)
-  void marcarNotificacionesLeidas(user.id)
-
   // 8. Nombre de distribuidora si está vinculado
   let distriNombre: string | null = null
   if (profile?.distri_id) {
@@ -158,6 +155,58 @@ export default async function PerfilPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Notificaciones — justo después del header ────────────────────── */}
+      {(notificaciones?.length ?? 0) > 0 && (
+        <>
+          <MarcarNotificacionesLeidas gondoleroId={user.id} />
+          <div className="px-4 pt-4">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">Notificaciones</h2>
+            <div className="rounded-2xl overflow-hidden divide-y divide-gray-100">
+              {(notificaciones ?? []).map((n: {
+                id: string
+                tipo: string
+                titulo: string
+                mensaje: string | null
+                leida: boolean
+                created_at: string
+              }) => (
+                <div
+                  key={n.id}
+                  className={`flex items-start gap-3 px-4 py-3 ${
+                    !n.leida
+                      ? 'bg-red-50 border-l-2 border-red-400'
+                      : 'bg-gray-50'
+                  }`}
+                >
+                  {/* Punto pulsante para no leídas */}
+                  <div className="shrink-0 mt-1.5">
+                    {!n.leida ? (
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded-full h-2 w-2 bg-gray-300" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold leading-tight ${!n.leida ? 'text-red-800' : 'text-gray-500'}`}>
+                      {n.titulo}
+                    </p>
+                    {n.mensaje && (
+                      <p className={`text-xs mt-0.5 ${!n.leida ? 'text-red-700' : 'text-gray-400'}`}>
+                        {n.mensaje}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400 mt-1">{tiempoRelativo(n.created_at)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="px-4 space-y-4 mt-4">
 
@@ -226,42 +275,7 @@ export default async function PerfilPage() {
           <CanjeCatalogo puntosDisponibles={puntosDisponibles} nivel={nivel} />
         </div>
 
-        {/* ── SECCIÓN 5 — Notificaciones ───────────────────────────────────── */}
-        {(notificaciones?.length ?? 0) > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Notificaciones</h2>
-            <div className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-50 overflow-hidden">
-              {(notificaciones ?? []).map((n: {
-                id: string
-                tipo: string
-                titulo: string
-                mensaje: string | null
-                leida: boolean
-                created_at: string
-              }) => (
-                <div
-                  key={n.id}
-                  className={`px-4 py-3 ${!n.leida ? 'bg-green-50' : ''}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className={`text-sm font-semibold ${!n.leida ? 'text-green-800' : 'text-gray-800'}`}>
-                      {n.titulo}
-                    </p>
-                    {!n.leida && (
-                      <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 mt-1.5" />
-                    )}
-                  </div>
-                  {n.mensaje && (
-                    <p className="text-xs text-gray-500 mt-0.5">{n.mensaje}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">{tiempoRelativo(n.created_at)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── SECCIÓN 6 — Historial de movimientos ──────────────────────────── */}
+        {/* ── SECCIÓN 5 — Historial de movimientos ──────────────────────────── */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Últimos movimientos</h2>
           {(movimientos?.length ?? 0) === 0 ? (
