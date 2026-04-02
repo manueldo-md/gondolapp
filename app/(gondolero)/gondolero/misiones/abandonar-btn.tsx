@@ -28,7 +28,7 @@ export function AbandonarBtn({ campanaId }: { campanaId: string }) {
       {/* Dialog de confirmación */}
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={() => !isPending && setOpen(false)}
         >
           <div
