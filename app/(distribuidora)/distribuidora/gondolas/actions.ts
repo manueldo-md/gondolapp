@@ -120,8 +120,10 @@ export async function aprobarFoto(fotoId: string) {
       await adminClient.from('notificaciones').insert({
         gondolero_id: foto.gondolero_id,
         tipo:         'nivel_subido',
-        titulo:       `¡Subiste al nivel ${nuevoNivel.toUpperCase()}! 🎉`,
-        mensaje:      `Alcanzaste el nivel ${nuevoNivel} en GondolApp. ¡Seguí así!`,
+        titulo:       `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
+        mensaje:      nuevoNivel === 'activo'
+          ? 'Felicitaciones, ahora sos nivel Activo. Tenés acceso a más campañas y mejores premios.'
+          : 'Felicitaciones, ahora sos nivel Pro. Podés canjear transferencias bancarias y tenés acceso a todas las campañas.',
         campana_id:   foto.campana_id,
       })
     }
