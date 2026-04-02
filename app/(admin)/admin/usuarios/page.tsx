@@ -1,8 +1,8 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoActor } from '@/types'
-import { CambiarRolBtn } from './cambiar-rol-btn'
 import { NuevoUsuarioModal } from './nuevo-usuario-modal'
+import { AccionesUsuario } from './acciones-usuario'
 
 function adminClient() {
   return createAdminClient(
@@ -37,7 +37,7 @@ export default async function UsuariosPage({
   let query = admin
     .from('profiles')
     .select(`
-      id, nombre, tipo_actor, nivel, puntos_disponibles, created_at,
+      id, nombre, celular, tipo_actor, nivel, puntos_disponibles, created_at, distri_id, marca_id,
       distri:distribuidoras(razon_social),
       marca:marcas(razon_social)
     `)
@@ -50,21 +50,28 @@ export default async function UsuariosPage({
 
   const { data: profiles } = await query
 
-  // Distribuidoras y marcas para el modal de nuevo usuario
+  // Distribuidoras y marcas para los modales
   const [{ data: distribuidoras }, { data: marcas }] = await Promise.all([
     admin.from('distribuidoras').select('id, razon_social').order('razon_social'),
     admin.from('marcas').select('id, razon_social').order('razon_social'),
   ])
 
-  // Obtener emails de auth
+  // Emails y estado de ban desde auth
   const { data: { users: authUsers } } = await admin.auth.admin.listUsers({ perPage: 1000 })
   const emailMap: Record<string, string> = {}
-  authUsers.forEach(u => { emailMap[u.id] = u.email ?? '' })
+  const bannedMap: Record<string, boolean> = {}
+  authUsers.forEach(u => {
+    emailMap[u.id] = u.email ?? ''
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bannedUntil = (u as any).banned_until as string | null | undefined
+    bannedMap[u.id] = bannedUntil ? new Date(bannedUntil) > new Date() : false
+  })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const lista = ((profiles ?? []) as any[]).map(p => ({
     ...p,
-    email: emailMap[p.id] ?? '',
+    email:        emailMap[p.id] ?? '',
+    activo:       !bannedMap[p.id],
     distri_nombre: Array.isArray(p.distri) ? p.distri[0]?.razon_social : p.distri?.razon_social,
     marca_nombre:  Array.isArray(p.marca)  ? p.marca[0]?.razon_social  : p.marca?.razon_social,
   }))
@@ -112,7 +119,7 @@ export default async function UsuariosPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Nombre', 'Email', 'Tipo', 'Nivel', 'Vinculado a', 'Registro', 'Acciones'].map(h => (
+                {['Nombre', 'Email', 'Tipo', 'Nivel', 'Vinculado a', 'Estado', 'Registro', 'Acciones'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>
@@ -121,7 +128,7 @@ export default async function UsuariosPage({
             </thead>
             <tbody className="divide-y divide-gray-50">
               {lista.map(u => (
-                <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={u.id} className={`hover:bg-gray-50 transition-colors ${!u.activo ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
                     {u.nombre ?? '—'}
                   </td>
@@ -141,11 +148,31 @@ export default async function UsuariosPage({
                   <td className="px-4 py-3 text-xs text-gray-500">
                     {u.distri_nombre ?? u.marca_nombre ?? '—'}
                   </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                      u.activo ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
+                    }`}>
+                      {u.activo ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
                     {tiempoRelativo(u.created_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <CambiarRolBtn userId={u.id} tipoActual={u.tipo_actor} />
+                    <AccionesUsuario
+                      usuario={{
+                        id:           u.id,
+                        email:        u.email,
+                        nombre:       u.nombre,
+                        celular:      u.celular,
+                        tipo_actor:   u.tipo_actor,
+                        activo:       u.activo,
+                        distri_id:    u.distri_id,
+                        marca_id:     u.marca_id,
+                      }}
+                      distribuidoras={(distribuidoras ?? []) as { id: string; razon_social: string }[]}
+                      marcas={(marcas ?? []) as { id: string; razon_social: string }[]}
+                    />
                   </td>
                 </tr>
               ))}

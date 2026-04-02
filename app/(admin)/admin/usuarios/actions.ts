@@ -19,8 +19,90 @@ async function getAdmin() {
 
 export async function cambiarTipoActor(userId: string, nuevoTipo: TipoActor) {
   const admin = await getAdmin()
-  await admin.from('profiles').update({ tipo_actor: nuevoTipo }).eq('id', userId)
+  // Limpiar distri_id/marca_id si el nuevo tipo no los usa
+  const updateData: Record<string, unknown> = { tipo_actor: nuevoTipo }
+  if (nuevoTipo !== 'gondolero' && nuevoTipo !== 'distribuidora') {
+    updateData.distri_id = null
+  }
+  if (nuevoTipo !== 'marca') {
+    updateData.marca_id = null
+  }
+  await admin.from('profiles').update(updateData).eq('id', userId)
   revalidatePath('/admin/usuarios')
+}
+
+export async function cambiarPasswordAdmin(
+  userId: string,
+  nuevaPassword: string
+): Promise<{ error?: string }> {
+  const admin = await getAdmin()
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: nuevaPassword })
+  if (error) return { error: error.message }
+  revalidatePath('/admin/usuarios')
+  return {}
+}
+
+export async function enviarEmailRecuperacion(
+  userId: string,
+  email: string
+): Promise<{ error?: string }> {
+  const admin = await getAdmin()
+  const { error } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email,
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/nueva-password`,
+    },
+  })
+  if (error) return { error: error.message }
+  return {}
+}
+
+export async function toggleActivarCuenta(
+  userId: string,
+  activar: boolean
+): Promise<{ error?: string }> {
+  const admin = await getAdmin()
+  const { error: authError } = await admin.auth.admin.updateUserById(userId, {
+    ban_duration: activar ? 'none' : '876600h',
+  })
+  if (authError) return { error: authError.message }
+  // Actualizar activo en profiles (requiere migration 004)
+  await admin.from('profiles').update({ activo: activar }).eq('id', userId)
+  revalidatePath('/admin/usuarios')
+  return {}
+}
+
+export async function editarPerfilAdmin(
+  userId: string,
+  datos: {
+    nombre: string
+    celular?: string
+    distri_id?: string | null
+    marca_id?: string | null
+  }
+): Promise<{ error?: string }> {
+  const admin = await getAdmin()
+  const { error } = await admin
+    .from('profiles')
+    .update({
+      nombre:   datos.nombre.trim(),
+      celular:  datos.celular?.trim() || null,
+      distri_id: datos.distri_id || null,
+      marca_id:  datos.marca_id  || null,
+    })
+    .eq('id', userId)
+  if (error) return { error: error.message }
+  revalidatePath('/admin/usuarios')
+  return {}
+}
+
+export async function eliminarUsuario(userId: string): Promise<{ error?: string }> {
+  const admin = await getAdmin()
+  const { error } = await admin.auth.admin.deleteUser(userId)
+  if (error) return { error: error.message }
+  revalidatePath('/admin/usuarios')
+  return {}
 }
 
 export async function crearUsuario(payload: {
