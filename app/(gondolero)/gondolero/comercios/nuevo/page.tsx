@@ -4,8 +4,19 @@ import { useState, useEffect, useTransition } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { ArrowLeft, Navigation, Loader2, MapPin } from 'lucide-react'
+import { get, set } from 'idb-keyval'
 import { crearComercio } from './actions'
 import type { TipoComercio } from '@/types'
+
+interface ComercioTempItem {
+  tempId: string
+  nombre: string
+  tipo: string
+  direccion: string | null
+  lat: number
+  lng: number
+  timestamp: number
+}
 
 const TIPOS: { value: TipoComercio; label: string; emoji: string }[] = [
   { value: 'autoservicio', label: 'Autoservicio', emoji: '🏪' },
@@ -70,6 +81,29 @@ function NuevoComercioForm() {
     if (!nombre.trim()) { setErrorMsg('El nombre es obligatorio.'); return }
     if (gpsEstado !== 'ok' || !lat || !lng) {
       setErrorMsg('Necesitamos tu ubicación GPS. Activalo e intentá de nuevo.')
+      return
+    }
+
+    // Sin conexión: guardar en IndexedDB y volver a captura con ID temporal
+    if (!navigator.onLine) {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      startTransition(async () => {
+        const pendientes: ComercioTempItem[] = (await get('comercios_pendientes')) ?? []
+        pendientes.push({
+          tempId,
+          nombre: nombre.trim(),
+          tipo,
+          direccion: direccion || null,
+          lat: lat!,
+          lng: lng!,
+          timestamp: Date.now(),
+        })
+        await set('comercios_pendientes', pendientes)
+        const params = new URLSearchParams()
+        if (campanaId) params.set('campana', campanaId)
+        params.set('comercio_nuevo', tempId)
+        router.push(`/gondolero/captura?${params.toString()}`)
+      })
       return
     }
 

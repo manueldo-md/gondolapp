@@ -1,9 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { get, set } from 'idb-keyval'
 import { useOfflineQueue } from '@/lib/hooks'
-import { subirFoto } from '@/app/(gondolero)/gondolero/captura/actions'
-import { registrarFoto } from '@/app/(gondolero)/gondolero/captura/actions'
+import { subirFoto, registrarFoto } from '@/app/(gondolero)/gondolero/captura/actions'
+import { crearComercioOffline } from '@/app/(gondolero)/gondolero/comercios/nuevo/actions'
+
+const COMERCIOS_PENDIENTES_KEY = 'comercios_pendientes'
+
+interface ComercioTempItem {
+  tempId: string
+  nombre: string
+  tipo: string
+  direccion: string | null
+  lat: number
+  lng: number
+  timestamp: number
+}
 
 export function OfflineSyncBanner() {
   const { obtenerPendientes, eliminar } = useOfflineQueue()
@@ -12,14 +25,29 @@ export function OfflineSyncBanner() {
   useEffect(() => {
     const handleOnline = async () => {
       const pendientes = await obtenerPendientes()
-      if (pendientes.length === 0) return
+      const comerciosPendientes: ComercioTempItem[] = (await get(COMERCIOS_PENDIENTES_KEY)) ?? []
+      const totalPendientes = pendientes.length + comerciosPendientes.length
 
-      setMensaje(`Subiendo ${pendientes.length} ${pendientes.length === 1 ? 'foto pendiente' : 'fotos pendientes'}...`)
+      if (totalPendientes === 0) return
+
+      if (pendientes.length > 0) {
+        setMensaje(`Subiendo ${pendientes.length} ${pendientes.length === 1 ? 'foto pendiente' : 'fotos pendientes'}...`)
+      }
 
       let sincronizadas = 0
+      const tempIdsUsados = new Set<string>()
 
       for (const item of pendientes) {
         try {
+          // Si el comercio es temporal, crearlo primero en Supabase
+          let comercioId = item.comercioId
+          if (item.comercioId.startsWith('temp_') && item.comercioPendiente) {
+            const { id, error } = await crearComercioOffline(item.comercioPendiente)
+            if (error || !id) throw new Error(error ?? 'Error creando comercio')
+            comercioId = id
+            tempIdsUsados.add(item.comercioId)
+          }
+
           // base64 → Blob → File → FormData
           const res = await fetch(item.fotoBase64)
           const blob = await res.blob()
@@ -31,7 +59,7 @@ export function OfflineSyncBanner() {
           await registrarFoto({
             campanaId: item.campanaId,
             bloqueId: item.bloqueId,
-            comercioId: item.comercioId,
+            comercioId,
             storagePath: item.storagePath,
             url,
             lat: item.lat,
@@ -48,6 +76,33 @@ export function OfflineSyncBanner() {
         } catch {
           // Mantener en cola para el próximo intento
         }
+      }
+
+      // Sincronizar comercios pendientes que no estuvieron asociados a una foto
+      const comerciosRestantes = comerciosPendientes.filter(
+        cp => !tempIdsUsados.has(cp.tempId)
+      )
+      const comerciosSincronizados: string[] = []
+      for (const cp of comerciosRestantes) {
+        try {
+          await crearComercioOffline({
+            nombre: cp.nombre,
+            tipo: cp.tipo,
+            direccion: cp.direccion,
+            lat: cp.lat,
+            lng: cp.lng,
+          })
+          comerciosSincronizados.push(cp.tempId)
+        } catch {
+          // Mantener para el próximo intento
+        }
+      }
+
+      // Limpiar comercios_pendientes ya sincronizados
+      const todosUsados = new Set([...tempIdsUsados, ...comerciosSincronizados])
+      if (todosUsados.size > 0) {
+        const actualizados = comerciosPendientes.filter(cp => !todosUsados.has(cp.tempId))
+        await set(COMERCIOS_PENDIENTES_KEY, actualizados)
       }
 
       if (sincronizadas > 0) {

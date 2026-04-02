@@ -84,6 +84,13 @@ export interface UploadPendiente {
   deviceId: string
   timestamp: string
   puntosAcreditar: number
+  comercioPendiente?: {
+    nombre: string
+    tipo: string
+    direccion: string | null
+    lat: number
+    lng: number
+  }
 }
 
 const QUEUE_KEY = 'gondolapp_upload_queue'

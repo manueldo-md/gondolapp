@@ -5,8 +5,9 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
   ArrowLeft, MapPin, Camera, CheckCircle2, XCircle,
-  RefreshCw, Navigation, Loader2, Star, AlertTriangle,
+  RefreshCw, Navigation, Loader2, Star, AlertTriangle, WifiOff,
 } from 'lucide-react'
+import { get, set } from 'idb-keyval'
 import { createClient } from '@/lib/supabase/client'
 import {
   calcularDistanciaMetros,
@@ -18,6 +19,19 @@ import {
 } from '@/lib/utils'
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
 import { registrarFoto, subirFoto, asegurarBloqueGenerico } from './actions'
+
+interface ComercioTempItem {
+  tempId: string
+  nombre: string
+  tipo: string
+  direccion: string | null
+  lat: number
+  lng: number
+  timestamp: number
+}
+
+const COMERCIOS_CACHE_KEY = 'comercios_cache'
+const COMERCIOS_PENDIENTES_KEY = 'comercios_pendientes'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -259,6 +273,11 @@ function CapturaContent() {
   const [cargando, setCargando] = useState(true)
   const [errorGlobal, setErrorGlobal] = useState<string | null>(null)
 
+  // Offline
+  const [modoOffline, setModoOffline] = useState(false)
+  const comerciosCacheRef = useRef<ComercioRow[]>([])
+  const [comerciosPendientes, setComerciosPendientes] = useState<ComercioTempItem[]>([])
+
   // Datos del flujo
   const [busqueda, setBusqueda] = useState('')
   const [comercios, setComercios] = useState<ComercioRow[]>([])
@@ -301,9 +320,87 @@ function CapturaContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campanaId])
 
-  // Buscar comercios con debounce
+  // Inicializar caché de comercios y manejar comercio_nuevo param
+  useEffect(() => {
+    const initOffline = async () => {
+      const pendientes: ComercioTempItem[] = (await get(COMERCIOS_PENDIENTES_KEY)) ?? []
+      setComerciosPendientes(pendientes)
+
+      const isOffline = !navigator.onLine
+      setModoOffline(isOffline)
+
+      if (isOffline) {
+        const cache = await get(COMERCIOS_CACHE_KEY)
+        if (cache?.data) comerciosCacheRef.current = cache.data
+      } else {
+        // Cachear todos los comercios para uso offline futuro
+        supabase
+          .from('comercios')
+          .select('id, nombre, direccion, lat, lng, tipo, validado')
+          .order('nombre')
+          .limit(500)
+          .then(({ data }) => {
+            if (data) {
+              comerciosCacheRef.current = data as ComercioRow[]
+              set(COMERCIOS_CACHE_KEY, { data, timestamp: Date.now() })
+            }
+          })
+      }
+
+      // Manejar param comercio_nuevo (redirigido desde /comercios/nuevo)
+      const nuevoId = searchParams.get('comercio_nuevo')
+      if (nuevoId) {
+        if (nuevoId.startsWith('temp_')) {
+          const found = pendientes.find(p => p.tempId === nuevoId)
+          if (found) {
+            setComercio({
+              id: found.tempId,
+              nombre: found.nombre,
+              direccion: found.direccion,
+              lat: found.lat,
+              lng: found.lng,
+              tipo: found.tipo,
+              validado: false,
+            })
+            setPaso('gps')
+          }
+        } else {
+          supabase
+            .from('comercios')
+            .select('id, nombre, direccion, lat, lng, tipo, validado')
+            .eq('id', nuevoId)
+            .single()
+            .then(({ data }) => {
+              if (data) {
+                setComercio(data as ComercioRow)
+                setPaso('gps')
+              }
+            })
+        }
+      }
+    }
+
+    initOffline()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Buscar comercios con debounce (online) o filtrar desde caché (offline)
   useEffect(() => {
     if (!busqueda.trim()) { setComercios([]); return }
+
+    const query = busqueda.toLowerCase()
+
+    const tempMatches: ComercioRow[] = comerciosPendientes
+      .filter(p => p.nombre.toLowerCase().includes(query))
+      .map(p => ({ id: p.tempId, nombre: p.nombre, direccion: p.direccion, lat: p.lat, lng: p.lng, tipo: p.tipo, validado: false }))
+
+    if (modoOffline || !navigator.onLine) {
+      const cacheResults = comerciosCacheRef.current
+        .filter(c => c.nombre.toLowerCase().includes(query))
+        .slice(0, 10)
+      setComercios([...tempMatches, ...cacheResults])
+      return
+    }
 
     setBuscando(true)
     const timer = setTimeout(() => {
@@ -313,14 +410,14 @@ function CapturaContent() {
         .ilike('nombre', `%${busqueda}%`)
         .limit(10)
         .then(({ data }) => {
-          setComercios((data as ComercioRow[]) ?? [])
+          setComercios([...tempMatches, ...(data as ComercioRow[] ?? [])])
           setBuscando(false)
         })
     }, 300)
 
     return () => { clearTimeout(timer); setBuscando(false) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busqueda])
+  }, [busqueda, modoOffline, comerciosPendientes])
 
   // Iniciar GPS al llegar al paso GPS
   useEffect(() => {
@@ -340,15 +437,51 @@ function CapturaContent() {
 
     setEnviando(true)
 
+    const blob = await comprimirImagen(fotoBlob)
+    const storagePath = generarPathFoto(campana.id, getDeviceId())
+    const timestampDispositivo = new Date().toISOString()
+    const lat = gps.posicion?.lat ?? 0
+    const lng = gps.posicion?.lng ?? 0
+    const bloqueIdBase = campana.primerBloqueId ?? ''
+
+    const comercioPendienteData = comercio.id.startsWith('temp_')
+      ? comerciosPendientes.find(p => p.tempId === comercio.id)
+      : undefined
+
+    const encolarFoto = async (fotoBlob: Blob) => {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        await encolar({
+          campanaId: campana.id,
+          bloqueId: bloqueIdBase,
+          comercioId: comercio.id,
+          storagePath,
+          fotoBase64: reader.result as string,
+          lat, lng,
+          declaracion: declaracionFinal!,
+          precio: precio ? parseFloat(precio) : null,
+          deviceId: getDeviceId(),
+          timestamp: timestampDispositivo,
+          puntosAcreditar: campana.puntos_por_foto,
+          comercioPendiente: comercioPendienteData
+            ? { nombre: comercioPendienteData.nombre, tipo: comercioPendienteData.tipo, direccion: comercioPendienteData.direccion, lat: comercioPendienteData.lat, lng: comercioPendienteData.lng }
+            : undefined,
+        })
+        setPaso('exito-offline')
+        setEnviando(false)
+      }
+      reader.readAsDataURL(fotoBlob)
+    }
+
+    // Si no hay conexión, encolar directamente sin intentar el fetch
+    if (!navigator.onLine) {
+      await encolarFoto(blob)
+      return
+    }
+
     try {
       // Obtener o crear bloque genérico si la campaña no tiene bloques configurados
       const bloqueId = campana.primerBloqueId ?? await asegurarBloqueGenerico(campana.id)
-
-      const blob = await comprimirImagen(fotoBlob)
-      const storagePath = generarPathFoto(campana.id, getDeviceId())
-      const timestampDispositivo = new Date().toISOString()
-      const lat = gps.posicion?.lat ?? 0
-      const lng = gps.posicion?.lng ?? 0
 
       // Subir foto a Storage vía Server Action (service role bypasea RLS)
       const formData = new FormData()
@@ -381,33 +514,8 @@ function CapturaContent() {
           err.message.includes('Failed')
         ))
 
-      if (esErrorRed && fotoBlob) {
-        // Encolar silenciosamente para sincronizar cuando haya conexión
-        const bloqueId = campana.primerBloqueId ?? ''
-        const storagePath = generarPathFoto(campana.id, getDeviceId())
-        const timestampDispositivo = new Date().toISOString()
-        const lat = gps.posicion?.lat ?? 0
-        const lng = gps.posicion?.lng ?? 0
-
-        const reader = new FileReader()
-        reader.onload = async () => {
-          await encolar({
-            campanaId: campana.id,
-            bloqueId,
-            comercioId: comercio.id,
-            storagePath,
-            fotoBase64: reader.result as string,
-            lat, lng,
-            declaracion: declaracionFinal!,
-            precio: precio ? parseFloat(precio) : null,
-            deviceId: getDeviceId(),
-            timestamp: timestampDispositivo,
-            puntosAcreditar: campana.puntos_por_foto,
-          })
-          setPaso('exito-offline')
-          setEnviando(false)
-        }
-        reader.readAsDataURL(fotoBlob)
+      if (esErrorRed) {
+        await encolarFoto(blob)
         return
       }
 
@@ -609,6 +717,14 @@ function CapturaContent() {
         {/* ── PASO 1: COMERCIO ── */}
         {paso === 'comercio' && (
           <div className="space-y-4">
+            {modoOffline && (
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                <WifiOff size={14} className="text-amber-500 shrink-0" />
+                <p className="text-xs text-amber-700">
+                  Modo sin conexión — mostrando comercios guardados
+                </p>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 ¿En qué comercio estás?

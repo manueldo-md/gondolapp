@@ -84,3 +84,49 @@ export async function crearComercio(formData: FormData) {
   params.set('comercio_nuevo', comercio.id)
   redirect(`/gondolero/captura?${params.toString()}`)
 }
+
+// Versión sin redirect para usar desde OfflineSyncBanner al sincronizar
+export async function crearComercioOffline(datos: {
+  nombre: string
+  tipo: string
+  direccion: string | null
+  lat: number
+  lng: number
+}): Promise<{ id?: string; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  const { data: zona } = await admin
+    .from('zonas').select('id').eq('nombre', 'Entre Ríos').limit(1).single()
+  let zonaId: string | null = zona?.id ?? null
+  if (!zonaId) {
+    const { data: primeraZona } = await admin.from('zonas').select('id').limit(1).single()
+    zonaId = primeraZona?.id ?? null
+  }
+  if (!zonaId) return { error: 'No hay zonas configuradas.' }
+
+  const { data: comercio, error } = await admin
+    .from('comercios')
+    .insert({
+      nombre: datos.nombre,
+      tipo: datos.tipo,
+      direccion: datos.direccion,
+      lat: datos.lat,
+      lng: datos.lng,
+      zona_id: zonaId,
+      registrado_por: user.id,
+      validado: false,
+    })
+    .select('id')
+    .single()
+
+  if (error) return { error: 'No se pudo guardar el comercio.' }
+  return { id: comercio.id }
+}
