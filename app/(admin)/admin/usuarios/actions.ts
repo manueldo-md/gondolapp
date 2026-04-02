@@ -33,6 +33,30 @@ export async function crearUsuario(payload: {
 }): Promise<{ error?: string }> {
   const admin = await getAdmin()
 
+  // Si es marca o distribuidora nueva (sin id vinculado), crear el registro primero
+  let distriId = payload.distri_id || null
+  let marcaId  = payload.marca_id  || null
+
+  if (payload.tipo_actor === 'distribuidora' && !distriId) {
+    const { data: nuevaDistri, error: distriError } = await admin
+      .from('distribuidoras')
+      .insert({ razon_social: payload.nombre, validada: false })
+      .select('id')
+      .single()
+    if (distriError) return { error: 'No se pudo crear la distribuidora: ' + distriError.message }
+    distriId = nuevaDistri.id
+  }
+
+  if (payload.tipo_actor === 'marca' && !marcaId) {
+    const { data: nuevaMarca, error: marcaError } = await admin
+      .from('marcas')
+      .insert({ razon_social: payload.nombre, validada: false })
+      .select('id')
+      .single()
+    if (marcaError) return { error: 'No se pudo crear la marca: ' + marcaError.message }
+    marcaId = nuevaMarca.id
+  }
+
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email: payload.email,
     password: payload.password,
@@ -40,8 +64,8 @@ export async function crearUsuario(payload: {
     user_metadata: {
       tipo_actor: payload.tipo_actor,
       nombre: payload.nombre,
-      distri_id: payload.distri_id || null,
-      marca_id: payload.marca_id || null,
+      distri_id: distriId,
+      marca_id: marcaId,
     },
   })
 
@@ -51,10 +75,12 @@ export async function crearUsuario(payload: {
   await admin.from('profiles').update({
     tipo_actor: payload.tipo_actor,
     nombre: payload.nombre,
-    distri_id: payload.distri_id || null,
-    marca_id: payload.marca_id || null,
+    distri_id: distriId,
+    marca_id: marcaId,
   }).eq('id', authData.user.id)
 
   revalidatePath('/admin/usuarios')
+  revalidatePath('/admin/marcas')
+  revalidatePath('/admin/distribuidoras')
   return {}
 }

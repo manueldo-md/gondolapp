@@ -5,16 +5,33 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag,
 } from 'lucide-react'
 
-const NAV = [
-  { href: '/admin/tablero',   label: 'Tablero',   icon: LayoutDashboard },
-  { href: '/admin/usuarios',  label: 'Usuarios',  icon: Users },
-  { href: '/admin/fotos',     label: 'Fotos',     icon: Image },
-  { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone },
-  { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
-  { href: '/admin/comercios', label: 'Comercios', icon: Store },
+const NAV_SECTIONS = [
+  {
+    label: null,
+    items: [
+      { href: '/admin/tablero',  label: 'Tablero', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'Actores',
+    items: [
+      { href: '/admin/usuarios',       label: 'Usuarios',       icon: Users },
+      { href: '/admin/distribuidoras', label: 'Distribuidoras', icon: Truck },
+      { href: '/admin/marcas',         label: 'Marcas',         icon: Tag },
+    ],
+  },
+  {
+    label: 'Operaciones',
+    items: [
+      { href: '/admin/fotos',     label: 'Fotos',     icon: Image },
+      { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone },
+      { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
+      { href: '/admin/comercios', label: 'Comercios', icon: Store },
+    ],
+  },
 ]
 
 export function AdminShell({
@@ -30,27 +47,36 @@ export function AdminShell({
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const Sidebar = ({ mobile }: { mobile?: boolean }) => (
-    <nav className={`flex flex-col gap-1 ${mobile ? 'p-4' : 'p-3'}`}>
-      {NAV.map(item => {
-        const active = pathname.startsWith(item.href)
-        const Icon = item.icon
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={() => setSidebarOpen(false)}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              active
-                ? 'bg-white/15 text-white'
-                : 'text-white/60 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            <Icon size={17} />
-            <span>{item.label}</span>
-            {active && <ChevronRight size={14} className="ml-auto opacity-50" />}
-          </Link>
-        )
-      })}
+    <nav className={`flex flex-col gap-0.5 ${mobile ? 'p-4' : 'p-3'}`}>
+      {NAV_SECTIONS.map((section, si) => (
+        <div key={si} className={si > 0 ? 'mt-4' : ''}>
+          {section.label && (
+            <p className="px-3 mb-1 text-[10px] font-semibold text-white/30 uppercase tracking-wider">
+              {section.label}
+            </p>
+          )}
+          {section.items.map(item => {
+            const active = pathname.startsWith(item.href)
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setSidebarOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-white/15 text-white'
+                    : 'text-white/60 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Icon size={17} />
+                <span>{item.label}</span>
+                {active && <ChevronRight size={14} className="ml-auto opacity-50" />}
+              </Link>
+            )
+          })}
+        </div>
+      ))}
     </nav>
   )
 
