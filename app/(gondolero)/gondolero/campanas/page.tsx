@@ -18,7 +18,9 @@ type CampanaRow = {
   financiada_por: string
   puntos_por_foto: number
   fecha_fin: string | null
+  fecha_limite_inscripcion: string | null
   objetivo_comercios: number | null
+  tope_total_comercios: number | null
   comercios_relevados: number
   instruccion: string | null
   min_comercios_para_cobrar: number
@@ -46,6 +48,13 @@ function CampanaCard({ campana, participando }: { campana: CampanaRow; participa
   const marcaNombre = campana.marca?.razon_social ?? 'GondolApp'
   const nueva = !participando && (Date.now() - new Date(campana.created_at).getTime() < SIETE_DIAS_MS)
 
+  // Badges de cupo e inscripción
+  const cupoLleno = !!(campana.tope_total_comercios != null && campana.comercios_relevados >= campana.tope_total_comercios)
+  const ultimosCupos = !cupoLleno && campana.tope_total_comercios != null &&
+    campana.comercios_relevados / campana.tope_total_comercios > 0.8
+  const diasInscripcion = campana.fecha_limite_inscripcion ? diasRestantes(campana.fecha_limite_inscripcion) : null
+  const inscripcionProntoCierra = diasInscripcion !== null && diasInscripcion >= 0 && diasInscripcion <= 3
+
   return (
     <div className={`rounded-2xl shadow-sm border overflow-hidden ${
       participando ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100'
@@ -68,6 +77,21 @@ function CampanaCard({ campana, participando }: { campana: CampanaRow; participa
           {nueva && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
               Nueva
+            </span>
+          )}
+          {cupoLleno && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-600">
+              Sin cupos
+            </span>
+          )}
+          {!cupoLleno && ultimosCupos && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">
+              Últimos cupos
+            </span>
+          )}
+          {inscripcionProntoCierra && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">
+              Inscripción cierra en {diasInscripcion === 0 ? 'hoy' : `${diasInscripcion}d`}
             </span>
           )}
         </div>
@@ -166,8 +190,8 @@ export default async function CampanasPage() {
     .from('campanas')
     .select(`
       id, nombre, tipo, marca_id, financiada_por,
-      puntos_por_foto, fecha_fin, objetivo_comercios,
-      comercios_relevados, instruccion, min_comercios_para_cobrar,
+      puntos_por_foto, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
+      tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
       es_abierta, created_at,
       marca:marcas ( razon_social ),
       bloques_foto ( id )

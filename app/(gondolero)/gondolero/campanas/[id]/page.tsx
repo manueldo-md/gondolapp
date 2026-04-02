@@ -29,6 +29,7 @@ type CampanaDetalle = {
   fecha_fin: string | null
   fecha_limite_inscripcion: string | null
   objetivo_comercios: number | null
+  tope_total_comercios: number | null
   max_comercios_por_gondolero: number
   min_comercios_para_cobrar: number
   comercios_relevados: number
@@ -62,7 +63,7 @@ export default async function CampanaDetallePage({
     .select(`
       id, nombre, tipo, financiada_por,
       puntos_por_foto, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
-      objetivo_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
+      objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion,
       marca:marcas ( razon_social ),
       bloques_foto ( id, orden, instruccion, tipo_contenido )
@@ -89,6 +90,17 @@ export default async function CampanaDetallePage({
   const progreso = calcularPorcentaje(c.comercios_relevados, c.objetivo_comercios ?? 0)
   const marcaNombre = c.marca?.razon_social ?? 'GondolApp'
   const bloques = [...(c.bloques_foto ?? [])].sort((a, b) => a.orden - b.orden)
+
+  // Validaciones de acceso
+  const inscripcionCerrada = !!(
+    c.fecha_limite_inscripcion && new Date(c.fecha_limite_inscripcion) < new Date()
+  )
+  const cupoLleno = !!(
+    c.tope_total_comercios != null && c.comercios_relevados >= c.tope_total_comercios
+  )
+  const cupoProgreso = c.tope_total_comercios
+    ? calcularPorcentaje(c.comercios_relevados, c.tope_total_comercios)
+    : null
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -196,7 +208,30 @@ export default async function CampanaDetallePage({
           </div>
         </div>
 
-        {/* Progreso */}
+        {/* Cupo total */}
+        {c.tope_total_comercios != null && (
+          <div className={`rounded-2xl border p-4 ${cupoLleno ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-sm font-semibold text-gray-700">Cupo disponible</h2>
+              <span className={`text-sm font-medium ${cupoLleno ? 'text-red-600' : 'text-gray-600'}`}>
+                {c.comercios_relevados} / {c.tope_total_comercios}
+              </span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${cupoLleno ? 'bg-red-400' : 'bg-gondo-verde-400'}`}
+                style={{ width: `${cupoProgreso}%` }}
+              />
+            </div>
+            <p className={`text-xs mt-1.5 ${cupoLleno ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+              {cupoLleno
+                ? 'Sin cupos disponibles'
+                : `${c.tope_total_comercios - c.comercios_relevados} cupos restantes`}
+            </p>
+          </div>
+        )}
+
+        {/* Progreso general */}
         {c.objetivo_comercios !== null && c.objetivo_comercios > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="flex justify-between items-center mb-2">
@@ -219,7 +254,12 @@ export default async function CampanaDetallePage({
 
       {/* CTA fijo al fondo */}
       <div className="fixed bottom-16 left-0 right-0 px-4 pb-2 bg-gradient-to-t from-gray-50 via-gray-50 pt-4">
-        <UnirseButton campanaId={c.id} yaUnido={yaUnido} />
+        <UnirseButton
+          campanaId={c.id}
+          yaUnido={yaUnido}
+          inscripcionCerrada={inscripcionCerrada}
+          cupoLleno={cupoLleno}
+        />
       </div>
 
     </div>

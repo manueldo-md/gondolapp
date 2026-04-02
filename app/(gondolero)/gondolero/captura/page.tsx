@@ -33,9 +33,53 @@ interface ComercioTempItem {
 const COMERCIOS_CACHE_KEY = 'comercios_cache'
 const COMERCIOS_PENDIENTES_KEY = 'comercios_pendientes'
 
+// ── Blur detection ────────────────────────────────────────────────────────────
+const BLUR_THRESHOLD = 100
+
+function getGray(data: Uint8ClampedArray, width: number, x: number, y: number): number {
+  const idx = (y * width + x) * 4
+  return 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]
+}
+
+function calcularBlurScore(blob: Blob): Promise<number> {
+  return new Promise(resolve => {
+    const img = new window.Image()
+    const objectUrl = URL.createObjectURL(blob)
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      const canvas = document.createElement('canvas')
+      const scale = Math.min(300 / img.width, 300 / img.height, 1)
+      canvas.width  = Math.max(3, Math.floor(img.width  * scale))
+      canvas.height = Math.max(3, Math.floor(img.height * scale))
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      let sum = 0, sumSq = 0, count = 0
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const idx = (y * width + x) * 4
+          const gray    = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]
+          const top     = getGray(data, width, x,     y - 1)
+          const bottom  = getGray(data, width, x,     y + 1)
+          const left    = getGray(data, width, x - 1, y)
+          const right   = getGray(data, width, x + 1, y)
+          const laplacian = Math.abs(4 * gray - top - bottom - left - right)
+          sum   += laplacian
+          sumSq += laplacian * laplacian
+          count++
+        }
+      }
+      const mean = sum / count
+      resolve((sumSq / count) - mean * mean)
+    }
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(999) }
+    img.src = objectUrl
+  })
+}
+
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'declaracion' | 'confirmacion' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'declaracion' | 'confirmacion' | 'exito' | 'exito-offline'
 type Declaracion = 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
 
 interface ComercioRow {
@@ -289,6 +333,7 @@ function CapturaContent() {
   const [precio, setPrecio] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [puntosGanados, setPuntosGanados] = useState(0)
+  const [blurScore, setBlurScore] = useState<number | null>(null)
 
   // Cargar datos de la campaña al montar
   useEffect(() => {
@@ -502,6 +547,7 @@ function CapturaContent() {
         timestampDispositivo,
         deviceId: getDeviceId(),
         puntosAcreditar: campana.puntos_por_foto,
+        blurScore,
       })
 
       setPuntosGanados(result.puntos)
@@ -572,12 +618,17 @@ function CapturaContent() {
         onCaptura={(blob, previewUrl) => {
           setFotoBlob(blob)
           setFotoPreview(previewUrl)
-          if (campana?.tipoContenido === 'ninguno') {
-            setDeclaracion('producto_presente')
-            setPaso('confirmacion')
-          } else {
-            setPaso('declaracion')
-          }
+          calcularBlurScore(blob).then(score => {
+            setBlurScore(score)
+            if (score < BLUR_THRESHOLD) {
+              setPaso('blur-advertencia')
+            } else if (campana?.tipoContenido === 'ninguno') {
+              setDeclaracion('producto_presente')
+              setPaso('confirmacion')
+            } else {
+              setPaso('declaracion')
+            }
+          })
         }}
         onVolver={() => setPaso('gps')}
       />
@@ -660,6 +711,49 @@ function CapturaContent() {
     )
   }
 
+  // ── BLUR ADVERTENCIA ─────────────────────────────────────────────────────────
+  if (paso === 'blur-advertencia') {
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col">
+        {fotoPreview && (
+          <div className="relative flex-1">
+            <Image src={fotoPreview} alt="Preview" fill className="object-contain" />
+          </div>
+        )}
+        <div className="bg-amber-50 border-t border-amber-200 px-5 py-5 shrink-0">
+          <div className="flex items-start gap-3 mb-4">
+            <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-amber-900 text-base">La foto puede estar borrosa</p>
+              <p className="text-sm text-amber-700 mt-0.5">¿Querés tomarla de nuevo?</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <button
+              onClick={() => { setFotoBlob(null); setFotoPreview(null); setBlurScore(null); setPaso('camara') }}
+              className="w-full py-3.5 bg-amber-500 text-white font-semibold rounded-xl min-h-touch"
+            >
+              Repetir foto
+            </button>
+            <button
+              onClick={() => {
+                if (campana?.tipoContenido === 'ninguno') {
+                  setDeclaracion('producto_presente')
+                  setPaso('confirmacion')
+                } else {
+                  setPaso('declaracion')
+                }
+              }}
+              className="w-full py-3.5 border border-amber-300 text-amber-700 font-semibold rounded-xl min-h-touch"
+            >
+              Usar igual
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
   const PASOS_LABEL = ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar']
@@ -676,13 +770,14 @@ function CapturaContent() {
               if (paso === 'comercio') router.back()
               else {
                 const prev: Record<Paso, Paso> = {
-                  comercio:       'comercio',
-                  gps:            'comercio',
-                  camara:         'gps',
-                  declaracion:    'camara',
-                  confirmacion:   campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
-                  exito:          'confirmacion',
-                  'exito-offline':'confirmacion',
+                  comercio:           'comercio',
+                  gps:                'comercio',
+                  camara:             'gps',
+                  'blur-advertencia': 'camara',
+                  declaracion:        'camara',
+                  confirmacion:       campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
+                  exito:              'confirmacion',
+                  'exito-offline':    'confirmacion',
                 }
                 setPaso(prev[paso])
               }

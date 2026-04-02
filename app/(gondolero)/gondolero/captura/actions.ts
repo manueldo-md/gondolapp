@@ -17,6 +17,7 @@ export interface RegistrarFotoParams {
   timestampDispositivo: string
   deviceId: string
   puntosAcreditar: number
+  blurScore?: number | null
 }
 
 export async function registrarFoto(params: RegistrarFotoParams) {
@@ -58,6 +59,7 @@ export async function registrarFoto(params: RegistrarFotoParams) {
       device_id:             params.deviceId,
       declaracion:           params.declaracion,
       precio_detectado:      params.precioDetectado,
+      blur_score:            params.blurScore ?? null,
       estado:                'pendiente',
       puntos_otorgados:      params.puntosAcreditar,
     })
