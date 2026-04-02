@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
-import Image from 'next/image'
 import { Camera } from 'lucide-react'
 import { formatearFechaHora } from '@/lib/utils'
+import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import type { EstadoFoto, DeclaracionFoto, TipoCampana } from '@/types'
 import { GondolasFilter } from './gondolas-filter'
 import { MarcaFotoAcciones } from './foto-acciones'
@@ -172,23 +172,15 @@ export default async function GondolasPage({
           {fotos.map(f => (
             <div key={f.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-gondo-indigo-50 transition-colors">
               {/* Imagen */}
-              <div className="relative aspect-square bg-gray-100">
-                {f.signedUrl ? (
-                  <Image
-                    src={f.signedUrl}
-                    alt="Foto de góndola"
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <Camera size={24} className="absolute inset-0 m-auto text-gray-300" />
-                )}
-                {/* Badge de estado superpuesto */}
+              <FotoLightbox
+                src={f.signedUrl}
+                alt="Foto de góndola"
+                containerClassName="relative aspect-square"
+              >
                 <span className={`absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${ESTADO_COLOR[f.estado]}`}>
                   {ESTADO_LABEL[f.estado]}
                 </span>
-              </div>
+              </FotoLightbox>
 
               {/* Info */}
               <div className="p-2.5">

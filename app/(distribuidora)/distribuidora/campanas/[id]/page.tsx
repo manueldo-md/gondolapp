@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
-import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowLeft, Camera, Clock, MapPin, Target, User } from 'lucide-react'
+import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import {
   labelEstadoCampana, colorEstadoCampana,
   labelTipoCampana, calcularPorcentaje,
@@ -225,26 +225,15 @@ export default async function CampanaDetallePage({
             <div key={f.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
 
               {/* Imagen */}
-              <div className="relative w-full h-52 bg-gray-100 shrink-0">
-                {f.signedUrl ? (
-                  <Image
-                    src={f.signedUrl}
-                    alt={`Foto de ${(f.comercio as { nombre: string } | null)?.nombre ?? 'comercio'}`}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 1024px) 100vw, (max-width: 1280px) 50vw, 33vw"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <Camera size={32} className="text-gray-300" />
-                  </div>
-                )}
-                {/* Badge de estado */}
+              <FotoLightbox
+                src={f.signedUrl}
+                alt={`Foto de ${(f.comercio as { nombre: string } | null)?.nombre ?? 'comercio'}`}
+                containerClassName="relative w-full h-52 shrink-0"
+              >
                 <span className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_COLOR[f.estado]}`}>
                   {ESTADO_LABEL[f.estado]}
                 </span>
-              </div>
+              </FotoLightbox>
 
               {/* Datos */}
               <div className="p-4 flex-1 flex flex-col gap-2.5">

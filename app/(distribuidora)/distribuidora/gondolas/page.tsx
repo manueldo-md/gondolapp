@@ -1,12 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
-import Image from 'next/image'
 import Link from 'next/link'
-import { CheckCircle2, Clock, MapPin, User, Camera } from 'lucide-react'
+import { CheckCircle2, Clock, MapPin, User } from 'lucide-react'
 import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoAcciones } from './foto-acciones'
+import { FotoLightbox } from '@/components/shared/foto-lightbox'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -52,22 +52,11 @@ function FotoCard({ foto }: { foto: FotoPendiente & { campana_id: string } }) {
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
 
       {/* Imagen */}
-      <div className="relative w-full h-52 bg-gray-100 shrink-0">
-        {imgSrc ? (
-          <Image
-            src={imgSrc}
-            alt={`Foto de ${foto.comercio?.nombre ?? 'comercio'}`}
-            fill
-            className="object-cover"
-            sizes="(max-width: 1024px) 100vw, (max-width: 1280px) 50vw, 33vw"
-            unoptimized
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <Camera size={32} className="text-gray-300" />
-          </div>
-        )}
-      </div>
+      <FotoLightbox
+        src={imgSrc}
+        alt={`Foto de ${foto.comercio?.nombre ?? 'comercio'}`}
+        containerClassName="relative w-full h-52 shrink-0"
+      />
 
       {/* Datos */}
       <div className="p-4 flex-1 flex flex-col gap-3">
