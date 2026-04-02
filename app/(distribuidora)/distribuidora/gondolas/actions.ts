@@ -71,7 +71,16 @@ export async function aprobarFoto(fotoId: string) {
     console.error('Error RPC incrementar_puntos:', rpcError)
   }
 
-  // 5. Actualizar participacion del gondolero
+  // 5. Incrementar fotos_aprobadas y recalcular tasa_aprobacion en profiles
+  const { error: rpcFotosError } = await adminClient.rpc('incrementar_fotos_aprobadas', {
+    p_gondolero_id: foto.gondolero_id,
+  })
+
+  if (rpcFotosError) {
+    console.error('Error RPC incrementar_fotos_aprobadas:', rpcFotosError)
+  }
+
+  // 7. Actualizar participacion del gondolero
   const { data: part } = await adminClient
     .from('participaciones')
     .select('comercios_completados, puntos_acumulados')
@@ -90,7 +99,7 @@ export async function aprobarFoto(fotoId: string) {
       .eq('gondolero_id', foto.gondolero_id)
   }
 
-  // 6. Incrementar comercios_relevados
+  // 8. Incrementar comercios_relevados
   await adminClient
     .from('campanas')
     .update({

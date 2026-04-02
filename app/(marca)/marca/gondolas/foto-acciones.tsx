@@ -12,7 +12,7 @@ export function MarcaFotoAcciones({ fotoId, estado }: { fotoId: string; estado: 
 
   const handleAprobar = () => {
     setAccion('aprobar')
-    startTransition(() => aprobarFotoMarca(fotoId))
+    startTransition(async () => { await aprobarFotoMarca(fotoId) })
   }
 
   const handleRechazar = () => {

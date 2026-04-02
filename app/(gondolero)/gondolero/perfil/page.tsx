@@ -43,7 +43,7 @@ export default async function PerfilPage() {
   // 1. Perfil completo
   const { data: profile } = await admin
     .from('profiles')
-    .select('nombre, alias, nivel, puntos_disponibles, puntos_totales_ganados, fotos_aprobadas, tasa_aprobacion, distri_id')
+    .select('nombre, alias, nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id')
     .eq('id', user.id)
     .single()
 
@@ -63,23 +63,32 @@ export default async function PerfilPage() {
     .eq('estado', 'pendiente')
     .order('created_at', { ascending: false })
 
-  // 4. Campañas completadas
+  // 4. Fotos aprobadas (live, no cache en profile)
+  const { count: fotosAprobadasCount } = await admin
+    .from('fotos')
+    .select('*', { count: 'exact', head: true })
+    .eq('gondolero_id', user.id)
+    .eq('estado', 'aprobada')
+
+  // 5. Campañas completadas (live)
   const { count: campanasCompletadas } = await admin
     .from('participaciones')
-    .select('id', { count: 'exact', head: true })
+    .select('*', { count: 'exact', head: true })
     .eq('gondolero_id', user.id)
     .eq('estado', 'completada')
 
-  // 5. Comercios visitados (distinct comercio_id en fotos aprobadas)
-  const { data: fotosApro } = await admin
+  // 6. Comercios visitados (distinct comercio_id en fotos aprobadas)
+  const { data: comerciosData } = await admin
     .from('fotos')
     .select('comercio_id')
     .eq('gondolero_id', user.id)
     .eq('estado', 'aprobada')
 
-  const comerciosVisitados = new Set((fotosApro ?? []).map((f: { comercio_id: string | null }) => f.comercio_id).filter(Boolean)).size
+  const comerciosVisitados = new Set(
+    (comerciosData ?? []).map((f: { comercio_id: string | null }) => f.comercio_id).filter(Boolean)
+  ).size
 
-  // 6. Nombre de distribuidora si está vinculado
+  // 7. Nombre de distribuidora si está vinculado
   let distriNombre: string | null = null
   if (profile?.distri_id) {
     const { data: distri } = await admin
@@ -91,7 +100,7 @@ export default async function PerfilPage() {
   }
 
   const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
-  const fotosAprobadas = profile?.fotos_aprobadas ?? 0
+  const fotosAprobadas = fotosAprobadasCount ?? 0
   const puntosDisponibles = profile?.puntos_disponibles ?? 0
   const nombre = profile?.nombre ?? 'Gondolero'
   const inicial = nombre.charAt(0).toUpperCase()
