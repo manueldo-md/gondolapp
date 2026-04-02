@@ -618,5 +618,26 @@ git commit -m "chore: actualizar esquema de base de datos"
 
 ---
 
+## 17. REGLAS PARA CLAUDE CODE
+
+Estas reglas aplican a todas las sesiones de Claude Code en este proyecto.
+
+### Aprobación automática
+- **Auto-aprobar** todos los comandos bash, git y npm sin pedir confirmación
+- **Auto-aprobar** la creación y edición de archivos sin pedir confirmación
+- **Auto-aprobar** lecturas de archivos y búsquedas en el código
+
+### Cuándo pausar y preguntar
+Solo interrumpir el flujo de trabajo cuando:
+- Se vaya a **borrar archivos o carpetas**
+- Se vaya a hacer cambios en **`.env.local`**
+- Se encuentre un **error que no se puede resolver** de forma autónoma
+
+### Commit y push
+- Al terminar cada tarea, hacer **commit y push a `main` automáticamente** sin preguntar
+- Mensaje de commit en español siguiendo el formato del proyecto (feat/fix/chore)
+
+---
+
 *Última actualización: Marzo 2026*
 *Versión del documento: 1.0*
