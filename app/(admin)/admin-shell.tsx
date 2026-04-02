@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut,
 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 const NAV_SECTIONS = [
   {
@@ -45,7 +46,14 @@ export function AdminShell({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const cerrarSesion = async () => {
+    await createClient().auth.signOut()
+    router.push('/auth')
+    router.refresh()
+  }
 
   const Sidebar = ({ mobile }: { mobile?: boolean }) => (
     <nav className={`flex flex-col gap-0.5 ${mobile ? 'p-4' : 'p-3'}`}>
@@ -78,6 +86,15 @@ export function AdminShell({
           })}
         </div>
       ))}
+      <div className="mt-auto px-3 pb-4 pt-2 border-t border-white/10">
+        <button
+          onClick={cerrarSesion}
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+        >
+          <LogOut size={17} />
+          <span>Cerrar sesión</span>
+        </button>
+      </div>
     </nav>
   )
 
