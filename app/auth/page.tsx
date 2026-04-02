@@ -11,7 +11,7 @@ import type { TipoActor } from '@/types'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Fase = 'bienvenida' | 'login' | 'registro'
+type Fase = 'bienvenida' | 'login' | 'registro' | 'zonas'
 
 const OPCIONES_TIPO: Array<{
   tipo: Exclude<TipoActor, 'admin'>
@@ -53,6 +53,10 @@ function AuthContent() {
   const [mostrarPassword, setMostrarPassword] = useState(false)
   const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [distribuidoras, setDistribuidoras] = useState<{ id: string; razon_social: string }[]>([])
+  const [zonas, setZonas] = useState<{ id: string; nombre: string }[]>([])
+  const [zonasSeleccionadas, setZonasSeleccionadas] = useState<string[]>([])
+  const [userId, setUserId] = useState<string | null>(null)
+  const [guardandoZonas, setGuardandoZonas] = useState(false)
 
   const formLogin = useForm<LoginForm>({
     resolver: zodResolver(schemaLogin),
@@ -132,6 +136,22 @@ function AuthContent() {
 
     // Si email confirmation está desactivado en Supabase → sesión inmediata
     if (signUpData.session) {
+      // Para gondoleros → mostrar paso de selección de zonas
+      if (data.tipo_actor === 'gondolero') {
+        const { data: zonasData } = await supabase
+          .from('zonas')
+          .select('id, nombre')
+          .eq('tipo', 'ciudad')
+          .order('nombre')
+        const ciudades = zonasData ?? []
+        if (ciudades.length > 0) {
+          setUserId(signUpData.session.user.id)
+          setZonas(ciudades)
+          setCargando(false)
+          setFase('zonas')
+          return
+        }
+      }
       router.push(redirect)
       router.refresh()
       return
@@ -264,6 +284,65 @@ function AuthContent() {
               ← Volver
             </button>
           </form>
+        )}
+
+        {/* ── ZONAS ── */}
+        {fase === 'zonas' && (
+          <div className="space-y-4">
+            <div className="text-center mb-2">
+              <p className="text-base font-bold text-gray-900">¿En qué ciudades trabajás?</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Seleccioná tus zonas para ver las campañas de tu área. Podés cambiarlo después desde tu Perfil.
+              </p>
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-2 border border-gray-200 rounded-xl p-3">
+              {zonas.map(zona => (
+                <label
+                  key={zona.id}
+                  className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={zonasSeleccionadas.includes(zona.id)}
+                    onChange={() => setZonasSeleccionadas(prev =>
+                      prev.includes(zona.id) ? prev.filter(z => z !== zona.id) : [...prev, zona.id]
+                    )}
+                    className="w-4 h-4 accent-gondo-verde-400 shrink-0"
+                  />
+                  <span className="text-sm text-gray-800">{zona.nombre}</span>
+                </label>
+              ))}
+            </div>
+            <button
+              onClick={async () => {
+                setGuardandoZonas(true)
+                if (zonasSeleccionadas.length > 0 && userId) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  await (supabase as any).from('gondolero_zonas').insert(
+                    zonasSeleccionadas.map(zona_id => ({ gondolero_id: userId, zona_id }))
+                  )
+                }
+                router.push(redirect)
+                router.refresh()
+              }}
+              disabled={guardandoZonas}
+              className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
+            >
+              {guardandoZonas
+                ? 'Guardando...'
+                : zonasSeleccionadas.length > 0
+                  ? `Guardar y empezar (${zonasSeleccionadas.length})`
+                  : 'Guardar y empezar'}
+            </button>
+            <button
+              type="button"
+              disabled={guardandoZonas}
+              onClick={() => { router.push(redirect); router.refresh() }}
+              className="w-full py-2 text-gray-400 text-sm hover:text-gray-600 transition-colors"
+            >
+              Omitir por ahora
+            </button>
+          </div>
         )}
 
         {/* ── REGISTRO ── */}

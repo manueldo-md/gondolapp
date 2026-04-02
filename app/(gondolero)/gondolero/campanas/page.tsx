@@ -223,6 +223,17 @@ export default async function CampanasPage() {
         )}
       </div>
 
+      {!tieneZonas && (
+        <div className="mx-4 mt-4 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+          <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
+          <p className="text-sm text-amber-800">
+            Seleccioná tus zonas de trabajo en tu{' '}
+            <a href="/gondolero/perfil" className="font-semibold underline">Perfil</a>{' '}
+            para ver solo las campañas de tu ciudad.
+          </p>
+        </div>
+      )}
+
       <div className="px-4 py-4 space-y-6">
 
         {/* ── Grupo 1: Mis campañas activas ── */}

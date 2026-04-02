@@ -137,7 +137,7 @@ export function ZonaFormModal({
 
 // ── Fila de zona con acciones inline ─────────────────────────────────────────
 
-export function ZonaFila({ zona }: { zona: ZonaRow }) {
+export function ZonaFila({ zona, campanas, gondoleros }: { zona: ZonaRow; campanas: number; gondoleros: number }) {
   const [modal, setModal] = useState<'editar' | 'eliminar' | null>(null)
   const [isPending, startTransition] = useTransition()
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -172,6 +172,12 @@ export function ZonaFila({ zona }: { zona: ZonaRow }) {
         </td>
         <td className="px-4 py-3 text-xs text-gray-400">
           {zona.lat && zona.lng ? `${zona.lat}, ${zona.lng}` : '—'}
+        </td>
+        <td className="px-4 py-3 text-sm text-gray-600">
+          {campanas > 0 ? campanas : <span className="text-gray-300">—</span>}
+        </td>
+        <td className="px-4 py-3 text-sm text-gray-600">
+          {gondoleros > 0 ? gondoleros : <span className="text-gray-300">—</span>}
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-1">

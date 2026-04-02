@@ -1,14 +1,22 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Loader2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import { crearCampanaInterna } from './actions'
 
 export default function NuevaCampanaPage() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [zonas, setZonas] = useState<{ id: string; nombre: string; tipo: string }[]>([])
+  const [zonasSeleccionadas, setZonasSeleccionadas] = useState<string[]>([])
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre').then(({ data }) => setZonas(data ?? []))
+  }, [])
 
   const [form, setForm] = useState({
     nombre:                      '',
@@ -32,6 +40,7 @@ export default function NuevaCampanaPage() {
 
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => fd.set(k, v))
+    zonasSeleccionadas.forEach(id => fd.append('zona_ids', id))
 
     startTransition(async () => {
       const result = await crearCampanaInterna(fd)
@@ -180,6 +189,31 @@ export default function NuevaCampanaPage() {
               />
             </div>
           </div>
+
+          {/* Zonas */}
+          {zonas.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Zonas de la campaña <span className="text-gray-400 font-normal">(opcional — vacío = todas)</span>
+              </label>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-50">
+                {zonas.map(z => (
+                  <label key={z.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={zonasSeleccionadas.includes(z.id)}
+                      onChange={() => setZonasSeleccionadas(prev =>
+                        prev.includes(z.id) ? prev.filter(x => x !== z.id) : [...prev, z.id]
+                      )}
+                      className="w-4 h-4 accent-gondo-amber-400 shrink-0"
+                    />
+                    <span className="text-sm text-gray-700">{z.nombre}</span>
+                    <span className="ml-auto text-[10px] text-gray-400 capitalize">{z.tipo}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {errorMsg && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">

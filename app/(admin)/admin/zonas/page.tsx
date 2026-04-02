@@ -13,13 +13,22 @@ function adminClient() {
 export default async function ZonasPage() {
   const admin = adminClient()
 
-  const { data: zonas } = await admin
-    .from('zonas')
-    .select('id, nombre, tipo, lat, lng')
-    .order('tipo')
-    .order('nombre')
+  const [{ data: zonas }, { data: campanaZonas }, { data: gondoleroZonas }] = await Promise.all([
+    admin.from('zonas').select('id, nombre, tipo, lat, lng').order('tipo').order('nombre'),
+    admin.from('campana_zonas').select('zona_id'),
+    admin.from('gondolero_zonas').select('zona_id'),
+  ])
 
   const lista = zonas ?? []
+
+  const campanaCountMap = new Map<string, number>()
+  for (const cz of campanaZonas ?? []) {
+    campanaCountMap.set(cz.zona_id, (campanaCountMap.get(cz.zona_id) ?? 0) + 1)
+  }
+  const gondoleroCountMap = new Map<string, number>()
+  for (const gz of gondoleroZonas ?? []) {
+    gondoleroCountMap.set(gz.zona_id, (gondoleroCountMap.get(gz.zona_id) ?? 0) + 1)
+  }
 
   const resumen = {
     ciudades:   lista.filter(z => z.tipo === 'ciudad').length,
@@ -56,7 +65,7 @@ export default async function ZonasPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Nombre', 'Tipo', 'Coordenadas', 'Acciones'].map(h => (
+                  {['Nombre', 'Tipo', 'Coordenadas', 'Campañas', 'Gondoleros', 'Acciones'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       {h}
                     </th>
@@ -65,7 +74,12 @@ export default async function ZonasPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {lista.map(zona => (
-                  <ZonaFila key={zona.id} zona={zona as { id: string; nombre: string; tipo: 'ciudad' | 'provincia' | 'region'; lat: number | null; lng: number | null }} />
+                  <ZonaFila
+                    key={zona.id}
+                    zona={zona as { id: string; nombre: string; tipo: 'ciudad' | 'provincia' | 'region'; lat: number | null; lng: number | null }}
+                    campanas={campanaCountMap.get(zona.id) ?? 0}
+                    gondoleros={gondoleroCountMap.get(zona.id) ?? 0}
+                  />
                 ))}
               </tbody>
             </table>

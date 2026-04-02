@@ -47,6 +47,12 @@ export async function crearCampanaInterna(formData: FormData) {
 
   if (errCampana) return { error: errCampana.message }
 
+  // Guardar zonas de la campaña
+  const zonaIds = formData.getAll('zona_ids') as string[]
+  if (zonaIds.length > 0) {
+    await admin.from('campana_zonas').insert(zonaIds.map(zona_id => ({ campana_id: campana.id, zona_id })))
+  }
+
   // Crear bloque de foto genérico
   const instruccion = (formData.get('instruccion') as string) || 'Fotografiá la góndola'
   const tipoContenido = (formData.get('tipo_contenido') as string) || 'propios'

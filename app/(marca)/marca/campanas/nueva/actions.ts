@@ -80,6 +80,12 @@ export async function crearCampana(formData: FormData) {
     .update({ tokens_disponibles: (marca?.tokens_disponibles ?? 0) - COSTO_CREACION })
     .eq('id', marcaId)
 
+  // Guardar zonas de la campaña
+  const zonaIds = formData.getAll('zona_ids') as string[]
+  if (zonaIds.length > 0) {
+    await admin.from('campana_zonas').insert(zonaIds.map(zona_id => ({ campana_id: campanaId, zona_id })))
+  }
+
   // Registrar movimiento
   await admin.from('movimientos_tokens').insert({
     actor_id:   marcaId,

@@ -57,6 +57,25 @@ export async function editarZona(
 
 export async function eliminarZona(id: string): Promise<{ error?: string }> {
   const admin = await getAdmin()
+
+  // Verificar campañas activas que usen esta zona
+  const { data: campanaIds } = await admin
+    .from('campana_zonas')
+    .select('campana_id')
+    .eq('zona_id', id)
+
+  if (campanaIds && campanaIds.length > 0) {
+    const ids = campanaIds.map((c: { campana_id: string }) => c.campana_id)
+    const { count } = await admin
+      .from('campanas')
+      .select('id', { count: 'exact', head: true })
+      .in('id', ids)
+      .eq('estado', 'activa')
+    if (count && count > 0) {
+      return { error: 'No podés eliminar una zona con campañas activas.' }
+    }
+  }
+
   const { error } = await admin.from('zonas').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/admin/zonas')
