@@ -20,14 +20,14 @@ export async function aprobarFoto(fotoId: string) {
 
   const admin = adminClient()
 
-  // Obtener datos de la foto antes de aprobar
+  // Obtener datos de la foto
   const { data: foto, error: errFoto } = await admin
     .from('fotos')
     .select('campana_id, gondolero_id, puntos_otorgados')
     .eq('id', fotoId)
     .single()
 
-  if (errFoto || !foto) throw new Error('No se encontró la foto')
+  if (errFoto || !foto) throw new Error('No se encontro la foto')
 
   // 1. Aprobar la foto
   const { error } = await admin
@@ -37,77 +37,39 @@ export async function aprobarFoto(fotoId: string) {
 
   if (error) throw new Error('No se pudo aprobar la foto: ' + error.message)
 
-  // 2. Incrementar comercios_relevados en la campaña
-  await admin.rpc('increment_comercios_relevados', { campana_id: foto.campana_id })
-    .then(async ({ error: rpcErr }) => {
-      if (rpcErr) {
-        // Fallback manual si no existe la RPC
-        const { data: camp } = await admin
-          .from('campanas')
-          .select('comercios_relevados')
-          .eq('id', foto.campana_id)
-          .single()
-        await admin
-          .from('campanas')
-          .update({ comercios_relevados: (camp?.comercios_relevados ?? 0) + 1 })
-          .eq('id', foto.campana_id)
-      }
-    })
-
-  // 3. Incrementar comercios_completados en participaciones
-  const { data: part } = await admin
-    .from('participaciones')
-    .select('comercios_completados')
-    .eq('campana_id', foto.campana_id)
-    .eq('gondolero_id', foto.gondolero_id)
+  // 2. Obtener datos de la campana
+  const { data: campana } = await admin
+    .from('campanas')
+    .select('puntos_por_foto, nombre, comercios_relevados')
+    .eq('id', foto.campana_id)
     .single()
 
-  if (part) {
+  const puntos = campana?.puntos_por_foto ?? 0
+
+  // 3. Insertar movimiento de puntos (el trigger update_gondolero_puntos
+  //    se encarga de actualizar profiles.puntos_disponibles automaticamente)
+  if (puntos > 0 && foto.puntos_otorgados === 0) {
+    await admin.from('movimientos_puntos').insert({
+      gondolero_id: foto.gondolero_id,
+      tipo:         'credito',
+      monto:        puntos,
+      concepto:     `Foto aprobada · ${campana?.nombre ?? 'campana'}`,
+      campana_id:   foto.campana_id,
+      foto_id:      fotoId,
+    })
+
+    // 4. Actualizar puntos_otorgados en la foto
     await admin
-      .from('participaciones')
-      .update({ comercios_completados: (part.comercios_completados ?? 0) + 1 })
-      .eq('campana_id', foto.campana_id)
-      .eq('gondolero_id', foto.gondolero_id)
+      .from('fotos')
+      .update({ puntos_otorgados: puntos })
+      .eq('id', fotoId)
   }
 
-  // 4. Acreditar puntos si no fueron acreditados todavía
-  if (foto.puntos_otorgados === 0) {
-    const { data: campana } = await admin
-      .from('campanas')
-      .select('puntos_por_foto, nombre')
-      .eq('id', foto.campana_id)
-      .single()
-
-    const puntos = campana?.puntos_por_foto ?? 0
-
-    if (puntos > 0) {
-      await admin.from('movimientos_puntos').insert({
-        gondolero_id: foto.gondolero_id,
-        tipo:         'credito',
-        monto:        puntos,
-        concepto:     `Foto aprobada - ${campana?.nombre ?? 'campaña'}`,
-        campana_id:   foto.campana_id,
-        foto_id:      fotoId,
-      })
-
-      await admin
-        .from('fotos')
-        .update({ puntos_otorgados: puntos })
-        .eq('id', fotoId)
-
-      // Actualizar puntos_disponibles del gondolero
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('puntos_disponibles')
-        .eq('id', foto.gondolero_id)
-        .single()
-
-      await admin
-        .from('profiles')
-        .update({ puntos_disponibles: (profile?.puntos_disponibles ?? 0) + puntos })
-        .eq('id', foto.gondolero_id)
-    }
-  }
+  // 5. Incrementar comercios_relevados en la campana
+  await admin
+    .from('campanas')
+    .update({ comercios_relevados: (campana?.comercios_relevados ?? 0) + 1 })
+    .eq('id', foto.campana_id)
 
   revalidatePath('/distribuidora/gondolas')
 }

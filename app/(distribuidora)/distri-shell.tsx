@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Images, Users, Store, LogOut } from 'lucide-react'
+import { Images, Users, Store, Megaphone, LogOut } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
-  { href: '/distribuidora/gondolas',   label: 'Góndolas',    icon: Images },
-  { href: '/distribuidora/gondoleros', label: 'Gondoleros',  icon: Users  },
-  { href: '/distribuidora/comercios',  label: 'Comercios',   icon: Store  },
+  { href: '/distribuidora/gondolas',   label: 'Gondolas',    icon: Images    },
+  { href: '/distribuidora/campanas',   label: 'Campanas',    icon: Megaphone },
+  { href: '/distribuidora/gondoleros', label: 'Gondoleros',  icon: Users     },
+  { href: '/distribuidora/comercios',  label: 'Comercios',   icon: Store     },
 ]
 
 export function DistriShell({
@@ -33,7 +34,7 @@ export function DistriShell({
   return (
     <div className="flex min-h-screen bg-gray-50">
 
-      {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
+      {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 w-60 bg-white border-r border-gray-200 flex flex-col z-20">
 
         {/* Logo */}
@@ -51,7 +52,7 @@ export function DistriShell({
           <p className="text-sm font-semibold text-gray-900 truncate">{empresa}</p>
         </div>
 
-        {/* Navegación */}
+        {/* Navegacion */}
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
           {NAV.map(({ href, label, icon: Icon }) => {
             const activo = pathname.startsWith(href)
@@ -79,12 +80,12 @@ export function DistriShell({
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 w-full transition-colors"
           >
             <LogOut size={17} />
-            Cerrar sesión
+            Cerrar sesion
           </button>
         </div>
       </aside>
 
-      {/* ── Contenido principal ───────────────────────────────────────────────── */}
+      {/* Contenido principal */}
       <div className="ml-60 flex-1 flex flex-col min-h-screen">
 
         {/* Topbar */}
