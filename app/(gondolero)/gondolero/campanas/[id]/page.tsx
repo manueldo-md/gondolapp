@@ -73,12 +73,13 @@ export default async function CampanaDetallePage({
 
   if (!campana) notFound()
 
-  // Verificar si el gondolero ya está inscripto
+  // Verificar si el gondolero ya está inscripto y activo
   const { data: participacion } = await supabase
     .from('participaciones')
     .select('id')
     .eq('campana_id', params.id)
     .eq('gondolero_id', user.id)
+    .eq('estado', 'activa')
     .maybeSingle()
 
   const yaUnido = !!participacion

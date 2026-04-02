@@ -9,16 +9,17 @@ export async function unirseACampana(campanaId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  // Si ya está inscripto, redirigir directo a misiones
+  // Si ya está inscripto y activo, redirigir directo a misiones
   const { data: existente } = await supabase
     .from('participaciones')
     .select('id')
     .eq('campana_id', campanaId)
     .eq('gondolero_id', user.id)
+    .eq('estado', 'activa')
     .maybeSingle()
 
   if (existente) {
-    redirect('/gondolero/misiones')
+    redirect(`/gondolero/misiones/${campanaId}`)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
