@@ -9,7 +9,7 @@ const NAV = [
   { href: '/marca/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
   { href: '/marca/campanas',   label: 'Campañas',   icon: Megaphone       },
   { href: '/marca/gondolas',   label: 'Góndolas',   icon: Images          },
-  { href: '/marca/perfil',     label: 'Mi cuenta',  icon: UserCog         },
+  { href: '/marca/cuenta',     label: 'Mi cuenta',  icon: UserCog         },
 ]
 
 export function MarcaShell({

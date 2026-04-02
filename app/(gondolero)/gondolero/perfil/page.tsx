@@ -7,6 +7,7 @@ import type { NivelGondolero } from '@/types'
 import { CanjeCatalogo } from './canje-catalogo'
 import { LogoutButton } from './logout-button'
 import { MarcarNotificacionesLeidas } from './marcar-leidas'
+import { CuentaModal } from './cuenta-modal'
 
 // ── Constantes de nivel ───────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ export default async function PerfilPage() {
   // 1. Perfil completo
   const { data: profile } = await admin
     .from('profiles')
-    .select('nombre, alias, nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id')
+    .select('nombre, alias, nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id, celular')
     .eq('id', user.id)
     .single()
 
@@ -347,13 +348,11 @@ export default async function PerfilPage() {
         <div>
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Mi cuenta</h2>
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <a
-              href="/gondolero/perfil/editar"
-              className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors"
-            >
-              <span className="text-sm text-gray-800">Editar perfil</span>
-              <span className="text-gray-400 text-sm">→</span>
-            </a>
+            <CuentaModal
+              email={user.email ?? ''}
+              nombre={profile?.nombre ?? ''}
+              celular={profile?.celular ?? ''}
+            />
           </div>
         </div>
 

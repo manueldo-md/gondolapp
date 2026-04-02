@@ -10,7 +10,7 @@ const NAV = [
   { href: '/distribuidora/campanas',   label: 'Campanas',    icon: Megaphone },
   { href: '/distribuidora/gondoleros', label: 'Gondoleros',  icon: Users     },
   { href: '/distribuidora/comercios',  label: 'Comercios',   icon: Store     },
-  { href: '/distribuidora/perfil',     label: 'Mi cuenta',   icon: UserCog   },
+  { href: '/distribuidora/cuenta',     label: 'Mi cuenta',   icon: UserCog   },
 ]
 
 export function DistriShell({
