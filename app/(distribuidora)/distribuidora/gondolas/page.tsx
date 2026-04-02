@@ -7,17 +7,22 @@ import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoAcciones } from './foto-acciones'
 
-// ── Tipos locales ─────────────────────────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 
-interface FotoPendiente {
+interface FotoPendienteRaw {
   id: string
   url: string
+  storage_path: string | null
   declaracion: DeclaracionFoto
   precio_detectado: number | null
   created_at: string
   gondolero: { nombre: string | null; alias: string | null } | null
   comercio:  { nombre: string; direccion: string | null } | null
   campana:   { nombre: string; tipo: TipoCampana } | null
+}
+
+interface FotoPendiente extends FotoPendienteRaw {
+  signedUrl: string | null
 }
 
 // ── Helpers visuales ──────────────────────────────────────────────────────────
@@ -34,24 +39,26 @@ const DECL_COLOR: Record<DeclaracionFoto, string> = {
   solo_competencia:       'bg-amber-100 text-amber-700',
 }
 
-// ── Componente de tarjeta (Server Component) ──────────────────────────────────
+// ── FotoCard ──────────────────────────────────────────────────────────────────
 
 function FotoCard({ foto }: { foto: FotoPendiente }) {
   const gondoleroNombre = foto.gondolero?.alias ?? foto.gondolero?.nombre ?? 'Gondolero'
   const decl = foto.declaracion
+  const imgSrc = foto.signedUrl ?? foto.url
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
 
       {/* Imagen */}
       <div className="relative w-full h-52 bg-gray-100 shrink-0">
-        {foto.url ? (
+        {imgSrc ? (
           <Image
-            src={foto.url}
+            src={imgSrc}
             alt={`Foto de ${foto.comercio?.nombre ?? 'comercio'}`}
             fill
             className="object-cover"
             sizes="(max-width: 1024px) 100vw, (max-width: 1280px) 50vw, 33vw"
+            unoptimized
           />
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -63,7 +70,6 @@ function FotoCard({ foto }: { foto: FotoPendiente }) {
       {/* Datos */}
       <div className="p-4 flex-1 flex flex-col gap-3">
 
-        {/* Campaña */}
         {foto.campana && (
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">
@@ -76,7 +82,6 @@ function FotoCard({ foto }: { foto: FotoPendiente }) {
           </div>
         )}
 
-        {/* Comercio */}
         <div className="flex items-start gap-2">
           <MapPin size={14} className="text-gray-400 mt-0.5 shrink-0" />
           <div className="min-w-0">
@@ -89,7 +94,6 @@ function FotoCard({ foto }: { foto: FotoPendiente }) {
           </div>
         </div>
 
-        {/* Gondolero + declaración */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 min-w-0">
             <User size={13} className="text-gray-400 shrink-0" />
@@ -100,7 +104,6 @@ function FotoCard({ foto }: { foto: FotoPendiente }) {
           </span>
         </div>
 
-        {/* Precio + timestamp */}
         <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
           {foto.precio_detectado != null
             ? <span className="font-medium text-gray-600">${foto.precio_detectado}</span>
@@ -113,7 +116,6 @@ function FotoCard({ foto }: { foto: FotoPendiente }) {
         </div>
       </div>
 
-      {/* Botones */}
       <div className="px-4 pb-4 shrink-0">
         <FotoAcciones fotoId={foto.id} />
       </div>
@@ -121,15 +123,13 @@ function FotoCard({ foto }: { foto: FotoPendiente }) {
   )
 }
 
-// ── Página principal ──────────────────────────────────────────────────────────
+// ── Página ────────────────────────────────────────────────────────────────────
 
 export default async function GondolasPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  // Admin client para leer fotos sin restricciones RLS del MVP
-  // TODO: reemplazar con RLS policies para distribuidoras cuando estén implementadas
   const admin = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -139,7 +139,7 @@ export default async function GondolasPage() {
   const { data, error } = await admin
     .from('fotos')
     .select(`
-      id, url, declaracion, precio_detectado, created_at,
+      id, url, storage_path, declaracion, precio_detectado, created_at,
       gondolero:profiles ( nombre, alias ),
       comercio:comercios  ( nombre, direccion ),
       campana:campanas    ( nombre, tipo )
@@ -148,16 +148,23 @@ export default async function GondolasPage() {
     .order('created_at', { ascending: false })
     .limit(100)
 
-  if (error) {
-    console.error('Error fetching fotos pendientes:', error.message)
-  }
+  if (error) console.error('Error fetching fotos pendientes:', error.message)
 
-  const fotos = (data as FotoPendiente[] | null) ?? []
+  const fotosRaw = (data as FotoPendienteRaw[] | null) ?? []
+
+  // Generar URLs firmadas para el bucket privado
+  const fotos: FotoPendiente[] = await Promise.all(
+    fotosRaw.map(async (foto) => {
+      if (!foto.storage_path) return { ...foto, signedUrl: null }
+      const { data: signed } = await admin.storage
+        .from('fotos-gondola')
+        .createSignedUrl(foto.storage_path, 3600)
+      return { ...foto, signedUrl: signed?.signedUrl ?? null }
+    })
+  )
 
   return (
     <div>
-
-      {/* Encabezado */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Fotos pendientes</h2>
@@ -170,7 +177,6 @@ export default async function GondolasPage() {
         </div>
       </div>
 
-      {/* Estado vacío */}
       {fotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
@@ -186,7 +192,6 @@ export default async function GondolasPage() {
           ))}
         </div>
       )}
-
     </div>
   )
 }
