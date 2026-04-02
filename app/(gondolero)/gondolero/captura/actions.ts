@@ -1,0 +1,159 @@
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { redirect } from 'next/navigation'
+
+export interface RegistrarFotoParams {
+  campanaId: string
+  bloqueId: string
+  comercioId: string
+  storagePath: string
+  url: string
+  lat: number
+  lng: number
+  declaracion: 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
+  precioDetectado: number | null
+  timestampDispositivo: string
+  deviceId: string
+  puntosAcreditar: number
+}
+
+export async function registrarFoto(params: RegistrarFotoParams) {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  // Verificar que tiene participación activa
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: participacion } = await (supabase as any)
+    .from('participaciones')
+    .select('id, comercios_completados')
+    .eq('campana_id', params.campanaId)
+    .eq('gondolero_id', user.id)
+    .eq('estado', 'activa')
+    .maybeSingle() as { data: { id: string; comercios_completados: number } | null }
+
+  if (!participacion) {
+    throw new Error('No tenés una participación activa en esta campaña.')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any
+
+  // Crear registro de foto
+  const { data: foto, error: fotoError } = await db
+    .from('fotos')
+    .insert({
+      campana_id:            params.campanaId,
+      bloque_id:             params.bloqueId,
+      gondolero_id:          user.id,
+      comercio_id:           params.comercioId,
+      url:                   params.url,
+      storage_path:          params.storagePath,
+      lat:                   params.lat,
+      lng:                   params.lng,
+      timestamp_dispositivo: params.timestampDispositivo,
+      device_id:             params.deviceId,
+      declaracion:           params.declaracion,
+      precio_detectado:      params.precioDetectado,
+      estado:                'pendiente',
+      puntos_otorgados:      params.puntosAcreditar,
+    })
+    .select('id')
+    .single()
+
+  if (fotoError) {
+    throw new Error('No pudimos guardar la foto: ' + fotoError.message)
+  }
+
+  // Acreditar puntos al gondolero
+  await db.from('movimientos_puntos').insert({
+    gondolero_id: user.id,
+    tipo:         'credito',
+    monto:        params.puntosAcreditar,
+    concepto:     'Foto de góndola',
+    campana_id:   params.campanaId,
+    foto_id:      foto.id,
+  })
+
+  // Incrementar comercios_completados en la participación
+  await db
+    .from('participaciones')
+    .update({ comercios_completados: (participacion.comercios_completados ?? 0) + 1 })
+    .eq('id', participacion.id)
+
+  return { fotoId: foto.id, puntos: params.puntosAcreditar }
+}
+
+// Sube una foto a Supabase Storage usando el service role para bypassear RLS.
+// Recibe FormData porque los Blobs no se pueden pasar directamente a Server Actions.
+export async function subirFoto(formData: FormData): Promise<{ url: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const file = formData.get('foto') as File
+  const storagePath = formData.get('storagePath') as string
+
+  if (!file || !storagePath) throw new Error('Faltan datos para subir la foto.')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  const { error } = await admin.storage
+    .from('fotos-gondola')
+    .upload(storagePath, file, { contentType: 'image/jpeg', upsert: false })
+
+  if (error) throw new Error('Error al subir la foto: ' + error.message)
+
+  const { data: urlData } = admin.storage
+    .from('fotos-gondola')
+    .getPublicUrl(storagePath)
+
+  return { url: urlData.publicUrl }
+}
+
+// Devuelve el id de un bloque existente para la campaña, o crea uno genérico si no hay ninguno.
+// Usa el admin client para evitar restricciones RLS al insertar — solo se ejecuta en el servidor.
+export async function asegurarBloqueGenerico(campanaId: string): Promise<string> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  // Cliente directo con service_role — bypasea RLS.
+  // createServerClient de @supabase/ssr NO bypasea RLS; se necesita el cliente base.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  ) as any
+
+  const { data: bloques } = await db
+    .from('bloques_foto')
+    .select('id')
+    .eq('campana_id', campanaId)
+    .limit(1)
+
+  if (bloques && bloques.length > 0) return bloques[0].id
+
+  // No hay bloques — crear uno genérico para el MVP
+  const { data: nuevo, error } = await db
+    .from('bloques_foto')
+    .insert({
+      campana_id:     campanaId,
+      orden:          1,
+      instruccion:    'Fotografiá la góndola completa',
+      tipo_contenido: 'ambos',
+    })
+    .select('id')
+    .single()
+
+  if (error) throw new Error('No se pudo configurar el bloque: ' + error.message)
+  return nuevo.id
+}
