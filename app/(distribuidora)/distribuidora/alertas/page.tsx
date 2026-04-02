@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { PackageX, Store, Megaphone, UserX } from 'lucide-react'
 import { diasRestantes, calcularPorcentaje, tiempoRelativo } from '@/lib/utils'
+import { IgnorarAlertaBoton } from './ignorar-alerta-boton'
 
 function makeAdmin() {
   return createAdminClient(
@@ -42,6 +43,23 @@ export default async function AlertasPage() {
   const catorceDiasAtras = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
   const tresDiasAdelante = new Date(Date.now() + 3  * 24 * 60 * 60 * 1000)
 
+  // ── Alertas ignoradas activas ─────────────────────────────────────────────
+  const { data: ignoradasRaw } = await (admin as any)
+    .from('alertas_ignoradas')
+    .select('referencia_id, tipo')
+    .eq('distri_id', distriId)
+    .gt('ignorada_hasta', new Date().toISOString())
+
+  const ignoradasMap = new Map<string, Set<string>>()
+  for (const i of ignoradasRaw ?? []) {
+    const row = i as { referencia_id: string; tipo: string }
+    if (!ignoradasMap.has(row.tipo)) ignoradasMap.set(row.tipo, new Set())
+    ignoradasMap.get(row.tipo)!.add(row.referencia_id)
+  }
+  function esIgnorada(tipo: string, id: string) {
+    return ignoradasMap.get(tipo)?.has(id) ?? false
+  }
+
   // ── TIPO 1: Quiebre de stock ───────────────────────────────────────────────
   interface Quiebre { comercioId: string; nombre: string; veces: number; ultimaVez: string }
   let quiebres: Quiebre[] = []
@@ -60,6 +78,7 @@ export default async function AlertasPage() {
     const qMap = new Map<string, Quiebre>()
     for (const f of qRaw ?? []) {
       const fo = f as unknown as { comercio_id: string; created_at: string; comercios: { nombre: string } | null }
+      if (esIgnorada('quiebre_stock', fo.comercio_id)) continue
       const entry = qMap.get(fo.comercio_id)
       if (entry) {
         entry.veces++
@@ -80,7 +99,6 @@ export default async function AlertasPage() {
   let sinVisita: ComercioSinVisita[] = []
 
   if (gondoleroIds.length > 0) {
-    // Fotos en los últimos 60 días
     const { data: fotasRec } = await admin
       .from('fotos')
       .select('comercio_id, created_at')
@@ -89,7 +107,6 @@ export default async function AlertasPage() {
       .order('created_at', { ascending: false })
       .limit(2000)
 
-    // Última visita por comercio
     const lastVisitMap = new Map<string, Date>()
     for (const f of fotasRec ?? []) {
       const fo = f as { comercio_id: string; created_at: string }
@@ -98,9 +115,8 @@ export default async function AlertasPage() {
       }
     }
 
-    // Filtrar los que no fueron visitados en 30 días
     const sinVisitaEntries = [...lastVisitMap.entries()]
-      .filter(([, d]) => d < treintaAtras)
+      .filter(([id, d]) => d < treintaAtras && !esIgnorada('sin_visita', id))
       .sort((a, b) => a[1].getTime() - b[1].getTime())
       .slice(0, 50)
 
@@ -132,7 +148,8 @@ export default async function AlertasPage() {
 
   const campanasRiesgo = (campanasRaw ?? []).filter(c =>
     new Date(c.fecha_fin!) < tresDiasAdelante &&
-    (c.comercios_relevados ?? 0) < (c.objetivo_comercios ?? 0) * 0.5
+    (c.comercios_relevados ?? 0) < (c.objetivo_comercios ?? 0) * 0.5 &&
+    !esIgnorada('campana_riesgo', c.id)
   )
 
   // ── TIPO 4: Gondoleros inactivos ──────────────────────────────────────────
@@ -148,7 +165,7 @@ export default async function AlertasPage() {
     const activoSet = new Set((gondActivos ?? []).map((f: { gondolero_id: string }) => f.gondolero_id))
 
     const inactivoProfiles = (gondoleroRows ?? []).filter(
-      (g: { id: string }) => !activoSet.has(g.id)
+      (g: { id: string }) => !activoSet.has(g.id) && !esIgnorada('gondolero_inactivo', g.id)
     ) as { id: string; nombre: string; alias: string | null }[]
 
     if (inactivoProfiles.length > 0) {
@@ -171,7 +188,7 @@ export default async function AlertasPage() {
         alias:            g.alias,
         diasSinActividad: ultimaMap.has(g.id)
           ? Math.floor((Date.now() - ultimaMap.get(g.id)!.getTime()) / (24 * 60 * 60 * 1000))
-          : -1, // nunca tuvo fotos
+          : -1,
       })).sort((a, b) => b.diasSinActividad - a.diasSinActividad)
     }
   }
@@ -209,12 +226,15 @@ export default async function AlertasPage() {
                   Producto no encontrado {q.veces} {q.veces === 1 ? 'vez' : 'veces'} · última vez {tiempoRelativo(q.ultimaVez)}
                 </p>
               </div>
-              <Link
-                href={`/distribuidora/gondolas?comercio_id=${q.comercioId}&declaracion=producto_no_encontrado`}
-                className="ml-3 shrink-0 text-xs font-semibold text-gondo-amber-400 hover:underline"
-              >
-                Ver fotos
-              </Link>
+              <div className="flex items-center gap-1 shrink-0 ml-3">
+                <Link
+                  href={`/distribuidora/gondolas?comercio_id=${q.comercioId}&declaracion=producto_no_encontrado`}
+                  className="text-xs font-semibold text-gondo-amber-400 hover:underline"
+                >
+                  Ver fotos
+                </Link>
+                <IgnorarAlertaBoton tipo="quiebre_stock" referenciaId={q.comercioId} />
+              </div>
             </div>
           ))
         )}
@@ -236,12 +256,15 @@ export default async function AlertasPage() {
                 <p className="text-sm font-medium text-gray-900 truncate">{c.nombre}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{c.diasSinVisita} días sin visita</p>
               </div>
-              <Link
-                href="/distribuidora/campanas"
-                className="ml-3 shrink-0 text-xs font-semibold text-gondo-amber-400 hover:underline"
-              >
-                Asignar a campaña
-              </Link>
+              <div className="flex items-center gap-1 shrink-0 ml-3">
+                <Link
+                  href="/distribuidora/campanas"
+                  className="text-xs font-semibold text-gondo-amber-400 hover:underline"
+                >
+                  Asignar a campaña
+                </Link>
+                <IgnorarAlertaBoton tipo="sin_visita" referenciaId={c.id} />
+              </div>
             </div>
           ))
         )}
@@ -264,7 +287,7 @@ export default async function AlertasPage() {
               <div key={c.id} className="px-4 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-gray-900 truncate mr-3">{c.nombre}</p>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {dias !== null && (
                       <span className="text-xs font-semibold text-red-500">
                         {dias === 0 ? 'Último día' : `${dias}d`}
@@ -276,6 +299,7 @@ export default async function AlertasPage() {
                     >
                       Ver campaña
                     </Link>
+                    <IgnorarAlertaBoton tipo="campana_riesgo" referenciaId={c.id} />
                   </div>
                 </div>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -314,12 +338,15 @@ export default async function AlertasPage() {
                     : `${g.diasSinActividad} días sin actividad`}
                 </p>
               </div>
-              <Link
-                href="/distribuidora/gondoleros"
-                className="ml-3 shrink-0 text-xs font-semibold text-gondo-amber-400 hover:underline"
-              >
-                Ver perfil
-              </Link>
+              <div className="flex items-center gap-1 shrink-0 ml-3">
+                <Link
+                  href="/distribuidora/gondoleros"
+                  className="text-xs font-semibold text-gondo-amber-400 hover:underline"
+                >
+                  Ver perfil
+                </Link>
+                <IgnorarAlertaBoton tipo="gondolero_inactivo" referenciaId={g.id} />
+              </div>
             </div>
           ))
         )}
