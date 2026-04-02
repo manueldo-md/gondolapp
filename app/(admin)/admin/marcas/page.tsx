@@ -2,6 +2,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { CheckCircle2, AlertCircle, Coins } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import { ValidarMarcaBtn } from './validar-btn'
+import { NuevaMarcaModal } from './nueva-marca-modal'
 
 function adminClient() {
   return createAdminClient(
@@ -48,6 +49,7 @@ export default async function MarcasAdminPage() {
             {marcas.length} marcas · {validadas} validadas · {pendientes} pendientes
           </p>
         </div>
+        <NuevaMarcaModal />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

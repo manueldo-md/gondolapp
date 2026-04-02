@@ -2,6 +2,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { CheckCircle2, AlertCircle, Coins } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import { ValidarDistriBtn } from './validar-btn'
+import { NuevaDistriModal } from './nueva-distri-modal'
 
 function adminClient() {
   return createAdminClient(
@@ -46,11 +47,14 @@ export default async function DistribuidorasAdminPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Distribuidoras</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {distris.length} distribuidoras · {validadas} validadas · {pendientes} pendientes
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Distribuidoras</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {distris.length} distribuidoras · {validadas} validadas · {pendientes} pendientes
+          </p>
+        </div>
+        <NuevaDistriModal />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
