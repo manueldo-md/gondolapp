@@ -43,7 +43,10 @@ export async function ignorarAlerta(tipo: string, referenciaId: string) {
       { onConflict: 'distri_id,tipo,referencia_id' }
     )
 
-  if (error) return { error: error.message }
+  if (error) {
+    console.error('[ignorarAlerta] DB error:', error.message, { tipo, referenciaId })
+    return { error: error.message }
+  }
 
   revalidatePath('/distribuidora/alertas')
   return { ok: true }

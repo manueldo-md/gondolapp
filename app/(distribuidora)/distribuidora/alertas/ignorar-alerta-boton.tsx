@@ -1,7 +1,6 @@
 'use client'
 
 import { useTransition } from 'react'
-import { BellOff, Loader2 } from 'lucide-react'
 import { ignorarAlerta } from './actions'
 
 export function IgnorarAlertaBoton({
@@ -13,22 +12,22 @@ export function IgnorarAlertaBoton({
 }) {
   const [pending, startTransition] = useTransition()
 
+  function handleClick() {
+    startTransition(() => {
+      ignorarAlerta(tipo, referenciaId).then(res => {
+        if (res?.error) console.error('[IgnorarAlertaBoton] error:', res.error)
+      })
+    })
+  }
+
   return (
     <button
-      onClick={() =>
-        startTransition(async () => {
-          await ignorarAlerta(tipo, referenciaId)
-        })
-      }
+      onClick={handleClick}
       disabled={pending}
       title="Ignorar por 7 días — se reactiva automáticamente"
-      className="shrink-0 ml-1 p-1 text-gray-300 hover:text-gray-500 transition-colors disabled:opacity-40 rounded"
+      className="shrink-0 text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 disabled:opacity-50 transition-colors"
     >
-      {pending ? (
-        <Loader2 size={13} className="animate-spin" />
-      ) : (
-        <BellOff size={13} />
-      )}
+      {pending ? 'Ignorando...' : '🔕 Ignorar 7 días'}
     </button>
   )
 }
