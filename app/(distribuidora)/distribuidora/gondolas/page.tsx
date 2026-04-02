@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
+import Link from 'next/link'
 import { CheckCircle2, Clock, MapPin, User, Camera } from 'lucide-react'
 import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
@@ -16,6 +17,7 @@ interface FotoPendienteRaw {
   declaracion: DeclaracionFoto
   precio_detectado: number | null
   created_at: string
+  campana_id: string
   gondolero: { nombre: string | null; alias: string | null } | null
   comercio:  { nombre: string; direccion: string | null } | null
   campana:   { nombre: string; tipo: TipoCampana } | null
@@ -41,7 +43,7 @@ const DECL_COLOR: Record<DeclaracionFoto, string> = {
 
 // ── FotoCard ──────────────────────────────────────────────────────────────────
 
-function FotoCard({ foto }: { foto: FotoPendiente }) {
+function FotoCard({ foto }: { foto: FotoPendiente & { campana_id: string } }) {
   const gondoleroNombre = foto.gondolero?.alias ?? foto.gondolero?.nombre ?? 'Gondolero'
   const decl = foto.declaracion
   const imgSrc = foto.signedUrl ?? foto.url
@@ -71,14 +73,22 @@ function FotoCard({ foto }: { foto: FotoPendiente }) {
       <div className="p-4 flex-1 flex flex-col gap-3">
 
         {foto.campana && (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">
-              {foto.campana.nombre}
-            </span>
-            <span className="text-[10px] text-gray-300">·</span>
-            <span className="text-[11px] text-gray-400 shrink-0">
-              {labelTipoCampana(foto.campana.tipo)}
-            </span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">
+                {foto.campana.nombre}
+              </span>
+              <span className="text-[10px] text-gray-300">·</span>
+              <span className="text-[11px] text-gray-400 shrink-0">
+                {labelTipoCampana(foto.campana.tipo)}
+              </span>
+            </div>
+            <Link
+              href={`/distribuidora/campanas/${foto.campana_id}`}
+              className="shrink-0 text-[11px] font-semibold text-gondo-amber-400 hover:underline"
+            >
+              Ver campana →
+            </Link>
           </div>
         )}
 
@@ -156,7 +166,7 @@ export default async function GondolasPage() {
   const { data, error } = await admin
     .from('fotos')
     .select(`
-      id, url, storage_path, declaracion, precio_detectado, created_at,
+      id, url, storage_path, declaracion, precio_detectado, created_at, campana_id,
       gondolero:profiles ( nombre, alias ),
       comercio:comercios  ( nombre, direccion ),
       campana:campanas    ( nombre, tipo )
