@@ -88,7 +88,6 @@ function AuthContent() {
       email: data.email,
       options: {
         shouldCreateUser: false,
-        emailRedirectTo: undefined,
       },
     })
 
@@ -114,7 +113,6 @@ function AuthContent() {
       email: data.email,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: undefined,
         data: {
           tipo_actor: data.tipo_actor,
           nombre: data.nombre,
