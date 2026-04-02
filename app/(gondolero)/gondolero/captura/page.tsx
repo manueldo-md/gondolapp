@@ -35,7 +35,10 @@ const COMERCIOS_PENDIENTES_KEY = 'comercios_pendientes'
 const CAMPANA_CACHE_PREFIX = 'campana_cache_'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
-const BLUR_THRESHOLD = 50
+const BLUR_THRESHOLD = typeof window !== 'undefined' &&
+  /Android|iPhone|iPad/i.test(navigator.userAgent)
+  ? 500  // móvil — cámaras más nítidas generan scores más altos
+  : 50   // desktop
 
 function calcularBlurScore(imageData: ImageData): number {
   const { data, width, height } = imageData
@@ -653,6 +656,8 @@ function CapturaContent() {
           setFotoPreview(previewUrl)
           const score = await calcularBlur(blob)
           setBlurScore(score)
+          console.log('Device:', /Android|iPhone|iPad/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop')
+          console.log('Blur score:', score, '| Threshold:', BLUR_THRESHOLD)
           console.log('¿Foto borrosa?', score < BLUR_THRESHOLD)
           if (score < BLUR_THRESHOLD) {
             console.log('Mostrando advertencia de blur')
@@ -760,6 +765,11 @@ function CapturaContent() {
             <div>
               <p className="font-semibold text-amber-900 text-base">La foto puede estar borrosa</p>
               <p className="text-sm text-amber-700 mt-0.5">¿Querés tomarla de nuevo?</p>
+              {process.env.NODE_ENV === 'development' && blurScore !== null && (
+                <p className="text-xs text-amber-600 mt-1 font-mono">
+                  Score de nitidez: {Math.round(blurScore)} (mínimo: {BLUR_THRESHOLD})
+                </p>
+              )}
             </div>
           </div>
           <div className="flex flex-col gap-2.5">
