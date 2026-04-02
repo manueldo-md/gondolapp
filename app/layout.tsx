@@ -50,7 +50,7 @@ export default function RootLayout({
       <head>
         {/* Favicon */}
         <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
       </head>
       <body className="font-sans antialiased bg-gray-50">
         {children}
