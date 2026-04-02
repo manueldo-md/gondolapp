@@ -10,7 +10,7 @@ import {
   diasRestantes, formatearFechaHora, tiempoRelativo,
 } from '@/lib/utils'
 import type { DeclaracionFoto, EstadoFoto, TipoCampana, EstadoCampana } from '@/types'
-import { FotoAcciones } from '../../gondolas/foto-acciones'
+import { MarcaFotoAcciones } from '../../gondolas/foto-acciones'
 import { TabFilter } from './tab-filter'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ const ESTADO_LABEL: Record<EstadoFoto, string> = {
   pendiente:   'Pendiente',
   aprobada:    'Aprobada',
   rechazada:   'Rechazada',
-  en_revision: 'En revision',
+  en_revision: 'En revisión',
 }
 
 const NIVEL_COLOR: Record<string, string> = {
@@ -74,7 +74,7 @@ const ESTADO_PART_LABEL: Record<string, string> = {
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
-export default async function CampanaDetallePage({
+export default async function MarcaCampanaDetallePage({
   params,
   searchParams,
 }: {
@@ -94,7 +94,7 @@ export default async function CampanaDetallePage({
   // Campaña
   const { data: campana, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, financiada_por, min_comercios_para_cobrar')
+    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, min_comercios_para_cobrar')
     .eq('id', params.id)
     .single()
 
@@ -141,12 +141,10 @@ export default async function CampanaDetallePage({
     })
   )
 
-  const progreso   = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
-  const dias       = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
-  const esPropia   = campana.financiada_por === 'distri'
-  const colorBarra = esPropia ? 'bg-gondo-amber-400' : 'bg-gondo-indigo-600'
+  const progreso = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
+  const dias     = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
 
-  // Conteos por estado para el header de tabs
+  // Conteos por estado
   const { data: conteos } = await admin
     .from('fotos')
     .select('estado')
@@ -162,7 +160,7 @@ export default async function CampanaDetallePage({
       {/* Back */}
       <div className="flex items-center gap-3 mb-6">
         <Link
-          href="/distribuidora/campanas"
+          href="/marca/campanas"
           className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
         >
           <ArrowLeft size={18} />
@@ -174,9 +172,7 @@ export default async function CampanaDetallePage({
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-              esPropia ? 'bg-gondo-amber-50 text-gondo-amber-400' : 'bg-gondo-indigo-50 text-gondo-indigo-600'
-            }`}>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gondo-indigo-50 text-gondo-indigo-600">
               {labelTipoCampana(campana.tipo as TipoCampana)}
             </span>
             <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${colorEstadoCampana(campana.estado as EstadoCampana)}`}>
@@ -194,12 +190,12 @@ export default async function CampanaDetallePage({
         )}
 
         {/* Stats row */}
-        <div className="flex items-center gap-5 text-xs text-gray-500 mb-4">
+        <div className="flex items-center gap-5 text-xs text-gray-500 mb-4 flex-wrap">
           {dias !== null && (
             <div className="flex items-center gap-1">
               <Clock size={12} />
               <span className={dias <= 3 ? 'text-red-500 font-medium' : ''}>
-                {dias === 0 ? 'Ultimo dia' : `${dias} dias restantes`}
+                {dias === 0 ? 'Último día' : `${dias} días restantes`}
               </span>
             </div>
           )}
@@ -209,6 +205,10 @@ export default async function CampanaDetallePage({
               <span>{campana.comercios_relevados} / {campana.objetivo_comercios} comercios</span>
             </div>
           )}
+          <div className="flex items-center gap-1">
+            <Users size={12} />
+            <span>{participaciones.length} gondolero{participaciones.length !== 1 ? 's' : ''}</span>
+          </div>
         </div>
 
         {/* Barra de progreso */}
@@ -220,7 +220,7 @@ export default async function CampanaDetallePage({
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all ${colorBarra}`}
+                className="h-full bg-gondo-indigo-600 rounded-full transition-all"
                 style={{ width: `${progreso}%` }}
               />
             </div>
@@ -282,7 +282,7 @@ export default async function CampanaDetallePage({
         )}
       </div>
 
-      {/* Tabs */}
+      {/* Tabs de fotos */}
       <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
         <TabFilter tabActivo={tab} />
         <p className="text-sm text-gray-500">
@@ -296,12 +296,12 @@ export default async function CampanaDetallePage({
         </p>
       </div>
 
-      {/* Grid */}
+      {/* Grid de fotos */}
       {fotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center bg-white rounded-xl border border-gray-200">
           <Camera size={32} className="text-gray-300 mb-4" />
           <p className="text-sm text-gray-400">
-            {tab ? `No hay fotos ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}s.` : 'Todavia no hay fotos en esta campana.'}
+            {tab ? `No hay fotos ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}s.` : 'Todavía no hay fotos en esta campaña.'}
           </p>
         </div>
       ) : (
@@ -365,7 +365,7 @@ export default async function CampanaDetallePage({
               {/* Acciones solo en pendientes */}
               {f.estado === 'pendiente' && (
                 <div className="px-4 pb-4 shrink-0">
-                  <FotoAcciones fotoId={f.id} />
+                  <MarcaFotoAcciones fotoId={f.id} estado={f.estado} />
                 </div>
               )}
             </div>

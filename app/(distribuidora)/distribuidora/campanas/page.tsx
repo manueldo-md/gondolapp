@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Clock, Target, Megaphone } from 'lucide-react'
+import { Plus, Clock, Target, Megaphone, Users } from 'lucide-react'
 import {
   labelEstadoCampana,
   colorEstadoCampana,
@@ -24,6 +24,7 @@ interface CampanaRow {
   financiada_por: string
   marca: { razon_social: string } | null
   created_at: string
+  gondoleroCount: number
 }
 
 export default async function CampanasPage() {
@@ -62,9 +63,28 @@ export default async function CampanasPage() {
   if (error) console.error('Error fetching campanas:', error.message)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const campanas = ((data ?? []) as any[]).map((c: any) => ({
+  const campanasSinCount = ((data ?? []) as any[]).map((c: any) => ({
     ...c,
     marca: Array.isArray(c.marca) ? (c.marca[0] ?? null) : c.marca,
+  }))
+
+  // Conteos de gondoleros por campaña
+  const campanaIds = campanasSinCount.map((c: { id: string }) => c.id)
+  let partCounts: Record<string, number> = {}
+  if (campanaIds.length > 0) {
+    const { data: partsData } = await admin
+      .from('participaciones')
+      .select('campana_id')
+      .in('campana_id', campanaIds)
+    partCounts = ((partsData ?? []) as { campana_id: string }[]).reduce(
+      (acc, p) => { acc[p.campana_id] = (acc[p.campana_id] ?? 0) + 1; return acc },
+      {} as Record<string, number>
+    )
+  }
+
+  const campanas = campanasSinCount.map(c => ({
+    ...c,
+    gondoleroCount: partCounts[c.id] ?? 0,
   })) as CampanaRow[]
 
   const propias  = campanas.filter(c => c.financiada_por === 'distri')
@@ -162,7 +182,7 @@ function CampanaList({ campanas }: { campanas: CampanaRow[] }) {
                 <h3 className="font-semibold text-gray-900 text-base mb-3">{c.nombre}</h3>
 
                 {/* Stats */}
-                <div className="flex items-center gap-5 text-xs text-gray-500">
+                <div className="flex items-center gap-5 text-xs text-gray-500 flex-wrap">
                   {dias !== null && (
                     <div className="flex items-center gap-1">
                       <Clock size={12} />
@@ -177,6 +197,10 @@ function CampanaList({ campanas }: { campanas: CampanaRow[] }) {
                       <span>{c.comercios_relevados} / {c.objetivo_comercios} comercios</span>
                     </div>
                   )}
+                  <div className="flex items-center gap-1">
+                    <Users size={12} />
+                    <span>{c.gondoleroCount} gondolero{c.gondoleroCount !== 1 ? 's' : ''}</span>
+                  </div>
                 </div>
 
                 {/* Barra de progreso */}
