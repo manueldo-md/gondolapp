@@ -2,23 +2,27 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Images, Users, Store, Megaphone, LogOut, UserCog } from 'lucide-react'
+import { Images, Users, Store, Megaphone, LogOut, UserCog, LayoutDashboard, Bell } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
-  { href: '/distribuidora/gondolas',   label: 'Gondolas',    icon: Images    },
-  { href: '/distribuidora/campanas',   label: 'Campanas',    icon: Megaphone },
-  { href: '/distribuidora/gondoleros', label: 'Gondoleros',  icon: Users     },
-  { href: '/distribuidora/comercios',  label: 'Comercios',   icon: Store     },
-  { href: '/distribuidora/cuenta',     label: 'Mi cuenta',   icon: UserCog   },
+  { href: '/distribuidora/dashboard',  label: 'Dashboard',   icon: LayoutDashboard },
+  { href: '/distribuidora/gondolas',   label: 'Gondolas',    icon: Images          },
+  { href: '/distribuidora/campanas',   label: 'Campanas',    icon: Megaphone       },
+  { href: '/distribuidora/gondoleros', label: 'Gondoleros',  icon: Users           },
+  { href: '/distribuidora/comercios',  label: 'Comercios',   icon: Store           },
+  { href: '/distribuidora/alertas',    label: 'Alertas',     icon: Bell            },
+  { href: '/distribuidora/cuenta',     label: 'Mi cuenta',   icon: UserCog         },
 ]
 
 export function DistriShell({
   children,
   empresa,
+  hayAlertas,
 }: {
   children: React.ReactNode
   empresa: string
+  hayAlertas: boolean
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -30,7 +34,7 @@ export function DistriShell({
     router.refresh()
   }
 
-  const seccionActual = NAV.find(n => pathname.startsWith(n.href))?.label ?? 'Panel'
+  const seccionActual = NAV.find(n => pathname.startsWith(n.href))?.label ?? 'Dashboard'
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -57,6 +61,7 @@ export function DistriShell({
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
           {NAV.map(({ href, label, icon: Icon }) => {
             const activo = pathname.startsWith(href)
+            const esAlertas = href === '/distribuidora/alertas'
             return (
               <Link
                 key={href}
@@ -69,6 +74,9 @@ export function DistriShell({
               >
                 <Icon size={17} strokeWidth={activo ? 2.5 : 1.8} />
                 {label}
+                {esAlertas && hayAlertas && (
+                  <span className="ml-auto w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                )}
               </Link>
             )
           })}

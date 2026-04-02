@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { DistriShell } from './distri-shell'
 
@@ -26,14 +27,34 @@ export default async function DistriLayout({
   }
 
   let empresa = 'Mi distribuidora'
+  let hayAlertas = false
+
   if (profile.distri_id) {
-    const { data: distri } = await db
-      .from('distribuidoras')
-      .select('razon_social')
-      .eq('id', profile.distri_id)
-      .single()
+    const admin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+
+    const [{ data: distri }, { data: gondRows }] = await Promise.all([
+      admin.from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single(),
+      admin.from('profiles').select('id').eq('distri_id', profile.distri_id).eq('tipo_actor', 'gondolero'),
+    ])
     if (distri?.razon_social) empresa = distri.razon_social
+
+    const gondIds = (gondRows ?? []).map((g: { id: string }) => g.id)
+    if (gondIds.length > 0) {
+      const sieteAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      const { count } = await admin
+        .from('fotos')
+        .select('*', { count: 'exact', head: true })
+        .in('gondolero_id', gondIds)
+        .eq('declaracion', 'producto_no_encontrado')
+        .eq('estado', 'aprobada')
+        .gte('created_at', sieteAtras)
+      hayAlertas = (count ?? 0) > 0
+    }
   }
 
-  return <DistriShell empresa={empresa}>{children}</DistriShell>
+  return <DistriShell empresa={empresa} hayAlertas={hayAlertas}>{children}</DistriShell>
 }

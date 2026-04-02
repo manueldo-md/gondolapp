@@ -15,7 +15,7 @@ const RUTAS_PUBLICAS = [
 const DESTINO_POR_ACTOR: Record<TipoActor, string> = {
   gondolero:     '/gondolero/campanas',
   fixer:         '/gondolero/campanas',  // misma interfaz que gondolero
-  distribuidora: '/distribuidora/gondolas',
+  distribuidora: '/distribuidora/dashboard',
   marca:         '/marca/dashboard',
   admin:         '/admin/tablero',
 }
