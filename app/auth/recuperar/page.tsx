@@ -9,26 +9,19 @@ export default function RecuperarPage() {
   const [email, setEmail] = useState('')
   const [enviado, setEnviado] = useState(false)
   const [cargando, setCargando] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim()) return
 
     setCargando(true)
-    setError(null)
 
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    // No revelar si el email existe o no — siempre mostrar éxito
+    await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/auth/nueva-password`,
     })
 
     setCargando(false)
-
-    if (err) {
-      setError('No pudimos enviar el email. Verificá la dirección e intentá de nuevo.')
-      return
-    }
-
     setEnviado(true)
   }
 
@@ -42,22 +35,25 @@ export default function RecuperarPage() {
             <span className="text-white text-2xl font-bold">G</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Recuperar contraseña</h1>
-          <p className="text-gray-500 text-sm mt-1">Te enviamos un link a tu email</p>
+          <p className="text-gray-500 text-sm mt-1">Te enviamos un email con instrucciones</p>
         </div>
 
         {enviado ? (
-          <div className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-              <p className="text-green-800 font-semibold text-sm">📬 ¡Email enviado!</p>
-              <p className="text-green-700 text-sm mt-1">
-                Te enviamos un email con instrucciones para recuperar tu contraseña. Revisá tu bandeja de entrada.
+          <div className="space-y-5">
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
+              <p className="text-green-800 font-semibold text-sm mb-2">📬 Revisá tu casilla</p>
+              <p className="text-green-700 text-sm leading-relaxed">
+                Te enviamos un email a{' '}
+                <span className="font-semibold">{email}</span>.{' '}
+                Revisá tu bandeja de entrada y seguí las instrucciones.
               </p>
+              <p className="text-green-600 text-xs mt-2">El link expira en 1 hora.</p>
             </div>
             <Link
               href="/auth"
               className="block w-full py-3 text-center text-gray-500 text-sm hover:text-gray-700 transition-colors"
             >
-              ← Volver al inicio
+              ← Volver al login
             </Link>
           </div>
         ) : (
@@ -79,25 +75,19 @@ export default function RecuperarPage() {
               />
             </div>
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
-                {error}
-              </div>
-            )}
-
             <button
               type="submit"
               disabled={cargando || !email.trim()}
               className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
             >
-              {cargando ? 'Enviando...' : 'Enviar link de recuperación'}
+              {cargando ? 'Enviando...' : 'Enviar instrucciones'}
             </button>
 
             <Link
               href="/auth"
               className="block w-full py-2 text-center text-gray-500 text-sm hover:text-gray-700 transition-colors"
             >
-              ← Volver
+              ← Volver al login
             </Link>
           </form>
         )}

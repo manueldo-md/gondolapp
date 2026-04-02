@@ -7,6 +7,8 @@ const RUTAS_PUBLICAS = [
   '/auth',
   '/auth/callback',
   '/auth/error',
+  '/auth/recuperar',
+  '/auth/nueva-password',
 ]
 
 // Destino por tipo de actor después del login

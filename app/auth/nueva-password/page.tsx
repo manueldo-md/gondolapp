@@ -1,17 +1,16 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Eye, EyeOff } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-function NuevaPasswordContent() {
+export default function NuevaPasswordPage() {
   const supabase = createClient()
   const router = useRouter()
-  const searchParams = useSearchParams()
 
-  const [sessionReady, setSessionReady] = useState(false)
-  const [linkError, setLinkError] = useState<string | null>(null)
+  const [tokenValido, setTokenValido] = useState(false)
+  const [tokenExpirado, setTokenExpirado] = useState(false)
   const [password, setPassword] = useState('')
   const [confirmar, setConfirmar] = useState('')
   const [mostrarPassword, setMostrarPassword] = useState(false)
@@ -19,26 +18,27 @@ function NuevaPasswordContent() {
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Intercambiar el code del link por una sesión (PKCE flow)
   useEffect(() => {
-    const code = searchParams.get('code')
-    if (code) {
-      supabase.auth.exchangeCodeForSession(code).then(({ error: err }) => {
-        if (err) {
-          setLinkError('El link expiró o ya fue usado. Solicitá uno nuevo.')
-        } else {
-          setSessionReady(true)
-        }
+    // Escuchar el evento PASSWORD_RECOVERY que Supabase dispara
+    // cuando detecta un token de recuperación válido en el hash de la URL
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setTokenValido(true)
+      }
+    })
+
+    // Si el token es inválido o expirado, PASSWORD_RECOVERY nunca se dispara.
+    // Después de 4 segundos sin recibirlo, mostrar el estado de error.
+    const timeout = setTimeout(() => {
+      setTokenValido(prev => {
+        if (!prev) setTokenExpirado(true)
+        return prev
       })
-    } else {
-      // Implicit flow — chequear sesión existente (tipo=recovery en el hash)
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          setSessionReady(true)
-        } else {
-          setLinkError('Link inválido. Solicitá un nuevo link de recuperación.')
-        }
-      })
+    }, 4000)
+
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(timeout)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -57,7 +57,7 @@ function NuevaPasswordContent() {
 
     setCargando(true)
 
-    const { data, error: err } = await supabase.auth.updateUser({ password })
+    const { error: err } = await supabase.auth.updateUser({ password })
 
     if (err) {
       setError('No se pudo actualizar la contraseña. Intentá de nuevo.')
@@ -65,33 +65,58 @@ function NuevaPasswordContent() {
       return
     }
 
-    // Redirigir al panel según tipo_actor
-    if (data.user) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any
-      const { data: profile } = await db
-        .from('profiles')
-        .select('tipo_actor')
-        .eq('id', data.user.id)
-        .single()
-
-      const destino: Record<string, string> = {
-        gondolero:     '/gondolero/campanas',
-        distribuidora: '/distribuidora/gondolas',
-        marca:         '/marca/dashboard',
-        admin:         '/admin/tablero',
-      }
-
-      router.push(destino[profile?.tipo_actor ?? ''] ?? '/')
-      router.refresh()
-    }
+    // El middleware redirige al panel correcto según tipo_actor
+    router.push('/')
+    router.refresh()
   }
 
+  // ── Token expirado / inválido ──────────────────────────────────────────────
+  if (tokenExpirado) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm space-y-5">
+          <div className="text-center mb-2">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gondo-verde-400 rounded-2xl mb-4">
+              <span className="text-white text-2xl font-bold">G</span>
+            </div>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-5 text-center">
+            <p className="text-red-800 font-semibold text-sm mb-1">Link expirado o inválido</p>
+            <p className="text-red-600 text-sm">
+              El link expiró o ya fue usado. Pedí uno nuevo.
+            </p>
+          </div>
+          <a
+            href="/auth/recuperar"
+            className="block w-full py-3 text-center bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-colors min-h-touch"
+          >
+            Pedir nuevo link
+          </a>
+          <a
+            href="/auth"
+            className="block w-full py-2 text-center text-gray-500 text-sm hover:text-gray-700 transition-colors"
+          >
+            ← Volver al login
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Loading mientras se verifica el token ─────────────────────────────────
+  if (!tokenValido) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-gondo-verde-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  // ── Formulario de nueva contraseña ────────────────────────────────────────
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
 
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gondo-verde-400 rounded-2xl mb-4">
             <span className="text-white text-2xl font-bold">G</span>
@@ -100,100 +125,70 @@ function NuevaPasswordContent() {
           <p className="text-gray-500 text-sm mt-1">Elegí una contraseña segura</p>
         </div>
 
-        {linkError ? (
-          <div className="space-y-4">
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-              <p className="text-red-700 text-sm">{linkError}</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Nueva contraseña
+            </label>
+            <div className="relative">
+              <input
+                type={mostrarPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+                autoComplete="new-password"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                {mostrarPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
-            <a
-              href="/auth/recuperar"
-              className="block w-full py-3 text-center bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-colors"
-            >
-              Solicitar nuevo link
-            </a>
           </div>
-        ) : !sessionReady ? (
-          <div className="flex justify-center py-12">
-            <div className="w-8 h-8 border-2 border-gondo-verde-400 border-t-transparent rounded-full animate-spin" />
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Confirmar contraseña
+            </label>
+            <div className="relative">
+              <input
+                type={mostrarConfirm ? 'text' : 'password'}
+                value={confirmar}
+                onChange={e => setConfirmar(e.target.value)}
+                placeholder="Repetí tu contraseña"
+                className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarConfirm(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                {mostrarConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Nueva contraseña
-              </label>
-              <div className="relative">
-                <input
-                  type={mostrarPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
-                  autoComplete="new-password"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => setMostrarPassword(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  {mostrarPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
+              {error}
             </div>
+          )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Confirmar contraseña
-              </label>
-              <div className="relative">
-                <input
-                  type={mostrarConfirm ? 'text' : 'password'}
-                  value={confirmar}
-                  onChange={e => setConfirmar(e.target.value)}
-                  placeholder="Repetí tu contraseña"
-                  className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setMostrarConfirm(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  {mostrarConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={cargando}
-              className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
-            >
-              {cargando ? 'Guardando...' : 'Guardar nueva contraseña'}
-            </button>
-          </form>
-        )}
+          <button
+            type="submit"
+            disabled={cargando}
+            className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
+          >
+            {cargando ? 'Guardando...' : 'Guardar nueva contraseña'}
+          </button>
+        </form>
 
       </div>
     </div>
-  )
-}
-
-export default function NuevaPasswordPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-gondo-verde-400 border-t-transparent rounded-full animate-spin" />
-      </div>
-    }>
-      <NuevaPasswordContent />
-    </Suspense>
   )
 }
