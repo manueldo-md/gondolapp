@@ -32,6 +32,7 @@ interface ComercioTempItem {
 
 const COMERCIOS_CACHE_KEY = 'comercios_cache'
 const COMERCIOS_PENDIENTES_KEY = 'comercios_pendientes'
+const CAMPANA_CACHE_PREFIX = 'campana_cache_'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
 const BLUR_THRESHOLD = 50
@@ -70,9 +71,12 @@ function calcularBlur(blob: Blob): Promise<number> {
       canvas.height = Math.max(3, Math.floor(img.height * scale))
       const ctx = canvas.getContext('2d')!
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      console.log('Imagen cargada en canvas:', canvas.width, 'x', canvas.height)
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
       URL.revokeObjectURL(url)
-      resolve(calcularBlurScore(imageData))
+      const score = calcularBlurScore(imageData)
+      console.log('Blur score calculado:', score, '| Threshold:', BLUR_THRESHOLD)
+      resolve(score)
     }
     img.onerror = () => { URL.revokeObjectURL(url); resolve(999) }
     img.src = url
@@ -341,29 +345,54 @@ function CapturaContent() {
   useEffect(() => {
     if (!campanaId) { setCargando(false); return }
 
-    supabase
-      .from('campanas')
-      .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido )')
-      .eq('id', campanaId)
-      .eq('estado', 'activa')
-      .single()
-      .then(({ data, error }) => {
-        if (error || !data) {
-          setErrorGlobal('No encontramos la campaña o ya no está activa.')
+    const cargarCampana = async () => {
+      // Sin conexión: cargar desde IndexedDB
+      if (!navigator.onLine) {
+        const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
+        if (cached) {
+          setCampana(cached)
         } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const d = data as any
-          const bloques = d.bloques_foto as { id: string; tipo_contenido: string }[]
-          setCampana({
-            id: d.id,
-            nombre: d.nombre,
-            puntos_por_foto: d.puntos_por_foto,
-            primerBloqueId: bloques?.[0]?.id ?? null,
-            tipoContenido: bloques?.[0]?.tipo_contenido ?? 'propios',
-          })
+          setErrorGlobal('Sin conexión y sin datos guardados para esta campaña.')
         }
         setCargando(false)
-      })
+        return
+      }
+
+      supabase
+        .from('campanas')
+        .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido )')
+        .eq('id', campanaId)
+        .eq('estado', 'activa')
+        .single()
+        .then(async ({ data, error }) => {
+          if (error || !data) {
+            // Intentar desde caché como fallback
+            const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
+            if (cached) {
+              setCampana(cached)
+            } else {
+              setErrorGlobal('No encontramos la campaña o ya no está activa.')
+            }
+          } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const d = data as any
+            const bloques = d.bloques_foto as { id: string; tipo_contenido: string }[]
+            const campanaData: CampanaData = {
+              id: d.id,
+              nombre: d.nombre,
+              puntos_por_foto: d.puntos_por_foto,
+              primerBloqueId: bloques?.[0]?.id ?? null,
+              tipoContenido: bloques?.[0]?.tipo_contenido ?? 'propios',
+            }
+            setCampana(campanaData)
+            // Guardar en caché para uso offline futuro
+            await set(CAMPANA_CACHE_PREFIX + campanaId, campanaData)
+          }
+          setCargando(false)
+        })
+    }
+
+    cargarCampana()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campanaId])
 
@@ -618,12 +647,15 @@ function CapturaContent() {
     return (
       <PasoCamara
         onCaptura={async (blob, previewUrl) => {
+          console.log('Foto capturada, iniciando blur detection...')
+          console.log('Blob size:', blob.size, 'type:', blob.type)
           setFotoBlob(blob)
           setFotoPreview(previewUrl)
           const score = await calcularBlur(blob)
-          console.log('Blur score:', score, 'Threshold:', BLUR_THRESHOLD)
           setBlurScore(score)
+          console.log('¿Foto borrosa?', score < BLUR_THRESHOLD)
           if (score < BLUR_THRESHOLD) {
+            console.log('Mostrando advertencia de blur')
             setPaso('blur-advertencia')
           } else if (campana?.tipoContenido === 'ninguno') {
             setDeclaracion('producto_presente')

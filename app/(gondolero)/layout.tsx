@@ -2,32 +2,38 @@ import { createClient } from '@/lib/supabase/server'
 import { GondoleroNav } from './gondolero-nav'
 import { InstalarAppBanner } from '@/components/mobile/instalar-app-banner'
 import { OfflineSyncBanner } from '@/components/mobile/offline-sync'
+import { OfflineDetector } from '@/components/mobile/offline-detector'
 
 export default async function GondoleroLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
   let unreadCount = 0
-  if (user) {
-    const { count } = await supabase
-      .from('notificaciones')
-      .select('*', { count: 'exact', head: true })
-      .eq('gondolero_id', user.id)
-      .eq('leida', false)
-    unreadCount = count ?? 0
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { count } = await supabase
+        .from('notificaciones')
+        .select('*', { count: 'exact', head: true })
+        .eq('gondolero_id', user.id)
+        .eq('leida', false)
+      unreadCount = count ?? 0
+    }
+  } catch {
+    // Sin conexión o Supabase no disponible — continuar con defaults
   }
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       <InstalarAppBanner />
       <OfflineSyncBanner />
-      <main className="flex-1 overflow-y-auto pb-20">
-        {children}
-      </main>
+      <OfflineDetector>
+        <main className="flex-1 overflow-y-auto pb-20">
+          {children}
+        </main>
+      </OfflineDetector>
       <GondoleroNav unreadCount={unreadCount} />
     </div>
   )
