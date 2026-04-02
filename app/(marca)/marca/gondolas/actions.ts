@@ -23,7 +23,7 @@ export async function aprobarFotoMarca(fotoId: string) {
   // 1. Obtener la foto con datos de la campaña en una sola query
   const { data: foto, error: fotoError } = await admin
     .from('fotos')
-    .select('*, campanas(puntos_por_foto, nombre, comercios_relevados)')
+    .select('*, campanas(puntos_por_foto, nombre, comercios_relevados, min_comercios_para_cobrar)')
     .eq('id', fotoId)
     .single()
 
@@ -88,12 +88,21 @@ export async function aprobarFotoMarca(fotoId: string) {
     .single()
 
   if (part) {
+    const nuevosComercios = (part.comercios_completados ?? 0) + 1
+    const updateData: Record<string, number | string> = {
+      puntos_acumulados:     (part.puntos_acumulados ?? 0) + campana.puntos_por_foto,
+      comercios_completados: nuevosComercios,
+    }
+
+    // Verificar si alcanzó el mínimo para completar la campaña
+    const minRequerido: number | null = campana.min_comercios_para_cobrar ?? null
+    if (minRequerido !== null && nuevosComercios >= minRequerido) {
+      updateData.estado = 'completada'
+    }
+
     await admin
       .from('participaciones')
-      .update({
-        puntos_acumulados:     (part.puntos_acumulados     ?? 0) + campana.puntos_por_foto,
-        comercios_completados: (part.comercios_completados ?? 0) + 1,
-      })
+      .update(updateData)
       .eq('campana_id', foto.campana_id)
       .eq('gondolero_id', foto.gondolero_id)
   }
