@@ -5,7 +5,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
-function adminClient() {
+function createAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -18,60 +18,69 @@ export async function aprobarFoto(fotoId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const admin = adminClient()
+  const adminClient = createAdminClient()
 
-  // Obtener datos de la foto
-  const { data: foto, error: errFoto } = await admin
+  // 1. Obtener la foto con datos de la campaña
+  const { data: foto, error: fotoError } = await adminClient
     .from('fotos')
-    .select('campana_id, gondolero_id, puntos_otorgados')
+    .select('*, campanas(puntos_por_foto, nombre, comercios_relevados)')
     .eq('id', fotoId)
     .single()
 
-  if (errFoto || !foto) throw new Error('No se encontro la foto')
+  if (fotoError || !foto) {
+    console.error('Error obteniendo foto:', fotoError)
+    return { error: 'Foto no encontrada' }
+  }
 
-  // 1. Aprobar la foto
-  const { error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const campana = (foto as any).campanas
+
+  // 2. Aprobar la foto y marcar puntos_otorgados
+  await adminClient
     .from('fotos')
-    .update({ estado: 'aprobada' })
+    .update({
+      estado:           'aprobada',
+      puntos_otorgados: campana.puntos_por_foto,
+    })
     .eq('id', fotoId)
 
-  if (error) throw new Error('No se pudo aprobar la foto: ' + error.message)
-
-  // 2. Obtener datos de la campana
-  const { data: campana } = await admin
-    .from('campanas')
-    .select('puntos_por_foto, nombre, comercios_relevados')
-    .eq('id', foto.campana_id)
-    .single()
-
-  const puntos = campana?.puntos_por_foto ?? 0
-
-  // 3. Insertar movimiento de puntos (el trigger update_gondolero_puntos
-  //    se encarga de actualizar profiles.puntos_disponibles automaticamente)
-  if (puntos > 0 && foto.puntos_otorgados === 0) {
-    await admin.from('movimientos_puntos').insert({
+  // 3. Insertar movimiento de puntos
+  const { error: puntosError } = await adminClient
+    .from('movimientos_puntos')
+    .insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'credito',
-      monto:        puntos,
-      concepto:     `Foto aprobada · ${campana?.nombre ?? 'campana'}`,
+      monto:        campana.puntos_por_foto,
+      concepto:     `Foto aprobada · ${campana.nombre}`,
       campana_id:   foto.campana_id,
       foto_id:      fotoId,
     })
 
-    // 4. Actualizar puntos_otorgados en la foto
-    await admin
-      .from('fotos')
-      .update({ puntos_otorgados: puntos })
-      .eq('id', fotoId)
+  if (puntosError) {
+    console.error('Error insertando puntos:', puntosError)
   }
 
-  // 5. Incrementar comercios_relevados en la campana
-  await admin
+  // 4. Incrementar puntos en profiles via RPC
+  // (actualiza puntos_disponibles Y puntos_totales_ganados atómicamente)
+  const { error: rpcError } = await adminClient.rpc('incrementar_puntos', {
+    p_gondolero_id: foto.gondolero_id,
+    p_monto:        campana.puntos_por_foto,
+  })
+
+  if (rpcError) {
+    console.error('Error RPC incrementar_puntos:', rpcError)
+  }
+
+  // 5. Incrementar comercios_relevados
+  await adminClient
     .from('campanas')
-    .update({ comercios_relevados: (campana?.comercios_relevados ?? 0) + 1 })
+    .update({
+      comercios_relevados: (campana.comercios_relevados || 0) + 1,
+    })
     .eq('id', foto.campana_id)
 
   revalidatePath('/distribuidora/gondolas')
+  revalidatePath(`/distribuidora/campanas/${foto.campana_id}`)
 }
 
 export async function rechazarFoto(fotoId: string) {
@@ -79,7 +88,7 @@ export async function rechazarFoto(fotoId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const { error } = await adminClient()
+  const { error } = await createAdminClient()
     .from('fotos')
     .update({ estado: 'rechazada' })
     .eq('id', fotoId)
