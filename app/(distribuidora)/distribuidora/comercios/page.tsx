@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Store, MapPin, CheckCircle2, Clock, AlertCircle } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
+import { ValidarBtn } from './validar-btn'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -13,11 +14,13 @@ interface ComercioRow {
   direccion: string | null
   tipo: TipoComercio
   validado: boolean
+  registrado_por: string | null
   created_at: string
 }
 
 interface ComercioConStats extends ComercioRow {
   ultimaVisita: string | null
+  puedeValidar: boolean
 }
 
 // ── Helpers visuales ──────────────────────────────────────────────────────────
@@ -51,10 +54,30 @@ export default async function ComerciosPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
+  // Obtener distri_id del usuario para filtrar comercios de sus gondoleros
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('distri_id')
+    .eq('id', user.id)
+    .single()
+
+  const distriId = profile?.distri_id ?? null
+
+  // IDs de gondoleros de esta distribuidora
+  let gondoleroIds: string[] = []
+  if (distriId) {
+    const { data: gondolerosData } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('distri_id', distriId)
+      .eq('tipo_actor', 'gondolero')
+    gondoleroIds = (gondolerosData ?? []).map((g: { id: string }) => g.id)
+  }
+
   // Todos los comercios validados y sin validar
   const { data: comerciosData, error } = await admin
     .from('comercios')
-    .select('id, nombre, direccion, tipo, validado, created_at')
+    .select('id, nombre, direccion, tipo, validado, registrado_por, created_at')
     .order('nombre', { ascending: true })
     .limit(200)
 
@@ -85,6 +108,9 @@ export default async function ComerciosPage() {
   const lista: ComercioConStats[] = comercios.map(c => ({
     ...c,
     ultimaVisita: ultimaVisitaMap[c.id] ?? null,
+    puedeValidar: !c.validado && (
+      !c.registrado_por || gondoleroIds.includes(c.registrado_por)
+    ),
   }))
 
   const validados   = lista.filter(c => c.validado).length
@@ -178,6 +204,14 @@ export default async function ComerciosPage() {
                       <div className="flex items-center justify-center gap-1 text-green-600">
                         <CheckCircle2 size={14} />
                         <span className="text-xs font-medium">Validado</span>
+                      </div>
+                    ) : c.puedeValidar ? (
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <AlertCircle size={12} />
+                          <span className="text-[11px] font-medium">Sin validar</span>
+                        </div>
+                        <ValidarBtn comercioId={c.id} />
                       </div>
                     ) : (
                       <div className="flex items-center justify-center gap-1 text-amber-500">

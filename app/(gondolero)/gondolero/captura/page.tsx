@@ -31,6 +31,7 @@ interface ComercioRow {
   lat: number
   lng: number
   tipo: string
+  validado: boolean
 }
 
 interface CampanaData {
@@ -308,7 +309,7 @@ function CapturaContent() {
     const timer = setTimeout(() => {
       supabase
         .from('comercios')
-        .select('id, nombre, direccion, lat, lng, tipo')
+        .select('id, nombre, direccion, lat, lng, tipo, validado')
         .ilike('nombre', `%${busqueda}%`)
         .limit(10)
         .then(({ data }) => {
@@ -624,6 +625,16 @@ function CapturaContent() {
                 <p className="text-sm text-gray-500">{comercio.direccion}</p>
               )}
             </div>
+
+            {/* Aviso comercio sin validar */}
+            {!comercio.validado && (
+              <div className="flex items-start gap-2.5 px-3.5 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <AlertTriangle size={15} className="text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  Este comercio está pendiente de validación por tu distribuidora — podés usarlo igual.
+                </p>
+              </div>
+            )}
 
             {/* Estado GPS */}
             <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center">

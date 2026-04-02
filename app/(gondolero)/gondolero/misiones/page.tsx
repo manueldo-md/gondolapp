@@ -9,6 +9,7 @@ import {
   formatearPuntos,
 } from '@/lib/utils'
 import type { TipoCampana } from '@/types'
+import { AbandonarBtn } from './abandonar-btn'
 
 type ParticipacionRow = {
   id: string
@@ -93,7 +94,7 @@ function MisionCard({ p }: { p: ParticipacionRow }) {
       )}
 
       {/* CTA */}
-      <div className="px-4 pb-4">
+      <div className="px-4 pb-2">
         <Link
           href={`/gondolero/captura?campana=${c.id}`}
           className="flex items-center justify-center gap-2 w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-colors min-h-touch"
@@ -101,6 +102,11 @@ function MisionCard({ p }: { p: ParticipacionRow }) {
           Ir a capturar
           <ChevronRight size={16} />
         </Link>
+      </div>
+
+      {/* Abandonar — discreto */}
+      <div className="px-4 pb-3">
+        <AbandonarBtn campanaId={c.id} />
       </div>
     </div>
   )
