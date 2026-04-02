@@ -628,5 +628,48 @@ git commit -m "chore: actualizar esquema de base de datos"
 
 ---
 
-*Última actualización: Marzo 2026*
-*Versión del documento: 1.0*
+## 18. Features pendientes de diseño
+
+### Misiones de venta desde alertas (Alta prioridad)
+
+**CONCEPTO:**
+La distribuidora puede convertir una alerta de quiebre de stock en una "misión de venta" que les llega directamente a sus vendedores.
+
+**DIFERENCIA CON CAMPAÑA NORMAL:**
+- No es una campaña de fotos sino una misión de acción
+- El vendedor va al comercio a VENDER, no a fotografiar
+- Reporta si vendió o no, y el motivo si no pudo
+
+**FLUJO PROPUESTO:**
+1. Distri ve alerta "Quiebre de stock en Kiosco El Cid"
+2. Toca "Crear misión de venta" desde la alerta
+3. Se genera automáticamente una misión con:
+   - Comercio pre-cargado (el del quiebre)
+   - Productos a ofrecer (los de la distri)
+   - Vendedores sugeridos (los que visitaron ese comercio)
+4. Los vendedores reciben notificación in-app
+5. El vendedor va al comercio y reporta:
+   - ✅ Vendió — cantidad y productos
+   - ❌ No vendió — motivo (no había encargado, precio alto, prefiere otra marca, local cerrado, etc.)
+6. La distri ve el resultado en tiempo real
+
+**DATO CLAVE DE NEGOCIO:**
+El motivo de no venta es información de altísimo valor para la marca — es inteligencia competitiva real del campo. Esto justifica el Peldaño 2 del negocio (data para marcas).
+
+**CONSIDERACIONES TÉCNICAS:**
+- Nuevo tipo de misión: `'venta'` (distinto a `'foto'`)
+- Nueva tabla: `misiones_venta` o extender `campanas` con `tipo = 'venta'`
+- Nueva tabla: `resultados_venta` (vendio, motivo, productos, cantidad)
+- El vendedor NO necesita sacar foto (opcional)
+- Notificación push cuando le llega una misión de venta
+
+**PREGUNTAS PENDIENTES DE DEFINIR:**
+- ¿Se pagan puntos por misión de venta? ¿Cuántos?
+- ¿Solo van los vendedores que visitaron ese comercio o cualquier vendedor de la zona?
+- ¿El resultado de venta lo puede ver la marca también?
+- ¿Hay un tiempo límite para completar la misión?
+
+---
+
+*Última actualización: Abril 2026*
+*Versión del documento: 1.1*
