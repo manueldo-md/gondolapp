@@ -49,11 +49,12 @@ export async function crearCampanaInterna(formData: FormData) {
 
   // Crear bloque de foto genérico
   const instruccion = (formData.get('instruccion') as string) || 'Fotografiá la góndola'
+  const tipoContenido = (formData.get('tipo_contenido') as string) || 'propios'
   await admin.from('bloques_foto').insert({
     campana_id:     campana.id,
     orden:          1,
     instruccion,
-    tipo_contenido: 'propios',
+    tipo_contenido: tipoContenido,
   })
 
   revalidatePath('/distribuidora/campanas')

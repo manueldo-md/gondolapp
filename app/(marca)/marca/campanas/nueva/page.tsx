@@ -37,9 +37,10 @@ const TIPOS: { value: TipoCampana; label: string }[] = [
 ]
 
 const TIPO_CONTENIDO: { value: TipoContenidoBloque; label: string }[] = [
-  { value: 'propios',      label: 'Solo mis productos'    },
-  { value: 'competencia',  label: 'Solo competencia'      },
-  { value: 'ambos',        label: 'Mis productos y competencia' },
+  { value: 'propios',      label: 'Solo mis productos'                      },
+  { value: 'competencia',  label: 'Solo competencia'                        },
+  { value: 'ambos',        label: 'Mis productos y competencia'             },
+  { value: 'ninguno',      label: 'Sin productos (stands, comercios, etc.)' },
 ]
 
 // ── Componente ────────────────────────────────────────────────────────────────

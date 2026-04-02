@@ -13,6 +13,7 @@ export default function NuevaCampanaPage() {
   const [form, setForm] = useState({
     nombre:                      '',
     instruccion:                 '',
+    tipo_contenido:              'propios',
     puntos_por_foto:             '5',
     fecha_inicio:                '',
     fecha_fin:                   '',
@@ -21,7 +22,7 @@ export default function NuevaCampanaPage() {
     min_comercios_para_cobrar:   '3',
   })
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }))
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,6 +84,23 @@ export default function NuevaCampanaPage() {
               placeholder="Qué deben fotografiar y cómo hacerlo..."
               className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
             />
+          </div>
+
+          {/* Tipo de contenido */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Tipo de contenido del bloque
+            </label>
+            <select
+              value={form.tipo_contenido}
+              onChange={set('tipo_contenido')}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition bg-white"
+            >
+              <option value="propios">Solo mis productos</option>
+              <option value="competencia">Solo competencia</option>
+              <option value="ambos">Mis productos y competencia</option>
+              <option value="ninguno">Sin productos (stands, comercios, etc.)</option>
+            </select>
           </div>
 
           {/* Puntos */}

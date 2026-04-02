@@ -53,7 +53,7 @@ export type EstadoCanje =
 
 export type FinanciadaPor = 'marca' | 'distri' | 'gondolapp'
 
-export type TipoContenidoBloque = 'propios' | 'competencia' | 'ambos'
+export type TipoContenidoBloque = 'propios' | 'competencia' | 'ambos' | 'ninguno'
 
 // ── INTERFACES DE DOMINIO ─────────────────────────────────────────────────────
 

@@ -38,6 +38,7 @@ interface CampanaData {
   nombre: string
   puntos_por_foto: number
   primerBloqueId: string | null
+  tipoContenido: string
 }
 
 // ── Componente cámara (ciclo de vida propio) ──────────────────────────────────
@@ -275,7 +276,7 @@ function CapturaContent() {
 
     supabase
       .from('campanas')
-      .select('id, nombre, puntos_por_foto, bloques_foto ( id )')
+      .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido )')
       .eq('id', campanaId)
       .eq('estado', 'activa')
       .single()
@@ -285,12 +286,13 @@ function CapturaContent() {
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const d = data as any
-          const bloques = d.bloques_foto as { id: string }[]
+          const bloques = d.bloques_foto as { id: string; tipo_contenido: string }[]
           setCampana({
             id: d.id,
             nombre: d.nombre,
             puntos_por_foto: d.puntos_por_foto,
             primerBloqueId: bloques?.[0]?.id ?? null,
+            tipoContenido: bloques?.[0]?.tipo_contenido ?? 'propios',
           })
         }
         setCargando(false)
@@ -329,7 +331,11 @@ function CapturaContent() {
   // ── Upload y registro ─────────────────────────────────────────────────────
 
   const handleEnviar = async () => {
-    if (!fotoBlob || !comercio || !declaracion || !campana) return
+    const declaracionFinal = campana?.tipoContenido === 'ninguno'
+      ? 'producto_presente'
+      : declaracion
+    if (!fotoBlob || !comercio || !campana) return
+    if (campana.tipoContenido !== 'ninguno' && !declaracion) return
 
     setEnviando(true)
 
@@ -354,7 +360,7 @@ function CapturaContent() {
             storagePath,
             fotoBase64: reader.result as string,
             lat, lng,
-            declaracion,
+            declaracion: declaracionFinal!,
             precio: precio ? parseFloat(precio) : null,
             deviceId: getDeviceId(),
             timestamp: timestampDispositivo,
@@ -381,7 +387,7 @@ function CapturaContent() {
         storagePath,
         url,
         lat, lng,
-        declaracion,
+        declaracion: declaracionFinal!,
         precioDetectado: precio ? parseFloat(precio) : null,
         timestampDispositivo,
         deviceId: getDeviceId(),
@@ -444,7 +450,12 @@ function CapturaContent() {
         onCaptura={(blob, previewUrl) => {
           setFotoBlob(blob)
           setFotoPreview(previewUrl)
-          setPaso('declaracion')
+          if (campana?.tipoContenido === 'ninguno') {
+            setDeclaracion('producto_presente')
+            setPaso('confirmacion')
+          } else {
+            setPaso('declaracion')
+          }
         }}
         onVolver={() => setPaso('gps')}
       />
@@ -507,8 +518,12 @@ function CapturaContent() {
               if (paso === 'comercio') router.back()
               else {
                 const prev: Record<Paso, Paso> = {
-                  comercio: 'comercio', gps: 'comercio', camara: 'gps',
-                  declaracion: 'gps', confirmacion: 'declaracion', exito: 'confirmacion'
+                  comercio:     'comercio',
+                  gps:          'comercio',
+                  camara:       'gps',
+                  declaracion:  'camara',
+                  confirmacion: campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
+                  exito:        'confirmacion',
                 }
                 setPaso(prev[paso])
               }
@@ -764,7 +779,7 @@ function CapturaContent() {
         )}
 
         {/* ── PASO 5: CONFIRMACIÓN ── */}
-        {paso === 'confirmacion' && comercio && fotoPreview && declaracion && (
+        {paso === 'confirmacion' && comercio && fotoPreview && (
           <div className="space-y-4">
             <p className="text-sm font-semibold text-gray-700">Resumen antes de enviar</p>
 
@@ -782,6 +797,7 @@ function CapturaContent() {
                   <p className="text-sm font-medium text-gray-900">{comercio.nombre}</p>
                 </div>
               </div>
+              {campana?.tipoContenido !== 'ninguno' && declaracion && (
               <div className="flex items-center gap-3 p-3">
                 <span className="text-lg shrink-0">
                   {declaracion === 'producto_presente' ? '✅' : declaracion === 'producto_no_encontrado' ? '❌' : '🔄'}
@@ -797,6 +813,7 @@ function CapturaContent() {
                   </p>
                 </div>
               </div>
+              )}
               <div className="flex items-center gap-3 p-3">
                 <Star size={16} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
                 <div>
