@@ -148,23 +148,62 @@ export default async function CampanasPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const { data: campanas, error } = await supabase
+  // Zonas declaradas por el gondolero
+  const { data: gondoleroZonas } = await supabase
+    .from('gondolero_zonas')
+    .select('zona_id')
+    .eq('gondolero_id', user.id)
+
+  const zonaIds = (gondoleroZonas ?? []).map((gz: { zona_id: string }) => gz.zona_id)
+  const tieneZonas = zonaIds.length > 0
+
+  let query = supabase
     .from('campanas')
     .select(`
       id, nombre, tipo, marca_id, financiada_por,
       puntos_por_foto, fecha_fin, objetivo_comercios,
       comercios_relevados, instruccion, min_comercios_para_cobrar,
+      es_abierta,
       marca:marcas ( razon_social ),
       bloques_foto ( id )
     `)
     .eq('estado', 'activa')
     .order('created_at', { ascending: false })
 
-  if (error) {
-    console.error('Error fetching campanas:', error.message)
-  }
+  // Si tiene zonas declaradas: filtrar por campanas de esas zonas o campanas abiertas
+  // Las campanas sin zonas asignadas en campana_zonas son visibles para todos
+  let lista: CampanaRow[] = []
 
-  const lista = (campanas as CampanaRow[] | null) ?? []
+  if (tieneZonas) {
+    // Obtener IDs de campañas vinculadas a las zonas del gondolero
+    const { data: campanaZonas } = await supabase
+      .from('campana_zonas')
+      .select('campana_id')
+      .in('zona_id', zonaIds)
+
+    const campanaIdsConZona = (campanaZonas ?? []).map((cz: { campana_id: string }) => cz.campana_id)
+
+    const { data: campanas, error } = await query
+    if (error) console.error('Error fetching campanas:', error.message)
+
+    const todas = (campanas as CampanaRow[] | null) ?? []
+    // Mostrar: campanas abiertas + campanas que tienen zona matching + campanas sin zonas asignadas
+    const { data: todasCampanaZonas } = await supabase
+      .from('campana_zonas')
+      .select('campana_id')
+    const campanasConAlgunaZona = new Set((todasCampanaZonas ?? []).map((cz: { campana_id: string }) => cz.campana_id))
+
+    lista = todas.filter(c =>
+      (c as unknown as { es_abierta: boolean }).es_abierta ||
+      campanaIdsConZona.includes(c.id) ||
+      !campanasConAlgunaZona.has(c.id) // campaña sin zonas = visible para todos
+    )
+  } else {
+    // Sin zonas declaradas: ver todas las campañas activas
+    const { data: campanas, error } = await query
+    if (error) console.error('Error fetching campanas:', error.message)
+    lista = (campanas as CampanaRow[] | null) ?? []
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

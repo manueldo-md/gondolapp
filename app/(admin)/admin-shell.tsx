@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight, Truck, Tag,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin,
 } from 'lucide-react'
 
 const NAV_SECTIONS = [
@@ -30,6 +30,7 @@ const NAV_SECTIONS = [
       { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone },
       { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
       { href: '/admin/comercios', label: 'Comercios', icon: Store },
+      { href: '/admin/zonas',     label: 'Zonas',     icon: MapPin },
     ],
   },
 ]

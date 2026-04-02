@@ -8,6 +8,7 @@ import { CanjeCatalogo } from './canje-catalogo'
 import { LogoutButton } from './logout-button'
 import { MarcarNotificacionesLeidas } from './marcar-leidas'
 import { CuentaModal } from './cuenta-modal'
+import { ZonasSelector } from './zonas-selector'
 
 // ── Constantes de nivel ───────────────────────────────────────────────────────
 
@@ -98,7 +99,15 @@ export default async function PerfilPage() {
     .order('created_at', { ascending: false })
     .limit(10)
 
-  // 8. Nombre de distribuidora si está vinculado
+  // 8. Zonas disponibles y zonas del gondolero
+  const [{ data: todasLasZonas }, { data: gondoleroZonas }] = await Promise.all([
+    admin.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre'),
+    admin.from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id),
+  ])
+
+  const zonasActuales = (gondoleroZonas ?? []).map((gz: { zona_id: string }) => gz.zona_id)
+
+  // 9. Nombre de distribuidora si está vinculado
   let distriNombre: string | null = null
   if (profile?.distri_id) {
     const { data: distri } = await admin
@@ -344,7 +353,17 @@ export default async function PerfilPage() {
           </div>
         )}
 
-        {/* ── SECCIÓN 8 — Mi cuenta ────────────────────────────────────────── */}
+        {/* ── SECCIÓN 8 — Mis zonas ────────────────────────────────────────── */}
+        {(todasLasZonas?.length ?? 0) > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-4">
+            <ZonasSelector
+              todasLasZonas={(todasLasZonas ?? []) as { id: string; nombre: string; tipo: string }[]}
+              zonasActuales={zonasActuales}
+            />
+          </div>
+        )}
+
+        {/* ── SECCIÓN 9 — Mi cuenta ────────────────────────────────────────── */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Mi cuenta</h2>
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -356,7 +375,7 @@ export default async function PerfilPage() {
           </div>
         </div>
 
-        {/* ── SECCIÓN 9 — Footer ───────────────────────────────────────────── */}
+        {/* ── SECCIÓN 10 — Footer ──────────────────────────────────────────── */}
         <div className="space-y-3 pt-2">
           <LogoutButton />
           <p className="text-center text-[11px] text-gray-300">GondolApp v1.0</p>
