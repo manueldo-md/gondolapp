@@ -505,6 +505,18 @@ function CapturaContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso])
 
+  // Advertir antes de cerrar la pestaña si hay captura en progreso
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (paso !== 'comercio' && paso !== 'exito' && paso !== 'exito-offline') {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [paso])
+
   // ── Upload y registro ─────────────────────────────────────────────────────
 
   const handleEnviar = async () => {

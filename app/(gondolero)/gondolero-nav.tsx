@@ -1,7 +1,7 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import { LayoutGrid, CheckSquare, BarChart2, User } from 'lucide-react'
 
 const TABS = [
@@ -11,37 +11,99 @@ const TABS = [
   { href: '/gondolero/perfil',    label: 'Perfil',    icon: User        },
 ]
 
+function NavItem({
+  href, label, icon: Icon, activo, esActividad, unreadCount, enCaptura,
+}: {
+  href: string
+  label: string
+  icon: React.ElementType
+  activo: boolean
+  esActividad: boolean
+  unreadCount: number
+  enCaptura: boolean
+}) {
+  const router = useRouter()
+  const [showDialog, setShowDialog] = useState(false)
+
+  const handleClick = () => {
+    if (enCaptura) {
+      setShowDialog(true)
+      return
+    }
+    router.push(href)
+  }
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 min-h-touch transition-colors ${
+          activo ? 'text-gondo-verde-400' : 'text-gray-400 hover:text-gray-600'
+        }`}
+      >
+        <div className="relative">
+          <Icon size={22} strokeWidth={activo ? 2.5 : 1.8} />
+          {esActividad && unreadCount > 0 && (
+            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </div>
+        <span className={`text-[11px] leading-none ${activo ? 'font-semibold' : 'font-normal'}`}>
+          {label}
+        </span>
+      </button>
+
+      {showDialog && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center pb-24 px-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDialog(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+            <div>
+              <p className="font-bold text-gray-900 text-base">¿Salir de la captura?</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Perdés el progreso de esta foto. Los datos del comercio y la campaña se mantienen — podés volver a empezar.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <button
+                onClick={() => setShowDialog(false)}
+                className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl"
+              >
+                Seguir capturando
+              </button>
+              <button
+                onClick={() => { setShowDialog(false); router.push(href) }}
+                className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl"
+              >
+                Salir igual
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function GondoleroNav({ unreadCount }: { unreadCount: number }) {
   const pathname = usePathname()
+  const enCaptura = pathname.includes('/captura')
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 safe-area-inset-bottom">
       <div className="flex items-stretch max-w-lg mx-auto">
-        {TABS.map(({ href, label, icon: Icon }) => {
-          const activo = pathname.startsWith(href)
-          const esActividad = href === '/gondolero/actividad'
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 min-h-touch transition-colors ${
-                activo ? 'text-gondo-verde-400' : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              <div className="relative">
-                <Icon size={22} strokeWidth={activo ? 2.5 : 1.8} />
-                {esActividad && unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </div>
-              <span className={`text-[11px] leading-none ${activo ? 'font-semibold' : 'font-normal'}`}>
-                {label}
-              </span>
-            </Link>
-          )
-        })}
+        {TABS.map(({ href, label, icon }) => (
+          <NavItem
+            key={href}
+            href={href}
+            label={label}
+            icon={icon}
+            activo={pathname.startsWith(href)}
+            esActividad={href === '/gondolero/actividad'}
+            unreadCount={unreadCount}
+            enCaptura={enCaptura}
+          />
+        ))}
       </div>
     </nav>
   )
