@@ -94,7 +94,7 @@ export default async function CampanaDetallePage({
   // Campaña
   const { data: campana, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, financiada_por, min_comercios_para_cobrar')
+    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, financiada_por, min_comercios_para_cobrar, marca:marcas(razon_social)')
     .eq('id', params.id)
     .single()
 
@@ -145,6 +145,10 @@ export default async function CampanaDetallePage({
   const dias       = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
   const esPropia   = campana.financiada_por === 'distri'
   const colorBarra = esPropia ? 'bg-gondo-amber-400' : 'bg-gondo-indigo-600'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const marcaNombre = Array.isArray((campana as any).marca)
+    ? ((campana as any).marca[0]?.razon_social ?? null)
+    : ((campana as any).marca?.razon_social ?? null)
 
   // Conteos por estado para el header de tabs
   const { data: conteos } = await admin
@@ -182,6 +186,11 @@ export default async function CampanaDetallePage({
             <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${colorEstadoCampana(campana.estado as EstadoCampana)}`}>
               {labelEstadoCampana(campana.estado as EstadoCampana)}
             </span>
+            {marcaNombre && (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                {marcaNombre}
+              </span>
+            )}
           </div>
           <div className="text-right shrink-0">
             <p className="text-xs text-gray-400">Puntos/foto</p>
@@ -213,7 +222,7 @@ export default async function CampanaDetallePage({
 
         {/* Barra de progreso */}
         {campana.objetivo_comercios && campana.objetivo_comercios > 0 && (
-          <div>
+          <div className="mb-4">
             <div className="flex justify-between text-xs text-gray-400 mb-1">
               <span>Avance</span>
               <span>{progreso}%</span>
@@ -226,6 +235,21 @@ export default async function CampanaDetallePage({
             </div>
           </div>
         )}
+
+        {/* Grid de 4 métricas */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+          {[
+            { label: 'Fotos totales',   value: Object.values(counts).reduce((a, b) => a + b, 0) },
+            { label: 'Aprobadas',       value: counts['aprobada']  ?? 0, color: 'text-green-600' },
+            { label: 'Pendientes',      value: counts['pendiente'] ?? 0, color: 'text-amber-600' },
+            { label: 'Gondoleros',      value: participaciones.length },
+          ].map(m => (
+            <div key={m.label} className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+              <p className={`text-2xl font-bold ${m.color ?? 'text-gray-900'}`}>{m.value}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">{m.label}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Gondoleros participando */}
@@ -284,15 +308,10 @@ export default async function CampanaDetallePage({
 
       {/* Tabs */}
       <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
-        <TabFilter tabActivo={tab} />
+        <TabFilter tabActivo={tab} counts={counts} />
         <p className="text-sm text-gray-500">
           {fotos.length} foto{fotos.length !== 1 ? 's' : ''}
           {tab ? ` ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}` : ' en total'}
-          {counts['pendiente'] > 0 && !tab && (
-            <span className="ml-2 text-xs font-semibold text-amber-600">
-              · {counts['pendiente']} pendiente{counts['pendiente'] !== 1 ? 's' : ''}
-            </span>
-          )}
         </p>
       </div>
 

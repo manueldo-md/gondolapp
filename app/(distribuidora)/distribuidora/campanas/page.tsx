@@ -220,7 +220,7 @@ function CampanaList({ campanas }: { campanas: CampanaRow[] }) {
                 href={`/distribuidora/campanas/${c.id}`}
                 className="shrink-0 text-xs font-semibold text-gondo-amber-400 hover:underline"
               >
-                Ver fotos →
+                Ver detalle →
               </Link>
             </div>
           </div>

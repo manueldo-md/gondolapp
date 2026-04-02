@@ -213,7 +213,7 @@ export default async function MarcaCampanaDetallePage({
 
         {/* Barra de progreso */}
         {campana.objetivo_comercios && campana.objetivo_comercios > 0 && (
-          <div>
+          <div className="mb-4">
             <div className="flex justify-between text-xs text-gray-400 mb-1">
               <span>Avance</span>
               <span>{progreso}%</span>
@@ -226,6 +226,21 @@ export default async function MarcaCampanaDetallePage({
             </div>
           </div>
         )}
+
+        {/* Grid de 4 métricas */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+          {[
+            { label: 'Fotos totales', value: Object.values(counts).reduce((a, b) => a + b, 0) },
+            { label: 'Aprobadas',     value: counts['aprobada']  ?? 0, color: 'text-green-600' },
+            { label: 'Pendientes',    value: counts['pendiente'] ?? 0, color: 'text-amber-600' },
+            { label: 'Gondoleros',    value: participaciones.length },
+          ].map(m => (
+            <div key={m.label} className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+              <p className={`text-2xl font-bold ${m.color ?? 'text-gray-900'}`}>{m.value}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">{m.label}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Gondoleros participando */}
@@ -284,7 +299,7 @@ export default async function MarcaCampanaDetallePage({
 
       {/* Tabs de fotos */}
       <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
-        <TabFilter tabActivo={tab} />
+        <TabFilter tabActivo={tab} counts={counts} />
         <p className="text-sm text-gray-500">
           {fotos.length} foto{fotos.length !== 1 ? 's' : ''}
           {tab ? ` ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}` : ' en total'}
