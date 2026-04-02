@@ -24,4 +24,6 @@ export async function abandonarCampana(campanaId: string) {
     .eq('estado', 'activa')
 
   revalidatePath('/gondolero/misiones')
+  revalidatePath(`/gondolero/misiones/${campanaId}`)
+  revalidatePath('/gondolero/campanas')
 }

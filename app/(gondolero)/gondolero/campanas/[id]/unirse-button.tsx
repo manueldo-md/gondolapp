@@ -18,10 +18,10 @@ export function UnirseButton({
     return (
       <div className="space-y-1">
         <Link
-          href="/gondolero/misiones"
+          href={`/gondolero/misiones/${campanaId}`}
           className="block w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl text-center shadow-lg text-base transition-colors hover:bg-gondo-verde-600"
         >
-          Ir a mis misiones →
+          Continuar esta misión →
         </Link>
         <AbandonarBtn campanaId={campanaId} />
       </div>
