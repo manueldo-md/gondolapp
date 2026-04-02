@@ -4,13 +4,14 @@ import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Eye, EyeOff } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { schemaLogin, schemaRegistro, type LoginForm, type RegistroForm } from '@/lib/validations'
 import type { TipoActor } from '@/types'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Fase = 'bienvenida' | 'login' | 'registro' | 'otp'
+type Fase = 'bienvenida' | 'login' | 'registro'
 
 const OPCIONES_TIPO: Array<{
   tipo: Exclude<TipoActor, 'admin'>
@@ -47,11 +48,10 @@ function AuthContent() {
   const redirect = searchParams.get('redirect') || '/'
 
   const [fase, setFase] = useState<Fase>('bienvenida')
-  const [faseOrigen, setFaseOrigen] = useState<'login' | 'registro'>('login')
-  const [email, setEmail] = useState('')
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [otpInput, setOtpInput] = useState('')
+  const [mostrarPassword, setMostrarPassword] = useState(false)
+  const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [distribuidoras, setDistribuidoras] = useState<{ id: string; razon_social: string }[]>([])
 
   const formLogin = useForm<LoginForm>({
@@ -76,44 +76,29 @@ function AuthContent() {
       .then(({ data }) => setDistribuidoras(data ?? []))
   }, [tipoActorSeleccionado]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-submit al completar 6 dígitos
-  useEffect(() => {
-    if (otpInput.length === 8) {
-      handleVerificarOTP()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otpInput])
-
-  const irAOTP = (emailValue: string, origen: 'login' | 'registro') => {
-    setEmail(emailValue)
-    setFaseOrigen(origen)
-    setFase('otp')
-    setCargando(false)
-  }
-
   // ── LOGIN ─────────────────────────────────────────────────────────────────
   const handleLogin = async (data: LoginForm) => {
     setCargando(true)
     setError(null)
 
-    const { error: err } = await supabase.auth.signInWithOtp({
+    const { error: err } = await supabase.auth.signInWithPassword({
       email: data.email,
-      options: {
-        shouldCreateUser: false,
-      },
+      password: data.password,
     })
 
     if (err) {
       setError(
-        err.message.toLowerCase().includes('user not found') || err.status === 400
-          ? 'No encontramos una cuenta con ese email. ¿Querés registrarte?'
-          : 'No pudimos enviarte el código. Intentá de nuevo.'
+        err.message.toLowerCase().includes('invalid login credentials') ||
+        err.message.toLowerCase().includes('invalid credentials')
+          ? 'Email o contraseña incorrectos.'
+          : 'No pudimos iniciar sesión. Intentá de nuevo.'
       )
       setCargando(false)
       return
     }
 
-    irAOTP(data.email, 'login')
+    router.push(redirect)
+    router.refresh()
   }
 
   // ── REGISTRO ──────────────────────────────────────────────────────────────
@@ -121,10 +106,10 @@ function AuthContent() {
     setCargando(true)
     setError(null)
 
-    const { error: err } = await supabase.auth.signInWithOtp({
+    const { data: signUpData, error: err } = await supabase.auth.signUp({
       email: data.email,
+      password: data.password,
       options: {
-        shouldCreateUser: true,
         data: {
           tipo_actor: data.tipo_actor,
           nombre: data.nombre,
@@ -135,41 +120,28 @@ function AuthContent() {
     })
 
     if (err) {
-      setError('No pudimos crear tu cuenta. Intentá de nuevo.')
+      setError(
+        err.message.toLowerCase().includes('already registered') ||
+        err.message.toLowerCase().includes('user already registered')
+          ? 'Ya existe una cuenta con ese email. ¿Querés iniciar sesión?'
+          : 'No pudimos crear tu cuenta. Intentá de nuevo.'
+      )
       setCargando(false)
       return
     }
 
-    irAOTP(data.email, 'registro')
-  }
-
-  // ── VERIFICAR OTP ─────────────────────────────────────────────────────────
-  const handleVerificarOTP = async () => {
-    if (otpInput.length !== 8 || cargando) return
-    setCargando(true)
-    setError(null)
-
-    const { error: err } = await supabase.auth.verifyOtp({
-      email,
-      token: otpInput,
-      type: 'email',
-    })
-
-    if (err) {
-      setError('El código es incorrecto o ya expiró. Pedí uno nuevo.')
-      setOtpInput('')
-      setCargando(false)
+    // Si email confirmation está desactivado en Supabase → sesión inmediata
+    if (signUpData.session) {
+      router.push(redirect)
+      router.refresh()
       return
     }
 
-    router.push(redirect)
-    router.refresh()
-  }
-
-  const handleReenviarOTP = () => {
-    setOtpInput('')
+    // Si está activado → pedir que confirmen email
     setError(null)
-    setFase(faseOrigen)
+    setCargando(false)
+    setFase('bienvenida')
+    // Mostrar mensaje de confirmación (manejado arriba con un estado separado si fuera necesario)
   }
 
   // ── RENDER ────────────────────────────────────────────────────────────────
@@ -190,13 +162,13 @@ function AuthContent() {
         {fase === 'bienvenida' && (
           <div className="space-y-3">
             <button
-              onClick={() => setFase('login')}
+              onClick={() => { setError(null); setFase('login') }}
               className="w-full py-3 px-4 bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-colors min-h-touch"
             >
               Ya tengo cuenta — Entrar
             </button>
             <button
-              onClick={() => setFase('registro')}
+              onClick={() => { setError(null); setFase('registro') }}
               className="w-full py-3 px-4 border border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors min-h-touch"
             >
               Registrarme
@@ -209,7 +181,7 @@ function AuthContent() {
           <form onSubmit={formLogin.handleSubmit(handleLogin)} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Tu email
+                Email
               </label>
               <input
                 type="email"
@@ -227,16 +199,43 @@ function AuthContent() {
               )}
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Contraseña
+              </label>
+              <div className="relative">
+                <input
+                  type={mostrarPassword ? 'text' : 'password'}
+                  {...formLogin.register('password')}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {mostrarPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {formLogin.formState.errors.password && (
+                <p className="text-red-600 text-sm mt-1">
+                  {formLogin.formState.errors.password.message}
+                </p>
+              )}
+            </div>
+
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
                 {error}
-                {error.includes('registrarte') && (
+                {error.includes('sesión') && (
                   <button
                     type="button"
-                    onClick={() => { setError(null); setFase('registro') }}
+                    onClick={() => { setError(null); setFase('login') }}
                     className="block mt-1 font-medium underline"
                   >
-                    Ir a registro →
+                    Ir a iniciar sesión →
                   </button>
                 )}
               </div>
@@ -247,7 +246,7 @@ function AuthContent() {
               disabled={cargando}
               className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
             >
-              {cargando ? 'Enviando código...' : 'Enviar código de acceso'}
+              {cargando ? 'Ingresando...' : 'Entrar'}
             </button>
 
             <button
@@ -311,7 +310,7 @@ function AuthContent() {
             {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Tu email
+                Email
               </label>
               <input
                 type="email"
@@ -324,6 +323,62 @@ function AuthContent() {
               {formRegistro.formState.errors.email && (
                 <p className="text-red-600 text-sm mt-1">
                   {formRegistro.formState.errors.email.message}
+                </p>
+              )}
+            </div>
+
+            {/* Contraseña */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Contraseña
+              </label>
+              <div className="relative">
+                <input
+                  type={mostrarPassword ? 'text' : 'password'}
+                  {...formRegistro.register('password')}
+                  placeholder="Mínimo 6 caracteres"
+                  className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {mostrarPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {formRegistro.formState.errors.password && (
+                <p className="text-red-600 text-sm mt-1">
+                  {formRegistro.formState.errors.password.message}
+                </p>
+              )}
+            </div>
+
+            {/* Confirmar contraseña */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Confirmar contraseña
+              </label>
+              <div className="relative">
+                <input
+                  type={mostrarConfirm ? 'text' : 'password'}
+                  {...formRegistro.register('confirmPassword')}
+                  placeholder="Repetí tu contraseña"
+                  className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarConfirm(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {mostrarConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {formRegistro.formState.errors.confirmPassword && (
+                <p className="text-red-600 text-sm mt-1">
+                  {formRegistro.formState.errors.confirmPassword.message}
                 </p>
               )}
             </div>
@@ -371,6 +426,15 @@ function AuthContent() {
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
                 {error}
+                {error.includes('iniciar sesión') && (
+                  <button
+                    type="button"
+                    onClick={() => { setError(null); setFase('login') }}
+                    className="block mt-1 font-medium underline"
+                  >
+                    Ir a iniciar sesión →
+                  </button>
+                )}
               </div>
             )}
 
@@ -390,56 +454,6 @@ function AuthContent() {
               ← Volver
             </button>
           </form>
-        )}
-
-        {/* ── OTP ── */}
-        {fase === 'otp' && (
-          <div className="space-y-5">
-            <div className="text-center">
-              <div className="text-4xl mb-3">📬</div>
-              <h2 className="text-lg font-semibold text-gray-900">Revisá tu email</h2>
-              <p className="text-gray-500 text-sm mt-1">
-                Te mandamos un código de 6 dígitos a{' '}
-                <span className="font-medium text-gray-700">{email}</span>
-              </p>
-            </div>
-
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={8}
-              value={otpInput}
-              onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 8))}
-              placeholder="000000"
-              className="w-full px-4 py-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-center text-3xl font-mono tracking-widest"
-              autoComplete="one-time-code"
-              autoFocus
-              disabled={cargando}
-            />
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm text-center">
-                {error}
-              </div>
-            )}
-
-            <button
-              onClick={handleVerificarOTP}
-              disabled={otpInput.length !== 8 || cargando}
-              className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
-            >
-              {cargando ? 'Verificando...' : 'Entrar →'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleReenviarOTP}
-              className="w-full py-2 text-gray-500 text-sm hover:text-gray-700 transition-colors"
-            >
-              No me llegó el código — reenviar
-            </button>
-          </div>
         )}
 
       </div>

@@ -7,36 +7,43 @@ export const schemaLogin = z.object({
     .string()
     .min(1, 'El email es obligatorio')
     .email('Ingresá un email válido'),
+  password: z
+    .string()
+    .min(6, 'La contraseña debe tener al menos 6 caracteres'),
 })
 
-export const schemaRegistro = z.object({
-  email: z
-    .string()
-    .min(1, 'El email es obligatorio')
-    .email('Ingresá un email válido'),
-  nombre: z
-    .string()
-    .min(2, 'El nombre debe tener al menos 2 caracteres')
-    .max(100, 'El nombre es demasiado largo'),
-  tipo_actor: z.enum(['gondolero', 'fixer', 'distribuidora', 'marca'], {
-    required_error: 'Seleccioná el tipo de cuenta',
-  }),
-  celular: z
-    .string()
-    .optional()
-    .refine(
-      (val) => !val || /^(\+54|54)?9?\d{10}$/.test(val.replace(/[\s\-\(\)]/g, '')),
-      'Ingresá un número de celular válido'
-    ),
-  distri_id: z.string().uuid().optional(),
-})
-
-export const schemaOTP = z.object({
-  otp: z
-    .string()
-    .length(6, 'El código debe tener 6 dígitos')
-    .regex(/^\d+$/, 'El código solo puede contener números'),
-})
+export const schemaRegistro = z
+  .object({
+    email: z
+      .string()
+      .min(1, 'El email es obligatorio')
+      .email('Ingresá un email válido'),
+    nombre: z
+      .string()
+      .min(2, 'El nombre debe tener al menos 2 caracteres')
+      .max(100, 'El nombre es demasiado largo'),
+    tipo_actor: z.enum(['gondolero', 'fixer', 'distribuidora', 'marca'], {
+      required_error: 'Seleccioná el tipo de cuenta',
+    }),
+    celular: z
+      .string()
+      .optional()
+      .refine(
+        (val) => !val || /^(\+54|54)?9?\d{10}$/.test(val.replace(/[\s\-\(\)]/g, '')),
+        'Ingresá un número de celular válido'
+      ),
+    distri_id: z.string().uuid().optional(),
+    password: z
+      .string()
+      .min(6, 'La contraseña debe tener al menos 6 caracteres'),
+    confirmPassword: z
+      .string()
+      .min(1, 'Confirmá tu contraseña'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Las contraseñas no coinciden',
+    path: ['confirmPassword'],
+  })
 
 // ── COMERCIO ──────────────────────────────────────────────────────────────────
 
@@ -209,7 +216,6 @@ export const schemaEmpresa = z.object({
 
 export type LoginForm = z.infer<typeof schemaLogin>
 export type RegistroForm = z.infer<typeof schemaRegistro>
-export type OTPForm = z.infer<typeof schemaOTP>
 export type ComercioForm = z.infer<typeof schemaComercio>
 export type CampanaPaso1Form = z.infer<typeof schemaCampanaPaso1>
 export type CampanaPaso2Form = z.infer<typeof schemaCampanaPaso2>
