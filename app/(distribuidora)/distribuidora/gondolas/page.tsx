@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { CheckCircle2, Clock, MapPin, User, X, Info } from 'lucide-react'
 import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
-import { FotoAcciones } from './foto-acciones'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { GondolasTabs } from './gondolas-tabs'
 import { FiltrosArchivo } from './filtros-archivo'
+import { GondolasPendientes } from './gondolas-pendientes'
+import { FotoAcciones } from './foto-acciones'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -393,27 +394,21 @@ export default async function GondolasPage({
       )}
 
       {/* Grid de fotos */}
-      {fotos.length === 0 ? (
+      {tabActivo === 'pendiente' ? (
+        <GondolasPendientes fotos={fotos.map(f => ({ ...f, signedUrl: f.signedUrl ?? null, url: f.url ?? null }))} />
+      ) : fotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
             <CheckCircle2 size={28} className="text-gray-300" />
           </div>
-          <h3 className="text-base font-semibold text-gray-700 mb-1">
-            {tabActivo === 'pendiente' ? 'Todo al día' : 'Sin resultados'}
-          </h3>
-          <p className="text-sm text-gray-400">
-            {tabActivo === 'pendiente'
-              ? 'No hay fotos pendientes de revisión.'
-              : 'No hay fotos que coincidan con estos filtros.'}
-          </p>
-          {tabActivo === 'archivo' && (
-            <Link
-              href="/distribuidora/gondolas?tab=archivo"
-              className="mt-3 text-sm text-gondo-amber-400 font-medium hover:underline"
-            >
-              Ver todo el archivo
-            </Link>
-          )}
+          <h3 className="text-base font-semibold text-gray-700 mb-1">Sin resultados</h3>
+          <p className="text-sm text-gray-400">No hay fotos que coincidan con estos filtros.</p>
+          <Link
+            href="/distribuidora/gondolas?tab=archivo"
+            className="mt-3 text-sm text-gondo-amber-400 font-medium hover:underline"
+          >
+            Ver todo el archivo
+          </Link>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -421,7 +416,7 @@ export default async function GondolasPage({
             <FotoCard
               key={foto.id}
               foto={foto}
-              mostrarAcciones={tabActivo === 'pendiente'}
+              mostrarAcciones={false}
             />
           ))}
         </div>

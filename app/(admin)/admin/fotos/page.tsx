@@ -1,7 +1,5 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { tiempoRelativo } from '@/lib/utils'
-import { FotoLightbox } from '@/components/shared/foto-lightbox'
-import { FotoAccionesAdmin } from './foto-acciones'
+import { FotosGrid } from './fotos-grid'
 
 function adminClient() {
   return createAdminClient(
@@ -9,13 +7,6 @@ function adminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
-}
-
-const ESTADO_COLOR: Record<string, string> = {
-  pendiente:   'bg-amber-100 text-amber-700 border-amber-200',
-  aprobada:    'bg-green-100 text-green-700 border-green-200',
-  rechazada:   'bg-red-100 text-red-700 border-red-200',
-  en_revision: 'bg-blue-100 text-blue-700 border-blue-200',
 }
 
 export default async function FotosAdminPage({
@@ -37,7 +28,13 @@ export default async function FotosAdminPage({
     .order('created_at', { ascending: false })
     .limit(60)
 
-  if (filtroEstado !== 'todos') query = query.eq('estado', filtroEstado)
+  if (filtroEstado !== 'todos') {
+    query = query.eq('estado', filtroEstado)
+  } else {
+    // Por defecto excluir archivadas del listado general
+    query = query.neq('estado', 'archivada')
+  }
+
   if (searchParams.campana) query = query.eq('campana_id', searchParams.campana)
 
   const { data: fotosRaw, error: fotosError } = await query
@@ -47,14 +44,11 @@ export default async function FotosAdminPage({
   const fotos = (fotosRaw ?? []) as any[]
   console.log(`[admin/fotos] found ${fotos.length} fotos, filtro=${filtroEstado}`)
 
-  // Generate signed URLs usando storage_path (no la URL pública)
+  // Generate signed URLs
   const signed = await Promise.all(
     fotos.map(async f => {
       const path: string | null = f.storage_path ?? null
-      if (!path) {
-        console.warn(`[admin/fotos] foto ${f.id} sin storage_path, usando url directo`)
-        return { id: f.id, signedUrl: f.url ?? null }
-      }
+      if (!path) return { id: f.id, signedUrl: f.url ?? null }
       const { data, error } = await admin.storage
         .from('fotos-gondola')
         .createSignedUrl(path, 3600)
@@ -65,7 +59,18 @@ export default async function FotosAdminPage({
   const signedMap: Record<string, string | null> = {}
   signed.forEach(s => { signedMap[s.id] = s.signedUrl })
 
-  const FILTROS = ['todos', 'pendiente', 'aprobada', 'rechazada', 'en_revision']
+  const FILTROS = ['todos', 'pendiente', 'aprobada', 'rechazada', 'en_revision', 'archivada']
+
+  // Preparar datos para el componente cliente
+  const fotosItems = fotos.map(f => ({
+    id:              f.id,
+    estado:          f.estado,
+    signedUrl:       signedMap[f.id] ?? null,
+    gondoleroNombre: Array.isArray(f.gondolero) ? f.gondolero[0]?.nombre : f.gondolero?.nombre,
+    comercioNombre:  Array.isArray(f.comercio)  ? f.comercio[0]?.nombre  : f.comercio?.nombre,
+    campanaNombre:   Array.isArray(f.campana)   ? f.campana[0]?.nombre   : f.campana?.nombre,
+    createdAt:       f.created_at,
+  }))
 
   return (
     <div className="space-y-5">
@@ -86,49 +91,17 @@ export default async function FotosAdminPage({
                 : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
             }`}
           >
-            {f}
+            {f === 'en_revision' ? 'en revisión' : f}
           </a>
         ))}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-        {fotos.map(f => {
-          const gondoleroNombre = Array.isArray(f.gondolero) ? f.gondolero[0]?.nombre : f.gondolero?.nombre
-          const comercioNombre  = Array.isArray(f.comercio)  ? f.comercio[0]?.nombre  : f.comercio?.nombre
-          const campanaNombre   = Array.isArray(f.campana)   ? f.campana[0]?.nombre   : f.campana?.nombre
-          const signedUrl = signedMap[f.id] ?? null
-
-          return (
-            <div key={f.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <FotoLightbox
-                src={signedUrl}
-                alt={`Foto ${f.id}`}
-                containerClassName="relative w-full h-44 shrink-0"
-              >
-                <div className="absolute top-2 left-2">
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${ESTADO_COLOR[f.estado] ?? 'bg-gray-100 text-gray-500'}`}>
-                    {f.estado}
-                  </span>
-                </div>
-              </FotoLightbox>
-              <div className="p-3 space-y-1">
-                <p className="text-xs font-medium text-gray-800 truncate">{gondoleroNombre ?? '—'}</p>
-                <p className="text-[11px] text-gray-500 truncate">{comercioNombre ?? '—'}</p>
-                <p className="text-[11px] text-gray-400 truncate">{campanaNombre ?? '—'}</p>
-                <p className="text-[11px] text-gray-400">{tiempoRelativo(f.created_at)}</p>
-                {f.estado === 'pendiente' && (
-                  <FotoAccionesAdmin fotoId={f.id} />
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {fotos.length === 0 && (
+      {fotosItems.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
           <p className="text-sm text-gray-400">No hay fotos con este filtro</p>
         </div>
+      ) : (
+        <FotosGrid fotos={fotosItems} />
       )}
     </div>
   )
