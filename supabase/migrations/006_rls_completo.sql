@@ -1,8 +1,8 @@
 -- =============================================================================
--- GondolApp — Migración 006: RLS completo
+-- GondolApp — Migración 006: RLS completo (idempotente)
 -- Completa las políticas faltantes detectadas en auditoría de abril 2026.
 -- Ejecutar en Supabase Dashboard → SQL Editor
--- PRECAUCIÓN: revisar cuidadosamente antes de ejecutar en producción.
+-- Script idempotente: se puede ejecutar múltiples veces sin errores.
 -- =============================================================================
 
 -- =============================================================================
@@ -13,6 +13,7 @@
 -- ── GONDOLERO_ZONAS ───────────────────────────────────────────────────────────
 -- Necesario para que la página de campañas filtre por zona del gondolero.
 
+DROP POLICY IF EXISTS "gondolero_zonas_select" ON gondolero_zonas;
 CREATE POLICY "gondolero_zonas_select"
   ON gondolero_zonas FOR SELECT
   USING (
@@ -20,10 +21,12 @@ CREATE POLICY "gondolero_zonas_select"
     get_tipo_actor() = 'admin'
   );
 
+DROP POLICY IF EXISTS "gondolero_zonas_insert" ON gondolero_zonas;
 CREATE POLICY "gondolero_zonas_insert"
   ON gondolero_zonas FOR INSERT
   WITH CHECK (gondolero_id = auth.uid());
 
+DROP POLICY IF EXISTS "gondolero_zonas_delete" ON gondolero_zonas;
 CREATE POLICY "gondolero_zonas_delete"
   ON gondolero_zonas FOR DELETE
   USING (gondolero_id = auth.uid());
@@ -33,6 +36,7 @@ CREATE POLICY "gondolero_zonas_delete"
 -- Cualquier usuario autenticado puede leer zonas de campañas (no es info sensible).
 -- INSERT/DELETE solo via service_role (server actions con admin client).
 
+DROP POLICY IF EXISTS "campana_zonas_select" ON campana_zonas;
 CREATE POLICY "campana_zonas_select"
   ON campana_zonas FOR SELECT
   USING (auth.uid() IS NOT NULL);
@@ -41,6 +45,7 @@ CREATE POLICY "campana_zonas_select"
 -- Necesario para que el flujo de captura obtenga los bloques de foto de la campaña.
 -- El JS browser client hace la query anidada en la página de captura.
 
+DROP POLICY IF EXISTS "bloques_foto_select" ON bloques_foto;
 CREATE POLICY "bloques_foto_select"
   ON bloques_foto FOR SELECT
   USING (
@@ -76,6 +81,7 @@ CREATE POLICY "bloques_foto_select"
 -- ── MOVIMIENTOS_TOKENS ────────────────────────────────────────────────────────
 -- Necesario para que las páginas "Cuenta" de distri y marca muestren el historial.
 
+DROP POLICY IF EXISTS "movimientos_tokens_select_distri" ON movimientos_tokens;
 CREATE POLICY "movimientos_tokens_select_distri"
   ON movimientos_tokens FOR SELECT
   USING (
@@ -99,6 +105,7 @@ CREATE POLICY "movimientos_tokens_select_distri"
 -- Distri necesita ver los perfiles de sus gondoleros (página /distribuidora/gondoleros).
 -- Marca también necesita ver gondoleros participantes en sus campañas.
 
+DROP POLICY IF EXISTS "profiles_select_distri" ON profiles;
 CREATE POLICY "profiles_select_distri"
   ON profiles FOR SELECT
   USING (
@@ -106,6 +113,7 @@ CREATE POLICY "profiles_select_distri"
     distri_id = get_distri_id()
   );
 
+DROP POLICY IF EXISTS "profiles_select_marca" ON profiles;
 CREATE POLICY "profiles_select_marca"
   ON profiles FOR SELECT
   USING (
@@ -118,13 +126,11 @@ CREATE POLICY "profiles_select_marca"
     )
   );
 
--- Distri y marca pueden actualizar sus propios datos vía server actions.
--- No necesitan policy de UPDATE (usan admin client en las actions).
-
 -- ── DISTRIBUIDORAS: gondoleros pueden ver las validadas ───────────────────────
 -- El formulario de registro muestra un dropdown de distribuidoras validadas.
 -- Sin esta policy el dropdown está vacío y el gondolero no puede registrarse.
 
+DROP POLICY IF EXISTS "distribuidoras_select_gondolero" ON distribuidoras;
 CREATE POLICY "distribuidoras_select_gondolero"
   ON distribuidoras FOR SELECT
   USING (
@@ -132,9 +138,9 @@ CREATE POLICY "distribuidoras_select_gondolero"
     validada = true
   );
 
--- UPDATE de distribuidoras via service_role (server actions con admin client).
-
 -- ── DISTRIBUIDORAS: la propia distri puede actualizarse ──────────────────────
+
+DROP POLICY IF EXISTS "distribuidoras_update_own" ON distribuidoras;
 CREATE POLICY "distribuidoras_update_own"
   ON distribuidoras FOR UPDATE
   USING (
@@ -143,6 +149,8 @@ CREATE POLICY "distribuidoras_update_own"
   );
 
 -- ── MARCAS: la propia marca puede actualizarse ────────────────────────────────
+
+DROP POLICY IF EXISTS "marcas_update_own" ON marcas;
 CREATE POLICY "marcas_update_own"
   ON marcas FOR UPDATE
   USING (
@@ -151,9 +159,8 @@ CREATE POLICY "marcas_update_own"
   );
 
 -- ── COMERCIOS: distri y admin pueden actualizar (validación) ──────────────────
--- Sin esta policy, el botón "Validar comercio" de distri falla si usa client regular.
--- (Las actions actuales usan admin client, pero se agrega por correctitud.)
 
+DROP POLICY IF EXISTS "comercios_update_distri_admin" ON comercios;
 CREATE POLICY "comercios_update_distri_admin"
   ON comercios FOR UPDATE
   USING (
@@ -168,18 +175,16 @@ CREATE POLICY "comercios_update_distri_admin"
   );
 
 -- ── NOTIFICACIONES: gondolero puede marcar las suyas como leídas ─────────────
--- La action marcarNotificacionesLeidas usa admin client, pero esta policy
--- cubre el caso de futura implementación directa desde el cliente.
 
+DROP POLICY IF EXISTS "notificaciones_update_leida" ON notificaciones;
 CREATE POLICY "notificaciones_update_leida"
   ON notificaciones FOR UPDATE
   USING (gondolero_id = auth.uid())
   WITH CHECK (gondolero_id = auth.uid());
 
--- ── CAMPAÑAS: distri puede insertar campañas internas ─────────────────────────
--- La action crearCampanaInterna usa admin client actualmente,
--- pero se agrega la policy por correctitud y para no depender de ese detalle.
+-- ── CAMPAÑAS: distri puede insertar y actualizar campañas internas ────────────
 
+DROP POLICY IF EXISTS "campanas_insert_distri" ON campanas;
 CREATE POLICY "campanas_insert_distri"
   ON campanas FOR INSERT
   WITH CHECK (
@@ -187,7 +192,7 @@ CREATE POLICY "campanas_insert_distri"
     distri_id = get_distri_id()
   );
 
--- Distri puede actualizar sus propias campañas.
+DROP POLICY IF EXISTS "campanas_update_distri" ON campanas;
 CREATE POLICY "campanas_update_distri"
   ON campanas FOR UPDATE
   USING (
@@ -195,7 +200,7 @@ CREATE POLICY "campanas_update_distri"
     distri_id = get_distri_id()
   );
 
--- Marca puede actualizar sus propias campañas.
+DROP POLICY IF EXISTS "campanas_update_marca" ON campanas;
 CREATE POLICY "campanas_update_marca"
   ON campanas FOR UPDATE
   USING (
@@ -203,26 +208,20 @@ CREATE POLICY "campanas_update_marca"
     marca_id = get_marca_id()
   );
 
--- ── PARTICIPACIONES: el sistema puede actualizar comercios_completados ─────────
--- Sin esta policy, si alguna action intentara UPDATE via client regular fallaría.
--- (Las actions usan admin client, pero se agrega por correctitud.)
+-- ── PARTICIPACIONES: admin y gondolero pueden actualizar ──────────────────────
 
+DROP POLICY IF EXISTS "participaciones_update_admin" ON participaciones;
 CREATE POLICY "participaciones_update_admin"
   ON participaciones FOR UPDATE
   USING (get_tipo_actor() = 'admin');
 
--- Gondolero puede actualizar solo su participación (ej. para abandonar).
+DROP POLICY IF EXISTS "participaciones_update_gondolero" ON participaciones;
 CREATE POLICY "participaciones_update_gondolero"
   ON participaciones FOR UPDATE
   USING (
     get_tipo_actor() IN ('gondolero', 'fixer') AND
     gondolero_id = auth.uid()
   );
-
--- ── MOVIMIENTOS_PUNTOS: admins y gondoleros ───────────────────────────────────
--- La policy existente cubre SELECT pero no INSERT.
--- Las server actions usan admin client para INSERT, pero policy por correctitud.
--- (No se agrega — el INSERT via service_role bypasea RLS de todos modos.)
 
 -- =============================================================================
 -- VERIFICACIÓN POST-MIGRACIÓN
