@@ -82,7 +82,7 @@ export default async function ActividadPage() {
   const canjesPendientes = canjesPendientesRes.data ?? []
   const fotosAprobadas = fotosRes.count ?? 0
   const fotosPendientesTotal = fotosPendientesRes.count ?? 0
-  const fotosPendientesPreview = (fotosPendientesRes.data ?? []) as {
+  const fotosPendientesPreview = (fotosPendientesRes.data ?? []) as unknown as {
     id: string
     created_at: string
     comercio: { nombre: string } | null
