@@ -38,11 +38,13 @@ const NAV_SECTIONS = [
 
 export function AdminShell({
   nombre,
-  excepciones,
+  fotosPendientes,
+  canjesPendientes,
   children,
 }: {
   nombre: string
-  excepciones: number
+  fotosPendientes: number
+  canjesPendientes: number
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -126,11 +128,23 @@ export function AdminShell({
         </div>
 
         <div className="flex items-center gap-3">
-          {excepciones > 0 && (
-            <div className="flex items-center gap-1.5 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-              <span>{excepciones} pendiente{excepciones !== 1 ? 's' : ''}</span>
-            </div>
-          )}
+          {(fotosPendientes > 0 || canjesPendientes > 0) && (() => {
+            const total = fotosPendientes + canjesPendientes
+            const href = fotosPendientes > 0 ? '/admin/fotos?estado=pendiente' : '/admin/canjes'
+            const partes = [
+              fotosPendientes > 0 ? `${fotosPendientes} foto${fotosPendientes !== 1 ? 's' : ''} pendiente${fotosPendientes !== 1 ? 's' : ''}` : null,
+              canjesPendientes  > 0 ? `${canjesPendientes} canje${canjesPendientes  !== 1 ? 's' : ''} por procesar` : null,
+            ].filter(Boolean).join(' · ')
+            return (
+              <Link
+                href={href}
+                title={partes}
+                className="flex items-center gap-1.5 bg-red-500 hover:bg-red-400 text-white text-xs font-bold px-2.5 py-1 rounded-full transition-colors"
+              >
+                {total} pendiente{total !== 1 ? 's' : ''}
+              </Link>
+            )
+          })()}
           <span className="text-white/60 text-sm hidden sm:inline">{nombre}</span>
         </div>
       </header>

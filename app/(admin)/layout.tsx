@@ -27,10 +27,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     admin.from('canjes').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
   ])
 
-  const excepciones = (fotosPendientes ?? 0) + (canjesPendientes ?? 0)
-
   return (
-    <AdminShell nombre={profile.nombre ?? 'Admin'} excepciones={excepciones}>
+    <AdminShell
+      nombre={profile.nombre ?? 'Admin'}
+      fotosPendientes={fotosPendientes ?? 0}
+      canjesPendientes={canjesPendientes ?? 0}
+    >
       {children}
     </AdminShell>
   )
