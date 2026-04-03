@@ -48,7 +48,7 @@ export async function retirarFoto(fotoId: string): Promise<{ error?: string }> {
 
   if (!foto) return { error: 'Foto no encontrada.' }
   if (foto.gondolero_id !== user.id) return { error: 'No tenés permiso para retirar esta foto.' }
-  if (foto.estado !== 'pendiente') return { error: 'Esta foto ya fue revisada y no puede retirarse.' }
+  if (foto.estado !== 'pendiente' && foto.estado !== 'en_revision') return { error: 'Esta foto ya fue revisada y no puede retirarse.' }
 
   // 2. Eliminar de Storage si tiene path
   if (foto.storage_path) {
@@ -91,5 +91,7 @@ export async function retirarFoto(fotoId: string): Promise<{ error?: string }> {
 
   revalidatePath('/gondolero/misiones')
   revalidatePath(`/gondolero/misiones/${foto.campana_id}`)
+  revalidatePath('/gondolero/actividad')
+  revalidatePath('/gondolero/actividad/pendientes')
   return {}
 }
