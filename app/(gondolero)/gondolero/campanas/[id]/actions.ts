@@ -63,14 +63,14 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
   }
 
   // Buscar cualquier participación existente (cualquier estado)
-  const { data: existente } = await admin
+  const { data: existente, error: existenteError } = await admin
     .from('participaciones')
     .select('id, estado')
     .eq('campana_id', campanaId)
     .eq('gondolero_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle() as { data: { id: string; estado: string } | null }
+    .maybeSingle()
+
+  console.log('[unirse] existente:', existente, 'error:', existenteError)
 
   if (existente?.estado === 'activa') {
     redirect(`/gondolero/misiones/${campanaId}`)
@@ -78,6 +78,7 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
 
   if (existente) {
     // Ya existe fila (completada/abandonada) → UPDATE para reactivar
+    console.log('[unirse] haciendo UPDATE de id:', existente.id)
     const { error } = await admin
       .from('participaciones')
       .update({
@@ -88,9 +89,11 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
       })
       .eq('id', existente.id)
 
+    console.log('[unirse] UPDATE error:', error)
     if (error) return { error: `No pudimos reactivar tu inscripción: ${error.message}` }
   } else {
     // Primera vez → INSERT
+    console.log('[unirse] haciendo INSERT')
     const { error } = await admin
       .from('participaciones')
       .insert({
@@ -101,6 +104,7 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
         puntos_acumulados:     0,
       })
 
+    console.log('[unirse] INSERT error:', error)
     if (error) return { error: `No pudimos inscribirte: ${error.message}` }
   }
 
