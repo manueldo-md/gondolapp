@@ -72,9 +72,10 @@ const MENU_ACCIONES: Record<string, MenuAccion[]> = {
       icono: <XCircle size={13} /> },
   ],
   rechazada: [
-    { label: 'Aprobar',           nuevoEstado: 'aprobada',    variant: 'default', icono: <CheckCircle2 size={13} /> },
-    { label: 'Mandar a revisión', nuevoEstado: 'en_revision', variant: 'default', icono: <Eye size={13} /> },
-    { label: 'Archivar',          nuevoEstado: 'archivada',   variant: 'default', icono: <Archive size={13} /> },
+    { label: 'Aprobar',            nuevoEstado: 'aprobada',    variant: 'default', icono: <CheckCircle2 size={13} /> },
+    { label: 'Volver a pendiente', nuevoEstado: 'pendiente',   variant: 'default', icono: <RotateCcw size={13} /> },
+    { label: 'Mandar a revisión',  nuevoEstado: 'en_revision', variant: 'default', icono: <Eye size={13} /> },
+    { label: 'Archivar',           nuevoEstado: 'archivada',   variant: 'default', icono: <Archive size={13} /> },
   ],
   en_revision: [
     { label: 'Aprobar',           nuevoEstado: 'aprobada',  variant: 'default', icono: <CheckCircle2 size={13} /> },

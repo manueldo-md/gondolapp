@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Star, Clock, Camera, CheckCircle2, MapPin, ChevronRight } from 'lucide-react'
 import { AbandonarBtn } from '../abandonar-btn'
+import { RetirarFotoBtn } from './retirar-foto-btn'
 import {
   labelTipoCampana,
   diasRestantes,
@@ -223,6 +224,9 @@ export default async function MisionDetallePage({
                         <span className="text-xs font-semibold text-gondo-verde-400">
                           +{formatearPuntos(foto.puntos_otorgados)} pts
                         </span>
+                      )}
+                      {foto.estado === 'pendiente' && (
+                        <RetirarFotoBtn fotoId={foto.id} />
                       )}
                     </div>
                   </div>
