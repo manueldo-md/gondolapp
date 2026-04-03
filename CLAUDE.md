@@ -716,5 +716,27 @@ Los canjes son iniciativa del gondolero (gasta sus puntos). Los beneficios son i
 
 ---
 
+### Catálogo de canjes configurable (Media prioridad)
+
+**CONCEPTO:**
+Reemplazar los valores hardcodeados de puntos por canje por un catálogo dinámico administrable desde el panel admin.
+
+**ESTADO ACTUAL:**
+Los puntos mínimos para cada canje están en la tabla `configuracion` (`puntos_canje_celular`, `puntos_canje_nafta`, etc.) como valores simples.
+
+**LO QUE FALTA:**
+- Tabla `premios_catalogo` con cada premio como un registro independiente
+- Cada premio tiene: nombre, descripcion, puntos, tipo, imagen, activo, disponible_desde (nivel)
+- El admin puede agregar, editar, desactivar premios
+- La distri puede agregar premios propios para sus gondoleros (beneficios segmentados — ver feature anterior)
+- Los gondoleros ven el catálogo actualizado en tiempo real desde la DB
+
+**RELACIÓN CON BENEFICIOS SEGMENTADOS:**
+El catálogo de canjes es la base sobre la que se construyen los beneficios segmentados por distri/zona/nivel.
+
+Eliminar la sección "Economía" del panel de configuración cuando se implemente el catálogo — los valores pasan a vivir en la tabla de premios.
+
+---
+
 *Última actualización: Abril 2026*
 *Versión del documento: 1.1*
