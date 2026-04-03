@@ -62,31 +62,47 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
     }
   }
 
-  // Verificar si ya hay participación activa (bloquear re-inscripción paralela)
-  const { data: existenteActiva } = await admin
+  // Buscar cualquier participación existente (cualquier estado)
+  const { data: existente } = await admin
     .from('participaciones')
-    .select('id')
+    .select('id, estado')
     .eq('campana_id', campanaId)
     .eq('gondolero_id', user.id)
-    .eq('estado', 'activa')
-    .maybeSingle()
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle() as { data: { id: string; estado: string } | null }
 
-  if (existenteActiva) {
+  if (existente?.estado === 'activa') {
     redirect(`/gondolero/misiones/${campanaId}`)
   }
 
-  // Nueva inscripción (también para completada/abandonada → crea nueva fila)
-  const { error } = await admin
-    .from('participaciones')
-    .insert({
-      campana_id:            campanaId,
-      gondolero_id:          user.id,
-      estado:                'activa',
-      comercios_completados: 0,
-      puntos_acumulados:     0,
-    })
+  if (existente) {
+    // Ya existe fila (completada/abandonada) → UPDATE para reactivar
+    const { error } = await admin
+      .from('participaciones')
+      .update({
+        estado:                'activa',
+        comercios_completados: 0,
+        puntos_acumulados:     0,
+        joined_at:             new Date().toISOString(),
+      })
+      .eq('id', existente.id)
 
-  if (error) return { error: 'No pudimos inscribirte. Intentá de nuevo.' }
+    if (error) return { error: `No pudimos reactivar tu inscripción: ${error.message}` }
+  } else {
+    // Primera vez → INSERT
+    const { error } = await admin
+      .from('participaciones')
+      .insert({
+        campana_id:            campanaId,
+        gondolero_id:          user.id,
+        estado:                'activa',
+        comercios_completados: 0,
+        puntos_acumulados:     0,
+      })
+
+    if (error) return { error: `No pudimos inscribirte: ${error.message}` }
+  }
 
   revalidatePath('/gondolero/misiones')
   revalidatePath('/gondolero/campanas')

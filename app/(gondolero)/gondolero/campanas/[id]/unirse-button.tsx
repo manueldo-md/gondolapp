@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { XCircle } from 'lucide-react'
 import { unirseACampana } from './actions'
 import { AbandonarBtn } from '../../misiones/abandonar-btn'
+import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 
 const NIVEL_LABEL: Record<string, string> = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
 
@@ -92,9 +93,12 @@ export function UnirseButton({
   return (
     <div className="space-y-2">
       {error && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
-          <XCircle size={14} className="text-red-500 shrink-0" />
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
+          <div className="flex items-center gap-2">
+            <XCircle size={14} className="text-red-500 shrink-0" />
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+          <BotonReportarError errorTecnico={error} contexto="Unirse a campaña" />
         </div>
       )}
       <button
