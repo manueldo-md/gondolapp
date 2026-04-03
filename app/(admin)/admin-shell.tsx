@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -32,6 +32,12 @@ const NAV_SECTIONS = [
       { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
       { href: '/admin/comercios', label: 'Comercios', icon: Store },
       { href: '/admin/zonas',     label: 'Zonas',     icon: MapPin },
+    ],
+  },
+  {
+    label: 'Sistema',
+    items: [
+      { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
     ],
   },
 ]

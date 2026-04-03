@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { get, set } from 'idb-keyval'
 import { useOfflineQueue } from '@/lib/hooks'
-import { subirFoto, registrarFoto } from '@/app/(gondolero)/gondolero/captura/actions'
+import { subirFoto, registrarFoto, obtenerConfigCompresion } from '@/app/(gondolero)/gondolero/captura/actions'
 import { comprimirImagen } from '@/lib/utils'
 import { crearComercioOffline } from '@/app/(gondolero)/gondolero/comercios/nuevo/actions'
 
@@ -25,6 +25,7 @@ export function OfflineSyncBanner() {
 
   useEffect(() => {
     const handleOnline = async () => {
+      const cfg = await obtenerConfigCompresion()
       const pendientes = await obtenerPendientes()
       const comerciosPendientes: ComercioTempItem[] = (await get(COMERCIOS_PENDIENTES_KEY)) ?? []
       const totalPendientes = pendientes.length + comerciosPendientes.length
@@ -53,7 +54,7 @@ export function OfflineSyncBanner() {
           const res = await fetch(item.fotoBase64)
           const blobOriginal = await res.blob()
           console.log('[offline-sync] Antes:', (blobOriginal.size / 1024).toFixed(1), 'KB')
-          const blob = await comprimirImagen(blobOriginal, 0.25, 1024, 0.70)
+          const blob = await comprimirImagen(blobOriginal, cfg.maxSizeMB, cfg.maxWidth, cfg.calidad)
           console.log('[offline-sync] Después:', (blob.size / 1024).toFixed(1), 'KB')
           const formData = new FormData()
           formData.append('foto', new File([blob], 'foto.jpg', { type: 'image/jpeg' }))

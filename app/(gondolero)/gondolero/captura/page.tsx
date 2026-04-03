@@ -18,7 +18,8 @@ import {
   formatearPuntos,
 } from '@/lib/utils'
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
-import { registrarFoto, subirFoto, asegurarBloqueGenerico } from './actions'
+import { registrarFoto, subirFoto, asegurarBloqueGenerico, obtenerConfigCompresion } from './actions'
+import type { ConfigCompresion } from '@/lib/config'
 
 interface ComercioTempItem {
   tempId: string
@@ -343,6 +344,12 @@ function CapturaContent() {
   const [enviando, setEnviando] = useState(false)
   const [puntosGanados, setPuntosGanados] = useState(0)
   const [blurScore, setBlurScore] = useState<number | null>(null)
+  const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
+
+  // Cargar config de compresión al montar
+  useEffect(() => {
+    obtenerConfigCompresion().then(cfg => setComprConfig(cfg))
+  }, [])
 
   // Cargar datos de la campaña al montar
   useEffect(() => {
@@ -529,7 +536,7 @@ function CapturaContent() {
     setEnviando(true)
 
     console.log('[compresión] Antes:', (fotoBlob.size / 1024).toFixed(1), 'KB')
-    const blob = await comprimirImagen(fotoBlob, 0.25, 1024, 0.70)
+    const blob = await comprimirImagen(fotoBlob, comprConfig.maxSizeMB, comprConfig.maxWidth, comprConfig.calidad)
     console.log('[compresión] Después:', (blob.size / 1024).toFixed(1), 'KB')
     const storagePath = generarPathFoto(campana.id, getDeviceId())
     const timestampDispositivo = new Date().toISOString()

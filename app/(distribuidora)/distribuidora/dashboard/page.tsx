@@ -93,7 +93,7 @@ export default async function DashboardPage() {
   const campanas = campanasRaw ?? []
 
   // ── Preview de alertas ────────────────────────────────────────────────────
-  const alertasPreview: { tipo: string; descripcion: string }[] = []
+  const alertasPreview: { tipo: string; descripcion: string; href: string }[] = []
   let alertasTotal = 0
 
   if (gondoleroIds.length > 0) {
@@ -112,7 +112,11 @@ export default async function DashboardPage() {
         vistos.add(fo.comercio_id)
         alertasTotal++
         if (alertasPreview.length < 3) {
-          alertasPreview.push({ tipo: '🔴 Quiebre de stock', descripcion: fo.comercios?.nombre ?? 'Comercio' })
+          alertasPreview.push({
+            tipo: '🔴 Quiebre de stock',
+            descripcion: fo.comercios?.nombre ?? 'Comercio',
+            href: `/distribuidora/gondolas?comercio_id=${fo.comercio_id}&declaracion=producto_no_encontrado`,
+          })
         }
       }
     }
@@ -126,7 +130,11 @@ export default async function DashboardPage() {
     const inactivosCnt = gondoleroIds.filter(id => !activoSet.has(id)).length
     alertasTotal += inactivosCnt
     if (inactivosCnt > 0 && alertasPreview.length < 3) {
-      alertasPreview.push({ tipo: '🟡 Gondolero inactivo', descripcion: `${inactivosCnt} sin actividad en 14 días` })
+      alertasPreview.push({
+        tipo: '🟡 Gondolero inactivo',
+        descripcion: `${inactivosCnt} sin actividad en 14 días`,
+        href: '/distribuidora/gondoleros',
+      })
     }
   }
 
@@ -139,7 +147,13 @@ export default async function DashboardPage() {
   )
   alertasTotal += campanasRiesgo.length
   for (const c of campanasRiesgo) {
-    if (alertasPreview.length < 3) alertasPreview.push({ tipo: '🟠 Campaña en riesgo', descripcion: c.nombre })
+    if (alertasPreview.length < 3) {
+      alertasPreview.push({
+        tipo: '🟠 Campaña en riesgo',
+        descripcion: c.nombre,
+        href: `/distribuidora/campanas/${c.id}`,
+      })
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -231,14 +245,14 @@ export default async function DashboardPage() {
             {alertasPreview.map((a, i) => (
               <Link
                 key={i}
-                href="/distribuidora/alertas"
-                className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+                href={a.href}
+                className="flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 <div>
                   <p className="text-[11px] font-semibold text-gray-400">{a.tipo}</p>
                   <p className="text-sm text-gray-800 mt-0.5">{a.descripcion}</p>
                 </div>
-                <ChevronRight size={15} className="text-gray-300 shrink-0" />
+                <ChevronRight size={15} className="text-gray-400 shrink-0" />
               </Link>
             ))}
           </div>

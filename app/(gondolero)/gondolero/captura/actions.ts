@@ -3,6 +3,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import { getConfigCompresion, type ConfigCompresion } from '@/lib/config'
+
+export async function obtenerConfigCompresion(): Promise<ConfigCompresion> {
+  return getConfigCompresion()
+}
 
 export interface RegistrarFotoParams {
   campanaId: string
