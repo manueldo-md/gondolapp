@@ -217,7 +217,7 @@ function PasoCamara({
           gamma,
           beta,
           gammaOk: Math.abs(gamma) <= 20,          // ±20° tolerancia horizontal
-          betaOk:  beta >= 45 && beta <= 115,       // rango vertical aceptable
+          betaOk:  beta >= 60 && beta <= 100,       // rango vertical aceptable (±20° desde 80°)
         })
       }
       window.addEventListener('deviceorientation', handler)
@@ -250,7 +250,7 @@ function PasoCamara({
       const previewUrl = URL.createObjectURL(blob)
 
       const gammaFueraRango = Math.abs(gammaAlCapturar) > 25
-      const betaFueraRango  = betaAlCapturar < 45 || betaAlCapturar > 115
+      const betaFueraRango  = betaAlCapturar < 60 || betaAlCapturar > 100
 
       if (gyroDisponible && (gammaFueraRango || betaFueraRango)) {
         const mensaje =
@@ -401,8 +401,8 @@ function PasoCamara({
           const estaOk = inclinacion.gammaOk && inclinacion.betaOk
           // X: gamma — desplazamiento horizontal (±20° → zona segura, clamp ±40px)
           const dx = Math.max(-40, Math.min(40, (inclinacion.gamma / 30) * 40))
-          // Y: beta  — desplazamiento vertical (center=80°, rango 45-115, clamp ±40px)
-          const dy = Math.max(-40, Math.min(40, ((inclinacion.beta - 80) / 35) * 40))
+          // Y: beta  — desplazamiento vertical (center=80°, rango 60-100, clamp ±40px)
+          const dy = Math.max(-40, Math.min(40, ((inclinacion.beta - 80) / 20) * 40))
 
           const msgNivel = !inclinacion.gammaOk && !inclinacion.betaOk
             ? 'Corregí la posición'
