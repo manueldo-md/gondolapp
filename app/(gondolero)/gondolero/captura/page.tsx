@@ -20,6 +20,7 @@ import {
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
 import { registrarFoto, subirFoto, asegurarBloqueGenerico, obtenerConfigCompresion } from './actions'
 import type { ConfigCompresion } from '@/lib/config'
+import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 
 interface ComercioTempItem {
   tempId: string
@@ -662,6 +663,7 @@ function CapturaContent() {
           className="px-6 py-3 bg-gondo-verde-400 text-white rounded-xl font-semibold">
           Volver
         </button>
+        <BotonReportarError errorTecnico={errorGlobal} />
       </div>
     )
   }

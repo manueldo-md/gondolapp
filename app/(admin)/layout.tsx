@@ -22,9 +22,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   if (!profile || profile.tipo_actor !== 'admin') redirect('/auth')
 
-  const [{ count: fotosPendientes }, { count: canjesPendientes }] = await Promise.all([
+  const [
+    { count: fotosPendientes },
+    { count: canjesPendientes },
+    { count: erroresNuevos },
+  ] = await Promise.all([
     admin.from('fotos').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
     admin.from('canjes').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+    admin.from('errores_reportados').select('*', { count: 'exact', head: true }).eq('estado', 'nuevo'),
   ])
 
   return (
@@ -32,6 +37,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       nombre={profile.nombre ?? 'Admin'}
       fotosPendientes={fotosPendientes ?? 0}
       canjesPendientes={canjesPendientes ?? 0}
+      erroresNuevos={erroresNuevos ?? 0}
     >
       {children}
     </AdminShell>

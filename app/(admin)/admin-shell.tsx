@@ -5,52 +5,69 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-const NAV_SECTIONS = [
-  {
-    label: null,
-    items: [
-      { href: '/admin/tablero',  label: 'Tablero', icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: 'Actores',
-    items: [
-      { href: '/admin/usuarios',       label: 'Usuarios',       icon: Users },
-      { href: '/admin/distribuidoras', label: 'Distribuidoras', icon: Truck },
-      { href: '/admin/marcas',         label: 'Marcas',         icon: Tag },
-    ],
-  },
-  {
-    label: 'Operaciones',
-    items: [
-      { href: '/admin/fotos',     label: 'Fotos',     icon: Image },
-      { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone },
-      { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
-      { href: '/admin/comercios', label: 'Comercios', icon: Store },
-      { href: '/admin/zonas',     label: 'Zonas',     icon: MapPin },
-    ],
-  },
-  {
-    label: 'Sistema',
-    items: [
-      { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
-    ],
-  },
-]
+type NavItem = {
+  href: string
+  label: string
+  icon: React.ElementType
+  badge?: number
+}
+
+type NavSection = {
+  label: string | null
+  items: NavItem[]
+}
+
+function buildNavSections(erroresNuevos: number): NavSection[] {
+  return [
+    {
+      label: null,
+      items: [
+        { href: '/admin/tablero', label: 'Tablero', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'Actores',
+      items: [
+        { href: '/admin/usuarios',       label: 'Usuarios',       icon: Users },
+        { href: '/admin/distribuidoras', label: 'Distribuidoras', icon: Truck },
+        { href: '/admin/marcas',         label: 'Marcas',         icon: Tag },
+      ],
+    },
+    {
+      label: 'Operaciones',
+      items: [
+        { href: '/admin/fotos',     label: 'Fotos',     icon: Image },
+        { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone },
+        { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
+        { href: '/admin/comercios', label: 'Comercios', icon: Store },
+        { href: '/admin/zonas',     label: 'Zonas',     icon: MapPin },
+      ],
+    },
+    {
+      label: 'Sistema',
+      items: [
+        { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
+        { href: '/admin/errores',       label: 'Errores',       icon: AlertTriangle, badge: erroresNuevos },
+      ],
+    },
+  ]
+}
 
 export function AdminShell({
   nombre,
   fotosPendientes,
   canjesPendientes,
+  erroresNuevos = 0,
   children,
 }: {
   nombre: string
   fotosPendientes: number
   canjesPendientes: number
+  erroresNuevos?: number
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -63,9 +80,11 @@ export function AdminShell({
     router.refresh()
   }
 
+  const navSections = buildNavSections(erroresNuevos)
+
   const Sidebar = ({ mobile }: { mobile?: boolean }) => (
     <nav className={`flex flex-col gap-0.5 ${mobile ? 'p-4' : 'p-3'}`}>
-      {NAV_SECTIONS.map((section, si) => (
+      {navSections.map((section, si) => (
         <div key={si} className={si > 0 ? 'mt-4' : ''}>
           {section.label && (
             <p className="px-3 mb-1 text-[10px] font-semibold text-white/30 uppercase tracking-wider">
@@ -88,7 +107,12 @@ export function AdminShell({
               >
                 <Icon size={17} />
                 <span>{item.label}</span>
-                {active && <ChevronRight size={14} className="ml-auto opacity-50" />}
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
+                    {item.badge}
+                  </span>
+                )}
+                {active && !item.badge && <ChevronRight size={14} className="ml-auto opacity-50" />}
               </Link>
             )
           })}

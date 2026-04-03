@@ -62,38 +62,29 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
     }
   }
 
-  // Verificar participación existente
-  const { data: existente } = await admin
+  // Verificar si ya hay participación activa (bloquear re-inscripción paralela)
+  const { data: existenteActiva } = await admin
     .from('participaciones')
-    .select('id, estado')
+    .select('id')
     .eq('campana_id', campanaId)
     .eq('gondolero_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle() as { data: { id: string; estado: string } | null }
+    .eq('estado', 'activa')
+    .maybeSingle()
 
-  // Si ya está activo, redirigir directo a misiones
-  if (existente?.estado === 'activa') {
+  if (existenteActiva) {
     redirect(`/gondolero/misiones/${campanaId}`)
   }
 
-  // Si completó o abandonó: volver a activar la participación
-  if (existente?.estado === 'completada' || existente?.estado === 'abandonada') {
-    const { error } = await admin
-      .from('participaciones')
-      .update({ estado: 'activa', comercios_completados: 0 })
-      .eq('id', existente.id)
-
-    if (error) return { error: 'No pudimos volver a inscribirte. Intentá de nuevo.' }
-    revalidatePath('/gondolero/misiones')
-    revalidatePath('/gondolero/campanas')
-    redirect('/gondolero/misiones')
-  }
-
-  // Nueva inscripción
+  // Nueva inscripción (también para completada/abandonada → crea nueva fila)
   const { error } = await admin
     .from('participaciones')
-    .insert({ campana_id: campanaId, gondolero_id: user.id })
+    .insert({
+      campana_id:            campanaId,
+      gondolero_id:          user.id,
+      estado:                'activa',
+      comercios_completados: 0,
+      puntos_acumulados:     0,
+    })
 
   if (error) return { error: 'No pudimos inscribirte. Intentá de nuevo.' }
 

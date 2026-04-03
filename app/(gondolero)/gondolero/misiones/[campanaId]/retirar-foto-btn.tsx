@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
 import { retirarFoto } from '../actions'
+import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 
 export function RetirarFotoBtn({ fotoId }: { fotoId: string }) {
   const [mostrando, setMostrando] = useState(false)
@@ -43,7 +44,10 @@ export function RetirarFotoBtn({ fotoId }: { fotoId: string }) {
         </ul>
 
         {error && (
-          <p className="text-xs font-medium text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+          <div className="bg-red-50 rounded-lg px-3 py-2">
+            <p className="text-xs font-medium text-red-600">{error}</p>
+            <BotonReportarError errorTecnico={error} />
+          </div>
         )}
 
         <div className="flex gap-3 pt-1">
