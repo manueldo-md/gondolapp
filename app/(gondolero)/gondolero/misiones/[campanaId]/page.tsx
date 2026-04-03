@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Star, Clock, Camera, CheckCircle2, MapPin, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Star, Clock, Camera, CheckCircle2, MapPin, ChevronRight, ImageOff } from 'lucide-react'
 import { AbandonarBtn } from '../abandonar-btn'
 import { RetirarFotoBtn } from './retirar-foto-btn'
 import {
@@ -20,7 +21,9 @@ type FotoRow = {
   puntos_otorgados: number
   created_at: string
   comercio_id: string
+  storage_path: string | null
   comercio: { nombre: string } | null
+  signedUrl?: string | null
 }
 
 const ESTADO_FOTO: Record<string, { label: string; color: string }> = {
@@ -42,6 +45,11 @@ export default async function MisionDetallePage({
   params: { campanaId: string }
 }) {
   const supabase = await createClient()
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -81,7 +89,7 @@ export default async function MisionDetallePage({
 
     supabase
       .from('fotos')
-      .select('id, estado, declaracion, puntos_otorgados, created_at, comercio_id, comercio:comercios ( nombre )')
+      .select('id, estado, declaracion, puntos_otorgados, created_at, comercio_id, storage_path, comercio:comercios ( nombre )')
       .eq('campana_id', params.campanaId)
       .eq('gondolero_id', user.id)
       .order('created_at', { ascending: false })
@@ -95,7 +103,16 @@ export default async function MisionDetallePage({
     redirect('/gondolero/misiones')
   }
 
-  const fotos = (fotosRes.data as FotoRow[] | null) ?? []
+  const fotosRaw = (fotosRes.data as FotoRow[] | null) ?? []
+  const fotos: FotoRow[] = await Promise.all(
+    fotosRaw.map(async (foto) => {
+      if (!foto.storage_path) return { ...foto, signedUrl: null }
+      const { data: signed } = await admin.storage
+        .from('fotos-gondola')
+        .createSignedUrl(foto.storage_path, 3600)
+      return { ...foto, signedUrl: signed?.signedUrl ?? null }
+    })
+  )
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin as string) : null
   const progreso = calcularPorcentaje(
     participacion.comercios_completados,
@@ -206,8 +223,10 @@ export default async function MisionDetallePage({
             <div className="space-y-3">
               {fotosPend.map(foto => (
                 <div key={foto.id} className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                    <Camera size={14} className="text-amber-400" />
+                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 mt-0.5 bg-gray-100 flex items-center justify-center">
+                    {foto.signedUrl
+                      ? <img src={foto.signedUrl} alt="" className="w-full h-full object-cover" /> // eslint-disable-line @next/next/no-img-element
+                      : <ImageOff size={14} className="text-gray-300" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{foto.comercio?.nombre ?? 'Comercio'}</p>
@@ -232,8 +251,10 @@ export default async function MisionDetallePage({
             <div className="space-y-3">
               {fotosApro.map(foto => (
                 <div key={foto.id} className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                    <Camera size={14} className="text-green-500" />
+                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 mt-0.5 bg-gray-100 flex items-center justify-center">
+                    {foto.signedUrl
+                      ? <img src={foto.signedUrl} alt="" className="w-full h-full object-cover" /> // eslint-disable-line @next/next/no-img-element
+                      : <ImageOff size={14} className="text-gray-300" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{foto.comercio?.nombre ?? 'Comercio'}</p>
@@ -260,8 +281,10 @@ export default async function MisionDetallePage({
             <div className="space-y-3">
               {fotosRech.map(foto => (
                 <div key={foto.id} className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                    <Camera size={14} className="text-red-400" />
+                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 mt-0.5 bg-gray-100 flex items-center justify-center">
+                    {foto.signedUrl
+                      ? <img src={foto.signedUrl} alt="" className="w-full h-full object-cover" /> // eslint-disable-line @next/next/no-img-element
+                      : <ImageOff size={14} className="text-gray-300" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{foto.comercio?.nombre ?? 'Comercio'}</p>

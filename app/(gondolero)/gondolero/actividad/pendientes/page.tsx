@@ -2,17 +2,19 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Camera } from 'lucide-react'
+import { ArrowLeft, Camera, ImageOff } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import { RetirarFotoBtn } from '../../misiones/[campanaId]/retirar-foto-btn'
 
-type FotoPendiente = {
+type FotoPendienteRaw = {
   id: string
-  url: string
+  storage_path: string | null
   created_at: string
   comercio: { nombre: string } | null
   campana: { nombre: string; id: string } | null
 }
+
+type FotoPendiente = FotoPendienteRaw & { signedUrl: string | null }
 
 export default async function FotosPendientesPage() {
   const supabase = await createClient()
@@ -27,12 +29,22 @@ export default async function FotosPendientesPage() {
 
   const { data } = await admin
     .from('fotos')
-    .select('id, url, created_at, comercio:comercios(nombre), campana:campanas(id, nombre)')
+    .select('id, storage_path, created_at, comercio:comercios(nombre), campana:campanas(id, nombre)')
     .eq('gondolero_id', user.id)
     .in('estado', ['pendiente', 'en_revision'])
     .order('created_at', { ascending: false })
 
-  const fotos = (data ?? []) as unknown as FotoPendiente[]
+  const fotosRaw = (data ?? []) as unknown as FotoPendienteRaw[]
+
+  const fotos: FotoPendiente[] = await Promise.all(
+    fotosRaw.map(async (foto) => {
+      if (!foto.storage_path) return { ...foto, signedUrl: null }
+      const { data: signed } = await admin.storage
+        .from('fotos-gondola')
+        .createSignedUrl(foto.storage_path, 3600)
+      return { ...foto, signedUrl: signed?.signedUrl ?? null }
+    })
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -70,18 +82,16 @@ export default async function FotosPendientesPage() {
             {fotos.map(foto => (
               <div key={foto.id} className="flex items-center gap-3 p-4">
                 {/* Thumbnail */}
-                <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100">
-                  {foto.url ? (
+                <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center">
+                  {foto.signedUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={foto.url}
+                      src={foto.signedUrl}
                       alt="Foto de góndola"
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Camera size={20} className="text-gray-300" />
-                    </div>
+                    <ImageOff size={20} className="text-gray-300" />
                   )}
                 </div>
 
