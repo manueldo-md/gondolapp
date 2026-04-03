@@ -245,12 +245,13 @@ export function generarPathFachada(comercioId: string): string {
 
 /**
  * Comprime una imagen antes de subirla
- * Target: < 1.2 MB para fotos de góndola
+ * Target: ~0.25 MB para fotos de góndola (óptimo para IA Vertex Vision)
  */
 export async function comprimirImagen(
   blob: Blob,
-  maxSizeMB: number = 1.2,
-  maxWidth: number = 1920
+  maxSizeMB: number = 0.25,
+  maxWidth: number = 1024,
+  calidadInicial: number = 0.70
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -294,7 +295,7 @@ export async function comprimirImagen(
         )
       }
 
-      comprimir(0.85)
+      comprimir(calidadInicial)
     }
 
     img.onerror = () => reject(new Error('Error al cargar la imagen'))

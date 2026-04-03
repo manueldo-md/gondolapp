@@ -53,7 +53,7 @@ export function OfflineSyncBanner() {
           const res = await fetch(item.fotoBase64)
           const blobOriginal = await res.blob()
           console.log('[offline-sync] Antes:', (blobOriginal.size / 1024).toFixed(1), 'KB')
-          const blob = await comprimirImagen(blobOriginal, 1.2, 1920)
+          const blob = await comprimirImagen(blobOriginal, 0.25, 1024, 0.70)
           console.log('[offline-sync] Después:', (blob.size / 1024).toFixed(1), 'KB')
           const formData = new FormData()
           formData.append('foto', new File([blob], 'foto.jpg', { type: 'image/jpeg' }))
