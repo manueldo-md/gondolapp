@@ -126,7 +126,7 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
 
   // ── Acción masiva ─────────────────────────────────────────────────────────────
 
-  function ejecutarAccionMasiva(accion: 'aprobada' | 'rechazada' | 'archivada') {
+  function ejecutarAccionMasiva(accion: 'aprobada' | 'rechazada' | 'archivada' | 'pendiente') {
     const ids = Array.from(seleccionados)
     startMasiva(async () => {
       const { procesadas, errores } = await accionMasiva(ids, accion)
@@ -181,6 +181,14 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
           </button>
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              disabled={isPendingMasiva}
+              onClick={() => ejecutarAccionMasiva('pendiente')}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 text-xs font-semibold rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors"
+            >
+              {isPendingMasiva ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+              Volver a pendiente
+            </button>
             <button
               disabled={isPendingMasiva}
               onClick={() => ejecutarAccionMasiva('aprobada')}

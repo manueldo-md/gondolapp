@@ -130,7 +130,7 @@ export async function rechazarFotoAdmin(fotoId: string) {
 
 export async function accionMasiva(
   fotoIds: string[],
-  accion: 'aprobada' | 'rechazada' | 'archivada'
+  accion: 'aprobada' | 'rechazada' | 'archivada' | 'pendiente'
 ): Promise<{ procesadas: number; errores: number }> {
   if (!fotoIds.length) return { procesadas: 0, errores: 0 }
   const admin = await getAdmin()
@@ -145,6 +145,8 @@ export async function accionMasiva(
     query = query.neq('estado', 'archivada').neq('estado', 'aprobada')
   } else if (accion === 'archivada') {
     query = query.neq('estado', 'aprobada')
+  } else if (accion === 'pendiente') {
+    query = query.neq('estado', 'pendiente') // excluir las que ya están pendientes
   }
 
   const { data: fotosRaw } = await query
@@ -156,6 +158,12 @@ export async function accionMasiva(
 
   if (accion === 'archivada') {
     const { error } = await admin.from('fotos').update({ estado: 'archivada' }).in('id', idsElegibles)
+    revalidatePath('/admin/fotos')
+    return error ? { procesadas: 0, errores: idsElegibles.length } : { procesadas: idsElegibles.length, errores: 0 }
+  }
+
+  if (accion === 'pendiente') {
+    const { error } = await admin.from('fotos').update({ estado: 'pendiente' }).in('id', idsElegibles)
     revalidatePath('/admin/fotos')
     return error ? { procesadas: 0, errores: idsElegibles.length } : { procesadas: idsElegibles.length, errores: 0 }
   }
