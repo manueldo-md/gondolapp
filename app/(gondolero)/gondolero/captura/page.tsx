@@ -528,7 +528,9 @@ function CapturaContent() {
 
     setEnviando(true)
 
-    const blob = await comprimirImagen(fotoBlob)
+    console.log('[compresión] Antes:', (fotoBlob.size / 1024).toFixed(1), 'KB')
+    const blob = await comprimirImagen(fotoBlob, 1.2, 1920)
+    console.log('[compresión] Después:', (blob.size / 1024).toFixed(1), 'KB')
     const storagePath = generarPathFoto(campana.id, getDeviceId())
     const timestampDispositivo = new Date().toISOString()
     const lat = gps.posicion?.lat ?? 0
