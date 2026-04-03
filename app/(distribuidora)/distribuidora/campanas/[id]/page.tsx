@@ -22,9 +22,11 @@ interface FotoRow {
   declaracion: DeclaracionFoto
   estado: EstadoFoto
   precio_detectado: number | null
+  precio_confirmado: number | null
   created_at: string
   gondolero: { nombre: string | null; alias: string | null } | null
   comercio:  { nombre: string; direccion: string | null } | null
+  bloque:    { instruccion: string | null } | null
   signedUrl: string | null
 }
 
@@ -117,7 +119,7 @@ export default async function CampanaDetallePage({
   const tab = searchParams.tab ?? ''
   let query = admin
     .from('fotos')
-    .select('id, url, storage_path, declaracion, estado, precio_detectado, created_at, gondolero:profiles(nombre, alias), comercio:comercios(nombre, direccion)')
+    .select('id, url, storage_path, declaracion, estado, precio_detectado, precio_confirmado, created_at, gondolero:profiles(nombre, alias), comercio:comercios(nombre, direccion), bloque:bloques_foto(instruccion)')
     .eq('campana_id', params.id)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -370,10 +372,15 @@ export default async function CampanaDetallePage({
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
-                  {f.precio_detectado != null
-                    ? <span className="font-medium text-gray-600">${f.precio_detectado}</span>
-                    : <span />
-                  }
+                  {f.precio_confirmado != null && (
+                    <span className="text-xs font-medium text-gray-600">
+                      💲 ${f.precio_confirmado}
+                      {(f.bloque as { instruccion: string | null } | null)?.instruccion && (
+                        <span className="text-gray-400 font-normal"> · {(f.bloque as { instruccion: string | null }).instruccion}</span>
+                      )}
+                    </span>
+                  )}
+                  {f.precio_confirmado == null && <span />}
                   <div className="flex items-center gap-1">
                     <Clock size={11} />
                     <span>{formatearFechaHora(f.created_at)}</span>

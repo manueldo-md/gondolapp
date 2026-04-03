@@ -20,7 +20,7 @@ export default async function FotosAdminPage({
   let query = admin
     .from('fotos')
     .select(`
-      id, url, storage_path, estado, declaracion, puntos_otorgados, created_at,
+      id, url, storage_path, estado, declaracion, puntos_otorgados, precio_detectado, precio_confirmado, created_at,
       gondolero:profiles!gondolero_id(nombre),
       comercio:comercios(nombre),
       campana:campanas(nombre)
@@ -70,6 +70,8 @@ export default async function FotosAdminPage({
     comercioNombre:  Array.isArray(f.comercio)  ? f.comercio[0]?.nombre  : f.comercio?.nombre,
     campanaNombre:   Array.isArray(f.campana)   ? f.campana[0]?.nombre   : f.campana?.nombre,
     createdAt:       f.created_at,
+    precioConfirmado: f.precio_confirmado ?? null,
+    precioDetectado:  f.precio_detectado ?? null,
   }))
 
   return (

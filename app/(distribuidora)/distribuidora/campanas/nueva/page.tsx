@@ -12,6 +12,7 @@ export default function NuevaCampanaPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [zonas, setZonas] = useState<{ id: string; nombre: string; tipo: string }[]>([])
   const [zonasSeleccionadas, setZonasSeleccionadas] = useState<string[]>([])
+  const [solicitarPrecio, setSolicitarPrecio] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -42,6 +43,7 @@ export default function NuevaCampanaPage() {
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => fd.set(k, v))
     zonasSeleccionadas.forEach(id => fd.append('zona_ids', id))
+    fd.set('solicitar_precio', solicitarPrecio ? 'true' : 'false')
 
     startTransition(async () => {
       const result = await crearCampanaInterna(fd)
@@ -112,6 +114,20 @@ export default function NuevaCampanaPage() {
               <option value="ninguno">Sin productos (stands, comercios, etc.)</option>
             </select>
           </div>
+
+          {/* Solicitar precio */}
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={solicitarPrecio}
+              onChange={e => setSolicitarPrecio(e.target.checked)}
+              className="w-4 h-4 accent-gondo-amber-400"
+            />
+            <div>
+              <span className="text-sm font-medium text-gray-700">Pedir precio al gondolero</span>
+              <p className="text-xs text-gray-400 mt-0.5">El gondolero deberá ingresar el precio cuando encuentre el producto</p>
+            </div>
+          </label>
 
           {/* Puntos */}
           <div>

@@ -109,6 +109,8 @@ interface CampanaData {
   puntos_por_foto: number
   primerBloqueId: string | null
   tipoContenido: string
+  bloqueInstruccion: string
+  bloqueSolicitarPrecio: boolean
 }
 
 // ── Componente cámara (ciclo de vida propio) ──────────────────────────────────
@@ -547,7 +549,7 @@ function CapturaContent() {
 
       supabase
         .from('campanas')
-        .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido )')
+        .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio )')
         .eq('id', campanaId)
         .eq('estado', 'activa')
         .single()
@@ -563,13 +565,15 @@ function CapturaContent() {
           } else {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const d = data as any
-            const bloques = d.bloques_foto as { id: string; tipo_contenido: string }[]
+            const bloques = d.bloques_foto as { id: string; tipo_contenido: string; instruccion: string | null; solicitar_precio: boolean | null }[]
             const campanaData: CampanaData = {
               id: d.id,
               nombre: d.nombre,
               puntos_por_foto: d.puntos_por_foto,
               primerBloqueId: bloques?.[0]?.id ?? null,
               tipoContenido: bloques?.[0]?.tipo_contenido ?? 'propios',
+              bloqueInstruccion: bloques?.[0]?.instruccion ?? 'el producto',
+              bloqueSolicitarPrecio: bloques?.[0]?.solicitar_precio ?? false,
             }
             setCampana(campanaData)
             // Guardar en caché para uso offline futuro
@@ -775,7 +779,7 @@ function CapturaContent() {
         url,
         lat, lng,
         declaracion: declaracionFinal!,
-        precioDetectado: precio ? parseFloat(precio) : null,
+        precioConfirmado: precio ? parseFloat(precio) : null,
         timestampDispositivo,
         deviceId: getDeviceId(),
         puntosAcreditar: campana.puntos_por_foto,
@@ -1258,23 +1262,24 @@ function CapturaContent() {
               ))}
             </div>
 
-            {/* Precio opcional */}
-            {declaracion === 'producto_presente' && (
+            {/* Precio — solo si el bloque lo requiere */}
+            {declaracion === 'producto_presente' && campana?.bloqueSolicitarPrecio && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Precio observado <span className="text-gray-400 font-normal">(opcional)</span>
+                  ¿A cuánto está {campana.bloqueInstruccion}?
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
                   <input
                     type="number"
-                    inputMode="decimal"
+                    inputMode="numeric"
                     value={precio}
                     onChange={e => setPrecio(e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0"
                     className="w-full pl-7 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
                   />
                 </div>
+                <p className="text-xs text-gray-400 mt-1.5">Ingresá el precio que ves en la góndola</p>
               </div>
             )}
 

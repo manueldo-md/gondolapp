@@ -19,6 +19,8 @@ export interface FotoItem {
   comercioNombre: string | null
   campanaNombre: string | null
   createdAt: string
+  precioConfirmado: number | null
+  precioDetectado: number | null
 }
 
 interface Toast {
@@ -413,6 +415,19 @@ function FotoCard({
           <Clock size={10} />
           <span>{tiempoRelativo(foto.createdAt)}</span>
         </div>
+        {(foto.precioConfirmado != null || foto.precioDetectado != null) && (
+          <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
+            {foto.precioConfirmado != null && (
+              <span className="font-medium text-gray-700">💲 ${foto.precioConfirmado}</span>
+            )}
+            {foto.precioDetectado != null && (
+              <span className="text-gray-400">(IA: ${foto.precioDetectado})</span>
+            )}
+            {foto.precioDetectado === null && foto.precioConfirmado != null && (
+              <span className="text-gray-400 text-[10px]">IA pendiente</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

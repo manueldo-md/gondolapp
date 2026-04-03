@@ -67,11 +67,13 @@ export async function crearCampana(formData: FormData) {
   const instruccionBloque = formData.get('instruccion_bloque') as string
   const tipoContenido = (formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios'
 
+  const solicitarPrecio = formData.get('solicitar_precio') === 'true'
   await admin.from('bloques_foto').insert({
-    campana_id:    campanaId,
-    orden:         1,
-    instruccion:   instruccionBloque || (formData.get('instruccion') as string) || '',
-    tipo_contenido: tipoContenido,
+    campana_id:      campanaId,
+    orden:           1,
+    instruccion:     instruccionBloque || (formData.get('instruccion') as string) || '',
+    tipo_contenido:  tipoContenido,
+    solicitar_precio: solicitarPrecio,
   })
 
   // Descontar tokens

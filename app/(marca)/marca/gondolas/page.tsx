@@ -15,8 +15,10 @@ interface FotoRow {
   declaracion: DeclaracionFoto
   estado: EstadoFoto
   created_at: string
+  precio_confirmado: number | null
   comercio: { nombre: string } | null
   gondolero: { nombre: string | null; alias: string | null } | null
+  bloque: { instruccion: string | null } | null
   signedUrl: string | null
 }
 
@@ -109,7 +111,7 @@ export default async function GondolasPage({
   // Query de fotos
   let query = admin
     .from('fotos')
-    .select('id, storage_path, url, declaracion, estado, created_at, comercio:comercios(nombre), gondolero:profiles(nombre, alias)')
+    .select('id, storage_path, url, declaracion, estado, created_at, precio_confirmado, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
     .order('created_at', { ascending: false })
     .limit(100)
 
@@ -197,6 +199,14 @@ export default async function GondolasPage({
                     ?? (f.gondolero as { nombre: string | null; alias: string | null } | null)?.nombre
                     ?? '—'}
                 </p>
+                {(f.precio_confirmado != null) && (
+                  <p className="text-[10px] text-gray-500 font-medium mt-0.5">
+                    💲 ${f.precio_confirmado}
+                    {(f.bloque as { instruccion: string | null } | null)?.instruccion && (
+                      <span className="text-gray-400 font-normal"> · {(f.bloque as { instruccion: string | null }).instruccion}</span>
+                    )}
+                  </p>
+                )}
                 <p className="text-[10px] text-gray-400">
                   {formatearFechaHora(f.created_at)}
                 </p>

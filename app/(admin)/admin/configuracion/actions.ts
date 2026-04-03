@@ -37,3 +37,29 @@ export async function guardarConfigCompresion(
   revalidatePath('/admin/configuracion')
   return {}
 }
+
+export async function guardarConfiguracion(clave: string, valor: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  const { error } = await admin
+    .from('configuracion')
+    .update({
+      valor,
+      updated_at: new Date().toISOString(),
+      updated_by: user.id,
+    })
+    .eq('clave', clave)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/configuracion')
+  return { ok: true }
+}

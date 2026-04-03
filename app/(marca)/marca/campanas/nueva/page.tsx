@@ -16,6 +16,7 @@ interface Step1 {
   instruccion_bloque: string
   tipo_contenido: TipoContenidoBloque
   puntos_por_foto: string
+  solicitar_precio: boolean
 }
 
 interface Step2 {
@@ -67,6 +68,7 @@ export default function NuevaCampanaPage() {
     instruccion_bloque: '',
     tipo_contenido:     'propios',
     puntos_por_foto:    '5',
+    solicitar_precio:   false,
   })
 
   const [s2, setS2] = useState<Step2>({
@@ -83,7 +85,10 @@ export default function NuevaCampanaPage() {
   const handleSubmit = () => {
     setErrorMsg(null)
     const fd = new FormData()
-    Object.entries(s1).forEach(([k, v]) => fd.set(k, v))
+    Object.entries(s1).forEach(([k, v]) => {
+      if (k !== 'solicitar_precio') fd.set(k, v as string)
+    })
+    fd.set('solicitar_precio', s1.solicitar_precio ? 'true' : 'false')
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
     zonasSeleccionadas.forEach(id => fd.append('zona_ids', id))
 
@@ -221,6 +226,20 @@ export default function NuevaCampanaPage() {
                 ))}
               </div>
             </div>
+
+            {/* Solicitar precio */}
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={s1.solicitar_precio}
+                onChange={e => setS1(p => ({ ...p, solicitar_precio: e.target.checked }))}
+                className="accent-gondo-indigo-600 w-4 h-4"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">Pedir precio al gondolero</span>
+                <p className="text-xs text-gray-400 mt-0.5">El gondolero deberá ingresar el precio cuando encuentre el producto</p>
+              </div>
+            </label>
 
             {/* Puntos por foto */}
             <div>
