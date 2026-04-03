@@ -127,6 +127,13 @@ function PasoCamara({
   const [camError, setCamError] = useState<string | null>(null)
   const [capturando, setCapturando] = useState(false)
   const [modoDesktop, setModoDesktop] = useState(false)
+  const [streamKey, setStreamKey] = useState(0) // incrementar para reiniciar la cámara
+
+  // ── Giroscopio ──────────────────────────────────────────────────────────────
+  const [gyroDisponible, setGyroDisponible] = useState(false)
+  const [inclinacion, setInclinacion] = useState<{ gamma: number; inclinado: boolean } | null>(null)
+  const [capturaInclinada, setCapturaInclinada] = useState(false)
+  const [pendingCaptura, setPendingCaptura] = useState<{ blob: Blob; previewUrl: string } | null>(null)
 
   // Cuando el estado pasa a 'activo', el <video> ya está en el DOM — conectar el stream
   useEffect(() => {
@@ -136,14 +143,13 @@ function PasoCamara({
     }
   }, [camEstado])
 
+  // Iniciar/reiniciar stream de cámara (streamKey como trigger de reinicio)
   useEffect(() => {
     let cancelado = false
 
     const conectarStream = (stream: MediaStream) => {
       if (cancelado) { stream.getTracks().forEach(t => t.stop()); return }
       streamRef.current = stream
-      // No tocar videoRef aquí — el elemento puede no estar en el DOM todavía.
-      // El useEffect de arriba se encarga de conectarlo cuando camEstado cambia a 'activo'.
       setCamEstado('activo')
     }
 
@@ -175,6 +181,40 @@ function PasoCamara({
       cancelado = true
       streamRef.current?.getTracks().forEach(t => t.stop())
     }
+  }, [streamKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escuchar orientación del dispositivo (giroscopio)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.DeviceOrientationEvent) return
+
+    let limpieza: (() => void) | null = null
+
+    const iniciarGiroscopio = async () => {
+      try {
+        // iOS 13+ requiere permiso explícito — solo funciona desde gesto de usuario
+        type DevOrientConPermiso = typeof DeviceOrientationEvent & {
+          requestPermission?: () => Promise<PermissionState>
+        }
+        const DevOrient = DeviceOrientationEvent as DevOrientConPermiso
+        if (typeof DevOrient.requestPermission === 'function') {
+          const perm = await DevOrient.requestPermission()
+          if (perm !== 'granted') return
+        }
+      } catch {
+        return // iOS sin gesto de usuario: saltar silenciosamente, sin bloquear
+      }
+
+      const handler = (e: DeviceOrientationEvent) => {
+        const gamma = e.gamma ?? 0
+        setGyroDisponible(true)
+        setInclinacion({ gamma, inclinado: Math.abs(gamma) > 15 })
+      }
+      window.addEventListener('deviceorientation', handler)
+      limpieza = () => window.removeEventListener('deviceorientation', handler)
+    }
+
+    iniciarGiroscopio()
+    return () => { limpieza?.() }
   }, [])
 
   const capturar = useCallback(() => {
@@ -190,11 +230,23 @@ function PasoCamara({
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
 
+    // Guardar el gamma en el momento exacto de la captura
+    const gammaAlCapturar = inclinacion?.gamma ?? 0
+
     canvas.toBlob((blob) => {
       if (!blob) { setCapturando(false); return }
-      onCaptura(blob, URL.createObjectURL(blob))
+      const previewUrl = URL.createObjectURL(blob)
+
+      // Advertir si el giroscopio detecta inclinación excesiva (>20°) al capturar
+      if (gyroDisponible && Math.abs(gammaAlCapturar) > 20) {
+        setPendingCaptura({ blob, previewUrl })
+        setCapturaInclinada(true)
+        setCapturando(false)
+      } else {
+        onCaptura(blob, previewUrl)
+      }
     }, 'image/jpeg', 0.92)
-  }, [capturando, onCaptura])
+  }, [capturando, onCaptura, inclinacion, gyroDisponible])
 
   const handleArchivo = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -202,6 +254,53 @@ function PasoCamara({
     streamRef.current?.getTracks().forEach(t => t.stop())
     onCaptura(file, URL.createObjectURL(file))
   }, [onCaptura])
+
+  // Reiniciar cámara para repetir foto inclinada
+  const repetirFoto = useCallback(() => {
+    if (pendingCaptura) URL.revokeObjectURL(pendingCaptura.previewUrl)
+    setPendingCaptura(null)
+    setCapturaInclinada(false)
+    setCamEstado('iniciando')
+    setStreamKey(k => k + 1)
+  }, [pendingCaptura])
+
+  // ── Vista: advertencia de inclinación ─────────────────────────────────────
+  if (capturaInclinada && pendingCaptura) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col">
+        <div className="relative flex-1">
+          <Image src={pendingCaptura.previewUrl} alt="Preview" fill className="object-contain" />
+        </div>
+        <div className="bg-amber-50 border-t border-amber-200 px-5 py-5 shrink-0">
+          <div className="flex items-start gap-3 mb-4">
+            <span className="text-2xl shrink-0">📐</span>
+            <div>
+              <p className="font-semibold text-amber-900 text-base">La foto puede estar muy inclinada</p>
+              <p className="text-sm text-amber-700 mt-0.5">¿Querés tomarla de nuevo?</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <button
+              onClick={repetirFoto}
+              className="w-full py-3.5 bg-amber-500 text-white font-semibold rounded-xl min-h-touch"
+            >
+              Repetir foto
+            </button>
+            <button
+              onClick={() => {
+                onCaptura(pendingCaptura.blob, pendingCaptura.previewUrl)
+                setPendingCaptura(null)
+                setCapturaInclinada(false)
+              }}
+              className="w-full py-3.5 border border-amber-300 text-amber-700 font-semibold rounded-xl min-h-touch"
+            >
+              Usar igual
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (camEstado === 'iniciando') {
     return (
@@ -274,8 +373,43 @@ function PasoCamara({
         <div className="w-72 h-52 border-2 border-white/60 rounded-2xl" />
       </div>
 
-      {/* Botón captura + alternativa archivo en desktop */}
+      {/* Botón captura + nivel de burbuja + alternativa archivo en desktop */}
       <div className="relative z-10 flex flex-col items-center gap-3 pb-12 pt-6 bg-gradient-to-t from-black/60 to-transparent">
+
+        {/* ── Indicador de nivel de burbuja (solo mobile con giroscopio) ──── */}
+        {gyroDisponible && inclinacion && (
+          <div className="flex flex-col items-center gap-1.5">
+            {/* Track horizontal */}
+            <div className="relative w-40 h-6 flex items-center">
+              {/* Línea base */}
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full h-0.5 bg-white/30 rounded-full" />
+              </div>
+              {/* Marcador central */}
+              <div className="absolute left-1/2 -translate-x-1/2 w-0.5 h-4 bg-white/50 rounded-full" />
+              {/* Burbuja móvil */}
+              <div
+                className={`absolute w-6 h-6 rounded-full border-2 shadow-lg transition-transform duration-100 ${
+                  !inclinacion.inclinado
+                    ? 'bg-green-400 border-green-200'
+                    : 'bg-red-400 border-red-200'
+                }`}
+                style={{
+                  left: '50%',
+                  transform: `translateX(calc(-50% + ${Math.max(-56, Math.min(56, (inclinacion.gamma / 30) * 56))}px))`,
+                }}
+              />
+            </div>
+            {inclinacion.inclinado ? (
+              <p className="text-xs font-semibold text-white bg-red-500/70 px-3 py-0.5 rounded-full backdrop-blur-sm">
+                Enderezá el celular
+              </p>
+            ) : (
+              <p className="text-xs text-white/60">Centrado ✓</p>
+            )}
+          </div>
+        )}
+
         <button
           onClick={capturar}
           disabled={capturando}
