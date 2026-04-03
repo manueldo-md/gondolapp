@@ -32,7 +32,7 @@ export default async function FotosPendientesPage() {
     .in('estado', ['pendiente', 'en_revision'])
     .order('created_at', { ascending: false })
 
-  const fotos = (data ?? []) as FotoPendiente[]
+  const fotos = (data ?? []) as unknown as FotoPendiente[]
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
