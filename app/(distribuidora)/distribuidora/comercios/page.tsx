@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
-import { Store, MapPin, CheckCircle2, Clock, AlertCircle } from 'lucide-react'
+import { Store, MapPin, CheckCircle2, Clock, AlertCircle, Camera } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { ValidarBtn } from './validar-btn'
@@ -16,11 +16,13 @@ interface ComercioRow {
   validado: boolean
   registrado_por: string | null
   created_at: string
+  foto_fachada_url: string | null
 }
 
 interface ComercioConStats extends ComercioRow {
   ultimaVisita: string | null
   puedeValidar: boolean
+  fachadaSignedUrl: string | null
 }
 
 // ── Helpers visuales ──────────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ export default async function ComerciosPage() {
   // Todos los comercios validados y sin validar
   const { data: comerciosData, error } = await admin
     .from('comercios')
-    .select('id, nombre, direccion, tipo, validado, registrado_por, created_at')
+    .select('id, nombre, direccion, tipo, validado, registrado_por, created_at, foto_fachada_url')
     .order('nombre', { ascending: true })
     .limit(200)
 
@@ -105,12 +107,25 @@ export default async function ComerciosPage() {
     )
   }
 
+  // Generar signed URLs para fotos de fachada
+  const fachadasSignedMap: Record<string, string> = {}
+  const conFachada = comercios.filter(c => c.foto_fachada_url)
+  if (conFachada.length > 0) {
+    await Promise.all(
+      conFachada.map(async (c) => {
+        const { data } = await admin.storage
+          .from('fotos-fachada')
+          .createSignedUrl(c.foto_fachada_url!, 3600)
+        if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
+      })
+    )
+  }
+
   const lista: ComercioConStats[] = comercios.map(c => ({
     ...c,
-    ultimaVisita: ultimaVisitaMap[c.id] ?? null,
-    puedeValidar: !c.validado && (
-      !c.registrado_por || gondoleroIds.includes(c.registrado_por)
-    ),
+    ultimaVisita:     ultimaVisitaMap[c.id] ?? null,
+    puedeValidar:     !c.validado && (!c.registrado_por || gondoleroIds.includes(c.registrado_por)),
+    fachadaSignedUrl: fachadasSignedMap[c.id] ?? null,
   }))
 
   const validados   = lista.filter(c => c.validado).length
@@ -161,12 +176,30 @@ export default async function ComerciosPage() {
             <tbody className="divide-y divide-gray-50">
               {lista.map(c => (
                 <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                  {/* Nombre + dirección */}
+                  {/* Nombre + dirección + thumbnail fachada */}
                   <td className="px-4 py-3.5">
                     <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
-                        <Store size={14} className="text-gray-400" />
-                      </div>
+                      {/* Thumbnail de fachada */}
+                      {c.fachadaSignedUrl ? (
+                        <a
+                          href={c.fachadaSignedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 mt-0.5"
+                          title="Ver foto de fachada"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={c.fachadaSignedUrl}
+                            alt={`Fachada de ${c.nombre}`}
+                            className="w-10 h-10 rounded-lg object-cover border border-gray-200 hover:border-gondo-verde-400 transition-colors"
+                          />
+                        </a>
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
+                          <Camera size={14} className="text-gray-300" />
+                        </div>
+                      )}
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900 truncate">{c.nombre}</p>
                         {c.direccion && (

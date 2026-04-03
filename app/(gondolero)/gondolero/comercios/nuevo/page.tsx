@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
-import { ArrowLeft, Navigation, Loader2, MapPin } from 'lucide-react'
+import { ArrowLeft, Navigation, Loader2, MapPin, Camera, ImageOff } from 'lucide-react'
 import { get, set } from 'idb-keyval'
 import { crearComercio } from './actions'
+import { comprimirImagen } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 
 interface ComercioTempItem {
@@ -34,6 +35,10 @@ function NuevoComercioForm() {
   const nombreParam = searchParams.get('nombre') ?? ''
   const campanaId   = searchParams.get('campana') ?? ''
 
+  // ── Paso del formulario ────────────────────────────────────────────────────
+  const [paso, setPaso] = useState<'formulario' | 'fachada'>('formulario')
+
+  // ── Datos del comercio ─────────────────────────────────────────────────────
   const [nombre,    setNombre]    = useState(nombreParam)
   const [tipo,      setTipo]      = useState<TipoComercio>('autoservicio')
   const [direccion, setDireccion] = useState('')
@@ -42,6 +47,17 @@ function NuevoComercioForm() {
   const [gpsEstado, setGpsEstado] = useState<'idle' | 'obteniendo' | 'ok' | 'error'>('idle')
   const [gpsError,  setGpsError]  = useState<string | null>(null)
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null)
+
+  // ── Foto de fachada ────────────────────────────────────────────────────────
+  const [fotoPreview,  setFotoPreview]  = useState<string | null>(null)
+  const [fotoBlob,     setFotoBlob]     = useState<Blob | null>(null)
+  const [comprimiendo, setComprimiendo] = useState(false)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+
+  // Limpiar object URL al desmontar
+  useEffect(() => {
+    return () => { if (fotoPreview) URL.revokeObjectURL(fotoPreview) }
+  }, [fotoPreview])
 
   // Pedir GPS automáticamente al abrir
   useEffect(() => {
@@ -74,7 +90,33 @@ function NuevoComercioForm() {
     )
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // ── Manejo de foto de fachada ──────────────────────────────────────────────
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Limpiar preview anterior
+    if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+    const preview = URL.createObjectURL(file)
+    setFotoPreview(preview)
+    setFotoBlob(null)
+
+    // Comprimir
+    setComprimiendo(true)
+    try {
+      const blob = await comprimirImagen(file, 0.25, 1024)
+      setFotoBlob(blob)
+    } catch {
+      setFotoBlob(file) // Fallback: usar original
+    }
+    setComprimiendo(false)
+
+    // Limpiar el input para permitir retomar la misma foto
+    e.target.value = ''
+  }
+
+  // ── Paso 1: validar formulario y avanzar ──────────────────────────────────
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
 
@@ -107,20 +149,149 @@ function NuevoComercioForm() {
       return
     }
 
+    // Online → ir al paso de foto de fachada
+    setPaso('fachada')
+  }
+
+  // ── Paso 2: enviar con o sin foto ─────────────────────────────────────────
+  const handleSubmitFinal = (conFoto: boolean) => {
+    setErrorMsg(null)
     const fd = new FormData()
-    fd.set('nombre',    nombre.trim())
-    fd.set('tipo',      tipo)
-    fd.set('direccion', direccion)
-    fd.set('lat',       String(lat))
-    fd.set('lng',       String(lng))
+    fd.set('nombre',     nombre.trim())
+    fd.set('tipo',       tipo)
+    fd.set('direccion',  direccion)
+    fd.set('lat',        String(lat))
+    fd.set('lng',        String(lng))
     fd.set('campana_id', campanaId)
+
+    if (conFoto && fotoBlob) {
+      fd.set('foto_fachada', fotoBlob, 'fachada.jpg')
+    }
 
     startTransition(async () => {
       const result = await crearComercio(fd)
-      if (result?.error) setErrorMsg(result.error)
+      if (result?.error) {
+        setErrorMsg(result.error)
+        setPaso('formulario')
+      }
     })
   }
 
+  // ── Render: paso de fachada ────────────────────────────────────────────────
+  if (paso === 'fachada') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-100 px-4 pt-10 pb-4 flex items-center gap-3">
+          <button
+            onClick={() => setPaso('formulario')}
+            className="p-1.5 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-base font-bold text-gray-900">Foto de fachada</h1>
+        </div>
+
+        <div className="px-4 py-6 space-y-5">
+          {/* Instrucción */}
+          <div className="text-center space-y-1.5">
+            <p className="text-base font-semibold text-gray-900">
+              Sacá una foto de la fachada del local
+            </p>
+            <p className="text-sm text-gray-500">
+              Ayuda a verificar que el comercio existe
+            </p>
+          </div>
+
+          {/* Área de foto */}
+          {fotoPreview ? (
+            <div className="space-y-3">
+              <div className="relative rounded-2xl overflow-hidden bg-gray-100 aspect-video">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={fotoPreview}
+                  alt="Fachada"
+                  className="w-full h-full object-cover"
+                />
+                {comprimiendo && (
+                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                    <Loader2 size={24} className="text-white animate-spin" />
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="w-full py-3 border border-gray-300 text-gray-600 font-medium rounded-xl text-sm hover:bg-gray-50 transition-colors"
+              >
+                Repetir foto
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              className="w-full py-10 border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center gap-3 text-gray-500 hover:border-gondo-verde-400 hover:text-gondo-verde-400 transition-colors"
+            >
+              <Camera size={36} className="text-gray-300" />
+              <div className="text-center">
+                <p className="font-semibold text-sm">Sacar foto</p>
+                <p className="text-xs text-gray-400 mt-0.5">Abre la cámara de tu dispositivo</p>
+              </div>
+            </button>
+          )}
+
+          {/* Input cámara oculto */}
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
+          {/* Error */}
+          {errorMsg && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-sm text-red-600">{errorMsg}</p>
+            </div>
+          )}
+
+          {/* Botones */}
+          <div className="space-y-2 pt-1">
+            {fotoPreview && (
+              <button
+                onClick={() => handleSubmitFinal(true)}
+                disabled={isPending || comprimiendo}
+                className="w-full py-4 bg-gondo-verde-400 text-white font-semibold rounded-2xl text-base disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch flex items-center justify-center gap-2"
+              >
+                {comprimiendo
+                  ? <><Loader2 size={18} className="animate-spin" /> Procesando foto...</>
+                  : isPending
+                    ? <><Loader2 size={18} className="animate-spin" /> Guardando...</>
+                    : 'Guardar con foto'
+                }
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleSubmitFinal(false)}
+              disabled={isPending}
+              className="w-full py-3.5 text-gray-500 font-medium text-sm rounded-2xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 min-h-touch"
+            >
+              {isPending && !fotoPreview
+                ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> Guardando...</span>
+                : 'Omitir por ahora'
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Render: paso del formulario ────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -134,7 +305,7 @@ function NuevoComercioForm() {
         <h1 className="text-base font-bold text-gray-900">Agregar comercio nuevo</h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="px-4 py-5 space-y-5">
+      <form onSubmit={handleFormSubmit} className="px-4 py-5 space-y-5">
 
         {/* GPS */}
         <div className={`rounded-2xl border p-4 flex items-center gap-3 ${
@@ -247,7 +418,7 @@ function NuevoComercioForm() {
         >
           {isPending
             ? <><Loader2 size={18} className="animate-spin" /> Guardando...</>
-            : 'Guardar comercio'
+            : 'Siguiente → Foto de fachada'
           }
         </button>
 

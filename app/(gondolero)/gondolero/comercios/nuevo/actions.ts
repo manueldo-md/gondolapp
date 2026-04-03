@@ -78,6 +78,36 @@ export async function crearComercio(formData: FormData) {
     return { error: 'No se pudo guardar el comercio. Intentá de nuevo.' }
   }
 
+  // Subir foto de fachada si está presente
+  // Bucket requerido: 'fotos-fachada' (crear en Supabase Storage Dashboard si no existe)
+  const fotoFachada = formData.get('foto_fachada') as File | null
+  if (fotoFachada && fotoFachada.size > 0) {
+    try {
+      const arrayBuffer = await fotoFachada.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      const path = `fachadas/${comercio.id}.jpg`
+
+      const { error: uploadError } = await admin.storage
+        .from('fotos-fachada')
+        .upload(path, buffer, {
+          contentType: 'image/jpeg',
+          upsert: true,
+        })
+
+      if (!uploadError) {
+        await admin
+          .from('comercios')
+          .update({ foto_fachada_url: path })
+          .eq('id', comercio.id)
+      } else {
+        console.error('Error subiendo fachada:', uploadError.message)
+      }
+    } catch (e) {
+      console.error('Excepción subiendo fachada:', e)
+      // No bloquear el flujo si la foto falla
+    }
+  }
+
   // Redirigir de vuelta a captura con el nuevo comercio pre-seleccionado
   const params = new URLSearchParams()
   if (campanaId) params.set('campana', campanaId)

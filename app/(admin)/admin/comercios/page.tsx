@@ -1,5 +1,5 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { Store, MapPin, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Store, MapPin, CheckCircle2, AlertCircle, Camera } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { ValidarToggleBtn } from './validar-toggle-btn'
@@ -40,7 +40,7 @@ export default async function ComerciosAdminPage({
     .from('comercios')
     .select(`
       id, nombre, direccion, tipo, validado, created_at,
-      registrado_por,
+      registrado_por, foto_fachada_url,
       registrador:profiles!registrado_por(nombre, tipo_actor)
     `)
     .order('created_at', { ascending: false })
@@ -56,6 +56,20 @@ export default async function ComerciosAdminPage({
     registrador_nombre: Array.isArray(c.registrador) ? c.registrador[0]?.nombre : c.registrador?.nombre,
     registrador_tipo:   Array.isArray(c.registrador) ? c.registrador[0]?.tipo_actor : c.registrador?.tipo_actor,
   }))
+
+  // Generar signed URLs para fotos de fachada
+  const fachadasSignedMap: Record<string, string> = {}
+  const conFachada = comercios.filter((c: { foto_fachada_url: string | null }) => c.foto_fachada_url)
+  if (conFachada.length > 0) {
+    await Promise.all(
+      conFachada.map(async (c: { id: string; foto_fachada_url: string }) => {
+        const { data } = await admin.storage
+          .from('fotos-fachada')
+          .createSignedUrl(c.foto_fachada_url, 3600)
+        if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
+      })
+    )
+  }
 
   const validados  = comercios.filter(c => c.validado).length
   const sinValidar = comercios.length - validados
@@ -108,9 +122,27 @@ export default async function ComerciosAdminPage({
                 <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3.5">
                     <div className="flex items-start gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
-                        <Store size={13} className="text-gray-400" />
-                      </div>
+                      {/* Thumbnail de fachada */}
+                      {fachadasSignedMap[c.id] ? (
+                        <a
+                          href={fachadasSignedMap[c.id]}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 mt-0.5"
+                          title="Ver foto de fachada"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={fachadasSignedMap[c.id]}
+                            alt={`Fachada de ${c.nombre}`}
+                            className="w-9 h-9 rounded-lg object-cover border border-gray-200 hover:border-[#1E1B4B] transition-colors"
+                          />
+                        </a>
+                      ) : (
+                        <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
+                          <Camera size={13} className="text-gray-300" />
+                        </div>
+                      )}
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900 truncate max-w-[180px]">{c.nombre}</p>
                         {c.direccion && (
