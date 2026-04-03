@@ -671,5 +671,50 @@ El motivo de no venta es información de altísimo valor para la marca — es in
 
 ---
 
+### Panel de beneficios segmentados para gondoleros
+
+**CONCEPTO:**
+Sistema de beneficios que permite ofrecer premios y recompensas a segmentos específicos de gondoleros, no a todos por igual.
+
+**CASOS DE USO:**
+- Beneficio exclusivo para gondoleros de Biomega
+- Premio para gondoleros activos en zona Concordia
+- Bono para gondoleros que completaron X campañas
+- Crédito en cuenta corriente de su distribuidora
+
+**SEGMENTACIÓN POSIBLE:**
+- Por distribuidora vinculada (distri_id)
+- Por zona de operación (gondolero_zonas)
+- Por nivel (casual/activo/pro)
+- Por cantidad de fotos aprobadas en un período
+- Por campañas completadas
+- Por zona geográfica específica
+
+**TIPOS DE BENEFICIO:**
+- Puntos extra acreditados directamente
+- Premio físico (nafta, gift card, etc.)
+- Crédito en cuenta corriente de la distribuidora (la distri le acredita al vendedor en su sistema)
+- Descuento en productos de la distribuidora
+- Acceso anticipado a campañas premium
+
+**MODELO DE DATOS SUGERIDO:**
+- Tabla: `beneficios` (id, nombre, descripcion, tipo, valor, fecha_inicio, fecha_fin, activo)
+- Tabla: `beneficio_segmentos` (beneficio_id, tipo_segmento, valor_segmento) — ej: tipo='distri', valor='biomega_id'
+- Tabla: `beneficio_gondoleros` (beneficio_id, gondolero_id, estado, otorgado_at) — tracking de quién recibió qué
+- La distribuidora puede crear beneficios para sus propios gondoleros desde su panel
+- GondolApp puede crear beneficios globales o segmentados desde el panel admin
+
+**FLUJO PROPUESTO:**
+1. Admin o distri crea un beneficio con segmentación
+2. El sistema identifica qué gondoleros califican
+3. Los gondoleros elegibles ven el beneficio en su sección de Actividad o en una nueva sección "Beneficios"
+4. Al reclamar el beneficio se registra y se notifica
+5. Si es crédito en distri → la distri recibe notificación para acreditarlo en su sistema
+
+**DIFERENCIA CON CANJES:**
+Los canjes son iniciativa del gondolero (gasta sus puntos). Los beneficios son iniciativa de la plataforma/distri (se otorgan por cumplir condiciones).
+
+---
+
 *Última actualización: Abril 2026*
 *Versión del documento: 1.1*
