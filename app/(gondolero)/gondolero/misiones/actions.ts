@@ -66,13 +66,20 @@ export async function retirarFoto(fotoId: string): Promise<{ error?: string }> {
       console.log('[retirarFoto] Sin storage_path, omitiendo eliminación de Storage')
     }
 
-    // 3. Eliminar registro de la DB
+    // 3. Eliminar movimientos_puntos asociados (FK constraint)
+    const { error: movError } = await admin
+      .from('movimientos_puntos')
+      .delete()
+      .eq('foto_id', fotoId)
+    console.log('[retirarFoto] Delete movimientos_puntos:', movError?.message ?? 'OK')
+
+    // 4. Eliminar registro de la DB
     const { error: deleteError } = await admin
       .from('fotos')
       .delete()
       .eq('id', fotoId)
 
-    console.log('[retirarFoto] Delete DB:', deleteError?.message ?? 'OK')
+    console.log('[retirarFoto] Delete fotos:', deleteError?.message ?? 'OK')
     if (deleteError) return { error: `Error al eliminar: ${deleteError.message}` }
 
     // 4. Decrementar comercios_completados en participaciones
