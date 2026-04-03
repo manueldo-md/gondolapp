@@ -59,12 +59,6 @@ export default async function ActividadPage() {
     admin.from('fotos')
       .select('*', { count: 'exact', head: true })
       .eq('gondolero_id', user.id).eq('estado', 'aprobada'),
-    admin.from('fotos')
-      .select('id, created_at, comercio:comercios(nombre), campana:campanas(nombre)', { count: 'exact' })
-      .eq('gondolero_id', user.id)
-      .in('estado', ['pendiente', 'en_revision'])
-      .order('created_at', { ascending: false })
-      .limit(3),
     admin.from('participaciones')
       .select('*', { count: 'exact', head: true })
       .eq('gondolero_id', user.id).eq('estado', 'completada'),
@@ -75,6 +69,12 @@ export default async function ActividadPage() {
       .select('id, tipo, titulo, mensaje, leida, created_at')
       .eq('gondolero_id', user.id)
       .order('created_at', { ascending: false }).limit(3),
+    admin.from('fotos')
+      .select('id, created_at, comercio:comercios(nombre), campana:campanas(nombre)', { count: 'exact' })
+      .eq('gondolero_id', user.id)
+      .in('estado', ['pendiente', 'en_revision'])
+      .order('created_at', { ascending: false })
+      .limit(3),
   ])
 
   const profile = profileRes.data
