@@ -43,6 +43,7 @@ export default async function ActividadPage() {
     campanasRes,
     comerciosRes,
     notificacionesRes,
+    fotosPendientesRes,
   ] = await Promise.all([
     admin.from('profiles')
       .select('nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion')
@@ -58,6 +59,12 @@ export default async function ActividadPage() {
     admin.from('fotos')
       .select('*', { count: 'exact', head: true })
       .eq('gondolero_id', user.id).eq('estado', 'aprobada'),
+    admin.from('fotos')
+      .select('id, created_at, comercio:comercios(nombre), campana:campanas(nombre)', { count: 'exact' })
+      .eq('gondolero_id', user.id)
+      .in('estado', ['pendiente', 'en_revision'])
+      .order('created_at', { ascending: false })
+      .limit(3),
     admin.from('participaciones')
       .select('*', { count: 'exact', head: true })
       .eq('gondolero_id', user.id).eq('estado', 'completada'),
@@ -74,6 +81,13 @@ export default async function ActividadPage() {
   const movimientos = movimientosRes.data ?? []
   const canjesPendientes = canjesPendientesRes.data ?? []
   const fotosAprobadas = fotosRes.count ?? 0
+  const fotosPendientesTotal = fotosPendientesRes.count ?? 0
+  const fotosPendientesPreview = (fotosPendientesRes.data ?? []) as {
+    id: string
+    created_at: string
+    comercio: { nombre: string } | null
+    campana: { nombre: string } | null
+  }[]
   const campanasCompletadas = campanasRes.count ?? 0
   const comerciosVisitados = new Set(
     (comerciosRes.data ?? []).map((f: { comercio_id: string | null }) => f.comercio_id).filter(Boolean)
@@ -250,6 +264,32 @@ export default async function ActividadPage() {
                     )}
                     <p className="text-xs text-gray-400 mt-1">{tiempoRelativo(n.created_at)}</p>
                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── SECCIÓN 4.5 — Fotos pendientes ── */}
+        {fotosPendientesTotal > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-semibold text-amber-800">
+                ⏳ {fotosPendientesTotal} {fotosPendientesTotal === 1 ? 'foto en revisión' : 'fotos en revisión'}
+              </p>
+              <Link
+                href="/gondolero/actividad/pendientes"
+                className="flex items-center gap-0.5 text-xs text-amber-700 font-medium"
+              >
+                Ver todas <ChevronRight size={13} />
+              </Link>
+            </div>
+            <p className="text-xs text-amber-600 mb-3">Te avisamos cuando sean aprobadas.</p>
+            <div className="space-y-1.5">
+              {fotosPendientesPreview.map(f => (
+                <div key={f.id} className="flex items-center justify-between text-xs">
+                  <span className="text-amber-800 font-medium truncate mr-2">{f.comercio?.nombre ?? 'Comercio'}</span>
+                  <span className="text-amber-600 shrink-0">{f.campana?.nombre ?? ''}</span>
                 </div>
               ))}
             </div>

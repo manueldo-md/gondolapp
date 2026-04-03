@@ -165,7 +165,7 @@ export default async function DashboardPage() {
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Métricas del día</h2>
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
           <MetricCard label="Fotos recibidas hoy"    value={fotasHoy}   icon={Camera} />
-          <MetricCard label="Pendientes de revisión" value={fotasPend}  icon={Clock}  highlight={fotasPend > 0} />
+          <MetricCard label="Pendientes de revisión" value={fotasPend}  icon={Clock}  highlight={fotasPend > 0} href="/distribuidora/gondolas" />
           <MetricCard label="Gondoleros activos hoy" value={gondActHoy} icon={Users}  />
           <MetricCard label="Comercios esta semana"  value={comSemana}  icon={Store}  />
         </div>
@@ -268,14 +268,16 @@ function MetricCard({
   value,
   icon: Icon,
   highlight,
+  href,
 }: {
   label: string
   value: number
   icon: React.ElementType
   highlight?: boolean
+  href?: string
 }) {
-  return (
-    <div className={`bg-white rounded-xl border p-4 ${highlight ? 'border-gondo-amber-400' : 'border-gray-200'}`}>
+  const inner = (
+    <div className={`bg-white rounded-xl border p-4 ${highlight ? 'border-gondo-amber-400' : 'border-gray-200'} ${href ? 'hover:bg-gray-50 transition-colors cursor-pointer' : ''}`}>
       <div className="flex items-center gap-2 mb-3">
         <Icon size={15} className={highlight ? 'text-gondo-amber-400' : 'text-gray-400'} />
         <span className="text-xs text-gray-500">{label}</span>
@@ -283,4 +285,6 @@ function MetricCard({
       <p className={`text-3xl font-bold ${highlight ? 'text-gondo-amber-400' : 'text-gray-900'}`}>{value}</p>
     </div>
   )
+  if (href) return <Link href={href}>{inner}</Link>
+  return inner
 }

@@ -11,6 +11,8 @@ import {
 import type { TipoCampana } from '@/types'
 import { AbandonarBtn } from './abandonar-btn'
 
+type FotoStats = { pendiente: number; aprobada: number; rechazada: number }
+
 type ParticipacionRow = {
   id: string
   comercios_completados: number
@@ -36,7 +38,7 @@ const COLORES_TIPO: Record<TipoCampana, string> = {
   interna:      'bg-gray-100 text-gray-500',
 }
 
-function MisionCard({ p }: { p: ParticipacionRow }) {
+function MisionCard({ p, fotoStats }: { p: ParticipacionRow; fotoStats?: FotoStats }) {
   const c = p.campana
   const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
   const progreso = calcularPorcentaje(p.comercios_completados, c.objetivo_comercios ?? 0)
@@ -65,13 +67,26 @@ function MisionCard({ p }: { p: ParticipacionRow }) {
         </h2>
 
         {/* Stats inline */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center flex-wrap gap-3">
           <div className="flex items-center gap-1.5">
             <Star size={14} className="text-gondo-verde-400 fill-gondo-verde-400" />
             <span className="text-sm font-semibold text-gondo-verde-400">
-              {formatearPuntos(p.puntos_acumulados)} pts ganados
+              {formatearPuntos(p.puntos_acumulados)} pts
             </span>
           </div>
+          {fotoStats && (fotoStats.aprobada > 0 || fotoStats.pendiente > 0 || fotoStats.rechazada > 0) && (
+            <div className="flex items-center gap-2 text-[11px] font-medium">
+              {fotoStats.aprobada > 0 && (
+                <span className="text-green-600">✅ {fotoStats.aprobada}</span>
+              )}
+              {fotoStats.pendiente > 0 && (
+                <span className="text-amber-500">⏳ {fotoStats.pendiente}</span>
+              )}
+              {fotoStats.rechazada > 0 && (
+                <span className="text-red-500">❌ {fotoStats.rechazada}</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -136,6 +151,25 @@ export default async function MisionesPage() {
 
   const lista = (participaciones as ParticipacionRow[] | null) ?? []
 
+  // Foto stats por campaña
+  const fotoStatsMap = new Map<string, FotoStats>()
+  if (lista.length > 0) {
+    const campanaIds = lista.map(p => p.campana.id)
+    const { data: fotosData } = await supabase
+      .from('fotos')
+      .select('campana_id, estado')
+      .eq('gondolero_id', user.id)
+      .in('campana_id', campanaIds)
+    for (const f of fotosData ?? []) {
+      const fo = f as { campana_id: string; estado: string }
+      const s = fotoStatsMap.get(fo.campana_id) ?? { pendiente: 0, aprobada: 0, rechazada: 0 }
+      if (fo.estado === 'pendiente' || fo.estado === 'en_revision') s.pendiente++
+      else if (fo.estado === 'aprobada') s.aprobada++
+      else if (fo.estado === 'rechazada') s.rechazada++
+      fotoStatsMap.set(fo.campana_id, s)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -169,7 +203,7 @@ export default async function MisionesPage() {
             </Link>
           </div>
         ) : (
-          lista.map(p => <MisionCard key={p.id} p={p} />)
+          lista.map(p => <MisionCard key={p.id} p={p} fotoStats={fotoStatsMap.get(p.campana.id)} />)
         )}
       </div>
     </div>

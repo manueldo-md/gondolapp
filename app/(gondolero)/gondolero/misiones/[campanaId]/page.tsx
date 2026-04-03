@@ -19,6 +19,7 @@ type FotoRow = {
   declaracion: string
   puntos_otorgados: number
   created_at: string
+  comercio_id: string
   comercio: { nombre: string } | null
 }
 
@@ -80,7 +81,7 @@ export default async function MisionDetallePage({
 
     supabase
       .from('fotos')
-      .select('id, estado, declaracion, puntos_otorgados, created_at, comercio:comercios ( nombre )')
+      .select('id, estado, declaracion, puntos_otorgados, created_at, comercio_id, comercio:comercios ( nombre )')
       .eq('campana_id', params.campanaId)
       .eq('gondolero_id', user.id)
       .order('created_at', { ascending: false })
@@ -103,6 +104,10 @@ export default async function MisionDetallePage({
   const puntosConfirmados = fotos
     .filter(f => f.estado === 'aprobada')
     .reduce((sum, f) => sum + (f.puntos_otorgados ?? 0), 0)
+  const fotosPend = fotos.filter(f => f.estado === 'pendiente' || f.estado === 'en_revision')
+  const fotosApro = fotos.filter(f => f.estado === 'aprobada')
+  const fotosRech = fotos.filter(f => f.estado === 'rechazada')
+
   const faltanParaCobrar = Math.max(
     0,
     (campana.min_comercios_para_cobrar as number) - participacion.comercios_completados
@@ -194,44 +199,85 @@ export default async function MisionDetallePage({
           </div>
         )}
 
-        {/* Historial de fotos */}
-        {fotos.length > 0 && (
+        {/* Fotos en revisión */}
+        {fotosPend.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">
-              Fotos enviadas ({fotos.length})
-            </h2>
+            <h2 className="text-sm font-semibold text-amber-600 mb-3">⏳ En revisión ({fotosPend.length})</h2>
             <div className="space-y-3">
-              {fotos.map(foto => {
-                const estadoInfo = ESTADO_FOTO[foto.estado] ?? { label: foto.estado, color: 'bg-gray-100 text-gray-500' }
-                return (
-                  <div key={foto.id} className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                      <Camera size={14} className="text-gray-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {foto.comercio?.nombre ?? 'Comercio'}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {DECLARACION_LABEL[foto.declaracion] ?? foto.declaracion} · {formatearFecha(foto.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${estadoInfo.color}`}>
-                        {estadoInfo.label}
-                      </span>
-                      {foto.estado === 'aprobada' && foto.puntos_otorgados > 0 && (
-                        <span className="text-xs font-semibold text-gondo-verde-400">
-                          +{formatearPuntos(foto.puntos_otorgados)} pts
-                        </span>
-                      )}
-                      {foto.estado === 'pendiente' && (
-                        <RetirarFotoBtn fotoId={foto.id} />
-                      )}
-                    </div>
+              {fotosPend.map(foto => (
+                <div key={foto.id} className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+                    <Camera size={14} className="text-amber-400" />
                   </div>
-                )
-              })}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{foto.comercio?.nombre ?? 'Comercio'}</p>
+                    <p className="text-xs text-gray-400">
+                      {DECLARACION_LABEL[foto.declaracion] ?? foto.declaracion} · {formatearFecha(foto.created_at)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">En revisión</span>
+                    {foto.estado === 'pendiente' && <RetirarFotoBtn fotoId={foto.id} />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Fotos aprobadas */}
+        {fotosApro.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <h2 className="text-sm font-semibold text-green-600 mb-3">✅ Aprobadas ({fotosApro.length})</h2>
+            <div className="space-y-3">
+              {fotosApro.map(foto => (
+                <div key={foto.id} className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+                    <Camera size={14} className="text-green-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{foto.comercio?.nombre ?? 'Comercio'}</p>
+                    <p className="text-xs text-gray-400">
+                      {DECLARACION_LABEL[foto.declaracion] ?? foto.declaracion} · {formatearFecha(foto.created_at)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-600">Aprobada</span>
+                    {foto.puntos_otorgados > 0 && (
+                      <span className="text-xs font-semibold text-gondo-verde-400">+{formatearPuntos(foto.puntos_otorgados)} pts</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Fotos rechazadas */}
+        {fotosRech.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <h2 className="text-sm font-semibold text-red-500 mb-3">❌ Rechazadas ({fotosRech.length})</h2>
+            <div className="space-y-3">
+              {fotosRech.map(foto => (
+                <div key={foto.id} className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+                    <Camera size={14} className="text-red-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{foto.comercio?.nombre ?? 'Comercio'}</p>
+                    <p className="text-xs text-gray-400">
+                      {DECLARACION_LABEL[foto.declaracion] ?? foto.declaracion} · {formatearFecha(foto.created_at)}
+                    </p>
+                    <Link
+                      href={`/gondolero/captura?campana=${params.campanaId}&comercio=${foto.comercio_id}`}
+                      className="inline-flex items-center gap-1 text-xs text-gondo-verde-400 font-semibold mt-1"
+                    >
+                      Volver a fotografiar <ChevronRight size={11} />
+                    </Link>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-500 shrink-0">Rechazada</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
