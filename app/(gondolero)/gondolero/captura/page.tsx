@@ -131,9 +131,14 @@ function PasoCamara({
 
   // ── Giroscopio ──────────────────────────────────────────────────────────────
   const [gyroDisponible, setGyroDisponible] = useState(false)
-  const [inclinacion, setInclinacion] = useState<{ gamma: number; inclinado: boolean } | null>(null)
+  const [inclinacion, setInclinacion] = useState<{
+    gamma: number; beta: number
+    gammaOk: boolean; betaOk: boolean
+  } | null>(null)
   const [capturaInclinada, setCapturaInclinada] = useState(false)
-  const [pendingCaptura, setPendingCaptura] = useState<{ blob: Blob; previewUrl: string } | null>(null)
+  const [pendingCaptura, setPendingCaptura] = useState<{
+    blob: Blob; previewUrl: string; mensaje: string
+  } | null>(null)
 
   // Cuando el estado pasa a 'activo', el <video> ya está en el DOM — conectar el stream
   useEffect(() => {
@@ -206,8 +211,14 @@ function PasoCamara({
 
       const handler = (e: DeviceOrientationEvent) => {
         const gamma = e.gamma ?? 0
+        const beta  = e.beta  ?? 80  // default: celular vertical apuntando a góndola
         setGyroDisponible(true)
-        setInclinacion({ gamma, inclinado: Math.abs(gamma) > 15 })
+        setInclinacion({
+          gamma,
+          beta,
+          gammaOk: Math.abs(gamma) <= 20,          // ±20° tolerancia horizontal
+          betaOk:  beta >= 45 && beta <= 115,       // rango vertical aceptable
+        })
       }
       window.addEventListener('deviceorientation', handler)
       limpieza = () => window.removeEventListener('deviceorientation', handler)
@@ -230,16 +241,25 @@ function PasoCamara({
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
 
-    // Guardar el gamma en el momento exacto de la captura
+    // Capturar posición exacta en el momento del disparo
     const gammaAlCapturar = inclinacion?.gamma ?? 0
+    const betaAlCapturar  = inclinacion?.beta  ?? 80
 
     canvas.toBlob((blob) => {
       if (!blob) { setCapturando(false); return }
       const previewUrl = URL.createObjectURL(blob)
 
-      // Advertir si el giroscopio detecta inclinación excesiva (>20°) al capturar
-      if (gyroDisponible && Math.abs(gammaAlCapturar) > 20) {
-        setPendingCaptura({ blob, previewUrl })
+      const gammaFueraRango = Math.abs(gammaAlCapturar) > 25
+      const betaFueraRango  = betaAlCapturar < 45 || betaAlCapturar > 115
+
+      if (gyroDisponible && (gammaFueraRango || betaFueraRango)) {
+        const mensaje =
+          gammaFueraRango && betaFueraRango
+            ? 'Corregí la inclinación antes de sacar la foto'
+            : gammaFueraRango
+              ? 'La foto está muy inclinada'
+              : 'Apuntá más derecho a la góndola'
+        setPendingCaptura({ blob, previewUrl, mensaje })
         setCapturaInclinada(true)
         setCapturando(false)
       } else {
@@ -275,7 +295,7 @@ function PasoCamara({
           <div className="flex items-start gap-3 mb-4">
             <span className="text-2xl shrink-0">📐</span>
             <div>
-              <p className="font-semibold text-amber-900 text-base">La foto puede estar muy inclinada</p>
+              <p className="font-semibold text-amber-900 text-base">{pendingCaptura.mensaje}</p>
               <p className="text-sm text-amber-700 mt-0.5">¿Querés tomarla de nuevo?</p>
             </div>
           </div>
@@ -376,39 +396,61 @@ function PasoCamara({
       {/* Botón captura + nivel de burbuja + alternativa archivo en desktop */}
       <div className="relative z-10 flex flex-col items-center gap-3 pb-12 pt-6 bg-gradient-to-t from-black/60 to-transparent">
 
-        {/* ── Indicador de nivel de burbuja (solo mobile con giroscopio) ──── */}
-        {gyroDisponible && inclinacion && (
-          <div className="flex flex-col items-center gap-1.5">
-            {/* Track horizontal */}
-            <div className="relative w-40 h-6 flex items-center">
-              {/* Línea base */}
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full h-0.5 bg-white/30 rounded-full" />
+        {/* ── Indicador de nivel 2D (solo mobile con giroscopio) ──── */}
+        {gyroDisponible && inclinacion && (() => {
+          const estaOk = inclinacion.gammaOk && inclinacion.betaOk
+          // X: gamma — desplazamiento horizontal (±20° → zona segura, clamp ±40px)
+          const dx = Math.max(-40, Math.min(40, (inclinacion.gamma / 30) * 40))
+          // Y: beta  — desplazamiento vertical (center=80°, rango 45-115, clamp ±40px)
+          const dy = Math.max(-40, Math.min(40, ((inclinacion.beta - 80) / 35) * 40))
+
+          const msgNivel = !inclinacion.gammaOk && !inclinacion.betaOk
+            ? 'Corregí la posición'
+            : !inclinacion.gammaOk
+              ? 'Enderezá el celular'
+              : !inclinacion.betaOk
+                ? 'Apuntá más derecho'
+                : 'Posición correcta ✓'
+
+          return (
+            <div className="flex flex-col items-center gap-1.5">
+              {/* Cuadrado 2D de referencia */}
+              <div className="relative w-24 h-24 rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm">
+                {/* Cruz de referencia */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-full h-px bg-white/25" />
+                </div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-full w-px bg-white/25" />
+                </div>
+                {/* Zona aceptable (círculo guía) */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full border border-white/20" />
+                </div>
+                {/* Burbuja 2D */}
+                <div
+                  className={`absolute w-5 h-5 rounded-full border-2 shadow-lg transition-all duration-100 ${
+                    estaOk
+                      ? 'bg-green-400 border-green-200'
+                      : 'bg-red-400 border-red-200'
+                  }`}
+                  style={{
+                    left:  '50%',
+                    top:   '50%',
+                    transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`,
+                  }}
+                />
               </div>
-              {/* Marcador central */}
-              <div className="absolute left-1/2 -translate-x-1/2 w-0.5 h-4 bg-white/50 rounded-full" />
-              {/* Burbuja móvil */}
-              <div
-                className={`absolute w-6 h-6 rounded-full border-2 shadow-lg transition-transform duration-100 ${
-                  !inclinacion.inclinado
-                    ? 'bg-green-400 border-green-200'
-                    : 'bg-red-400 border-red-200'
-                }`}
-                style={{
-                  left: '50%',
-                  transform: `translateX(calc(-50% + ${Math.max(-56, Math.min(56, (inclinacion.gamma / 30) * 56))}px))`,
-                }}
-              />
-            </div>
-            {inclinacion.inclinado ? (
-              <p className="text-xs font-semibold text-white bg-red-500/70 px-3 py-0.5 rounded-full backdrop-blur-sm">
-                Enderezá el celular
+              <p className={`text-xs font-medium px-2.5 py-0.5 rounded-full backdrop-blur-sm ${
+                estaOk
+                  ? 'text-white/70'
+                  : 'text-white font-semibold bg-red-500/70'
+              }`}>
+                {msgNivel}
               </p>
-            ) : (
-              <p className="text-xs text-white/60">Centrado ✓</p>
-            )}
-          </div>
-        )}
+            </div>
+          )
+        })()}
 
         <button
           onClick={capturar}
