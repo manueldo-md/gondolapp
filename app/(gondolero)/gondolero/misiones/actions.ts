@@ -29,69 +29,97 @@ export async function abandonarCampana(campanaId: string) {
 }
 
 export async function retirarFoto(fotoId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) redirect('/auth')
 
-  const admin = createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+    const admin = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
 
-  // 1. Obtener la foto y verificar ownership + estado
-  const { data: foto } = await admin
-    .from('fotos')
-    .select('id, gondolero_id, campana_id, estado, storage_path')
-    .eq('id', fotoId)
-    .single()
+    // 1. Obtener la foto y verificar ownership + estado
+    console.log('[retirarFoto] Buscando foto:', fotoId, 'gondolero:', user.id)
+    const { data: foto, error: fotoError } = await admin
+      .from('fotos')
+      .select('id, gondolero_id, campana_id, estado, storage_path')
+      .eq('id', fotoId)
+      .single()
 
-  if (!foto) return { error: 'Foto no encontrada.' }
-  if (foto.gondolero_id !== user.id) return { error: 'No tenés permiso para retirar esta foto.' }
-  if (foto.estado !== 'pendiente' && foto.estado !== 'en_revision') return { error: 'Esta foto ya fue revisada y no puede retirarse.' }
+    console.log('[retirarFoto] Foto encontrada:', foto, '| Error:', fotoError?.message)
 
-  // 2. Eliminar de Storage si tiene path
-  if (foto.storage_path) {
-    await admin.storage.from('fotos-gondola').remove([foto.storage_path])
-  }
+    if (fotoError || !foto) return { error: `Foto no encontrada: ${fotoError?.message ?? 'sin datos'}` }
+    if (foto.gondolero_id !== user.id) return { error: 'No tenés permiso para retirar esta foto.' }
+    if (foto.estado !== 'pendiente' && foto.estado !== 'en_revision') {
+      return { error: `Estado inválido para retirar: ${foto.estado}` }
+    }
 
-  // 3. Eliminar registro de la DB
-  const { error: deleteError } = await admin.from('fotos').delete().eq('id', fotoId)
-  if (deleteError) return { error: 'No se pudo eliminar la foto.' }
+    // 2. Eliminar de Storage si tiene path
+    if (foto.storage_path) {
+      const { error: storageError } = await admin.storage
+        .from('fotos-gondola')
+        .remove([foto.storage_path])
+      console.log('[retirarFoto] Storage remove:', storageError?.message ?? 'OK')
+    } else {
+      console.log('[retirarFoto] Sin storage_path, omitiendo eliminación de Storage')
+    }
 
-  // 4. Decrementar comercios_completados en participaciones
-  const { data: part } = await admin
-    .from('participaciones')
-    .select('comercios_completados')
-    .eq('campana_id', foto.campana_id)
-    .eq('gondolero_id', user.id)
-    .single()
+    // 3. Eliminar registro de la DB
+    const { error: deleteError } = await admin
+      .from('fotos')
+      .delete()
+      .eq('id', fotoId)
 
-  if (part) {
-    await admin
+    console.log('[retirarFoto] Delete DB:', deleteError?.message ?? 'OK')
+    if (deleteError) return { error: `Error al eliminar: ${deleteError.message}` }
+
+    // 4. Decrementar comercios_completados en participaciones
+    const { data: part, error: partError } = await admin
       .from('participaciones')
-      .update({ comercios_completados: Math.max(0, (part.comercios_completados ?? 0) - 1) })
+      .select('comercios_completados')
       .eq('campana_id', foto.campana_id)
       .eq('gondolero_id', user.id)
-  }
+      .single()
 
-  // 5. Decrementar comercios_relevados en campanas
-  const { data: campana } = await admin
-    .from('campanas')
-    .select('comercios_relevados')
-    .eq('id', foto.campana_id)
-    .single()
+    console.log('[retirarFoto] Participacion:', part, '| Error:', partError?.message)
 
-  if (campana) {
-    await admin
+    if (part) {
+      const { error: updPartError } = await admin
+        .from('participaciones')
+        .update({ comercios_completados: Math.max(0, (part.comercios_completados ?? 0) - 1) })
+        .eq('campana_id', foto.campana_id)
+        .eq('gondolero_id', user.id)
+      console.log('[retirarFoto] Update participacion:', updPartError?.message ?? 'OK')
+    }
+
+    // 5. Decrementar comercios_relevados en campanas
+    const { data: campana, error: campanaError } = await admin
       .from('campanas')
-      .update({ comercios_relevados: Math.max(0, (campana.comercios_relevados ?? 0) - 1) })
+      .select('comercios_relevados')
       .eq('id', foto.campana_id)
-  }
+      .single()
 
-  revalidatePath('/gondolero/misiones')
-  revalidatePath(`/gondolero/misiones/${foto.campana_id}`)
-  revalidatePath('/gondolero/actividad')
-  revalidatePath('/gondolero/actividad/pendientes')
-  return {}
+    console.log('[retirarFoto] Campana:', campana, '| Error:', campanaError?.message)
+
+    if (campana) {
+      const { error: updCampError } = await admin
+        .from('campanas')
+        .update({ comercios_relevados: Math.max(0, (campana.comercios_relevados ?? 0) - 1) })
+        .eq('id', foto.campana_id)
+      console.log('[retirarFoto] Update campana:', updCampError?.message ?? 'OK')
+    }
+
+    revalidatePath('/gondolero/misiones')
+    revalidatePath(`/gondolero/misiones/${foto.campana_id}`)
+    revalidatePath('/gondolero/actividad')
+    revalidatePath('/gondolero/actividad/pendientes')
+    console.log('[retirarFoto] Completado exitosamente')
+    return {}
+
+  } catch (e) {
+    console.error('[retirarFoto] Excepción:', e)
+    return { error: `Excepción: ${e instanceof Error ? e.message : String(e)}` }
+  }
 }

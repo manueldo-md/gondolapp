@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Star, Clock, Camera, MapPin, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Star, Clock, Camera, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
 import { UnirseButton } from './unirse-button'
 import {
   labelTipoCampana,
@@ -34,6 +34,7 @@ type CampanaDetalle = {
   min_comercios_para_cobrar: number
   comercios_relevados: number
   instruccion: string | null
+  nivel_minimo: string | null
   marca: { razon_social: string } | null
   bloques_foto: BloqueFotoRow[]
 }
@@ -48,6 +49,21 @@ const COLORES_TIPO: Record<TipoCampana, string> = {
   interna:      'bg-gray-100 text-gray-500',
 }
 
+const NIVEL_ORDEN: Record<string, number> = { casual: 0, activo: 1, pro: 2 }
+const NIVEL_LABEL: Record<string, string>  = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
+
+function ReqRow({ ok, text }: { ok: boolean; text: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      {ok
+        ? <CheckCircle2 size={15} className="text-green-500 shrink-0" />
+        : <XCircle     size={15} className="text-red-500 shrink-0" />
+      }
+      <span className={`text-sm ${ok ? 'text-gray-600' : 'text-red-700 font-medium'}`}>{text}</span>
+    </div>
+  )
+}
+
 export default async function CampanaDetallePage({
   params,
 }: {
@@ -58,13 +74,13 @@ export default async function CampanaDetallePage({
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const { data: campana } = await supabase
+  const { data: campanaData } = await supabase
     .from('campanas')
     .select(`
       id, nombre, tipo, financiada_por,
       puntos_por_foto, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
       objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
-      comercios_relevados, instruccion,
+      comercios_relevados, instruccion, nivel_minimo,
       marca:marcas ( razon_social ),
       bloques_foto ( id, orden, instruccion, tipo_contenido )
     `)
@@ -72,35 +88,53 @@ export default async function CampanaDetallePage({
     .eq('estado', 'activa')
     .single()
 
-  if (!campana) notFound()
+  if (!campanaData) notFound()
 
-  // Verificar si el gondolero ya está inscripto y activo
-  const { data: participacion } = await supabase
-    .from('participaciones')
-    .select('id')
-    .eq('campana_id', params.id)
-    .eq('gondolero_id', user.id)
-    .eq('estado', 'activa')
-    .maybeSingle()
+  const [{ data: participacionData }, { data: profileData }] = await Promise.all([
+    supabase
+      .from('participaciones')
+      .select('id, estado')
+      .eq('campana_id', params.id)
+      .eq('gondolero_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('profiles')
+      .select('nivel')
+      .eq('id', user.id)
+      .single(),
+  ])
 
-  const yaUnido = !!participacion
+  const c = campanaData as unknown as CampanaDetalle
+  const participacion = participacionData as { id: string; estado: string } | null
+  const gondoleroNivel = (profileData as { nivel: string } | null)?.nivel ?? 'casual'
 
-  const c = campana as unknown as CampanaDetalle
-  const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-  const progreso = calcularPorcentaje(c.comercios_relevados, c.objetivo_comercios ?? 0)
-  const marcaNombre = c.marca?.razon_social ?? 'GondolApp'
-  const bloques = [...(c.bloques_foto ?? [])].sort((a, b) => a.orden - b.orden)
+  const yaUnido        = participacion?.estado === 'activa'
+  const participacionAnteriorEstado = (
+    participacion?.estado === 'completada' || participacion?.estado === 'abandonada'
+  ) ? participacion.estado as 'completada' | 'abandonada' : null
 
-  // Validaciones de acceso
-  const inscripcionCerrada = !!(
-    c.fecha_limite_inscripcion && new Date(c.fecha_limite_inscripcion) < new Date()
-  )
-  const cupoLleno = !!(
-    c.tope_total_comercios != null && c.comercios_relevados >= c.tope_total_comercios
-  )
-  const cupoProgreso = c.tope_total_comercios
+  const dias         = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+  const progreso     = calcularPorcentaje(c.comercios_relevados, c.objetivo_comercios ?? 0)
+  const marcaNombre  = c.marca?.razon_social ?? 'GondolApp'
+  const bloques      = [...(c.bloques_foto ?? [])].sort((a, b) => a.orden - b.orden)
+
+  // Restricciones de acceso
+  const nivelMinimo       = c.nivel_minimo ?? 'casual'
+  const nivelOk           = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
+  const inscripcionCerrada = !!(c.fecha_limite_inscripcion && new Date(c.fecha_limite_inscripcion) < new Date())
+  const cupoLleno         = !!(c.tope_total_comercios != null && c.comercios_relevados >= c.tope_total_comercios)
+  const cupoProgreso      = c.tope_total_comercios
     ? calcularPorcentaje(c.comercios_relevados, c.tope_total_comercios)
     : null
+
+  // ¿Puede unirse? (sin contar participación anterior que es re-join)
+  const puedeUnirse = nivelOk && !inscripcionCerrada && !cupoLleno
+
+  // Mostrar panel de acceso cuando no está activo
+  const mostrarPanelAcceso = !yaUnido
+  const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || !!participacionAnteriorEstado
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -121,6 +155,11 @@ export default async function CampanaDetallePage({
           <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
             {marcaNombre}
           </span>
+          {nivelMinimo !== 'casual' && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600">
+              Nivel {NIVEL_LABEL[nivelMinimo]} requerido
+            </span>
+          )}
         </div>
         <h1 className="text-lg font-bold text-gray-900 mt-2 leading-snug">
           {c.nombre}
@@ -129,16 +168,52 @@ export default async function CampanaDetallePage({
 
       <div className="px-4 py-4 space-y-4">
 
+        {/* ── Ya participando ── */}
+        {yaUnido && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={18} className="text-green-600" />
+              <div>
+                <p className="text-sm font-semibold text-green-800">Ya estás participando</p>
+                <p className="text-xs text-green-600">Podés ver tu progreso en Mis misiones</p>
+              </div>
+            </div>
+            <Link
+              href={`/gondolero/misiones/${c.id}`}
+              className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-900"
+            >
+              Ir <ChevronRight size={13} />
+            </Link>
+          </div>
+        )}
+
+        {/* ── Participación anterior (completada / abandonada) ── */}
+        {!yaUnido && participacionAnteriorEstado && (
+          <div className={`rounded-2xl border p-4 ${
+            participacionAnteriorEstado === 'completada'
+              ? 'bg-green-50 border-green-200'
+              : 'bg-gray-50 border-gray-200'
+          }`}>
+            <p className={`text-sm font-semibold mb-0.5 ${
+              participacionAnteriorEstado === 'completada' ? 'text-green-800' : 'text-gray-700'
+            }`}>
+              {participacionAnteriorEstado === 'completada'
+                ? '✅ Ya completaste esta campaña'
+                : '⏸ Abandonaste esta campaña'}
+            </p>
+            <p className="text-xs text-gray-500">
+              {puedeUnirse ? 'Podés volver a unirte.' : 'No hay cupos o la inscripción está cerrada.'}
+            </p>
+          </div>
+        )}
+
         {/* Stats principales */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
             <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 mx-auto mb-1" />
-            <p className="text-base font-bold text-gondo-verde-400">
-              {formatearPuntos(c.puntos_por_foto)}
-            </p>
+            <p className="text-base font-bold text-gondo-verde-400">{formatearPuntos(c.puntos_por_foto)}</p>
             <p className="text-[11px] text-gray-400">pts/foto</p>
           </div>
-
           <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
             <Clock size={18} className="text-gray-400 mx-auto mb-1" />
             <p className={`text-base font-bold ${dias !== null && dias <= 3 ? 'text-red-500' : 'text-gray-700'}`}>
@@ -146,7 +221,6 @@ export default async function CampanaDetallePage({
             </p>
             <p className="text-[11px] text-gray-400">días</p>
           </div>
-
           <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
             <Camera size={18} className="text-gray-400 mx-auto mb-1" />
             <p className="text-base font-bold text-gray-700">{bloques.length}</p>
@@ -165,9 +239,7 @@ export default async function CampanaDetallePage({
         {/* Bloques de foto */}
         {bloques.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">
-              Fotos requeridas
-            </h2>
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Fotos requeridas</h2>
             <div className="space-y-3">
               {bloques.map((bloque, i) => (
                 <div key={bloque.id} className="flex gap-3">
@@ -181,34 +253,61 @@ export default async function CampanaDetallePage({
           </div>
         )}
 
-        {/* Reglas */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Condiciones</h2>
-          <div className="space-y-2.5">
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 size={16} className="text-gondo-verde-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-gray-600">
-                Mínimo <span className="font-medium">{c.min_comercios_para_cobrar} comercios</span> para cobrar puntos
-              </p>
-            </div>
-            <div className="flex items-start gap-2.5">
-              <MapPin size={16} className="text-gondo-verde-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-gray-600">
-                Máximo <span className="font-medium">{c.max_comercios_por_gondolero} comercios</span> por gondolero
-              </p>
-            </div>
-            {c.fecha_limite_inscripcion && (
-              <div className="flex items-start gap-2.5">
-                <Clock size={16} className="text-gondo-verde-400 mt-0.5 shrink-0" />
-                <p className="text-sm text-gray-600">
-                  Inscripción hasta el <span className="font-medium">{formatearFecha(c.fecha_limite_inscripcion)}</span>
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Panel de acceso / condiciones */}
+        {mostrarPanelAcceso && (hayRestricciones || !yaUnido) && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Condiciones de acceso</h2>
+            <div className="space-y-2.5">
+              {/* Inscripción */}
+              {c.fecha_limite_inscripcion ? (
+                <ReqRow
+                  ok={!inscripcionCerrada}
+                  text={inscripcionCerrada
+                    ? `Inscripción cerrada (venció el ${formatearFecha(c.fecha_limite_inscripcion)})`
+                    : `Inscripción abierta hasta el ${formatearFecha(c.fecha_limite_inscripcion)}`}
+                />
+              ) : (
+                <ReqRow ok text="Inscripción abierta" />
+              )}
 
-        {/* Cupo total */}
+              {/* Cupos */}
+              {c.tope_total_comercios != null && (
+                <ReqRow
+                  ok={!cupoLleno}
+                  text={cupoLleno
+                    ? `Sin cupos — ${c.comercios_relevados}/${c.tope_total_comercios} completos`
+                    : `Cupos disponibles — ${c.tope_total_comercios - c.comercios_relevados} restantes`}
+                />
+              )}
+
+              {/* Nivel */}
+              {nivelMinimo !== 'casual' && (
+                <ReqRow
+                  ok={nivelOk}
+                  text={nivelOk
+                    ? `Tu nivel ${NIVEL_LABEL[gondoleroNivel]} cumple el requisito (${NIVEL_LABEL[nivelMinimo]})`
+                    : `Requiere nivel ${NIVEL_LABEL[nivelMinimo]} — tu nivel es ${NIVEL_LABEL[gondoleroNivel]}`}
+                />
+              )}
+
+              {/* Mínimo de comercios */}
+              <div className="flex items-center gap-2.5">
+                <MapPin size={15} className="text-gondo-verde-400 shrink-0" />
+                <span className="text-sm text-gray-600">
+                  Mínimo <span className="font-medium">{c.min_comercios_para_cobrar} comercios</span> para cobrar puntos
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <Camera size={15} className="text-gondo-verde-400 shrink-0" />
+                <span className="text-sm text-gray-600">
+                  Máximo <span className="font-medium">{c.max_comercios_por_gondolero} comercios</span> por gondolero
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cupo total (barra visual) */}
         {c.tope_total_comercios != null && (
           <div className={`rounded-2xl border p-4 ${cupoLleno ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
             <div className="flex justify-between items-center mb-2">
@@ -224,9 +323,7 @@ export default async function CampanaDetallePage({
               />
             </div>
             <p className={`text-xs mt-1.5 ${cupoLleno ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-              {cupoLleno
-                ? 'Sin cupos disponibles'
-                : `${c.tope_total_comercios - c.comercios_relevados} cupos restantes`}
+              {cupoLleno ? 'Sin cupos disponibles' : `${c.tope_total_comercios - c.comercios_relevados} cupos restantes`}
             </p>
           </div>
         )}
@@ -241,10 +338,7 @@ export default async function CampanaDetallePage({
               </span>
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gondo-verde-400 rounded-full"
-                style={{ width: `${progreso}%` }}
-              />
+              <div className="h-full bg-gondo-verde-400 rounded-full" style={{ width: `${progreso}%` }} />
             </div>
             <p className="text-xs text-gray-400 mt-1.5">comercios relevados</p>
           </div>
@@ -259,6 +353,10 @@ export default async function CampanaDetallePage({
           yaUnido={yaUnido}
           inscripcionCerrada={inscripcionCerrada}
           cupoLleno={cupoLleno}
+          nivelOk={nivelOk}
+          nivelMinimo={nivelMinimo}
+          gondoleroNivel={gondoleroNivel}
+          participacionAnteriorEstado={participacionAnteriorEstado}
         />
       </div>
 

@@ -1,22 +1,38 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
+
+const NIVEL_ORDEN: Record<string, number> = { casual: 0, activo: 1, pro: 2 }
 
 export async function unirseACampana(campanaId: string): Promise<{ error: string } | void> {
   const supabase = await createClient()
-
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
   // Verificar campaña activa y validar restricciones
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: campana } = await (supabase as any)
+  const { data: campana } = await admin
     .from('campanas')
-    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados')
+    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados, nivel_minimo')
     .eq('id', campanaId)
     .eq('estado', 'activa')
-    .single() as { data: { id: string; fecha_limite_inscripcion: string | null; tope_total_comercios: number | null; comercios_relevados: number } | null }
+    .single() as {
+      data: {
+        id: string
+        fecha_limite_inscripcion: string | null
+        tope_total_comercios: number | null
+        comercios_relevados: number
+        nivel_minimo: string | null
+      } | null
+    }
 
   if (!campana) return { error: 'La campaña no está disponible.' }
 
@@ -30,28 +46,58 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
     return { error: 'Esta campaña ya alcanzó su cupo máximo.' }
   }
 
-  // Si ya está inscripto y activo, redirigir directo a misiones
-  const { data: existente } = await supabase
+  // Validar nivel del gondolero
+  const nivelMinimo = campana.nivel_minimo ?? 'casual'
+  if (nivelMinimo !== 'casual') {
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('nivel')
+      .eq('id', user.id)
+      .single() as { data: { nivel: string } | null }
+
+    const gondoleroNivel = profile?.nivel ?? 'casual'
+    if ((NIVEL_ORDEN[gondoleroNivel] ?? 0) < (NIVEL_ORDEN[nivelMinimo] ?? 0)) {
+      const NIVEL_LABEL: Record<string, string> = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
+      return { error: `Esta campaña requiere nivel ${NIVEL_LABEL[nivelMinimo] ?? nivelMinimo}. Tu nivel actual es ${NIVEL_LABEL[gondoleroNivel] ?? gondoleroNivel}.` }
+    }
+  }
+
+  // Verificar participación existente
+  const { data: existente } = await admin
     .from('participaciones')
-    .select('id')
+    .select('id, estado')
     .eq('campana_id', campanaId)
     .eq('gondolero_id', user.id)
-    .eq('estado', 'activa')
-    .maybeSingle()
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle() as { data: { id: string; estado: string } | null }
 
-  if (existente) {
+  // Si ya está activo, redirigir directo a misiones
+  if (existente?.estado === 'activa') {
     redirect(`/gondolero/misiones/${campanaId}`)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  // Si completó o abandonó: volver a activar la participación
+  if (existente?.estado === 'completada' || existente?.estado === 'abandonada') {
+    const { error } = await admin
+      .from('participaciones')
+      .update({ estado: 'activa', comercios_completados: 0 })
+      .eq('id', existente.id)
+
+    if (error) return { error: 'No pudimos volver a inscribirte. Intentá de nuevo.' }
+    revalidatePath('/gondolero/misiones')
+    revalidatePath('/gondolero/campanas')
+    redirect('/gondolero/misiones')
+  }
+
+  // Nueva inscripción
+  const { error } = await admin
     .from('participaciones')
-    .insert({
-      campana_id: campanaId,
-      gondolero_id: user.id,
-    })
+    .insert({ campana_id: campanaId, gondolero_id: user.id })
 
   if (error) return { error: 'No pudimos inscribirte. Intentá de nuevo.' }
 
+  revalidatePath('/gondolero/misiones')
+  revalidatePath('/gondolero/campanas')
   redirect('/gondolero/misiones')
 }

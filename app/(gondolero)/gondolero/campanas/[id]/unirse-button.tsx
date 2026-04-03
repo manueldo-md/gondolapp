@@ -6,20 +6,39 @@ import { XCircle } from 'lucide-react'
 import { unirseACampana } from './actions'
 import { AbandonarBtn } from '../../misiones/abandonar-btn'
 
+const NIVEL_LABEL: Record<string, string> = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
+
 export function UnirseButton({
   campanaId,
   yaUnido,
   inscripcionCerrada,
   cupoLleno,
+  nivelOk = true,
+  nivelMinimo = 'casual',
+  gondoleroNivel = 'casual',
+  participacionAnteriorEstado,
 }: {
   campanaId: string
   yaUnido: boolean
   inscripcionCerrada?: boolean
   cupoLleno?: boolean
+  nivelOk?: boolean
+  nivelMinimo?: string
+  gondoleroNivel?: string
+  participacionAnteriorEstado?: 'completada' | 'abandonada' | null
 }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
+  function handleUnirse() {
+    setError(null)
+    startTransition(async () => {
+      const result = await unirseACampana(campanaId)
+      if (result?.error) setError(result.error)
+    })
+  }
+
+  // Ya participando activamente
   if (yaUnido) {
     return (
       <div className="space-y-1">
@@ -34,6 +53,7 @@ export function UnirseButton({
     )
   }
 
+  // Sin cupos
   if (cupoLleno) {
     return (
       <div className="w-full py-4 bg-gray-100 text-gray-500 font-semibold rounded-2xl text-center text-base">
@@ -42,6 +62,7 @@ export function UnirseButton({
     )
   }
 
+  // Inscripción cerrada
   if (inscripcionCerrada) {
     return (
       <div className="w-full py-4 bg-gray-100 text-gray-500 font-semibold rounded-2xl text-center text-base">
@@ -49,6 +70,24 @@ export function UnirseButton({
       </div>
     )
   }
+
+  // Nivel insuficiente
+  if (!nivelOk) {
+    return (
+      <div className="space-y-2">
+        <div className="w-full py-4 bg-gray-100 text-gray-500 font-semibold rounded-2xl text-center text-base">
+          Requiere nivel {NIVEL_LABEL[nivelMinimo] ?? nivelMinimo}
+        </div>
+        <p className="text-xs text-center text-gray-400">
+          Tu nivel actual es <span className="font-semibold">{NIVEL_LABEL[gondoleroNivel] ?? gondoleroNivel}</span>.
+          Aprobá más fotos para subir de nivel.
+        </p>
+      </div>
+    )
+  }
+
+  // Re-unirse (completada / abandonada)
+  const esReunion = !!participacionAnteriorEstado
 
   return (
     <div className="space-y-2">
@@ -60,16 +99,16 @@ export function UnirseButton({
       )}
       <button
         disabled={pending}
-        onClick={() => {
-          setError(null)
-          startTransition(async () => {
-            const result = await unirseACampana(campanaId)
-            if (result?.error) setError(result.error)
-          })
-        }}
+        onClick={handleUnirse}
         className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-lg text-base transition-colors hover:bg-gondo-verde-600 disabled:opacity-60 min-h-touch"
       >
-        {pending ? 'Uniéndose...' : 'Unirme a esta campaña'}
+        {pending
+          ? 'Procesando...'
+          : esReunion
+            ? participacionAnteriorEstado === 'completada'
+              ? 'Volver a participar'
+              : 'Volver a unirme'
+            : 'Unirme a esta campaña'}
       </button>
     </div>
   )

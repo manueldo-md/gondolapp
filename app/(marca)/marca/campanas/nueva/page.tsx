@@ -24,6 +24,7 @@ interface Step2 {
   objetivo_comercios: string
   max_comercios_por_gondolero: string
   min_comercios_para_cobrar: string
+  nivel_minimo: string
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ export default function NuevaCampanaPage() {
     objetivo_comercios:         '',
     max_comercios_por_gondolero: '20',
     min_comercios_para_cobrar:  '3',
+    nivel_minimo:               'casual',
   })
 
   const paso1Valido = s1.nombre.trim().length >= 3 && s1.tipo
@@ -311,6 +313,22 @@ export default function NuevaCampanaPage() {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"
                 />
               </div>
+            </div>
+
+            {/* Nivel mínimo */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Nivel mínimo requerido
+              </label>
+              <select
+                value={s2.nivel_minimo}
+                onChange={e => setS2(p => ({ ...p, nivel_minimo: e.target.value }))}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition bg-white"
+              >
+                <option value="casual">Casual (todos)</option>
+                <option value="activo">Activo (50+ fotos aprobadas)</option>
+                <option value="pro">Pro (150+ fotos aprobadas)</option>
+              </select>
             </div>
 
             {/* Zonas */}
