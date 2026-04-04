@@ -738,5 +738,65 @@ Eliminar la sección "Economía" del panel de configuración cuando se implement
 
 ---
 
+### Privacidad y anonimato en el ecosistema
+
+**1. ALIAS ÚNICO PARA GONDOLEROS**
+
+Cada gondolero tiene un alias único generado automáticamente que es lo que ve toda la plataforma. El nombre real solo lo ve el admin y su distribuidora vinculada.
+
+**Pendiente de definir:**
+- Sistema de nomenclatura para el alias (¿random como "Cóndor47"? ¿inicial + apellido? ¿auto-generado al crear cuenta?)
+- Quién puede ver el nombre real: solo admin y la distri vinculada, o también las marcas cuyas campañas completó
+
+---
+
+**2. VISIBILIDAD DE CREADOR DE CAMPAÑA**
+
+El gondolero NO ve quién creó la campaña a menos que sea su distribuidora vinculada.
+- Si la creó su distri → mostrar nombre de la distri con badge especial "Tu distribuidora"
+- Si la creó otra distri o una marca → ocultar el creador, mostrar solo el nombre de la campaña
+
+**Consideraciones técnicas:**
+- En `campanas/page.tsx` y `campanas/[id]/page.tsx` filtrar la visibilidad del campo `distri_id` / `marca_id` según el `distri_id` del gondolero en profiles
+- Requiere que el gondolero tenga `distri_id` seteado en su perfil
+
+---
+
+**3. ETIQUETA DE DISTRIBUIDORA EN CAMPAÑA**
+
+Las campañas tienen un campo `distri_id`. Solo se muestra el nombre de la distri al gondolero si coincide con su `distri_id` en profiles.
+
+**Implementación sugerida:**
+```typescript
+// En campanas/page.tsx
+const gondoleroDistriId = profile.distri_id
+const campanas = campanas.map(c => ({
+  ...c,
+  distribuidora: c.distri_id === gondoleroDistriId ? c.distribuidora_nombre : null,
+  esMiDistri: c.distri_id === gondoleroDistriId,
+}))
+```
+
+---
+
+**4. RELACIONAMIENTO GONDOLERO ↔ DISTRIBUIDORA**
+
+El campo `distri_id` en `profiles` existe pero no hay un flujo formal de vinculación bidireccional.
+
+**Lo que falta:**
+- La distri debería poder ver y gestionar sus gondoleros vinculados (aprobarlos o desvincularlos)
+- El gondolero debería poder solicitar vincularse a una distri (o la distri lo invita)
+- Estado de vinculación: `pendiente` / `activo` / `suspendido`
+- Cuando la distri desvincula a un gondolero, su `distri_id` vuelve a null
+
+**Modelo de datos sugerido:**
+- Agregar `distri_vinculacion_estado text DEFAULT 'pendiente'` a profiles
+- O tabla separada `gondolero_distribuidoras (gondolero_id, distri_id, estado, created_at, updated_at)`
+
+**Impacto en el negocio:**
+Esta vinculación es clave para que la distri pueda asignar campañas exclusivas a "sus" vendedores y para el sistema de beneficios segmentados.
+
+---
+
 *Última actualización: Abril 2026*
 *Versión del documento: 1.1*
