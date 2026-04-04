@@ -85,7 +85,7 @@ export async function getConfig(): Promise<ConfigCompleta> {
         puntosCanjeTransferencia:  n('puntos_canje_transferencia', 2000),
       },
       niveles: {
-        fotosCasualAActivo: n('nivel_fotos_casual_a_activo', 50),
+        fotosCasualAActivo: n('nivel_fotos_casual_a_activo', 20),
         fotosActivoAPro:    n('nivel_fotos_activo_a_pro', 100),
       },
       operacion: {
@@ -114,7 +114,7 @@ export async function getConfig(): Promise<ConfigCompleta> {
         puntosCanjeNafta: 500, puntosCanjeGiftcard: 1000,
         puntosCanjeTransferencia: 2000,
       },
-      niveles: { fotosCasualAActivo: 50, fotosActivoAPro: 100 },
+      niveles: { fotosCasualAActivo: 20, fotosActivoAPro: 100 },
       operacion: {
         slaCanjesHoras: 48, alertaGondoleroInactivoDias: 14,
         alertaComercioSinVisitaDias: 30, alertaIgnoradaReactivacionDias: 7,

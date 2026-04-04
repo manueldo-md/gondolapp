@@ -18,3 +18,19 @@ export function calcularNuevoNivel(
   }
   return nivelActual
 }
+
+/**
+ * Calcula el nivel de un gondolero dinámicamente a partir de sus fotos aprobadas
+ * en el mes en curso. Fuente de verdad única para todas las vistas.
+ *
+ * Regla: Casual = 0–(fotosCasualAActivo-1), Activo = fotosCasualAActivo–(fotosActivoAPro-1), Pro = fotosActivoAPro+
+ */
+export function calcularNivelMensual(
+  fotosAprobadaMes: number,
+  fotosCasualAActivo: number,
+  fotosActivoAPro: number,
+): 'casual' | 'activo' | 'pro' {
+  if (fotosAprobadaMes >= fotosActivoAPro) return 'pro'
+  if (fotosAprobadaMes >= fotosCasualAActivo) return 'activo'
+  return 'casual'
+}

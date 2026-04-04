@@ -3,6 +3,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { User } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
+import { getConfig } from '@/lib/config'
+import { calcularNivelMensual } from '@/lib/nivel'
 import { ZonasSelector } from './zonas-selector'
 import { DatosForm } from './datos-form'
 import { PasswordForm } from './password-form'
@@ -33,12 +35,21 @@ export default async function PerfilPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const [profileRes, zonasRes, gondoleroZonasRes] = await Promise.all([
+  const ahora = new Date()
+  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+
+  const [profileRes, zonasRes, gondoleroZonasRes, fotosEsteMesRes, config] = await Promise.all([
     admin.from('profiles')
       .select('nombre, alias, nivel, distri_id, celular, codigo_gondolero')
       .eq('id', user.id).single(),
     admin.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre'),
     admin.from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id),
+    admin.from('fotos')
+      .select('id', { count: 'exact', head: true })
+      .eq('gondolero_id', user.id)
+      .eq('estado', 'aprobada')
+      .gte('created_at', inicioMes.toISOString()),
+    getConfig(),
   ])
 
   const profile = profileRes.data
@@ -88,7 +99,13 @@ export default async function PerfilPage() {
     }
   }
 
-  const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
+  // Nivel calculado dinámicamente del mes en curso (fuente de verdad)
+  const fotosEsteMes = fotosEsteMesRes.count ?? 0
+  const nivel = calcularNivelMensual(
+    fotosEsteMes,
+    config.niveles.fotosCasualAActivo,
+    config.niveles.fotosActivoAPro,
+  )
   const nombre = profile?.nombre ?? 'Gondolero'
   const inicial = nombre.charAt(0).toUpperCase()
 

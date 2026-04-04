@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Trophy } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { getConfig } from '@/lib/config'
+import { calcularNivelMensual } from '@/lib/nivel'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
 import { MarcarLogrosVistos } from './marcar-vistos'
@@ -111,51 +112,50 @@ export default async function LogrosPage() {
     (comerciosRes.data ?? []).map((f: { comercio_id: string | null }) => f.comercio_id).filter(Boolean)
   ).size
 
-  // ── Nivel real (corrige DB desactualizada) ────────────────────────────────
+  // ── Nivel dinámico (fotos aprobadas del mes en curso — fuente de verdad única) ──
   const puntosDisponibles  = profile?.puntos_disponibles ?? 0
   const fotosCasualAActivo = config.niveles.fotosCasualAActivo
   const fotosActivoAPro    = config.niveles.fotosActivoAPro
 
-  let nivelReal: NivelGondolero = (profile?.nivel ?? 'casual') as NivelGondolero
-  if (fotosAprobadas >= fotosActivoAPro) {
-    nivelReal = 'pro'
-  } else if (fotosAprobadas >= fotosCasualAActivo) {
-    nivelReal = 'activo'
-  }
+  // fotosEsteMesRes contiene todas las fotos del mes de todos los gondoleros;
+  // extraemos el conteo del usuario actual desde ese mismo mapa (construido más adelante).
+  // Para el cálculo de nivel propio necesitamos el conteo personal del mes:
+  const fotosEsteMes = (fotosEsteMesRes.data ?? []).filter(
+    (f: { gondolero_id: string }) => f.gondolero_id === user.id
+  ).length
 
-  // Actualizar DB si está desactualizado (fire-and-forget)
-  if (profile && nivelReal !== profile.nivel) {
-    admin.from('profiles').update({ nivel: nivelReal }).eq('id', user.id)
-  }
-
-  const nivel = nivelReal   // alias para el resto del componente
+  const nivel: NivelGondolero = calcularNivelMensual(
+    fotosEsteMes,
+    fotosCasualAActivo,
+    fotosActivoAPro,
+  )
 
   // ── Progreso de 3 nodos ───────────────────────────────────────────────────
   const fotasParaSiguiente = nivel === 'casual'
-    ? Math.max(0, fotosCasualAActivo - fotosAprobadas)
+    ? Math.max(0, fotosCasualAActivo - fotosEsteMes)
     : nivel === 'activo'
-      ? Math.max(0, fotosActivoAPro - fotosAprobadas)
+      ? Math.max(0, fotosActivoAPro - fotosEsteMes)
       : 0
 
   // Porcentaje de cada segmento de la barra lineal
   const linea1Pct = nivel === 'casual'
-    ? Math.min(100, Math.round((fotosAprobadas / fotosCasualAActivo) * 100))
+    ? Math.min(100, Math.round((fotosEsteMes / fotosCasualAActivo) * 100))
     : 100
 
   const linea2Pct = nivel === 'casual'
     ? 0
     : nivel === 'activo'
       ? Math.min(100, Math.round(
-          ((fotosAprobadas - fotosCasualAActivo) / (fotosActivoAPro - fotosCasualAActivo)) * 100
+          ((fotosEsteMes - fotosCasualAActivo) / (fotosActivoAPro - fotosCasualAActivo)) * 100
         ))
       : 100
 
   // Label debajo de cada línea
   const linea1Label = nivel === 'casual'
-    ? `${fotosAprobadas}/${fotosCasualAActivo}`
+    ? `${fotosEsteMes}/${fotosCasualAActivo}`
     : '✓'
   const linea2Label = nivel === 'activo'
-    ? `${fotosAprobadas - fotosCasualAActivo}/${fotosActivoAPro - fotosCasualAActivo}`
+    ? `${fotosEsteMes - fotosCasualAActivo}/${fotosActivoAPro - fotosCasualAActivo}`
     : nivel === 'pro'
       ? '✓'
       : `0/${fotosActivoAPro - fotosCasualAActivo}`
@@ -177,7 +177,7 @@ export default async function LogrosPage() {
   const [perfilesRankingRes, zonaColegasRes, zonasDataRes] = await Promise.all([
     todosIds.length > 0
       ? admin.from('profiles')
-          .select('id, alias, nivel, distri_id')
+          .select('id, alias, distri_id')
           .in('id', todosIds)
           .eq('tipo_actor', 'gondolero')
       : Promise.resolve({ data: [] }),
@@ -197,17 +197,20 @@ export default async function LogrosPage() {
     ? await admin.from('gondolero_zonas').select('gondolero_id').in('zona_id', misProvincias)
     : { data: [] }
 
-  type PerfilRanking = { id: string; alias: string | null; nivel: NivelGondolero; distri_id: string | null }
+  type PerfilRanking = { id: string; alias: string | null; distri_id: string | null }
   const perfiles = (perfilesRankingRes.data ?? []) as PerfilRanking[]
 
   const buildRanking = (lista: PerfilRanking[]): RankingEntry[] =>
     lista
-      .map(p => ({
-        gondolero_id:   p.id,
-        alias:          p.alias ?? 'Gondolero',
-        nivel:          p.nivel,
-        fotos_este_mes: conteoPorGondolero.get(p.id) ?? 0,
-      }))
+      .map(p => {
+        const fotasMes = conteoPorGondolero.get(p.id) ?? 0
+        return {
+          gondolero_id:   p.id,
+          alias:          p.alias ?? 'Gondolero',
+          nivel:          calcularNivelMensual(fotasMes, fotosCasualAActivo, fotosActivoAPro),
+          fotos_este_mes: fotasMes,
+        }
+      })
       .sort((a, b) => b.fotos_este_mes - a.fotos_este_mes)
       .slice(0, 10)
       .map((e, i) => ({ ...e, posicion: i + 1 }))
