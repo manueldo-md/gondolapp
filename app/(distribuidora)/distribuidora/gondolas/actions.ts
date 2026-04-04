@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { getConfig } from '@/lib/config'
 import { calcularNuevoNivel } from '@/lib/nivel'
+import { verificarLogros } from '@/lib/logros'
 
 function createAdminClient() {
   return createSupabaseClient(
@@ -161,6 +162,16 @@ export async function aprobarFoto(fotoId: string) {
       comercios_relevados: (campana.comercios_relevados || 0) + 1,
     })
     .eq('id', foto.campana_id)
+
+  // 9. Verificar y desbloquear logros
+  if (profileNivel) {
+    await verificarLogros(
+      foto.gondolero_id,
+      adminClient,
+      profileNivel.fotos_aprobadas ?? 0,
+      foto.campana_id
+    )
+  }
 
   revalidatePath('/distribuidora/gondolas')
   revalidatePath(`/distribuidora/campanas/${foto.campana_id}`)

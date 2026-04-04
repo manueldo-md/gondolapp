@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { getConfig } from '@/lib/config'
 import { calcularNuevoNivel } from '@/lib/nivel'
+import { verificarLogros } from '@/lib/logros'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -94,6 +95,14 @@ export async function aprobarFotoAdmin(fotoId: string) {
         })
       }
     }
+
+    // Verificar y desbloquear logros
+    await verificarLogros(
+      foto.gondolero_id,
+      admin,
+      profileNivel?.fotos_aprobadas ?? 0,
+      foto.campana_id
+    )
   }
 
   revalidatePath('/admin/fotos')

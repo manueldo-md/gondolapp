@@ -8,6 +8,7 @@ import type { NivelGondolero } from '@/types'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { MarcarNotificacionesLeidas } from '../perfil/marcar-leidas'
 import { getConfig } from '@/lib/config'
+import { LogrosYRanking, type LogroUI, type RankingEntry } from './logros-y-ranking'
 
 const NIVEL_LABEL: Record<NivelGondolero, string> = {
   casual: 'Casual',
@@ -20,6 +21,11 @@ const NIVEL_SIGUIENTE: Record<NivelGondolero, string> = {
   pro:    '',
 }
 
+const MESES_ES = [
+  'Enero','Febrero','Marzo','Abril','Mayo','Junio',
+  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
+]
+
 export default async function ActividadPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -31,6 +37,12 @@ export default async function ActividadPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
+  // Inicio del mes actual para ranking
+  const ahora = new Date()
+  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  const mesLabel = `${MESES_ES[ahora.getMonth()]} ${ahora.getFullYear()}`
+
+  // ── FASE 1: todas las queries independientes en paralelo ──────────────────
   const [
     profileRes,
     movimientosRes,
@@ -41,9 +53,13 @@ export default async function ActividadPage() {
     notificacionesRes,
     fotosPendientesRes,
     config,
+    fotosEsteMesRes,
+    misZonasRes,
+    todosLogrosRes,
+    gondoleroLogrosRes,
   ] = await Promise.all([
     admin.from('profiles')
-      .select('nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion')
+      .select('nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id')
       .eq('id', user.id).single(),
     admin.from('movimientos_puntos')
       .select('id, tipo, monto, concepto, created_at')
@@ -73,18 +89,40 @@ export default async function ActividadPage() {
       .order('created_at', { ascending: false })
       .limit(3),
     getConfig(),
+    // Fotos aprobadas este mes (gondolero_id only — para ranking)
+    admin.from('fotos')
+      .select('gondolero_id')
+      .eq('estado', 'aprobada')
+      .gte('created_at', inicioMes.toISOString()),
+    // Mis zonas
+    admin.from('gondolero_zonas')
+      .select('zona_id')
+      .eq('gondolero_id', user.id),
+    // Catálogo de logros
+    admin.from('logros')
+      .select('clave, nombre, descripcion, emoji')
+      .order('created_at', { ascending: true }),
+    // Logros desbloqueados por el gondolero
+    admin.from('gondolero_logros')
+      .select('logro_clave, frase_mostrada, desbloqueado_at')
+      .eq('gondolero_id', user.id),
   ])
 
-  const profile = profileRes.data
+  const profile = profileRes.data as {
+    nivel: NivelGondolero
+    puntos_disponibles: number
+    puntos_totales_ganados: number
+    tasa_aprobacion: number
+    distri_id: string | null
+  } | null
+
   const movimientos = movimientosRes.data ?? []
   const canjesPendientes = canjesPendientesRes.data ?? []
   const fotosAprobadas = fotosRes.count ?? 0
   const fotosPendientesTotal = fotosPendientesRes.count ?? 0
   const fotosPendientesPreview = (fotosPendientesRes.data ?? []) as unknown as {
-    id: string
-    created_at: string
-    comercio: { nombre: string } | null
-    campana: { nombre: string } | null
+    id: string; created_at: string
+    comercio: { nombre: string } | null; campana: { nombre: string } | null
   }[]
   const campanasCompletadas = campanasRes.count ?? 0
   const comerciosVisitados = new Set(
@@ -93,10 +131,10 @@ export default async function ActividadPage() {
   const notificaciones = notificacionesRes.data ?? []
   const hayNoLeidas = notificaciones.some((n: { leida: boolean }) => !n.leida)
 
+  // ── Nivel y progreso ──────────────────────────────────────────────────────
   const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
   const puntosDisponibles = profile?.puntos_disponibles ?? 0
 
-  // Thresholds dinámicos desde la DB
   const fotosCasualAActivo = config.niveles.fotosCasualAActivo
   const fotosActivoAPro    = config.niveles.fotosActivoAPro
 
@@ -118,6 +156,118 @@ export default async function ActividadPage() {
     : 100
   const fotasParaSiguiente = umbralSiguiente ? Math.max(0, umbralSiguiente - fotosAprobadas) : 0
 
+  // ── FASE 2: Ranking — queries dependientes de fase 1 ─────────────────────
+  const misZonaIds = (misZonasRes.data ?? []).map((z: { zona_id: string }) => z.zona_id)
+  const miDistriId = profile?.distri_id ?? null
+
+  // Agrupar fotos este mes por gondolero
+  const conteoPorGondolero = new Map<string, number>()
+  for (const f of fotosEsteMesRes.data ?? []) {
+    const id = (f as { gondolero_id: string }).gondolero_id
+    conteoPorGondolero.set(id, (conteoPorGondolero.get(id) ?? 0) + 1)
+  }
+  const todosIds = [...conteoPorGondolero.keys()]
+
+  const [perfilesRankingRes, zonaColegasRes, zonasDataRes] = await Promise.all([
+    todosIds.length > 0
+      ? admin.from('profiles')
+          .select('id, alias, nivel, distri_id')
+          .in('id', todosIds)
+          .eq('tipo_actor', 'gondolero')
+      : Promise.resolve({ data: [] }),
+    misZonaIds.length > 0
+      ? admin.from('gondolero_zonas')
+          .select('gondolero_id')
+          .in('zona_id', misZonaIds)
+      : Promise.resolve({ data: [] }),
+    misZonaIds.length > 0
+      ? admin.from('zonas').select('id, tipo').in('id', misZonaIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  // FASE 3: colegas por provincia (si el usuario tiene zonas tipo='provincia')
+  const misProvincias = (zonasDataRes.data ?? [])
+    .filter((z: { tipo: string }) => z.tipo === 'provincia')
+    .map((z: { id: string }) => z.id)
+
+  const provColegasRes = misProvincias.length > 0
+    ? await admin.from('gondolero_zonas')
+        .select('gondolero_id')
+        .in('zona_id', misProvincias)
+    : { data: [] }
+
+  // ── Construir rankings ──────────────────────────────────────────────────
+  type PerfilRanking = { id: string; alias: string | null; nivel: NivelGondolero; distri_id: string | null }
+
+  const perfiles = (perfilesRankingRes.data ?? []) as PerfilRanking[]
+
+  const buildRanking = (lista: PerfilRanking[], limit = 10): RankingEntry[] =>
+    lista
+      .map(p => ({
+        gondolero_id:  p.id,
+        alias:         p.alias ?? 'Gondolero',
+        nivel:         p.nivel,
+        fotos_este_mes: conteoPorGondolero.get(p.id) ?? 0,
+      }))
+      .sort((a, b) => b.fotos_este_mes - a.fotos_este_mes)
+      .slice(0, limit)
+      .map((e, i) => ({ ...e, posicion: i + 1 }))
+
+  const getPosicion = (lista: PerfilRanking[]): number | null => {
+    const sorted = lista
+      .map(p => ({ id: p.id, fotos: conteoPorGondolero.get(p.id) ?? 0 }))
+      .sort((a, b) => b.fotos - a.fotos)
+    const idx = sorted.findIndex(e => e.id === user.id)
+    return idx >= 0 ? idx + 1 : null
+  }
+
+  // Nacional
+  const rankingNacional  = buildRanking(perfiles)
+  const posNacional      = getPosicion(perfiles)
+
+  // Mi Distri
+  const perfilesDistri   = miDistriId ? perfiles.filter(p => p.distri_id === miDistriId) : []
+  const rankingDistri    = buildRanking(perfilesDistri)
+  const posDistri        = miDistriId ? getPosicion(perfilesDistri) : null
+
+  // Mi Zona
+  const zonaGondoleroIds = new Set(
+    (zonaColegasRes.data ?? []).map((z: { gondolero_id: string }) => z.gondolero_id)
+  )
+  const perfilesZona     = perfiles.filter(p => zonaGondoleroIds.has(p.id))
+  const rankingZona      = buildRanking(perfilesZona)
+  const posZona          = misZonaIds.length ? getPosicion(perfilesZona) : null
+
+  // Mi Provincia
+  const provGondoleroIds = new Set(
+    (provColegasRes.data ?? []).map((z: { gondolero_id: string }) => z.gondolero_id)
+  )
+  const perfilesProv     = perfiles.filter(p => provGondoleroIds.has(p.id))
+  const rankingProvincia = buildRanking(perfilesProv)
+  const posProvincia     = misProvincias.length ? getPosicion(perfilesProv) : null
+
+  // ── Construir logros UI ───────────────────────────────────────────────────
+  const logrosDesbloqueados = new Map<string, { frase: string | null; at: string | null }>(
+    (gondoleroLogrosRes.data ?? []).map((l: {
+      logro_clave: string; frase_mostrada: string | null; desbloqueado_at: string | null
+    }) => [l.logro_clave, { frase: l.frase_mostrada, at: l.desbloqueado_at }])
+  )
+
+  const logrosUI: LogroUI[] = (todosLogrosRes.data ?? []).map((l: {
+    clave: string; nombre: string; descripcion: string; emoji: string
+  }) => {
+    const desbloqueado = logrosDesbloqueados.get(l.clave)
+    return {
+      clave:           l.clave,
+      nombre:          l.nombre,
+      descripcion:     l.descripcion,
+      emoji:           l.emoji,
+      desbloqueado:    !!desbloqueado,
+      frase:           desbloqueado?.frase ?? null,
+      desbloqueado_at: desbloqueado?.at ?? null,
+    }
+  })
+
   const PREMIO_LABEL: Record<string, string> = {
     credito_celular: '🔋 Crédito celular',
     nafta_ypf:       '⛽ Nafta YPF',
@@ -136,7 +286,6 @@ export default async function ActividadPage() {
         </div>
       </div>
 
-      {/* Marcar notificaciones como leídas tras 2s */}
       {hayNoLeidas && <MarcarNotificacionesLeidas gondoleroId={user.id} />}
 
       <div className="px-4 space-y-4 pt-4">
@@ -199,7 +348,29 @@ export default async function ActividadPage() {
           </div>
         </div>
 
-        {/* ── SECCIÓN 3 — Canjear puntos ── */}
+        {/* ── SECCIÓN 3 — Logros + Ranking ── */}
+        <LogrosYRanking
+          logros={logrosUI}
+          rankings={{
+            nacional:  rankingNacional,
+            distri:    rankingDistri,
+            zona:      rankingZona,
+            provincia: rankingProvincia,
+          }}
+          misPosiciones={{
+            nacional:  posNacional,
+            distri:    posDistri,
+            zona:      posZona,
+            provincia: posProvincia,
+          }}
+          gondoleroId={user.id}
+          mesLabel={mesLabel}
+          hayDistri={!!miDistriId}
+          hayZona={misZonaIds.length > 0}
+          hayProvincia={misProvincias.length > 0}
+        />
+
+        {/* ── SECCIÓN 4 — Canjear puntos ── */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Canjear puntos</h2>
           <CanjeCatalogo puntosDisponibles={puntosDisponibles} nivel={nivel} />
@@ -230,7 +401,7 @@ export default async function ActividadPage() {
           </div>
         )}
 
-        {/* ── SECCIÓN 4 — Notificaciones ── */}
+        {/* ── SECCIÓN 5 — Notificaciones ── */}
         {notificaciones.length > 0 && (
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -244,11 +415,7 @@ export default async function ActividadPage() {
             </div>
             <div className="rounded-2xl overflow-hidden divide-y divide-gray-100">
               {notificaciones.map((n: {
-                id: string
-                titulo: string
-                mensaje: string | null
-                leida: boolean
-                created_at: string
+                id: string; titulo: string; mensaje: string | null; leida: boolean; created_at: string
               }) => (
                 <div
                   key={n.id}
@@ -283,7 +450,7 @@ export default async function ActividadPage() {
           </div>
         )}
 
-        {/* ── SECCIÓN 4.5 — Fotos pendientes ── */}
+        {/* ── SECCIÓN 5.5 — Fotos pendientes ── */}
         {fotosPendientesTotal > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
             <div className="flex items-center justify-between mb-1">
@@ -309,7 +476,7 @@ export default async function ActividadPage() {
           </div>
         )}
 
-        {/* ── SECCIÓN 5 — Últimos movimientos ── */}
+        {/* ── SECCIÓN 6 — Últimos movimientos ── */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-gray-700">Últimos movimientos</h2>
@@ -329,11 +496,7 @@ export default async function ActividadPage() {
           ) : (
             <div className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-50 overflow-hidden">
               {movimientos.map((m: {
-                id: string
-                tipo: string
-                monto: number
-                concepto: string | null
-                created_at: string
+                id: string; tipo: string; monto: number; concepto: string | null; created_at: string
               }) => (
                 <div key={m.id} className="flex items-center gap-3 px-4 py-3">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
