@@ -89,9 +89,11 @@ export function CamposBloqueBuilder({
 
   return (
     <div className="space-y-3">
+      {/* Encabezado de la sección */}
       <div className="flex items-center justify-between">
         <label className="block text-sm font-medium text-gray-700">
-          Preguntas del bloque <span className="text-gray-400 font-normal">(opcional)</span>
+          Preguntas del bloque{' '}
+          <span className="text-gray-400 font-normal">(opcional)</span>
         </label>
         <button
           type="button"
@@ -103,70 +105,84 @@ export function CamposBloqueBuilder({
         </button>
       </div>
 
+      {/* Estado vacío */}
       {campos.length === 0 && (
-        <p className="text-xs text-gray-400 text-center py-3 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+        <p className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
           Sin preguntas — el gondolero solo declarará resultado.
         </p>
       )}
 
+      {/* Lista de preguntas */}
       {campos.map((campo, idx) => {
         const estaExpandido = expandido === campo.tempId
         return (
-          <div key={campo.tempId} className="border border-gray-200 rounded-lg overflow-hidden">
-            {/* Header del campo */}
-            <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50">
-              <GripVertical size={14} className="text-gray-300 shrink-0" />
-              <span className="text-xs font-semibold text-gray-400">{idx + 1}</span>
-              <p className="flex-1 text-sm text-gray-700 truncate min-w-0">
+          <div
+            key={campo.tempId}
+            className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm"
+          >
+            {/* ── Header de la pregunta ── */}
+            <div className="flex items-center gap-2.5 px-4 py-3 bg-gray-900">
+              <GripVertical size={13} className="text-gray-500 shrink-0" />
+              <span className="text-xs font-bold text-white tracking-wide shrink-0">
+                Pregunta {idx + 1}
+              </span>
+              <p className="flex-1 text-sm text-gray-300 truncate min-w-0">
                 {campo.pregunta
                   ? campo.pregunta
-                  : <span className="text-gray-400 italic">Sin nombre</span>
+                  : <span className="text-gray-500 italic font-normal">Sin nombre</span>
                 }
               </p>
-              <span className="text-[10px] text-gray-400 shrink-0 hidden sm:inline">
+              <span className="text-[10px] font-medium text-gray-400 shrink-0 hidden sm:inline bg-gray-700 px-2 py-0.5 rounded-full">
                 {TIPO_LABEL[campo.tipo]}
               </span>
               <button
                 type="button"
                 onClick={() => setExpandido(estaExpandido ? null : campo.tempId)}
-                className="p-1 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                className="p-1 text-gray-400 hover:text-white transition-colors shrink-0"
+                title={estaExpandido ? 'Colapsar' : 'Expandir'}
               >
                 {estaExpandido ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
               </button>
               <button
                 type="button"
                 onClick={() => eliminar(campo.tempId)}
-                className="p-1 text-gray-300 hover:text-red-400 transition-colors shrink-0"
+                className="p-1 text-gray-500 hover:text-red-400 transition-colors shrink-0"
+                title="Eliminar pregunta"
               >
                 <Trash2 size={13} />
               </button>
             </div>
 
-            {/* Detalle expandido */}
+            {/* ── Detalle expandido ── */}
             {estaExpandido && (
-              <div className="p-3 space-y-3 border-t border-gray-100">
-                {/* Pregunta */}
+              <div className="p-4 space-y-4 bg-gray-50 border-t border-gray-200">
+
+                {/* Campo: Pregunta */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Pregunta</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    Texto de la pregunta
+                  </label>
                   <input
                     type="text"
                     value={campo.pregunta}
                     onChange={e => actualizar(campo.tempId, { pregunta: e.target.value })}
                     placeholder="Ej: ¿El producto tiene precio visible?"
-                    className={`w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 ${accentClass} transition`}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 ${accentClass} transition`}
                   />
                 </div>
 
-                {/* Tipo */}
+                {/* Campo: Tipo de respuesta */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de respuesta</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    Tipo de respuesta
+                  </label>
                   <select
                     value={campo.tipo}
                     onChange={e => actualizar(campo.tempId, {
                       tipo: e.target.value as CampoBloque['tipo'],
                       opciones: tieneOpciones(e.target.value as CampoBloque['tipo']) ? [''] : [],
                     })}
-                    className={`w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 ${accentClass} transition bg-white`}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 ${accentClass} transition appearance-none cursor-pointer`}
                   >
                     {(Object.entries(TIPO_LABEL) as [CampoBloque['tipo'], string][]).map(([v, l]) => (
                       <option key={v} value={v}>{l}</option>
@@ -174,25 +190,31 @@ export function CamposBloqueBuilder({
                   </select>
                 </div>
 
-                {/* Opciones (solo para selección) */}
+                {/* Campo: Opciones (solo para selección) */}
                 {tieneOpciones(campo.tipo) && (
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Opciones</label>
-                    <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Opciones de respuesta
+                    </label>
+                    <div className="space-y-2">
                       {campo.opciones.map((op, oi) => (
-                        <div key={oi} className="flex items-center gap-1.5">
+                        <div key={oi} className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-400 w-5 text-right shrink-0">
+                            {oi + 1}.
+                          </span>
                           <input
                             type="text"
                             value={op}
                             onChange={e => actualizarOpcion(campo.tempId, oi, e.target.value)}
                             placeholder={`Opción ${oi + 1}`}
-                            className={`flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 ${accentClass} transition`}
+                            className={`flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 ${accentClass} transition`}
                           />
                           {campo.opciones.length > 1 && (
                             <button
                               type="button"
                               onClick={() => eliminarOpcion(campo.tempId, oi)}
-                              className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                              className="p-1 text-gray-400 hover:text-red-400 transition-colors shrink-0"
+                              title="Eliminar opción"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -202,24 +224,30 @@ export function CamposBloqueBuilder({
                       <button
                         type="button"
                         onClick={() => agregarOpcion(campo.tempId)}
-                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors mt-0.5"
+                        className="flex items-center gap-1 text-xs font-medium text-gondo-indigo-600 hover:text-gondo-indigo-400 transition-colors mt-1 ml-7"
                       >
-                        <Plus size={11} /> Agregar opción
+                        <Plus size={11} />
+                        Agregar opción
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Obligatorio */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={campo.obligatorio}
-                    onChange={e => actualizar(campo.tempId, { obligatorio: e.target.checked })}
-                    className="w-3.5 h-3.5 accent-gondo-indigo-600"
-                  />
-                  <span className="text-xs text-gray-600">Respuesta obligatoria</span>
-                </label>
+                {/* Campo: Obligatorio */}
+                <div className="pt-1 border-t border-gray-200">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={campo.obligatorio}
+                      onChange={e => actualizar(campo.tempId, { obligatorio: e.target.checked })}
+                      className="w-4 h-4 accent-gondo-indigo-600 shrink-0"
+                    />
+                    <span className="text-xs font-medium text-gray-700">
+                      Respuesta obligatoria
+                    </span>
+                  </label>
+                </div>
+
               </div>
             )}
           </div>
