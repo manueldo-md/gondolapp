@@ -21,7 +21,7 @@ type NavSection = {
   items: NavItem[]
 }
 
-function buildNavSections(erroresNuevos: number): NavSection[] {
+function buildNavSections(erroresNuevos: number, campanasPendientes: number): NavSection[] {
   return [
     {
       label: null,
@@ -41,7 +41,7 @@ function buildNavSections(erroresNuevos: number): NavSection[] {
       label: 'Operaciones',
       items: [
         { href: '/admin/fotos',     label: 'Fotos',     icon: Image },
-        { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone },
+        { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone, badge: campanasPendientes },
         { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
         { href: '/admin/comercios', label: 'Comercios', icon: Store },
         { href: '/admin/zonas',     label: 'Zonas',     icon: MapPin },
@@ -62,12 +62,14 @@ export function AdminShell({
   fotosPendientes,
   canjesPendientes,
   erroresNuevos = 0,
+  campanasPendientes = 0,
   children,
 }: {
   nombre: string
   fotosPendientes: number
   canjesPendientes: number
   erroresNuevos?: number
+  campanasPendientes?: number
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -80,7 +82,7 @@ export function AdminShell({
     router.refresh()
   }
 
-  const navSections = buildNavSections(erroresNuevos)
+  const navSections = buildNavSections(erroresNuevos, campanasPendientes)
 
   const Sidebar = ({ mobile }: { mobile?: boolean }) => (
     <nav className={`flex flex-col gap-0.5 ${mobile ? 'p-4' : 'p-3'}`}>

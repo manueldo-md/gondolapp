@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
-import { pausarCampana, cerrarCampana, activarCampana } from './actions'
+import { pausarCampana, cerrarCampana, activarCampana, aprobarCampanaPendiente, rechazarCampanaPendiente } from './actions'
 
 export function CampanaAccionesAdmin({
   campanaId,
@@ -15,6 +15,24 @@ export function CampanaAccionesAdmin({
 
   return (
     <div className="flex gap-1.5 flex-wrap">
+      {estadoActual === 'pendiente_aprobacion' && (
+        <>
+          <button
+            disabled={isPending}
+            onClick={() => startTransition(async () => { await aprobarCampanaPendiente(campanaId) })}
+            className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
+          >
+            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Aprobar'}
+          </button>
+          <button
+            disabled={isPending}
+            onClick={() => startTransition(async () => { await rechazarCampanaPendiente(campanaId) })}
+            className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+          >
+            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Rechazar'}
+          </button>
+        </>
+      )}
       {estadoActual === 'activa' && (
         <button
           disabled={isPending}

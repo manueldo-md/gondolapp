@@ -33,3 +33,15 @@ export async function cerrarCampana(campanaId: string) {
   await admin.from('campanas').update({ estado: 'cerrada' }).eq('id', campanaId)
   revalidatePath('/admin/campanas')
 }
+
+export async function aprobarCampanaPendiente(campanaId: string) {
+  const admin = await getAdmin()
+  await admin.from('campanas').update({ estado: 'activa' }).eq('id', campanaId)
+  revalidatePath('/admin/campanas')
+}
+
+export async function rechazarCampanaPendiente(campanaId: string) {
+  const admin = await getAdmin()
+  await admin.from('campanas').update({ estado: 'cancelada' }).eq('id', campanaId)
+  revalidatePath('/admin/campanas')
+}

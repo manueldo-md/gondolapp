@@ -29,6 +29,7 @@ export default async function DistriLayout({
   let empresa = 'Mi distribuidora'
   let hayAlertas = false
   let solicitudesPendientesCount = 0
+  let campanasPendientesCount = 0
 
   if (profile.distri_id) {
     const admin = createAdminClient(
@@ -54,6 +55,17 @@ export default async function DistriLayout({
       // Tabla puede no existir aún en la DB — ignorar
     }
 
+    try {
+      const campanasPendientesRes = await admin
+        .from('campanas')
+        .select('*', { count: 'exact', head: true })
+        .eq('distri_id', profile.distri_id)
+        .eq('estado', 'pendiente_aprobacion')
+      campanasPendientesCount = campanasPendientesRes.count ?? 0
+    } catch {
+      // ignorar
+    }
+
     const gondIds = (gondRows ?? []).map((g: { id: string }) => g.id)
     if (gondIds.length > 0) {
       const sieteAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -73,6 +85,7 @@ export default async function DistriLayout({
       empresa={empresa}
       hayAlertas={hayAlertas}
       solicitudesPendientes={solicitudesPendientesCount}
+      campanasPendientes={campanasPendientesCount}
     >
       {children}
     </DistriShell>

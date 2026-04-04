@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, Clock, Target, Megaphone, Users } from 'lucide-react'
+import { Plus, Clock, Target, Megaphone, Users, Clock3 } from 'lucide-react'
 import {
   labelEstadoCampana,
   colorEstadoCampana,
@@ -10,6 +10,7 @@ import {
   calcularPorcentaje,
 } from '@/lib/utils'
 import type { TipoCampana, EstadoCampana } from '@/types'
+import { AprobacionBtns } from './aprobacion-btns'
 
 interface CampanaRow {
   id: string
@@ -22,6 +23,7 @@ interface CampanaRow {
   comercios_relevados: number
   puntos_por_foto: number
   financiada_por: string
+  instruccion: string | null
   marca: { razon_social: string } | null
   created_at: string
   gondoleroCount: number
@@ -48,13 +50,12 @@ export default async function CampanasPage() {
   const distriId = profile?.distri_id ?? null
 
   // Todas las campañas donde participa esta distribuidora
-  // (tanto propias financiada_por='distri' como las de marcas con distri_id asignado)
   const { data, error } = await admin
     .from('campanas')
     .select(`
       id, nombre, tipo, estado, fecha_inicio, fecha_fin,
       objetivo_comercios, comercios_relevados, puntos_por_foto,
-      financiada_por, created_at,
+      financiada_por, instruccion, created_at,
       marca:marcas ( razon_social )
     `)
     .eq('distri_id', distriId ?? '')
@@ -87,8 +88,9 @@ export default async function CampanasPage() {
     gondoleroCount: partCounts[c.id] ?? 0,
   })) as CampanaRow[]
 
-  const propias  = campanas.filter(c => c.financiada_por === 'distri')
-  const deMarca  = campanas.filter(c => c.financiada_por !== 'distri')
+  const pendientes = campanas.filter(c => c.estado === 'pendiente_aprobacion')
+  const propias    = campanas.filter(c => c.financiada_por === 'distri' && c.estado !== 'pendiente_aprobacion')
+  const deMarca    = campanas.filter(c => c.financiada_por !== 'distri' && c.estado !== 'pendiente_aprobacion')
 
   return (
     <div>
@@ -98,6 +100,7 @@ export default async function CampanasPage() {
           <p className="text-sm text-gray-500 mt-0.5">
             {propias.length} interna{propias.length !== 1 ? 's' : ''}
             {deMarca.length > 0 ? ` · ${deMarca.length} de marca` : ''}
+            {pendientes.length > 0 ? ` · ${pendientes.length} pendiente${pendientes.length !== 1 ? 's' : ''} de aprobación` : ''}
           </p>
         </div>
         <Link
@@ -126,6 +129,26 @@ export default async function CampanasPage() {
       ) : (
         <div className="space-y-6">
 
+          {/* ── Pendientes de aprobación ── */}
+          {pendientes.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Clock3 size={15} className="text-amber-500" />
+                <h3 className="text-xs font-semibold text-amber-700 uppercase tracking-wider">
+                  Pendientes de aprobación
+                </h3>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  {pendientes.length}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {pendientes.map(c => (
+                  <PendienteCard key={c.id} campana={c} />
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* ── Campañas propias ── */}
           {propias.length > 0 && (
             <section>
@@ -148,6 +171,52 @@ export default async function CampanasPage() {
 
         </div>
       )}
+    </div>
+  )
+}
+
+function PendienteCard({ campana }: { campana: CampanaRow }) {
+  const marcaNombre = campana.marca?.razon_social ?? 'Marca'
+  return (
+    <div className="bg-amber-50 rounded-xl border border-amber-200 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+              ⏳ Esperando tu aprobación
+            </span>
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white text-gray-600 border border-gray-200">
+              {marcaNombre}
+            </span>
+          </div>
+          <h3 className="font-semibold text-gray-900 text-base mb-1">{campana.nombre}</h3>
+          {campana.instruccion && (
+            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{campana.instruccion}</p>
+          )}
+          <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap mb-3">
+            <span className="font-medium text-gondo-verde-600">{campana.puntos_por_foto} pts/foto</span>
+            {campana.fecha_fin && (
+              <div className="flex items-center gap-1">
+                <Clock size={11} />
+                <span>Hasta {new Date(campana.fecha_fin).toLocaleDateString('es-AR')}</span>
+              </div>
+            )}
+            {campana.objetivo_comercios && (
+              <div className="flex items-center gap-1">
+                <Target size={11} />
+                <span>{campana.objetivo_comercios} comercios</span>
+              </div>
+            )}
+          </div>
+          <AprobacionBtns campanaId={campana.id} />
+        </div>
+        <Link
+          href={`/distribuidora/campanas/${campana.id}`}
+          className="shrink-0 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:underline"
+        >
+          Ver detalle →
+        </Link>
+      </div>
     </div>
   )
 }

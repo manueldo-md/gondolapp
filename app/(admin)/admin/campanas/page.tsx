@@ -56,7 +56,7 @@ export default async function CampanasAdminPage({
     distri_nombre: Array.isArray(c.distri) ? c.distri[0]?.razon_social : c.distri?.razon_social,
   }))
 
-  const FILTROS = ['todos', 'activa', 'borrador', 'pausada', 'cerrada', 'cancelada']
+  const FILTROS = ['todos', 'pendiente_aprobacion', 'activa', 'borrador', 'pausada', 'cerrada', 'cancelada']
 
   return (
     <div className="space-y-5">
@@ -73,10 +73,12 @@ export default async function CampanasAdminPage({
             className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
               filtroEstado === f
                 ? 'bg-[#1E1B4B] text-white'
-                : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+                : f === 'pendiente_aprobacion'
+                  ? 'bg-amber-50 border border-amber-200 text-amber-700 hover:border-amber-300'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
             }`}
           >
-            {f}
+            {f === 'pendiente_aprobacion' ? 'Pendientes' : f}
           </a>
         ))}
       </div>

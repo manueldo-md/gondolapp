@@ -26,10 +26,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { count: fotosPendientes },
     { count: canjesPendientes },
     { count: erroresNuevos },
+    { count: campanasPendientes },
   ] = await Promise.all([
     admin.from('fotos').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
     admin.from('canjes').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
     admin.from('errores_reportados').select('*', { count: 'exact', head: true }).eq('estado', 'nuevo'),
+    admin.from('campanas').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente_aprobacion'),
   ])
 
   return (
@@ -38,6 +40,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       fotosPendientes={fotosPendientes ?? 0}
       canjesPendientes={canjesPendientes ?? 0}
       erroresNuevos={erroresNuevos ?? 0}
+      campanasPendientes={campanasPendientes ?? 0}
     >
       {children}
     </AdminShell>

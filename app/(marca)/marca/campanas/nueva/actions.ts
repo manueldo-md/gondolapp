@@ -54,7 +54,7 @@ export async function crearCampana(formData: FormData) {
       min_comercios_para_cobrar: parseInt(formData.get('min_comercios_para_cobrar') as string) || 3,
       marca_id:                  marcaId,
       financiada_por:            'marca',
-      estado:                    'activa',
+      estado:                    'pendiente_aprobacion',
       tokens_creacion:           COSTO_CREACION,
     })
     .select('id')
