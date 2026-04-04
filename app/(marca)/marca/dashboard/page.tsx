@@ -79,97 +79,86 @@ export default async function DashboardPage() {
     tokens = marca?.tokens_disponibles ?? 0
   }
 
-  // ── Fotos de las campañas de la marca ─────────────────────────────────────
-  // Query: SELECT estado, comercio_id, precio_confirmado, storage_path, created_at,
-  //               declaracion, comercio:comercios(nombre)
-  //        FROM fotos
-  //        WHERE campana_id IN ($campanaIds)
-  //        ORDER BY created_at DESC
-  //        LIMIT 300
-  let fotosAprobadas = 0
-  let fotosPendientes = 0
-  let fotosRechazadas = 0
-  let comerciosRelevados = 0
-  let precioPromedio: number | null = null
-  let ultimasFotos: Array<{
-    id: string
-    storage_path: string | null
-    created_at: string
-    declaracion: DeclaracionFoto
-    comercio: { nombre: string } | null
-    signedUrl: string | null
-  }> = []
+  // ── Métricas de fotos — conteos directos en DB ────────────────────────────
+  // Se ejecutan en paralelo. Si no hay campañas, devuelven 0 / null sin crashear.
+  const NULL_UUID = '00000000-0000-0000-0000-000000000000'
+  const safeIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
 
-  if (campanaIds.length > 0) {
-    const { data: fotasData } = await admin
-      .from('fotos')
-      .select('id, estado, comercio_id, precio_confirmado, storage_path, created_at, declaracion, comercio:comercios(nombre)')
-      .in('campana_id', campanaIds)
-      .order('created_at', { ascending: false })
-      .limit(300)
+  const [aprobadas, pendientes, rechazadas, comerciosRes, precioRes, ultimasFotosRes] =
+    await Promise.all([
+      // SELECT COUNT(*) FROM fotos WHERE campana_id IN (...) AND estado = 'aprobada'
+      admin.from('fotos').select('*', { count: 'exact', head: true })
+        .in('campana_id', safeIds).eq('estado', 'aprobada'),
 
-    const todas = (fotasData ?? []) as Array<{
-      id: string
-      estado: string
-      comercio_id: string
-      precio_confirmado: number | null
-      storage_path: string | null
-      created_at: string
-      declaracion: DeclaracionFoto
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      comercio: any
-    }>
+      // SELECT COUNT(*) FROM fotos WHERE campana_id IN (...) AND estado = 'pendiente'
+      admin.from('fotos').select('*', { count: 'exact', head: true })
+        .in('campana_id', safeIds).eq('estado', 'pendiente'),
 
-    // Contar por estado
-    // (fotos WHERE estado = 'aprobada' / 'pendiente' / 'rechazada')
-    fotosAprobadas = todas.filter(f => f.estado === 'aprobada').length
-    fotosPendientes = todas.filter(f => f.estado === 'pendiente').length
-    fotosRechazadas = todas.filter(f => f.estado === 'rechazada').length
+      // SELECT COUNT(*) FROM fotos WHERE campana_id IN (...) AND estado = 'rechazada'
+      admin.from('fotos').select('*', { count: 'exact', head: true })
+        .in('campana_id', safeIds).eq('estado', 'rechazada'),
 
-    // Comercios distinct de fotos aprobadas
-    // (SELECT COUNT(DISTINCT comercio_id) FROM fotos WHERE estado = 'aprobada' AND campana_id IN ...)
-    const comerciosSet = new Set(
-      todas
-        .filter(f => f.estado === 'aprobada')
-        .map(f => f.comercio_id)
-        .filter(Boolean)
-    )
-    comerciosRelevados = comerciosSet.size
+      // SELECT comercio_id FROM fotos WHERE campana_id IN (...) AND estado = 'aprobada'
+      // (distinct se computa en JS sobre el array de IDs)
+      admin.from('fotos').select('comercio_id')
+        .in('campana_id', safeIds).eq('estado', 'aprobada'),
 
-    // Precio promedio de fotos aprobadas con precio_confirmado no null
-    // (SELECT AVG(precio_confirmado) FROM fotos WHERE estado = 'aprobada' AND precio_confirmado IS NOT NULL AND campana_id IN ...)
-    const precios = todas
-      .filter(f => f.estado === 'aprobada' && f.precio_confirmado !== null && f.precio_confirmado !== undefined)
-      .map(f => f.precio_confirmado as number)
-    if (precios.length > 0) {
-      precioPromedio = precios.reduce((a, b) => a + b, 0) / precios.length
-    }
+      // SELECT ROUND(AVG(precio_confirmado)::numeric, 2) FROM fotos
+      // WHERE campana_id = ANY($campana_ids) AND estado = 'aprobada' AND precio_confirmado IS NOT NULL
+      admin.rpc('avg_precio_confirmado', { campana_ids: safeIds }),
 
-    // Últimas 5 fotos con URLs firmadas
-    const primeras5 = todas.slice(0, 5)
-    ultimasFotos = await Promise.all(
-      primeras5.map(async (f) => {
-        let signedUrl: string | null = null
-        if (f.storage_path) {
-          const { data: signed } = await admin.storage
-            .from('fotos-gondola')
-            .createSignedUrl(f.storage_path, 3600)
-          signedUrl = signed?.signedUrl ?? null
-        }
-        return {
-          ...f,
-          comercio: Array.isArray(f.comercio) ? (f.comercio[0] ?? null) : f.comercio,
-          signedUrl,
-        }
-      })
-    )
-  }
+      // Últimas 5 fotos para el feed visual
+      // SELECT id, storage_path, created_at, declaracion, comercios(nombre)
+      // FROM fotos WHERE campana_id IN (...) ORDER BY created_at DESC LIMIT 5
+      admin.from('fotos')
+        .select('id, storage_path, created_at, declaracion, comercio:comercios(nombre)')
+        .in('campana_id', safeIds)
+        .order('created_at', { ascending: false })
+        .limit(5),
+    ])
+
+  const fotosAprobadas  = aprobadas.count  ?? 0
+  const fotosPendientes = pendientes.count ?? 0
+  const fotosRechazadas = rechazadas.count ?? 0
+  const comerciosRelevados = new Set(
+    ((comerciosRes.data ?? []) as { comercio_id: string }[])
+      .map(f => f.comercio_id)
+      .filter(Boolean)
+  ).size
+  const precioPromedio: number | null = precioRes.data ?? null
 
   // Tasa de aprobación: aprobadas / (aprobadas + rechazadas) * 100
   const totalRevisadas = fotosAprobadas + fotosRechazadas
   const tasaAprobacion = totalRevisadas > 0
     ? Math.round((fotosAprobadas / totalRevisadas) * 100)
     : null
+
+  // Feed visual — últimas 5 con URLs firmadas
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const primeras5 = (ultimasFotosRes.data ?? []) as any[]
+  const ultimasFotos: Array<{
+    id: string
+    storage_path: string | null
+    created_at: string
+    declaracion: DeclaracionFoto
+    comercio: { nombre: string } | null
+    signedUrl: string | null
+  }> = await Promise.all(
+    primeras5.map(async (f) => {
+      let signedUrl: string | null = null
+      if (f.storage_path) {
+        const { data: signed } = await admin.storage
+          .from('fotos-gondola')
+          .createSignedUrl(f.storage_path, 3600)
+        signedUrl = signed?.signedUrl ?? null
+      }
+      return {
+        ...f,
+        comercio: Array.isArray(f.comercio) ? (f.comercio[0] ?? null) : f.comercio,
+        signedUrl,
+      }
+    })
+  )
 
   const DECL_LABEL: Record<DeclaracionFoto, string> = {
     producto_presente:      'Presente',
