@@ -21,7 +21,7 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
   // Verificar campaña activa y validar restricciones
   const { data: campana } = await admin
     .from('campanas')
-    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados, nivel_minimo')
+    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados, nivel_minimo, financiada_por, distri_id, marca_id')
     .eq('id', campanaId)
     .eq('estado', 'activa')
     .single() as {
@@ -31,10 +31,55 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
         tope_total_comercios: number | null
         comercios_relevados: number
         nivel_minimo: string | null
+        financiada_por: string
+        distri_id: string | null
+        marca_id: string | null
       } | null
     }
 
   if (!campana) return { error: 'La campaña no está disponible.' }
+
+  // ── Validar acceso según financiador ────────────────────────────────────────
+  if (campana.financiada_por === 'distri' && campana.distri_id) {
+    const { data: vinculacion } = await admin
+      .from('gondolero_distri_solicitudes')
+      .select('id')
+      .eq('gondolero_id', user.id)
+      .eq('distri_id', campana.distri_id)
+      .eq('estado', 'aprobada')
+      .maybeSingle()
+
+    if (!vinculacion) {
+      return { error: 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.' }
+    }
+  }
+
+  if (campana.financiada_por === 'marca' && campana.marca_id) {
+    const { data: misDistrisRows } = await admin
+      .from('gondolero_distri_solicitudes')
+      .select('distri_id')
+      .eq('gondolero_id', user.id)
+      .eq('estado', 'aprobada')
+
+    const misDistriIds = (misDistrisRows ?? []).map(d => (d as { distri_id: string }).distri_id)
+
+    if (misDistriIds.length === 0) {
+      return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
+    }
+
+    const { data: relacion } = await admin
+      .from('marca_distri_relaciones')
+      .select('id')
+      .eq('marca_id', campana.marca_id)
+      .in('distri_id', misDistriIds)
+      .eq('estado', 'activa')
+      .limit(1)
+
+    if (!relacion?.length) {
+      return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
+    }
+  }
+  // ── Fin validación de acceso ─────────────────────────────────────────────────
 
   // Validar fecha límite de inscripción
   if (campana.fecha_limite_inscripcion && new Date(campana.fecha_limite_inscripcion) < new Date()) {

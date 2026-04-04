@@ -53,6 +53,7 @@ export async function crearCampana(formData: FormData) {
       max_comercios_por_gondolero: parseInt(formData.get('max_comercios_por_gondolero') as string) || 20,
       min_comercios_para_cobrar: parseInt(formData.get('min_comercios_para_cobrar') as string) || 3,
       marca_id:                  marcaId,
+      financiada_por:            'marca',
       estado:                    'activa',
       tokens_creacion:           COSTO_CREACION,
     })

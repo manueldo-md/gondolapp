@@ -92,7 +92,7 @@ export default async function CampanaDetallePage({
 
   if (!campanaData) notFound()
 
-  const [{ data: participacionData }, { data: profileData }] = await Promise.all([
+  const [{ data: participacionData }, { data: profileData }, { data: misDistrisData }] = await Promise.all([
     supabase
       .from('participaciones')
       .select('id, estado')
@@ -103,15 +103,20 @@ export default async function CampanaDetallePage({
       .maybeSingle(),
     supabase
       .from('profiles')
-      .select('nivel, distri_id')
+      .select('nivel')
       .eq('id', user.id)
       .single(),
+    supabase
+      .from('gondolero_distri_solicitudes')
+      .select('distri_id')
+      .eq('gondolero_id', user.id)
+      .eq('estado', 'aprobada'),
   ])
 
   const c = campanaData as unknown as CampanaDetalle
   const participacion = participacionData as { id: string; estado: string } | null
-  const gondoleroNivel = (profileData as { nivel: string; distri_id: string | null } | null)?.nivel ?? 'casual'
-  const gondoleroDistriId = (profileData as { nivel: string; distri_id: string | null } | null)?.distri_id ?? null
+  const gondoleroNivel = (profileData as { nivel: string } | null)?.nivel ?? 'casual'
+  const misDistriIds = (misDistrisData ?? []).map((d: { distri_id: string }) => d.distri_id)
 
   const yaUnido        = participacion?.estado === 'activa'
   const participacionAnteriorEstado = (
@@ -123,10 +128,27 @@ export default async function CampanaDetallePage({
   const bloques      = [...(c.bloques_foto ?? [])].sort((a, b) => a.orden - b.orden)
 
   // Badge de creador
-  const esMiDistri = !!(c.distri_id && gondoleroDistriId && c.distri_id === gondoleroDistriId)
+  const esMiDistri = !!c.distri_id && misDistriIds.includes(c.distri_id)
   const esGondolApp = c.financiada_por === 'gondolapp' || (!c.distri_id && !c.marca_id)
 
-  // Restricciones de acceso
+  // ── Control de acceso según financiador ───────────────────────────────────────
+  let sinAcceso = false
+  let motivoSinAcceso: string | undefined
+
+  if (c.financiada_por === 'distri' && c.distri_id && !misDistriIds.includes(c.distri_id)) {
+    sinAcceso = true
+    motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.'
+  } else if (c.financiada_por === 'marca' && c.marca_id) {
+    // Necesitamos verificar relaciones marca-distri — usamos misDistriIds que ya tenemos
+    // (la verificación completa ocurre server-side en el action; aquí mostramos el estado)
+    // Solo bloqueamos si el gondolero no tiene distris vinculadas
+    if (misDistriIds.length === 0) {
+      sinAcceso = true
+      motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.'
+    }
+  }
+
+  // Restricciones operativas de acceso
   const nivelMinimo       = c.nivel_minimo ?? 'casual'
   const nivelOk           = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
   const inscripcionCerrada = !!(c.fecha_limite_inscripcion && new Date(c.fecha_limite_inscripcion) < new Date())
@@ -136,11 +158,11 @@ export default async function CampanaDetallePage({
     : null
 
   // ¿Puede unirse? (sin contar participación anterior que es re-join)
-  const puedeUnirse = nivelOk && !inscripcionCerrada && !cupoLleno
+  const puedeUnirse = nivelOk && !inscripcionCerrada && !cupoLleno && !sinAcceso
 
   // Mostrar panel de acceso cuando no está activo
   const mostrarPanelAcceso = !yaUnido
-  const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || !!participacionAnteriorEstado
+  const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || sinAcceso || !!participacionAnteriorEstado
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -158,12 +180,17 @@ export default async function CampanaDetallePage({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[c.tipo]}`}>
             {labelTipoCampana(c.tipo)}
           </span>
-          {esMiDistri && (
+          {sinAcceso && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+              🔒 Acceso restringido
+            </span>
+          )}
+          {!sinAcceso && esMiDistri && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
               📦 Tu distribuidora
             </span>
           )}
-          {!esMiDistri && esGondolApp && (
+          {!sinAcceso && !esMiDistri && esGondolApp && (
             <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
               GondolApp
             </span>
@@ -370,6 +397,8 @@ export default async function CampanaDetallePage({
           nivelMinimo={nivelMinimo}
           gondoleroNivel={gondoleroNivel}
           participacionAnteriorEstado={participacionAnteriorEstado}
+          sinAcceso={sinAcceso}
+          motivoSinAcceso={motivoSinAcceso}
         />
       </div>
 

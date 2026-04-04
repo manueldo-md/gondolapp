@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { LayoutGrid } from 'lucide-react'
 import type { TipoCampana } from '@/types'
-import { CampanasSections, type CampanaCardData } from './campanas-sections'
+import { CampanasSections, type CampanaCardData, type AccesoInfo } from './campanas-sections'
 
 // CampanaRow: alias del tipo exportado desde campanas-sections
 type CampanaRow = CampanaCardData
@@ -22,8 +22,8 @@ export default async function CampanasPage() {
   const zonaIds = (gondoleroZonas ?? []).map((gz: { zona_id: string }) => gz.zona_id)
   const tieneZonas = zonaIds.length > 0
 
-  // Participaciones del gondolero (todos los estados)
-  const [participacionesRes, profileRes] = await Promise.all([
+  // Participaciones + perfil + mis distribuidoras vinculadas (en paralelo)
+  const [participacionesRes, profileRes, misDistrisRes] = await Promise.all([
     supabase
       .from('participaciones')
       .select('campana_id, estado')
@@ -31,21 +31,36 @@ export default async function CampanasPage() {
       .in('estado', ['activa', 'completada', 'abandonada']),
     supabase
       .from('profiles')
-      .select('nivel, distri_id')
+      .select('nivel')
       .eq('id', user.id)
       .single(),
+    supabase
+      .from('gondolero_distri_solicitudes')
+      .select('distri_id')
+      .eq('gondolero_id', user.id)
+      .eq('estado', 'aprobada'),
   ])
 
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
   for (const p of (participacionesRes.data ?? []) as { campana_id: string; estado: string }[]) {
-    // Si ya tiene activa, no sobreescribir
     if (!participacionMap.has(p.campana_id) || p.estado === 'activa') {
       participacionMap.set(p.campana_id, p.estado as 'activa' | 'completada' | 'abandonada')
     }
   }
-  const gondoleroNivel = (profileRes.data as { nivel: string; distri_id: string | null } | null)?.nivel ?? 'casual'
-  const gondoleroDistriId = (profileRes.data as { nivel: string; distri_id: string | null } | null)?.distri_id ?? null
-  const campanaIdsActivas = new Set([...participacionMap.entries()].filter(([, e]) => e === 'activa').map(([id]) => id))
+
+  const gondoleroNivel = (profileRes.data as { nivel: string } | null)?.nivel ?? 'casual'
+  const misDistriIds = (misDistrisRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
+
+  // Relaciones marca-distri activas (para verificar acceso a campañas de marca)
+  let relacionesMarcaDistri: { marca_id: string; distri_id: string }[] = []
+  if (misDistriIds.length > 0) {
+    const { data: relRes } = await supabase
+      .from('marca_distri_relaciones')
+      .select('marca_id, distri_id')
+      .in('distri_id', misDistriIds)
+      .eq('estado', 'activa')
+    relacionesMarcaDistri = (relRes ?? []) as { marca_id: string; distri_id: string }[]
+  }
 
   let query = supabase
     .from('campanas')
@@ -90,6 +105,27 @@ export default async function CampanasPage() {
     lista = (campanas as CampanaRow[] | null) ?? []
   }
 
+  // ── Calcular acceso por campaña ──────────────────────────────────────────────
+  const accesoMap: Record<string, AccesoInfo> = {}
+  for (const c of lista) {
+    const fp = c.financiada_por
+    if (fp === 'gondolapp' || !fp) {
+      accesoMap[c.id] = { ok: true }
+    } else if (fp === 'distri') {
+      const ok = !!c.distri_id && misDistriIds.includes(c.distri_id)
+      accesoMap[c.id] = ok ? { ok: true } : { ok: false, motivo: 'distri' }
+    } else if (fp === 'marca') {
+      if (!c.marca_id) {
+        accesoMap[c.id] = { ok: true }
+      } else {
+        const ok = relacionesMarcaDistri.some(r => r.marca_id === c.marca_id)
+        accesoMap[c.id] = ok ? { ok: true } : { ok: false, motivo: 'marca' }
+      }
+    } else {
+      accesoMap[c.id] = { ok: true }
+    }
+  }
+
   const activas     = lista.filter(c => participacionMap.get(c.id) === 'activa')
   const completadas = lista.filter(c => participacionMap.get(c.id) === 'completada')
   const disponibles = lista.filter(c => {
@@ -132,8 +168,9 @@ export default async function CampanasPage() {
           completadas={completadas}
           disponibles={disponibles}
           gondoleroNivel={gondoleroNivel}
-          gondoleroDistriId={gondoleroDistriId}
+          misDistriIds={misDistriIds}
           participacionRecord={participacionRecord}
+          accesoMap={accesoMap}
         />
       </div>
     </div>

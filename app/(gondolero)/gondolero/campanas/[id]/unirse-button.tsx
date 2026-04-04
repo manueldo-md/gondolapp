@@ -18,6 +18,8 @@ export function UnirseButton({
   nivelMinimo = 'casual',
   gondoleroNivel = 'casual',
   participacionAnteriorEstado,
+  sinAcceso = false,
+  motivoSinAcceso,
 }: {
   campanaId: string
   yaUnido: boolean
@@ -27,6 +29,8 @@ export function UnirseButton({
   nivelMinimo?: string
   gondoleroNivel?: string
   participacionAnteriorEstado?: 'completada' | 'abandonada' | null
+  sinAcceso?: boolean
+  motivoSinAcceso?: string
 }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -37,6 +41,20 @@ export function UnirseButton({
       const result = await unirseACampana(campanaId)
       if (result?.error) setError(result.error)
     })
+  }
+
+  // Sin acceso por regla de financiador
+  if (sinAcceso) {
+    return (
+      <div className="space-y-2">
+        <div className="w-full py-4 bg-gray-100 text-gray-500 font-semibold rounded-2xl text-center text-base">
+          🔒 No disponible para vos
+        </div>
+        {motivoSinAcceso && (
+          <p className="text-xs text-center text-gray-400">{motivoSinAcceso}</p>
+        )}
+      </div>
+    )
   }
 
   // Ya participando activamente

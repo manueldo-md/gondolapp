@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import {
-  Star, Clock, Camera, CheckCircle2, ChevronDown,
+  Star, Clock, Camera, CheckCircle2, ChevronDown, Lock,
 } from 'lucide-react'
 import {
   labelTipoCampana,
@@ -37,6 +37,10 @@ export interface CampanaCardData {
   bloques_foto: { id: string }[]
 }
 
+export type AccesoInfo =
+  | { ok: true }
+  | { ok: false; motivo: 'distri' | 'marca' }
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const NIVEL_ORDEN: Record<string, number> = { casual: 0, activo: 1, pro: 2 }
@@ -60,14 +64,17 @@ function CampanaCard({
   campana,
   participacionEstado,
   gondoleroNivel,
-  gondoleroDistriId,
+  misDistriIds,
+  accesoInfo,
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
   gondoleroNivel: string
-  gondoleroDistriId: string | null
+  misDistriIds: string[]
+  accesoInfo: AccesoInfo
 }) {
   const participando = participacionEstado === 'activa'
+  const sinAcceso = !accesoInfo.ok
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
   const progreso = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
   const cantBloques = campana.bloques_foto.length
@@ -81,13 +88,16 @@ function CampanaCard({
   const diasInscripcion = campana.fecha_limite_inscripcion ? diasRestantes(campana.fecha_limite_inscripcion) : null
   const inscripcionProntoCierra = diasInscripcion !== null && diasInscripcion >= 0 && diasInscripcion <= 3
 
-  // Badge de creador — solo mostrar si es mi distribuidora o GondolApp
-  const esMiDistri = !!(campana.distri_id && gondoleroDistriId && campana.distri_id === gondoleroDistriId)
+  const esMiDistri = !!campana.distri_id && misDistriIds.includes(campana.distri_id)
   const esGondolApp = campana.financiada_por === 'gondolapp' || (!campana.distri_id && !campana.marca_id)
 
   return (
     <div className={`rounded-2xl shadow-sm border overflow-hidden transition-transform duration-100 active:scale-[0.98] ${
-      participando ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100'
+      sinAcceso
+        ? 'bg-gray-50 border-gray-200 opacity-80'
+        : participando
+          ? 'bg-green-50 border-green-200'
+          : 'bg-white border-gray-100'
     }`}>
       {/* Header */}
       <div className="p-4 pb-3">
@@ -95,12 +105,35 @@ function CampanaCard({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[campana.tipo]}`}>
             {labelTipoCampana(campana.tipo)}
           </span>
-          {esMiDistri && (
+
+          {/* Badges de acceso restringido */}
+          {sinAcceso && !accesoInfo.ok && accesoInfo.motivo === 'distri' && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+              <Lock size={9} />
+              Solo para gondoleros de esa distribuidora
+            </span>
+          )}
+          {sinAcceso && !accesoInfo.ok && accesoInfo.motivo === 'marca' && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+              <Lock size={9} />
+              Requiere distribuidora vinculada a esta marca
+            </span>
+          )}
+
+          {/* Badge abierta para todos */}
+          {!sinAcceso && campana.financiada_por === 'gondolapp' && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+              ✓ Abierta para todos
+            </span>
+          )}
+
+          {/* Badges de contexto (solo cuando hay acceso) */}
+          {!sinAcceso && esMiDistri && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
               📦 Tu distribuidora
             </span>
           )}
-          {!esMiDistri && esGondolApp && (
+          {!sinAcceso && !esMiDistri && esGondolApp && campana.financiada_por !== 'gondolapp' && (
             <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
               GondolApp
             </span>
@@ -121,33 +154,35 @@ function CampanaCard({
               Abandonada — podés volver
             </span>
           )}
-          {!nivelOk && !participando && (
+          {!sinAcceso && !nivelOk && !participando && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-500">
               Requiere nivel {NIVEL_LABEL[nivelMinimo]}
             </span>
           )}
-          {nueva && (
+          {!sinAcceso && nueva && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
               Nueva
             </span>
           )}
-          {cupoLleno && (
+          {!sinAcceso && cupoLleno && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-600">
               Sin cupos
             </span>
           )}
-          {!cupoLleno && ultimosCupos && (
+          {!sinAcceso && !cupoLleno && ultimosCupos && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">
               Últimos cupos
             </span>
           )}
-          {inscripcionProntoCierra && (
+          {!sinAcceso && inscripcionProntoCierra && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">
               Inscripción cierra en {diasInscripcion === 0 ? 'hoy' : `${diasInscripcion}d`}
             </span>
           )}
         </div>
-        <h2 className="font-semibold text-gray-900 text-base leading-snug">{campana.nombre}</h2>
+        <h2 className={`font-semibold text-base leading-snug ${sinAcceso ? 'text-gray-500' : 'text-gray-900'}`}>
+          {campana.nombre}
+        </h2>
         {campana.instruccion && (
           <p className="text-gray-500 text-sm mt-1 line-clamp-2">{campana.instruccion}</p>
         )}
@@ -156,15 +191,15 @@ function CampanaCard({
       {/* Stats */}
       <div className="px-4 pb-3 flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-1.5">
-          <Star size={14} className="text-gondo-verde-400 fill-gondo-verde-400" />
-          <span className="text-sm font-semibold text-gondo-verde-400">
+          <Star size={14} className={sinAcceso ? 'text-gray-300 fill-gray-300' : 'text-gondo-verde-400 fill-gondo-verde-400'} />
+          <span className={`text-sm font-semibold ${sinAcceso ? 'text-gray-400' : 'text-gondo-verde-400'}`}>
             {formatearPuntos(campana.puntos_por_foto)} pts/foto
           </span>
         </div>
         {dias !== null && (
           <div className="flex items-center gap-1.5">
             <Clock size={14} className="text-gray-400" />
-            <span className={`text-sm font-medium ${dias <= 3 ? 'text-red-500' : 'text-gray-500'}`}>
+            <span className={`text-sm font-medium ${!sinAcceso && dias <= 3 ? 'text-red-500' : 'text-gray-500'}`}>
               {dias === 0 ? 'Último día' : `${dias} días`}
             </span>
           </div>
@@ -190,7 +225,7 @@ function CampanaCard({
           </div>
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gondo-verde-400 rounded-full transition-all"
+              className={`h-full rounded-full transition-all ${sinAcceso ? 'bg-gray-300' : 'bg-gondo-verde-400'}`}
               style={{ width: `${progreso}%` }}
             />
           </div>
@@ -199,30 +234,36 @@ function CampanaCard({
 
       {/* CTA */}
       <div className="px-4 pb-4">
-        <Link
-          href={participando
-            ? `/gondolero/misiones/${campana.id}`
-            : `/gondolero/campanas/${campana.id}`}
-          className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
-            participando
-              ? 'bg-green-600 hover:bg-green-700'
+        {sinAcceso ? (
+          <div className="w-full py-3 bg-gray-100 text-gray-400 text-center font-semibold rounded-xl text-sm cursor-not-allowed">
+            No disponible para vos
+          </div>
+        ) : (
+          <Link
+            href={participando
+              ? `/gondolero/misiones/${campana.id}`
+              : `/gondolero/campanas/${campana.id}`}
+            className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
+              participando
+                ? 'bg-green-600 hover:bg-green-700'
+                : participacionEstado === 'completada'
+                  ? 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
+                  : participacionEstado === 'abandonada'
+                    ? 'bg-gray-500 hover:bg-gray-600'
+                    : !nivelOk
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
+            }`}
+          >
+            {participando
+              ? 'Continuar →'
               : participacionEstado === 'completada'
-                ? 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
+                ? 'Volver a participar'
                 : participacionEstado === 'abandonada'
-                  ? 'bg-gray-500 hover:bg-gray-600'
-                  : !nivelOk
-                    ? 'bg-gray-300 cursor-not-allowed'
-                    : 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
-          }`}
-        >
-          {participando
-            ? 'Continuar →'
-            : participacionEstado === 'completada'
-              ? 'Volver a participar'
-              : participacionEstado === 'abandonada'
-                ? 'Volver a unirme'
-                : 'Ver campaña'}
-        </Link>
+                  ? 'Volver a unirme'
+                  : 'Ver campaña'}
+          </Link>
+        )}
       </div>
     </div>
   )
@@ -284,15 +325,17 @@ export function CampanasSections({
   completadas,
   disponibles,
   gondoleroNivel,
-  gondoleroDistriId,
+  misDistriIds,
   participacionRecord,
+  accesoMap,
 }: {
   activas: CampanaCardData[]
   completadas: CampanaCardData[]
   disponibles: CampanaCardData[]
   gondoleroNivel: string
-  gondoleroDistriId: string | null
+  misDistriIds: string[]
   participacionRecord: Record<string, 'activa' | 'completada' | 'abandonada'>
+  accesoMap: Record<string, AccesoInfo>
 }) {
   const hayAlgo = activas.length + completadas.length + disponibles.length > 0
 
@@ -327,7 +370,8 @@ export function CampanasSections({
               campana={c}
               participacionEstado="activa"
               gondoleroNivel={gondoleroNivel}
-              gondoleroDistriId={gondoleroDistriId}
+              misDistriIds={misDistriIds}
+              accesoInfo={accesoMap[c.id] ?? { ok: true }}
             />
           ))}
         </Seccion>
@@ -348,7 +392,8 @@ export function CampanasSections({
               campana={c}
               participacionEstado={participacionRecord[c.id]}
               gondoleroNivel={gondoleroNivel}
-              gondoleroDistriId={gondoleroDistriId}
+              misDistriIds={misDistriIds}
+              accesoInfo={accesoMap[c.id] ?? { ok: true }}
             />
           ))}
         </Seccion>
@@ -369,7 +414,8 @@ export function CampanasSections({
               campana={c}
               participacionEstado="completada"
               gondoleroNivel={gondoleroNivel}
-              gondoleroDistriId={gondoleroDistriId}
+              misDistriIds={misDistriIds}
+              accesoInfo={accesoMap[c.id] ?? { ok: true }}
             />
           ))}
         </Seccion>
