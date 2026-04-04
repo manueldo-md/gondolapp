@@ -7,12 +7,8 @@ import { tiempoRelativo, formatearPuntos, calcularPorcentaje } from '@/lib/utils
 import type { NivelGondolero } from '@/types'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { MarcarNotificacionesLeidas } from '../perfil/marcar-leidas'
+import { getConfig } from '@/lib/config'
 
-const NIVEL_UMBRAL: Record<NivelGondolero, number | null> = {
-  casual: 50,
-  activo: 150,
-  pro:    null,
-}
 const NIVEL_LABEL: Record<NivelGondolero, string> = {
   casual: 'Casual',
   activo: 'Activo',
@@ -44,6 +40,7 @@ export default async function ActividadPage() {
     comerciosRes,
     notificacionesRes,
     fotosPendientesRes,
+    config,
   ] = await Promise.all([
     admin.from('profiles')
       .select('nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion')
@@ -75,6 +72,7 @@ export default async function ActividadPage() {
       .in('estado', ['pendiente', 'en_revision'])
       .order('created_at', { ascending: false })
       .limit(3),
+    getConfig(),
   ])
 
   const profile = profileRes.data
@@ -97,8 +95,23 @@ export default async function ActividadPage() {
 
   const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
   const puntosDisponibles = profile?.puntos_disponibles ?? 0
+
+  // Thresholds dinámicos desde la DB
+  const fotosCasualAActivo = config.niveles.fotosCasualAActivo
+  const fotosActivoAPro    = config.niveles.fotosActivoAPro
+
+  const NIVEL_UMBRAL: Record<NivelGondolero, number | null> = {
+    casual: fotosCasualAActivo,
+    activo: fotosActivoAPro,
+    pro:    null,
+  }
+  const umbralAnterior: Record<NivelGondolero, number> = {
+    casual: 0,
+    activo: fotosCasualAActivo,
+    pro:    fotosActivoAPro,
+  }
+
   const umbralSiguiente = NIVEL_UMBRAL[nivel]
-  const umbralAnterior: Record<NivelGondolero, number> = { casual: 0, activo: 50, pro: 150 }
   const base = umbralAnterior[nivel]
   const progreso = umbralSiguiente
     ? calcularPorcentaje(fotosAprobadas - base, umbralSiguiente - base)

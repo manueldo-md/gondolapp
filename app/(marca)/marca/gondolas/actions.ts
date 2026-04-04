@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { getConfig } from '@/lib/config'
+import { calcularNuevoNivel } from '@/lib/nivel'
 
 function adminClient() {
   return createSupabaseClient(
@@ -18,7 +20,8 @@ export async function aprobarFotoMarca(fotoId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const admin = adminClient()
+  const [admin, config] = [adminClient(), await getConfig()]
+  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
 
   // 1. Obtener la foto con datos de la campaña en una sola query
   const { data: foto, error: fotoError } = await admin
@@ -99,13 +102,7 @@ export async function aprobarFotoMarca(fotoId: string) {
 
   if (profileNivel) {
     const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-    let nuevoNivel = profileNivel.nivel
-
-    if (fotosAprobadas >= 100 && profileNivel.nivel !== 'pro') {
-      nuevoNivel = 'pro'
-    } else if (fotosAprobadas >= 50 && profileNivel.nivel === 'casual') {
-      nuevoNivel = 'activo'
-    }
+    const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
 
     if (nuevoNivel !== profileNivel.nivel) {
       await admin.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)

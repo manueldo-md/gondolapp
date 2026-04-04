@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { getConfig } from '@/lib/config'
+import { calcularNuevoNivel } from '@/lib/nivel'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -17,7 +19,8 @@ async function getAdmin() {
 }
 
 export async function aprobarFotoAdmin(fotoId: string) {
-  const admin = await getAdmin()
+  const [admin, config] = await Promise.all([getAdmin(), getConfig()])
+  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
 
   const { data: fotoRaw } = await admin
     .from('fotos')
@@ -69,13 +72,7 @@ export async function aprobarFotoAdmin(fotoId: string) {
 
     if (profileNivel) {
       const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-      let nuevoNivel = profileNivel.nivel
-
-      if (fotosAprobadas >= 100 && profileNivel.nivel !== 'pro') {
-        nuevoNivel = 'pro'
-      } else if (fotosAprobadas >= 50 && profileNivel.nivel === 'casual') {
-        nuevoNivel = 'activo'
-      }
+      const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
 
       if (nuevoNivel !== profileNivel.nivel) {
         await admin.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
@@ -189,6 +186,8 @@ export async function accionMasiva(
   }
 
   // accion === 'aprobada': una por una para puntos y nivel
+  const config = await getConfig()
+  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
   let procesadas = 0, errores = 0
   for (const foto of fotos) {
     try {
@@ -217,9 +216,7 @@ export async function accionMasiva(
           .from('profiles').select('fotos_aprobadas, nivel').eq('id', foto.gondolero_id).single()
         if (profileNivel) {
           const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-          let nuevoNivel = profileNivel.nivel
-          if (fotosAprobadas >= 100 && profileNivel.nivel !== 'pro') nuevoNivel = 'pro'
-          else if (fotosAprobadas >= 50 && profileNivel.nivel === 'casual') nuevoNivel = 'activo'
+          const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
           if (nuevoNivel !== profileNivel.nivel) {
             await admin.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
             await admin.from('notificaciones').insert({

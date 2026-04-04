@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { getConfig } from '@/lib/config'
+import { calcularNuevoNivel } from '@/lib/nivel'
 
 function createAdminClient() {
   return createSupabaseClient(
@@ -18,7 +20,8 @@ export async function aprobarFoto(fotoId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const adminClient = createAdminClient()
+  const [adminClient, config] = [createAdminClient(), await getConfig()]
+  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
 
   // 1. Obtener la foto con datos de la campaña
   const { data: foto, error: fotoError } = await adminClient
@@ -100,13 +103,7 @@ export async function aprobarFoto(fotoId: string) {
 
   if (profileNivel) {
     const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-    let nuevoNivel = profileNivel.nivel
-
-    if (fotosAprobadas >= 100 && profileNivel.nivel !== 'pro') {
-      nuevoNivel = 'pro'
-    } else if (fotosAprobadas >= 50 && profileNivel.nivel === 'casual') {
-      nuevoNivel = 'activo'
-    }
+    const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
 
     if (nuevoNivel !== profileNivel.nivel) {
       await adminClient.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
@@ -213,7 +210,8 @@ export async function accionMasivaDistri(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const adminClient = createAdminClient()
+  const [adminClient, config] = [createAdminClient(), await getConfig()]
+  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
 
   // Solo fotos pendientes pueden procesarse en masa
   const { data: fotosRaw } = await adminClient
@@ -281,9 +279,7 @@ export async function accionMasivaDistri(
       .from('profiles').select('fotos_aprobadas, nivel').eq('id', foto.gondolero_id).single()
     if (profileNivel) {
       const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-      let nuevoNivel = profileNivel.nivel
-      if (fotosAprobadas >= 100 && profileNivel.nivel !== 'pro') nuevoNivel = 'pro'
-      else if (fotosAprobadas >= 50 && profileNivel.nivel === 'casual') nuevoNivel = 'activo'
+      const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
       if (nuevoNivel !== profileNivel.nivel) {
         await adminClient.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
         await adminClient.from('notificaciones').insert({
