@@ -44,6 +44,7 @@ function buildNavSections(erroresNuevos: number, campanasPendientes: number): Na
         { href: '/admin/campanas',  label: 'Campañas',  icon: Megaphone, badge: campanasPendientes },
         { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
         { href: '/admin/comercios', label: 'Comercios', icon: Store },
+        { href: '/admin/comercios/pendientes', label: 'Comercios pendientes', icon: Store },
         { href: '/admin/zonas',     label: 'Zonas',     icon: MapPin },
       ],
     },

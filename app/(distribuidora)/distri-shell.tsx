@@ -11,6 +11,7 @@ const NAV = [
   { href: '/distribuidora/campanas',   label: 'Campanas',    icon: Megaphone       },
   { href: '/distribuidora/gondoleros', label: 'Gondoleros',  icon: Users           },
   { href: '/distribuidora/comercios',  label: 'Comercios',   icon: Store           },
+  { href: '/distribuidora/comercios/pendientes', label: 'Comercios pendientes', icon: Store },
   { href: '/distribuidora/alertas',    label: 'Alertas',     icon: Bell            },
   { href: '/distribuidora/marcas',     label: 'Marcas',      icon: Tag             },
   { href: '/distribuidora/cuenta',     label: 'Mi cuenta',   icon: UserCog         },

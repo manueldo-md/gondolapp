@@ -19,8 +19,10 @@ import {
 } from '@/lib/utils'
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
 import { registrarFoto, subirFoto, asegurarBloqueGenerico, obtenerConfigCompresion } from './actions'
+import { crearComercioNuevo, subirFotoFachada } from './actions-comercios'
 import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
+import type { TipoComercio } from '@/types'
 
 interface ComercioTempItem {
   tempId: string
@@ -91,6 +93,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
 type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'declaracion' | 'formulario' | 'confirmacion' | 'exito' | 'exito-offline'
+  | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
 type Declaracion = 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
 
 interface ComercioRow {
@@ -115,6 +118,7 @@ interface CampoBloque {
 interface CampanaData {
   id: string
   nombre: string
+  tipo: string
   puntos_por_foto: number
   primerBloqueId: string | null
   tipoContenido: string
@@ -122,6 +126,13 @@ interface CampanaData {
   bloqueSolicitarPrecio: boolean
   campos: CampoBloque[]
 }
+
+const TIPOS_COMERCIO: { value: TipoComercio; label: string; emoji: string }[] = [
+  { value: 'almacen',      label: 'Almacén',      emoji: '🧺' },
+  { value: 'kiosco',       label: 'Kiosco',        emoji: '🗞️' },
+  { value: 'autoservicio', label: 'Autoservicio', emoji: '🏪' },
+  { value: 'otro',         label: 'Otro',          emoji: '🏬' },
+]
 
 // ── Componente cámara (ciclo de vida propio) ──────────────────────────────────
 
@@ -536,6 +547,21 @@ function CapturaContent() {
   const [blurScore, setBlurScore] = useState<number | null>(null)
   const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
 
+  // ── Estado extra para flujo COMERCIOS ─────────────────────────────────────
+  const [cmNombre,    setCmNombre]    = useState('')
+  const [cmTipo,      setCmTipo]      = useState<TipoComercio>('almacen')
+  const [cmDireccion, setCmDireccion] = useState('')
+  const [cmTelefono,  setCmTelefono]  = useState('')
+  const [cmEncargado, setCmEncargado] = useState('')
+  const [cmFachadaBlob,    setCmFachadaBlob]    = useState<Blob | null>(null)
+  const [cmFachadaPreview, setCmFachadaPreview] = useState<string | null>(null)
+  const [cmSubiendo,       setCmSubiendo]       = useState(false)
+  const [cmErrorMsg,       setCmErrorMsg]       = useState<string | null>(null)
+  const [cmComerciosCercanos, setCmComerciosCercanos] = useState<ComercioRow[]>([])
+  const [cmBuscandoCercanos,  setCmBuscandoCercanos]  = useState(false)
+  const [cmComercioYaExiste,  setCmComercioYaExiste]  = useState<ComercioRow | null>(null)
+  const cmFachadaInputRef = useRef<HTMLInputElement>(null)
+
   // Cargar config de compresión al montar
   useEffect(() => {
     obtenerConfigCompresion().then(cfg => setComprConfig(cfg))
@@ -560,7 +586,7 @@ function CapturaContent() {
 
       supabase
         .from('campanas')
-        .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden ) )')
+        .select('id, nombre, tipo, puntos_por_foto, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden ) )')
         .eq('id', campanaId)
         .eq('estado', 'activa')
         .single()
@@ -587,6 +613,7 @@ function CapturaContent() {
             const campanaData: CampanaData = {
               id: d.id,
               nombre: d.nombre,
+              tipo: d.tipo ?? 'relevamiento',
               puntos_por_foto: d.puntos_por_foto,
               primerBloqueId: primerBloque?.id ?? null,
               tipoContenido: primerBloque?.tipo_contenido ?? 'propios',
@@ -712,10 +739,53 @@ function CapturaContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso])
 
+  // Para campañas tipo 'comercios': al llegar al paso 'gps' o al elegir el comercio,
+  // redirigir al flujo especial 'comercios-gps'
+  useEffect(() => {
+    if (campana?.tipo === 'comercios' && paso === 'comercio') {
+      // En campañas COMERCIOS no se elige comercio — ir directo a comercios-gps
+      setPaso('comercios-gps')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campana?.tipo, paso])
+
+  // Buscar comercios cercanos cuando llegamos al paso comercios-gps y tenemos GPS
+  useEffect(() => {
+    if (paso !== 'comercios-gps') return
+    if (gps.estado !== 'activo' || !gps.posicion) return
+
+    const buscarCercanos = async () => {
+      setCmBuscandoCercanos(true)
+      const { data } = await supabase
+        .from('comercios')
+        .select('id, nombre, direccion, lat, lng, tipo, validado')
+        .limit(500)
+
+      if (data) {
+        const cercanos = (data as ComercioRow[]).filter(c => {
+          if (!c.lat || !c.lng) return false
+          return calcularDistanciaMetros(gps.posicion!.lat, gps.posicion!.lng, c.lat, c.lng) <= 20
+        })
+        setCmComerciosCercanos(cercanos)
+      }
+      setCmBuscandoCercanos(false)
+    }
+
+    buscarCercanos()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso, gps.estado, gps.posicion?.lat, gps.posicion?.lng])
+
+  // Solicitar GPS al llegar al paso comercios-gps
+  useEffect(() => {
+    if (paso === 'comercios-gps') gps.solicitar()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso])
+
   // Advertir antes de cerrar la pestaña si hay captura en progreso
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (paso !== 'comercio' && paso !== 'exito' && paso !== 'exito-offline') {
+      const pasosFinal: Paso[] = ['comercio', 'exito', 'exito-offline', 'comercios-exito', 'comercios-gps']
+      if (!pasosFinal.includes(paso)) {
         e.preventDefault()
         e.returnValue = ''
       }
@@ -829,6 +899,54 @@ function CapturaContent() {
       setErrorGlobal(err instanceof Error ? err.message : 'Error al enviar la foto.')
     } finally {
       setEnviando(false)
+    }
+  }
+
+  // Handler para enviar el nuevo comercio (flujo COMERCIOS)
+  const handleEnviarComercio = async () => {
+    if (!campana || !cmNombre.trim()) return
+    if (!gps.posicion) { setCmErrorMsg('Necesitamos tu ubicación GPS.'); return }
+
+    setCmSubiendo(true)
+    setCmErrorMsg(null)
+
+    try {
+      let fachadaPath: string | null = null
+      let fachadaUrl:  string | null = null
+
+      // Subir foto de fachada si existe
+      if (cmFachadaBlob) {
+        const fd = new FormData()
+        fd.append('foto', new File([cmFachadaBlob], 'fachada.jpg', { type: 'image/jpeg' }))
+        fd.append('campanaId', campana.id)
+        const res = await subirFotoFachada(fd)
+        fachadaPath = res.path
+        fachadaUrl  = res.url
+      }
+
+      const result = await crearComercioNuevo({
+        campanaId:           campana.id,
+        nombre:              cmNombre.trim(),
+        tipo:                cmTipo,
+        direccion:           cmDireccion.trim() || null,
+        lat:                 gps.posicion.lat,
+        lng:                 gps.posicion.lng,
+        telefono:            cmTelefono.trim() || null,
+        encargado:           cmEncargado.trim() || null,
+        fachadaStoragePath:  fachadaPath,
+        fachadaUrl:          fachadaUrl,
+      })
+
+      if ('error' in result && result.error) {
+        setCmErrorMsg(result.error)
+        return
+      }
+
+      setPaso('comercios-exito')
+    } catch (err) {
+      setCmErrorMsg(err instanceof Error ? err.message : 'Error al guardar el comercio.')
+    } finally {
+      setCmSubiendo(false)
     }
   }
 
@@ -980,6 +1098,400 @@ function CapturaContent() {
     )
   }
 
+  // ── FLUJO ESPECIAL COMERCIOS ─────────────────────────────────────────────────
+
+  // Éxito COMERCIOS
+  if (paso === 'comercios-exito') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen px-6 bg-white gap-6 text-center">
+        <div className="w-20 h-20 bg-gondo-verde-50 rounded-full flex items-center justify-center">
+          <CheckCircle2 size={40} className="text-gondo-verde-400" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">¡Comercio registrado!</h1>
+          <p className="text-gray-500 text-sm max-w-xs">
+            Tus puntos se acreditarán cuando el comercio sea validado por tu distribuidora.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <button
+            onClick={() => {
+              setCmNombre(''); setCmTipo('almacen'); setCmDireccion('')
+              setCmTelefono(''); setCmEncargado('')
+              setCmFachadaBlob(null); setCmFachadaPreview(null)
+              setCmComerciosCercanos([]); setCmComercioYaExiste(null)
+              setCmErrorMsg(null)
+              setPaso('comercios-gps')
+            }}
+            className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
+          >
+            Registrar otro comercio
+          </button>
+          <button
+            onClick={() => router.push('/gondolero/misiones')}
+            className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl min-h-touch"
+          >
+            Ir a mis misiones
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Comercio ya existe (seleccionado de la lista cercana)
+  if (paso === 'comercios-existente' && cmComercioYaExiste) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 flex items-center gap-3">
+          <button onClick={() => setPaso('comercios-gps')} className="p-1.5 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100">
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-base font-bold text-gray-900">Comercio encontrado</h1>
+        </div>
+        <div className="px-4 py-8 flex flex-col items-center text-center gap-5">
+          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center">
+            <MapPin size={28} className="text-blue-500" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 mb-1">{cmComercioYaExiste.nombre}</h2>
+            {cmComercioYaExiste.direccion && (
+              <p className="text-sm text-gray-500">{cmComercioYaExiste.direccion}</p>
+            )}
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 max-w-sm">
+            <p className="text-sm text-blue-800 font-medium mb-1">Este comercio ya está registrado</p>
+            <p className="text-xs text-blue-600">
+              Para generar puntos debés registrar un comercio nuevo que aún no esté en el mapa.
+            </p>
+          </div>
+          <button
+            onClick={() => { setCmComercioYaExiste(null); setPaso('comercios-gps') }}
+            className="w-full max-w-xs py-4 bg-gondo-verde-400 text-white font-semibold rounded-2xl min-h-touch"
+          >
+            Volver
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Paso GPS de comercios: pedir ubicación y buscar cercanos
+  if (paso === 'comercios-gps') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 flex items-center gap-3">
+          <button onClick={() => router.back()} className="p-1.5 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100">
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <p className="text-xs text-gray-400">{campana?.nombre}</p>
+            <h1 className="text-base font-bold text-gray-900">Registrar comercio nuevo</h1>
+          </div>
+        </div>
+        <div className="flex-1 px-4 py-5 space-y-5">
+          {/* Estado GPS */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center">
+            {gps.estado === 'idle' && (
+              <>
+                <Navigation size={36} className="text-gray-300 mx-auto mb-3" />
+                <p className="text-sm text-gray-600 mb-4">
+                  Necesitamos tu ubicación GPS para verificar que no hay un comercio cercano ya registrado.
+                </p>
+                <button
+                  onClick={gps.solicitar}
+                  className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
+                >
+                  Activar GPS
+                </button>
+              </>
+            )}
+            {gps.estado === 'solicitando' && (
+              <>
+                <Loader2 size={36} className="text-gondo-verde-400 mx-auto mb-3 animate-spin" />
+                <p className="text-sm text-gray-600">Obteniendo tu ubicación...</p>
+              </>
+            )}
+            {gps.estado === 'error' && (
+              <>
+                <XCircle size={36} className="text-red-400 mx-auto mb-3" />
+                <p className="text-sm text-red-600 mb-4">{gps.error}</p>
+                <button onClick={gps.solicitar} className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch">
+                  Reintentar
+                </button>
+              </>
+            )}
+            {gps.estado === 'activo' && gps.posicion && (
+              <div className="flex items-center justify-center gap-2 text-gondo-verde-400">
+                <Navigation size={18} className="shrink-0" />
+                <span className="text-sm font-medium">Ubicación obtenida ✓</span>
+              </div>
+            )}
+          </div>
+
+          {/* Buscando comercios cercanos */}
+          {cmBuscandoCercanos && (
+            <div className="flex items-center gap-2 text-gray-500 justify-center py-3">
+              <Loader2 size={16} className="animate-spin" />
+              <span className="text-sm">Verificando comercios cercanos...</span>
+            </div>
+          )}
+
+          {/* Comercios cercanos encontrados */}
+          {!cmBuscandoCercanos && cmComerciosCercanos.length > 0 && gps.estado === 'activo' && (
+            <div className="space-y-3">
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-3">
+                <AlertTriangle size={15} className="text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-700">
+                  Hay {cmComerciosCercanos.length} comercio{cmComerciosCercanos.length !== 1 ? 's' : ''} registrado{cmComerciosCercanos.length !== 1 ? 's' : ''} a menos de 20m. ¿Es alguno de estos?
+                </p>
+              </div>
+              {cmComerciosCercanos.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => { setCmComercioYaExiste(c); setPaso('comercios-existente') }}
+                  className="w-full flex items-start gap-3 p-3.5 bg-white border border-gray-200 rounded-xl text-left hover:border-amber-300 transition-colors"
+                >
+                  <MapPin size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 text-sm">{c.nombre}</p>
+                    {c.direccion && <p className="text-xs text-gray-400 truncate">{c.direccion}</p>}
+                  </div>
+                </button>
+              ))}
+              <p className="text-xs text-gray-400 text-center">o bien...</p>
+            </div>
+          )}
+
+          {/* Botón para ir al formulario de nuevo comercio */}
+          {gps.estado === 'activo' && !cmBuscandoCercanos && (
+            <button
+              onClick={() => setPaso('comercios-formulario')}
+              className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
+            >
+              {cmComerciosCercanos.length > 0 ? 'No es ninguno — es un comercio nuevo' : 'Continuar — Completar datos'}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Formulario del nuevo comercio (datos básicos)
+  if (paso === 'comercios-formulario') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 flex items-center gap-3">
+          <button onClick={() => setPaso('comercios-gps')} className="p-1.5 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100">
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-base font-bold text-gray-900">Datos del comercio</h1>
+        </div>
+        <div className="px-4 py-5 space-y-5">
+
+          {/* Nombre */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Nombre del comercio <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={cmNombre}
+              onChange={e => setCmNombre(e.target.value)}
+              placeholder="Ej: Almacén Don Juan"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+              autoComplete="off"
+            />
+          </div>
+
+          {/* Tipo */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tipo <span className="text-red-400">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {TIPOS_COMERCIO.map(t => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setCmTipo(t.value)}
+                  className={`flex items-center gap-2 px-3 py-3 rounded-xl border text-left transition-colors min-h-touch ${
+                    cmTipo === t.value
+                      ? 'bg-gondo-verde-50 border-gondo-verde-400 text-gondo-verde-400'
+                      : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="text-xl">{t.emoji}</span>
+                  <span className="text-sm font-medium">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Dirección */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Dirección <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={cmDireccion}
+              onChange={e => setCmDireccion(e.target.value)}
+              placeholder="Ej: San Martín 450, Concordia"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+              autoComplete="street-address"
+            />
+          </div>
+
+          {/* Teléfono */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Teléfono <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="tel"
+              value={cmTelefono}
+              onChange={e => setCmTelefono(e.target.value)}
+              placeholder="Ej: 345 412-3456"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+            />
+          </div>
+
+          {/* Encargado */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Encargado / dueño <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              value={cmEncargado}
+              onChange={e => setCmEncargado(e.target.value)}
+              placeholder="Ej: Juan García"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+              autoComplete="off"
+            />
+          </div>
+
+          {cmErrorMsg && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-sm text-red-600">{cmErrorMsg}</p>
+            </div>
+          )}
+
+          <button
+            onClick={() => {
+              if (!cmNombre.trim()) { setCmErrorMsg('El nombre es obligatorio.'); return }
+              setCmErrorMsg(null)
+              setPaso('comercios-fachada')
+            }}
+            className="w-full py-4 bg-gondo-verde-400 text-white font-semibold rounded-2xl text-base min-h-touch"
+          >
+            Siguiente → Foto de fachada
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Foto de fachada del comercio
+  if (paso === 'comercios-fachada') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 flex items-center gap-3">
+          <button onClick={() => setPaso('comercios-formulario')} className="p-1.5 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100">
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-base font-bold text-gray-900">Foto de fachada</h1>
+        </div>
+        <div className="px-4 py-6 space-y-5">
+          <div className="text-center space-y-1.5">
+            <p className="text-base font-semibold text-gray-900">Sacá una foto de la fachada del local</p>
+            <p className="text-sm text-gray-500">Ayuda a verificar que el comercio existe</p>
+          </div>
+
+          {cmFachadaPreview ? (
+            <div className="space-y-3">
+              <div className="relative rounded-2xl overflow-hidden bg-gray-100 aspect-video">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={cmFachadaPreview} alt="Fachada" className="w-full h-full object-cover" />
+              </div>
+              <button
+                type="button"
+                onClick={() => cmFachadaInputRef.current?.click()}
+                className="w-full py-3 border border-gray-300 text-gray-600 font-medium rounded-xl text-sm hover:bg-gray-50 transition-colors"
+              >
+                Repetir foto
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => cmFachadaInputRef.current?.click()}
+              className="w-full py-10 border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center gap-3 text-gray-500 hover:border-gondo-verde-400 hover:text-gondo-verde-400 transition-colors"
+            >
+              <Camera size={36} className="text-gray-300" />
+              <div className="text-center">
+                <p className="font-semibold text-sm">Sacar foto</p>
+                <p className="text-xs text-gray-400 mt-0.5">Abre la cámara trasera</p>
+              </div>
+            </button>
+          )}
+
+          <input
+            ref={cmFachadaInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              if (cmFachadaPreview) URL.revokeObjectURL(cmFachadaPreview)
+              const preview = URL.createObjectURL(file)
+              setCmFachadaPreview(preview)
+              try {
+                const compressed = await comprimirImagen(file, 0.25, 1024)
+                setCmFachadaBlob(compressed)
+              } catch {
+                setCmFachadaBlob(file)
+              }
+              e.target.value = ''
+            }}
+          />
+
+          {cmErrorMsg && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-sm text-red-600">{cmErrorMsg}</p>
+            </div>
+          )}
+
+          <div className="space-y-2 pt-1">
+            {cmFachadaPreview && (
+              <button
+                onClick={handleEnviarComercio}
+                disabled={cmSubiendo}
+                className="w-full py-4 bg-gondo-verde-400 text-white font-semibold rounded-2xl text-base disabled:opacity-50 min-h-touch flex items-center justify-center gap-2"
+              >
+                {cmSubiendo
+                  ? <><Loader2 size={18} className="animate-spin" /> Guardando...</>
+                  : 'Guardar con foto'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleEnviarComercio}
+              disabled={cmSubiendo}
+              className="w-full py-3.5 text-gray-500 font-medium text-sm rounded-2xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 min-h-touch flex items-center justify-center"
+            >
+              {cmSubiendo && !cmFachadaPreview
+                ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Guardando...</span>
+                : 'Omitir por ahora'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ── BLUR ADVERTENCIA ─────────────────────────────────────────────────────────
   if (paso === 'blur-advertencia') {
     return (
@@ -1026,12 +1538,17 @@ function CapturaContent() {
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
   const tieneCampos = (campana?.campos?.length ?? 0) > 0
-  const PASOS_LABEL = tieneCampos
-    ? ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Formulario', 'Confirmar']
-    : ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar']
-  const PASOS_KEY: Paso[] = tieneCampos
-    ? ['comercio', 'gps', 'camara', 'declaracion', 'formulario', 'confirmacion']
-    : ['comercio', 'gps', 'camara', 'declaracion', 'confirmacion']
+  const esCampanaComercio = campana?.tipo === 'comercios'
+  const PASOS_LABEL = esCampanaComercio
+    ? ['Ubicación', 'Formulario', 'Fachada']
+    : tieneCampos
+      ? ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Formulario', 'Confirmar']
+      : ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar']
+  const PASOS_KEY: Paso[] = esCampanaComercio
+    ? ['comercios-gps', 'comercios-formulario', 'comercios-fachada']
+    : tieneCampos
+      ? ['comercio', 'gps', 'camara', 'declaracion', 'formulario', 'confirmacion']
+      : ['comercio', 'gps', 'camara', 'declaracion', 'confirmacion']
   const pasoActualIdx = PASOS_KEY.indexOf(paso)
 
   return (
@@ -1044,15 +1561,20 @@ function CapturaContent() {
               if (paso === 'comercio') router.back()
               else {
                 const prev: Record<Paso, Paso> = {
-                  comercio:           'comercio',
-                  gps:                'comercio',
-                  camara:             'gps',
-                  'blur-advertencia': 'camara',
-                  declaracion:        'camara',
-                  formulario:         campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
-                  confirmacion:       tieneCampos ? 'formulario' : (campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion'),
-                  exito:              'confirmacion',
-                  'exito-offline':    'confirmacion',
+                  comercio:              'comercio',
+                  gps:                   'comercio',
+                  camara:                'gps',
+                  'blur-advertencia':    'camara',
+                  declaracion:           'camara',
+                  formulario:            campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
+                  confirmacion:          tieneCampos ? 'formulario' : (campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion'),
+                  exito:                 'confirmacion',
+                  'exito-offline':       'confirmacion',
+                  'comercios-gps':       'comercio',
+                  'comercios-existente': 'comercios-gps',
+                  'comercios-formulario':'comercios-gps',
+                  'comercios-fachada':   'comercios-formulario',
+                  'comercios-exito':     'comercios-gps',
                 }
                 setPaso(prev[paso])
               }
