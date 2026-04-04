@@ -8,6 +8,7 @@ import { DatosForm } from './datos-form'
 import { PasswordForm } from './password-form'
 import { LogoutButton } from './logout-button'
 import { DistriSection } from './distri-section'
+import { CodigoGondolero } from './codigo-gondolero'
 
 const NIVEL_COLOR: Record<NivelGondolero, string> = {
   casual: 'bg-gray-100 text-gray-600',
@@ -31,32 +32,24 @@ export default async function PerfilPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const [profileRes, zonasRes, gondoleroZonasRes, distribuidorasRes] = await Promise.all([
+  const [profileRes, zonasRes, gondoleroZonasRes] = await Promise.all([
     admin.from('profiles')
-      .select('nombre, alias, nivel, distri_id, celular')
+      .select('nombre, alias, nivel, distri_id, celular, codigo_gondolero')
       .eq('id', user.id).single(),
     admin.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre'),
     admin.from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id),
-    admin.from('distribuidoras').select('id, razon_social').eq('validada', true).order('razon_social'),
   ])
 
   const profile = profileRes.data
   const todasLasZonas = zonasRes.data ?? []
   const zonasActuales = (gondoleroZonasRes.data ?? []).map((gz: { zona_id: string }) => gz.zona_id)
-  const distribuidoras = (distribuidorasRes.data ?? []) as { id: string; razon_social: string }[]
 
   // Nombre de distribuidora si está vinculado
   let distriActual: { id: string; nombre: string } | null = null
   if (profile?.distri_id) {
-    const distri = distribuidoras.find(d => d.id === profile.distri_id)
-    if (distri) {
-      distriActual = { id: distri.id, nombre: distri.razon_social }
-    } else {
-      // distri no validada o no encontrada en la lista, buscar por id
-      const { data: distriData } = await admin
-        .from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single()
-      if (distriData) distriActual = { id: profile.distri_id, nombre: distriData.razon_social }
-    }
+    const { data: distriData } = await admin
+      .from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single()
+    if (distriData) distriActual = { id: profile.distri_id, nombre: distriData.razon_social }
   }
 
   // Solicitud pendiente (si no tiene distri vinculada)
@@ -132,10 +125,14 @@ export default async function PerfilPage() {
           </div>
         )}
 
+        {/* ── Mi código de gondolero ── */}
+        {profile?.codigo_gondolero && (
+          <CodigoGondolero codigo={profile.codigo_gondolero} />
+        )}
+
         {/* ── Mi distribuidora ── */}
         <DistriSection
           distriActual={distriActual}
-          distribuidoras={distribuidoras}
           solicitudPendiente={solicitudPendiente}
         />
 

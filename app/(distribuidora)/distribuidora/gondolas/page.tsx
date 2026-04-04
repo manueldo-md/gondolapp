@@ -177,6 +177,9 @@ export default async function GondolasPage({
 
   const distriId = profile?.distri_id ?? null
 
+  // Opción B: fotos visibles = campañas propias (siempre) + gondoleros actualmente vinculados
+  // Las fotos de campañas propias se ven aunque el gondolero se haya desvinculado después.
+
   // Gondoleros vinculados a esta distribuidora
   const { data: gondoleroRows } = await admin
     .from('profiles')
@@ -253,11 +256,22 @@ export default async function GondolasPage({
     if (campanaIdFiltro)   query = query.eq('campana_id',    campanaIdFiltro)
     if (desdeFiltro)       query = query.gte('created_at',   desdeFiltro)
     if (hastaFiltro)       query = query.lte('created_at',   hastaFiltro + 'T23:59:59')
-    // Si hay filtro por gondolero específico, usarlo (pero solo si pertenece a esta distri)
-    if (gondoleroIdFiltro && gondoleroIds.includes(gondoleroIdFiltro)) {
+    if (gondoleroIdFiltro) {
+      // Filter by specific gondolero — whether linked or not
+      // Still restrict to distri scope: own campaigns OR currently linked gondoleros
       query = query.eq('gondolero_id', gondoleroIdFiltro)
-    } else if (!gondoleroIdFiltro) {
-      // Sin filtro de gondolero: mostrar de todos los gondoleros/campañas de la distri
+      // Restrict to distri scope to prevent seeing unrelated gondoleros
+      if (hayCampanas && gondoleroIds.includes(gondoleroIdFiltro)) {
+        // gondolero is currently linked: show all their photos
+      } else if (hayCampanas) {
+        // gondolero unlinked: only show photos in own campaigns
+        query = query.in('campana_id', campanaIds)
+      } else if (!gondoleroIds.includes(gondoleroIdFiltro)) {
+        // gondolero unlinked and no own campaigns: nothing to show
+        query = query.in('gondolero_id', [''])
+      }
+    } else {
+      // No gondolero filter: show all fotos from own campaigns + linked gondoleros
       if (hayGondoleros && hayCampanas) {
         query = query.or(
           `gondolero_id.in.(${gondoleroIds.join(',')}),campana_id.in.(${campanaIds.join(',')})`
@@ -269,10 +283,6 @@ export default async function GondolasPage({
       } else {
         query = query.in('gondolero_id', [''])
       }
-    }
-    // Si hay gondoleroIdFiltro pero no está en la lista de la distri: no filtrar (sin resultados)
-    if (gondoleroIdFiltro && !gondoleroIds.includes(gondoleroIdFiltro)) {
-      query = query.in('gondolero_id', [''])
     }
   }
 

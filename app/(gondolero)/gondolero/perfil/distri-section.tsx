@@ -1,39 +1,22 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Loader2, Truck, CheckCircle2, ChevronDown } from 'lucide-react'
-import { solicitarVinculacion, desvincularseDeDistri } from './distri-actions'
+import { Loader2, Truck, CheckCircle2 } from 'lucide-react'
+import { desvincularseDeDistri } from './distri-actions'
 
 interface DistriSectionProps {
   distriActual: { id: string; nombre: string } | null
-  distribuidoras: { id: string; razon_social: string }[]
   solicitudPendiente: { distri_id: string; distri_nombre: string } | null
 }
 
-export function DistriSection({ distriActual, distribuidoras, solicitudPendiente }: DistriSectionProps) {
+export function DistriSection({ distriActual, solicitudPendiente }: DistriSectionProps) {
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [confirmarDesvincular, setConfirmarDesvincular] = useState(false)
-  const [distriSeleccionada, setDistriSeleccionada] = useState('')
-  const [mostrarSelector, setMostrarSelector] = useState(false)
 
   const showFeedback = (ok: boolean, msg: string) => {
     setFeedback({ ok, msg })
     if (ok) setTimeout(() => setFeedback(null), 4000)
-  }
-
-  const handleSolicitar = () => {
-    if (!distriSeleccionada) return
-    startTransition(async () => {
-      const res = await solicitarVinculacion(distriSeleccionada)
-      if (res.error) {
-        showFeedback(false, res.error)
-      } else {
-        setMostrarSelector(false)
-        setDistriSeleccionada('')
-        showFeedback(true, 'Solicitud enviada — la distribuidora debe aprobarla para quedar vinculado')
-      }
-    })
   }
 
   const handleDesvincular = () => {
@@ -112,51 +95,12 @@ export function DistriSection({ distriActual, distribuidoras, solicitudPendiente
               </p>
             </div>
           ) : (
-            <p className="text-sm text-gray-400">Sin distribuidora vinculada</p>
-          )}
-
-          {/* Selector */}
-          {!solicitudPendiente && (
-            <>
-              {!mostrarSelector ? (
-                <button
-                  onClick={() => setMostrarSelector(true)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-gondo-verde-400 hover:text-gondo-verde-600 transition-colors"
-                >
-                  <span>+ Solicitar vinculación</span>
-                  <ChevronDown size={12} />
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <select
-                    value={distriSeleccionada}
-                    onChange={e => setDistriSeleccionada(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 bg-white"
-                  >
-                    <option value="">Elegí una distribuidora</option>
-                    {distribuidoras.map(d => (
-                      <option key={d.id} value={d.id}>{d.razon_social}</option>
-                    ))}
-                  </select>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setMostrarSelector(false); setDistriSeleccionada('') }}
-                      disabled={isPending}
-                      className="flex-1 py-2 text-xs font-medium border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={handleSolicitar}
-                      disabled={isPending || !distriSeleccionada}
-                      className="flex-1 py-2 text-xs font-semibold bg-gondo-verde-400 text-white rounded-xl hover:bg-gondo-verde-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
-                    >
-                      {isPending ? <Loader2 size={12} className="animate-spin" /> : 'Enviar solicitud'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
+            <div className="space-y-2">
+              <p className="text-sm text-gray-400">Sin distribuidora vinculada</p>
+              <p className="text-xs text-gray-400">
+                Pedile a tu distribuidora que te invite por link o que ingrese tu código personal para vincularte.
+              </p>
+            </div>
           )}
         </div>
       )}

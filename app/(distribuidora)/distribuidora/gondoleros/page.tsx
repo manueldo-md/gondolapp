@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Users, Star, CheckCircle2, XCircle } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { SolicitudesTab } from './solicitudes-tab'
+import { InvitarPanel } from './invitar-panel'
 
 function adminClient() {
   return createSupabaseClient(
@@ -155,6 +156,11 @@ export default async function GondolerosPage({
             {lista.length} gondolero{lista.length !== 1 ? 's' : ''} vinculado{lista.length !== 1 ? 's' : ''}
           </p>
         </div>
+      </div>
+
+      {/* Panel de invitación — siempre visible */}
+      <div className="mb-6">
+        <InvitarPanel distriId={distriId ?? ''} distriNombre={distriNombre} />
       </div>
 
       {/* Tabs */}
