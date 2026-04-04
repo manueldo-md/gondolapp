@@ -15,7 +15,9 @@
       "Bash(mv:*)",
       "Bash(echo:*)",
       "Bash(pwd:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(powershell:*)",
+      "Bash(cmd:*)"
     ]
   }
 }
