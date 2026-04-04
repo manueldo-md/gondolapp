@@ -93,13 +93,13 @@ export async function crearComercio(formData: FormData) {
       console.log('[fachada] upload result — path:', uploadData?.path, 'error:', uploadError?.message ?? null)
 
       if (!uploadError) {
-        // Usar el path confirmado por Storage; si viene null (edge case), usar el path construido
-        const pathAGuardar = uploadData?.path ?? storagePath
+        // Siempre usar el path construido manualmente — uploadData.path puede devolver
+        // una URL firmada completa en algunas versiones del cliente de Supabase
         const { error: updateError } = await admin
           .from('comercios')
-          .update({ foto_fachada_url: pathAGuardar })
+          .update({ foto_fachada_url: storagePath })
           .eq('id', comercio.id)
-        console.log('[fachada] DB update — path guardado:', pathAGuardar, 'error:', updateError?.message ?? null)
+        console.log('[fachada] DB update — path guardado:', storagePath, 'error:', updateError?.message ?? null)
       } else {
         console.error('[fachada] Error subiendo a Storage:', uploadError.message)
       }
