@@ -57,7 +57,9 @@ export async function generarLinkInvitacionMarca(
 
   if (error) return { error: `No se pudo generar el link: ${error.message}` }
 
-  const link = `${process.env.NEXT_PUBLIC_APP_URL}/vinculacion-marca?token=${token}`
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://gondolapp-delta.vercel.app'
+  const link = `${appUrl}/vinculacion-marca?token=${token}`
+  console.log('[generarLink] link generado:', link)
   return { link }
 }
 
