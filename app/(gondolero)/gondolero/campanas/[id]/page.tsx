@@ -219,10 +219,10 @@ export default async function CampanaDetallePage({
               </div>
             </div>
             <Link
-              href={`/gondolero/misiones/${c.id}`}
+              href={`/gondolero/captura?campana=${c.id}`}
               className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-900"
             >
-              Ir <ChevronRight size={13} />
+              Capturar <ChevronRight size={13} />
             </Link>
           </div>
         )}

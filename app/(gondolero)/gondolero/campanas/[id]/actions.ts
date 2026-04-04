@@ -134,7 +134,7 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
   console.log('[unirse] existente:', existente, 'error:', existenteError)
 
   if (existente?.estado === 'activa') {
-    redirect(`/gondolero/misiones/${campanaId}`)
+    redirect(`/gondolero/captura?campana=${campanaId}`)
   }
 
   if (existente) {
@@ -171,5 +171,5 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
 
   revalidatePath('/gondolero/misiones')
   revalidatePath('/gondolero/campanas')
-  redirect('/gondolero/misiones')
+  redirect(`/gondolero/captura?campana=${campanaId}`)
 }
