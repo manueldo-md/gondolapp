@@ -827,5 +827,61 @@ Esta vinculación es clave para que la distri pueda asignar campañas exclusivas
 
 ---
 
+### Sistema de tokens para distribuidoras (Alta prioridad post-piloto)
+
+**Concepto:**
+Las distribuidoras no pagan la plataforma con dinero sino que ganan tokens haciendo acciones que alimentan el ecosistema. Las marcas son las que inyectan tokens al sistema al relacionarse con distribuidoras.
+
+**Fuentes de tokens para distribuidoras:**
+
+1. **Marca paga por vincularse (principal)**
+   Cuando una marca se vincula a una distribuidora, paga X tokens que van directo a la cuenta de la distri.
+   Lógica: la marca necesita la red de la distri para llegar al canal tradicional — eso tiene valor.
+
+2. **Gondolero completa misión**
+   Cuando se aprueba una foto de un gondolero vinculado, la distri gana Y tokens (pequeña fracción).
+   Lógica: la distri aportó el gondolero al sistema.
+
+3. **Comercio nuevo validado**
+   Cuando la distri valida un comercio nuevo, gana Z tokens.
+   Lógica: cada comercio mapeado enriquece el dataset.
+
+4. **Gondolero nuevo vinculado**
+   Cuando la distri incorpora un gondolero nuevo, gana W tokens.
+   Lógica: ampliar la red de sensores tiene valor.
+
+**Uso de tokens por la distribuidora:**
+- Crear campañas internas (ya definido: 15 tokens)
+- Solicitar informes especiales
+- Acceder a datos de competencia en su zona
+- Futuro: publicidad en el mapa de consumidores
+
+**Flujo de tokens al vincularse con marca:**
+1. Marca genera link de invitación a distri
+2. Antes de generar el link, se muestra el costo: "Vincularte con esta distribuidora cuesta X tokens"
+3. Marca confirma y se descuentan tokens de su cuenta
+4. Distribuidora acepta la invitación
+5. Tokens se acreditan en la cuenta de la distri
+
+**Parámetros configurables (en tabla `configuracion`):**
+- `tokens_vinculacion_marca_distri` — costo para la marca al vincularse
+- `tokens_gondolero_mision` — tokens que gana la distri por foto aprobada
+- `tokens_comercio_validado` — tokens por validar comercio nuevo
+- `tokens_gondolero_nuevo` — tokens por vincular gondolero nuevo
+
+**Implementación técnica:**
+- Usar tabla `movimientos_tokens` existente en el schema
+- La tabla ya tiene: `actor_id`, `actor_tipo`, `tipo`, `monto`, `concepto`
+- Agregar los INSERT en `movimientos_tokens` en cada evento
+- Actualizar `tokens_disponibles` en `distribuidoras`
+
+**Relación con el modelo de negocio:**
+- Las marcas son las que inyectan dinero/tokens al sistema
+- Las distribuidoras son incentivadas a crecer la red
+- Los gondoleros ganan puntos (no tokens)
+- GondolApp retiene una parte de los tokens como take rate
+
+---
+
 *Última actualización: Abril 2026*
 *Versión del documento: 1.1*
