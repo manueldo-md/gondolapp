@@ -59,6 +59,25 @@ export default async function FotosAdminPage({
   const signedMap: Record<string, string | null> = {}
   signed.forEach(s => { signedMap[s.id] = s.signedUrl })
 
+  // Fetch respuestas de formulario dinámico
+  const fotoIds = fotos.map(f => f.id)
+  const respuestasMap: Record<string, { pregunta: string; tipo: string; valor: unknown }[]> = {}
+  if (fotoIds.length > 0) {
+    const { data: respsData } = await admin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from('foto_respuestas' as any)
+      .select('foto_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .in('foto_id', fotoIds)
+    if (respsData) {
+      for (const r of respsData as { foto_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
+        if (!campo) continue
+        if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
+        respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+      }
+    }
+  }
+
   const FILTROS = ['todos', 'pendiente', 'aprobada', 'rechazada', 'en_revision', 'archivada']
 
   // Preparar datos para el componente cliente
@@ -74,6 +93,7 @@ export default async function FotosAdminPage({
     createdAt:       f.created_at,
     precioConfirmado: f.precio_confirmado ?? null,
     precioDetectado:  f.precio_detectado ?? null,
+    respuestas:      respuestasMap[f.id] ?? [],
   }))
 
   return (

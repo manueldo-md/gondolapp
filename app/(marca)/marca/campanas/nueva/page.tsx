@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { crearCampana } from './actions'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
+import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ export default function NuevaCampanaPage() {
     supabase.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre').then(({ data }) => setZonas(data ?? []))
   }, [])
 
+  const [campos, setCampos] = useState<CampoBloque[]>([])
+
   const [s1, setS1] = useState<Step1>({
     nombre:             '',
     tipo:               'relevamiento',
@@ -91,6 +94,7 @@ export default function NuevaCampanaPage() {
     fd.set('solicitar_precio', s1.solicitar_precio ? 'true' : 'false')
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
     zonasSeleccionadas.forEach(id => fd.append('zona_ids', id))
+    fd.set('campos_json', JSON.stringify(campos))
 
     startTransition(async () => {
       const result = await crearCampana(fd)
@@ -204,6 +208,9 @@ export default function NuevaCampanaPage() {
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"
               />
             </div>
+
+            {/* Campos del bloque */}
+            <CamposBloqueBuilder campos={campos} onChange={setCampos} />
 
             {/* Tipo de contenido */}
             <div>

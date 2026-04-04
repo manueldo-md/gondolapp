@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { crearCampanaInterna } from './actions'
+import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
 
 export default function NuevaCampanaPage() {
   const router = useRouter()
@@ -18,6 +19,8 @@ export default function NuevaCampanaPage() {
     const supabase = createClient()
     supabase.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre').then(({ data }) => setZonas(data ?? []))
   }, [])
+
+  const [campos, setCampos] = useState<CampoBloque[]>([])
 
   const [form, setForm] = useState({
     nombre:                      '',
@@ -44,6 +47,7 @@ export default function NuevaCampanaPage() {
     Object.entries(form).forEach(([k, v]) => fd.set(k, v))
     zonasSeleccionadas.forEach(id => fd.append('zona_ids', id))
     fd.set('solicitar_precio', solicitarPrecio ? 'true' : 'false')
+    fd.set('campos_json', JSON.stringify(campos))
 
     startTransition(async () => {
       const result = await crearCampanaInterna(fd)
@@ -97,6 +101,13 @@ export default function NuevaCampanaPage() {
               className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
             />
           </div>
+
+          {/* Campos del bloque */}
+          <CamposBloqueBuilder
+            campos={campos}
+            onChange={setCampos}
+            accentClass="focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400"
+          />
 
           {/* Tipo de contenido */}
           <div>

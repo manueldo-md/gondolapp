@@ -23,6 +23,7 @@ export interface RegistrarFotoParams {
   deviceId: string
   puntosAcreditar: number
   blurScore?: number | null
+  respuestas?: { campo_id: string; valor: unknown }[]
 }
 
 export async function registrarFoto(params: RegistrarFotoParams) {
@@ -90,6 +91,17 @@ export async function registrarFoto(params: RegistrarFotoParams) {
     .from('participaciones')
     .update({ comercios_completados: (participacion.comercios_completados ?? 0) + 1 })
     .eq('id', participacion.id)
+
+  // Guardar respuestas del formulario dinámico (si las hay)
+  if (params.respuestas && params.respuestas.length > 0) {
+    await db.from('foto_respuestas').insert(
+      params.respuestas.map(r => ({
+        foto_id:  foto.id,
+        campo_id: r.campo_id,
+        valor:    r.valor,
+      }))
+    )
+  }
 
   return { fotoId: foto.id, puntos: params.puntosAcreditar }
 }

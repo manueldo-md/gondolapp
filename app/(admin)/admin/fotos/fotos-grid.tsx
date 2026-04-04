@@ -8,6 +8,7 @@ import {
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { tiempoRelativo } from '@/lib/utils'
 import { accionMasiva, cambiarEstadoFoto } from './actions'
+import { FotoRespuestas } from '@/components/shared/foto-respuestas'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ export interface FotoItem {
   createdAt: string
   precioConfirmado: number | null
   precioDetectado: number | null
+  respuestas?: { pregunta: string; tipo: string; valor: unknown }[]
 }
 
 interface Toast {
@@ -427,6 +429,9 @@ function FotoCard({
               <span className="text-gray-400 text-[10px]">IA pendiente</span>
             )}
           </div>
+        )}
+        {foto.respuestas && foto.respuestas.length > 0 && (
+          <FotoRespuestas respuestas={foto.respuestas} />
         )}
       </div>
     </div>

@@ -7,6 +7,7 @@ import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import type { EstadoFoto, DeclaracionFoto, TipoCampana } from '@/types'
 import { GondolasFilter } from './gondolas-filter'
 import { MarcaFotoAcciones } from './foto-acciones'
+import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
 
 interface FotoRow {
   id: string
@@ -142,6 +143,25 @@ export default async function GondolasPage({
     })
   )
 
+  // Fetch respuestas de formulario dinámico
+  const fotoIds = fotos.map(f => f.id)
+  const respuestasMap: Record<string, RespuestaItem[]> = {}
+  if (fotoIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: respsData } = await (admin as any)
+      .from('foto_respuestas')
+      .select('foto_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .in('foto_id', fotoIds)
+    if (respsData) {
+      for (const r of respsData as { foto_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
+        if (!campo) continue
+        if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
+        respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+      }
+    }
+  }
+
   return (
     <div>
       {/* Header */}
@@ -210,6 +230,9 @@ export default async function GondolasPage({
                 <p className="text-[10px] text-gray-400">
                   {formatearFechaHora(f.created_at)}
                 </p>
+                {respuestasMap[f.id] && respuestasMap[f.id].length > 0 && (
+                  <FotoRespuestas respuestas={respuestasMap[f.id]} />
+                )}
                 <MarcaFotoAcciones fotoId={f.id} estado={f.estado} />
               </div>
             </div>

@@ -57,13 +57,37 @@ export async function crearCampanaInterna(formData: FormData) {
   const instruccion = (formData.get('instruccion') as string) || 'Fotografiá la góndola'
   const tipoContenido = (formData.get('tipo_contenido') as string) || 'propios'
   const solicitarPrecio = formData.get('solicitar_precio') === 'true'
-  await admin.from('bloques_foto').insert({
+  const { data: bloque } = await admin.from('bloques_foto').insert({
     campana_id:      campana.id,
     orden:           1,
     instruccion,
     tipo_contenido:  tipoContenido,
     solicitar_precio: solicitarPrecio,
-  })
+  }).select('id').single()
+
+  // Insertar campos dinámicos del bloque (si los hay)
+  const camposJson = formData.get('campos_json') as string | null
+  if (camposJson && bloque?.id) {
+    try {
+      const campos = JSON.parse(camposJson) as {
+        tipo: string; pregunta: string; opciones: string[]
+        obligatorio: boolean; orden: number
+      }[]
+      const camposValidos = campos.filter(c => c.pregunta.trim())
+      if (camposValidos.length > 0) {
+        await admin.from('bloque_campos').insert(
+          camposValidos.map(c => ({
+            bloque_id:  bloque.id,
+            tipo:       c.tipo,
+            pregunta:   c.pregunta.trim(),
+            opciones:   c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
+            obligatorio: c.obligatorio,
+            orden:      c.orden,
+          }))
+        )
+      }
+    } catch { /* campos_json inválido — ignorar */ }
+  }
 
   revalidatePath('/distribuidora/campanas')
   redirect('/distribuidora/campanas')

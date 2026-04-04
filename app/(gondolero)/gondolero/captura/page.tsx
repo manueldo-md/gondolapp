@@ -90,7 +90,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'declaracion' | 'confirmacion' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'declaracion' | 'formulario' | 'confirmacion' | 'exito' | 'exito-offline'
 type Declaracion = 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
 
 interface ComercioRow {
@@ -103,6 +103,15 @@ interface ComercioRow {
   validado: boolean
 }
 
+interface CampoBloque {
+  id: string
+  tipo: 'seleccion_multiple' | 'seleccion_unica' | 'binaria' | 'numero' | 'texto'
+  pregunta: string
+  opciones: string[] | null
+  obligatorio: boolean
+  orden: number
+}
+
 interface CampanaData {
   id: string
   nombre: string
@@ -111,6 +120,7 @@ interface CampanaData {
   tipoContenido: string
   bloqueInstruccion: string
   bloqueSolicitarPrecio: boolean
+  campos: CampoBloque[]
 }
 
 // ── Componente cámara (ciclo de vida propio) ──────────────────────────────────
@@ -520,6 +530,7 @@ function CapturaContent() {
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [declaracion, setDeclaracion] = useState<Declaracion | null>(null)
   const [precio, setPrecio] = useState('')
+  const [respuestas, setRespuestas] = useState<Record<string, unknown>>({})
   const [enviando, setEnviando] = useState(false)
   const [puntosGanados, setPuntosGanados] = useState(0)
   const [blurScore, setBlurScore] = useState<number | null>(null)
@@ -549,7 +560,7 @@ function CapturaContent() {
 
       supabase
         .from('campanas')
-        .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio )')
+        .select('id, nombre, puntos_por_foto, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden ) )')
         .eq('id', campanaId)
         .eq('estado', 'activa')
         .single()
@@ -565,15 +576,23 @@ function CapturaContent() {
           } else {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const d = data as any
-            const bloques = d.bloques_foto as { id: string; tipo_contenido: string; instruccion: string | null; solicitar_precio: boolean | null }[]
+            const bloques = d.bloques_foto as {
+              id: string; tipo_contenido: string; instruccion: string | null
+              solicitar_precio: boolean | null
+              bloque_campos: CampoBloque[] | null
+            }[]
+            const primerBloque = bloques?.[0]
+            const camposRaw = primerBloque?.bloque_campos ?? []
+            const campos: CampoBloque[] = [...camposRaw].sort((a, b) => a.orden - b.orden)
             const campanaData: CampanaData = {
               id: d.id,
               nombre: d.nombre,
               puntos_por_foto: d.puntos_por_foto,
-              primerBloqueId: bloques?.[0]?.id ?? null,
-              tipoContenido: bloques?.[0]?.tipo_contenido ?? 'propios',
-              bloqueInstruccion: bloques?.[0]?.instruccion ?? 'el producto',
-              bloqueSolicitarPrecio: bloques?.[0]?.solicitar_precio ?? false,
+              primerBloqueId: primerBloque?.id ?? null,
+              tipoContenido: primerBloque?.tipo_contenido ?? 'propios',
+              bloqueInstruccion: primerBloque?.instruccion ?? 'el producto',
+              bloqueSolicitarPrecio: primerBloque?.solicitar_precio ?? false,
+              campos,
             }
             setCampana(campanaData)
             // Guardar en caché para uso offline futuro
@@ -770,6 +789,11 @@ function CapturaContent() {
       formData.append('storagePath', storagePath)
       const { url } = await subirFoto(formData)
 
+      // Construir array de respuestas para el servidor
+      const respuestasArray = Object.entries(respuestas)
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([campo_id, valor]) => ({ campo_id, valor }))
+
       // Registrar en DB vía Server Action
       const result = await registrarFoto({
         campanaId: campana.id,
@@ -784,6 +808,7 @@ function CapturaContent() {
         deviceId: getDeviceId(),
         puntosAcreditar: campana.puntos_por_foto,
         blurScore,
+        respuestas: respuestasArray.length > 0 ? respuestasArray : undefined,
       })
 
       setPuntosGanados(result.puntos)
@@ -867,7 +892,7 @@ function CapturaContent() {
             setPaso('blur-advertencia')
           } else if (campana?.tipoContenido === 'ninguno') {
             setDeclaracion('producto_presente')
-            setPaso('confirmacion')
+            setPaso(campana.campos.length > 0 ? 'formulario' : 'confirmacion')
           } else {
             setPaso('declaracion')
           }
@@ -899,6 +924,7 @@ function CapturaContent() {
             onClick={() => {
               setFotoBlob(null); setFotoPreview(null)
               setDeclaracion(null); setPrecio('')
+              setRespuestas({})
               setComercio(null); setBusqueda('')
               setPaso('comercio')
             }}
@@ -935,6 +961,7 @@ function CapturaContent() {
             onClick={() => {
               setFotoBlob(null); setFotoPreview(null)
               setDeclaracion(null); setPrecio('')
+              setRespuestas({})
               setComercio(null); setBusqueda('')
               setPaso('comercio')
             }}
@@ -981,7 +1008,7 @@ function CapturaContent() {
               onClick={() => {
                 if (campana?.tipoContenido === 'ninguno') {
                   setDeclaracion('producto_presente')
-                  setPaso('confirmacion')
+                  setPaso(campana.campos.length > 0 ? 'formulario' : 'confirmacion')
                 } else {
                   setPaso('declaracion')
                 }
@@ -998,8 +1025,13 @@ function CapturaContent() {
 
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
-  const PASOS_LABEL = ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar']
-  const PASOS_KEY: Paso[] = ['comercio', 'gps', 'camara', 'declaracion', 'confirmacion']
+  const tieneCampos = (campana?.campos?.length ?? 0) > 0
+  const PASOS_LABEL = tieneCampos
+    ? ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Formulario', 'Confirmar']
+    : ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar']
+  const PASOS_KEY: Paso[] = tieneCampos
+    ? ['comercio', 'gps', 'camara', 'declaracion', 'formulario', 'confirmacion']
+    : ['comercio', 'gps', 'camara', 'declaracion', 'confirmacion']
   const pasoActualIdx = PASOS_KEY.indexOf(paso)
 
   return (
@@ -1017,7 +1049,8 @@ function CapturaContent() {
                   camara:             'gps',
                   'blur-advertencia': 'camara',
                   declaracion:        'camara',
-                  confirmacion:       campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
+                  formulario:         campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
+                  confirmacion:       tieneCampos ? 'formulario' : (campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion'),
                   exito:              'confirmacion',
                   'exito-offline':    'confirmacion',
                 }
@@ -1284,12 +1317,150 @@ function CapturaContent() {
             )}
 
             <button
-              onClick={() => setPaso('confirmacion')}
+              onClick={() => setPaso(tieneCampos ? 'formulario' : 'confirmacion')}
               disabled={!declaracion}
               className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-40 min-h-touch"
             >
               Continuar
             </button>
+          </div>
+        )}
+
+        {/* ── PASO FORMULARIO ── */}
+        {paso === 'formulario' && campana && campana.campos.length > 0 && (
+          <div className="space-y-5">
+            <p className="text-sm font-semibold text-gray-700">
+              Preguntas adicionales ({campana.campos.filter(c => c.obligatorio).length} obligatoria{campana.campos.filter(c => c.obligatorio).length !== 1 ? 's' : ''})
+            </p>
+
+            {campana.campos.map(campo => {
+              const val = respuestas[campo.id]
+              return (
+                <div key={campo.id} className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-800">
+                    {campo.pregunta}
+                    {campo.obligatorio && <span className="text-red-400 ml-1">*</span>}
+                  </label>
+
+                  {/* Sí / No */}
+                  {campo.tipo === 'binaria' && (
+                    <div className="flex gap-3">
+                      {['Sí', 'No'].map(op => (
+                        <button
+                          key={op}
+                          type="button"
+                          onClick={() => setRespuestas(r => ({ ...r, [campo.id]: op === 'Sí' }))}
+                          className={`flex-1 py-3 border-2 rounded-2xl text-sm font-semibold transition-colors ${
+                            val === (op === 'Sí')
+                              ? 'border-gondo-verde-400 bg-gondo-verde-50 text-gondo-verde-400'
+                              : 'border-gray-200 bg-white text-gray-700'
+                          }`}
+                        >
+                          {op}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Selección única */}
+                  {campo.tipo === 'seleccion_unica' && campo.opciones && (
+                    <div className="space-y-2">
+                      {campo.opciones.map(op => (
+                        <button
+                          key={op}
+                          type="button"
+                          onClick={() => setRespuestas(r => ({ ...r, [campo.id]: op }))}
+                          className={`w-full flex items-center gap-3 p-3.5 border-2 rounded-2xl text-left transition-colors ${
+                            val === op
+                              ? 'border-gondo-verde-400 bg-gondo-verde-50'
+                              : 'border-gray-200 bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded-full border-2 shrink-0 ${val === op ? 'border-gondo-verde-400 bg-gondo-verde-400' : 'border-gray-300'}`} />
+                          <span className="text-sm text-gray-900">{op}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Selección múltiple */}
+                  {campo.tipo === 'seleccion_multiple' && campo.opciones && (
+                    <div className="space-y-2">
+                      {campo.opciones.map(op => {
+                        const sel = Array.isArray(val) && (val as string[]).includes(op)
+                        return (
+                          <button
+                            key={op}
+                            type="button"
+                            onClick={() => {
+                              const prev = Array.isArray(val) ? (val as string[]) : []
+                              setRespuestas(r => ({
+                                ...r,
+                                [campo.id]: sel
+                                  ? prev.filter(v => v !== op)
+                                  : [...prev, op],
+                              }))
+                            }}
+                            className={`w-full flex items-center gap-3 p-3.5 border-2 rounded-2xl text-left transition-colors ${
+                              sel
+                                ? 'border-gondo-verde-400 bg-gondo-verde-50'
+                                : 'border-gray-200 bg-white hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center ${sel ? 'border-gondo-verde-400 bg-gondo-verde-400' : 'border-gray-300'}`}>
+                              {sel && <span className="text-white text-[10px] font-bold">✓</span>}
+                            </div>
+                            <span className="text-sm text-gray-900">{op}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Número */}
+                  {campo.tipo === 'numero' && (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={val !== undefined ? String(val) : ''}
+                      onChange={e => setRespuestas(r => ({ ...r, [campo.id]: e.target.value === '' ? undefined : Number(e.target.value) }))}
+                      placeholder="0"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+                    />
+                  )}
+
+                  {/* Texto libre */}
+                  {campo.tipo === 'texto' && (
+                    <textarea
+                      value={val !== undefined ? String(val) : ''}
+                      onChange={e => setRespuestas(r => ({ ...r, [campo.id]: e.target.value || undefined }))}
+                      placeholder="Escribí tu respuesta..."
+                      rows={3}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-sm"
+                    />
+                  )}
+                </div>
+              )
+            })}
+
+            {(() => {
+              const camposObligatorios = campana.campos.filter(c => c.obligatorio)
+              const todosCompletos = camposObligatorios.every(c => {
+                const v = respuestas[c.id]
+                if (v === undefined || v === null || v === '') return false
+                if (Array.isArray(v) && v.length === 0) return false
+                return true
+              })
+              return (
+                <button
+                  onClick={() => setPaso('confirmacion')}
+                  disabled={!todosCompletos}
+                  className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-40 min-h-touch"
+                >
+                  Continuar
+                </button>
+              )
+            })()}
           </div>
         )}
 

@@ -11,6 +11,7 @@ import { GondolasTabs } from './gondolas-tabs'
 import { FiltrosArchivo } from './filtros-archivo'
 import { GondolasPendientes } from './gondolas-pendientes'
 import { FotoAcciones } from './foto-acciones'
+import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -52,9 +53,11 @@ const DECL_COLOR: Record<DeclaracionFoto, string> = {
 function FotoCard({
   foto,
   mostrarAcciones,
+  respuestas,
 }: {
   foto: FotoPendiente & { campana_id: string }
   mostrarAcciones: boolean
+  respuestas?: RespuestaItem[]
 }) {
   const gondoleroNombre = foto.gondolero?.alias ?? foto.gondolero?.nombre ?? 'Gondolero'
   const decl = foto.declaracion
@@ -129,6 +132,8 @@ function FotoCard({
             <span>{formatearFechaHora(foto.created_at)}</span>
           </div>
         </div>
+
+        {respuestas && respuestas.length > 0 && <FotoRespuestas respuestas={respuestas} />}
       </div>
 
       {mostrarAcciones && (
@@ -293,6 +298,25 @@ export default async function GondolasPage({
     })
   )
 
+  // ── Respuestas de formulario dinámico ─────────────────────────────────────
+  const fotoIds = fotos.map(f => f.id)
+  const respuestasMap: Record<string, RespuestaItem[]> = {}
+  if (fotoIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: respsData } = await (admin as any)
+      .from('foto_respuestas')
+      .select('foto_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .in('foto_id', fotoIds)
+    if (respsData) {
+      for (const r of respsData as { foto_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
+        if (!campo) continue
+        if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
+        respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+      }
+    }
+  }
+
   // ── Títulos ────────────────────────────────────────────────────────────────
   const titulo =
     tabActivo === 'pendiente' ? 'Por aprobar' :
@@ -368,7 +392,14 @@ export default async function GondolasPage({
 
       {/* Grid de fotos */}
       {tabActivo === 'pendiente' ? (
-        <GondolasPendientes fotos={fotos.map(f => ({ ...f, signedUrl: f.signedUrl ?? null, url: f.url ?? null }))} />
+        <GondolasPendientes
+          fotos={fotos.map(f => ({
+            ...f,
+            signedUrl: f.signedUrl ?? null,
+            url: f.url ?? null,
+            respuestas: respuestasMap[f.id] ?? [],
+          }))}
+        />
       ) : fotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
@@ -390,6 +421,7 @@ export default async function GondolasPage({
               key={foto.id}
               foto={foto}
               mostrarAcciones={false}
+              respuestas={respuestasMap[foto.id]}
             />
           ))}
         </div>

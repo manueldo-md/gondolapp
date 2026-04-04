@@ -7,6 +7,7 @@ import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { aprobarFoto, rechazarFoto, accionMasivaDistri } from './actions'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
+import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
 
 const DECL_LABEL: Record<DeclaracionFoto, string> = {
   producto_presente:      'Producto presente',
@@ -31,6 +32,7 @@ interface FotoPendiente {
   gondolero: { nombre: string | null; alias: string | null } | null
   comercio:  { nombre: string; direccion: string | null } | null
   campana:   { nombre: string; tipo: TipoCampana } | null
+  respuestas?: RespuestaItem[]
 }
 
 export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
@@ -201,6 +203,10 @@ export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
                     <span>{formatearFechaHora(foto.created_at)}</span>
                   </div>
                 </div>
+
+                {foto.respuestas && foto.respuestas.length > 0 && (
+                  <FotoRespuestas respuestas={foto.respuestas} />
+                )}
               </div>
 
               {/* Acciones individuales — solo cuando no hay selección masiva */}
