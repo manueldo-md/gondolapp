@@ -87,19 +87,19 @@ export async function crearComercio(formData: FormData) {
       const buffer = Buffer.from(arrayBuffer)
       const path = `fachadas/${comercio.id}.jpg`
 
-      const { error: uploadError } = await admin.storage
+      const { data: uploadData, error: uploadError } = await admin.storage
         .from('fotos-gondola')
         .upload(path, buffer, {
           contentType: 'image/jpeg',
           upsert: true,
         })
 
-      if (!uploadError) {
+      if (!uploadError && uploadData?.path) {
         await admin
           .from('comercios')
-          .update({ foto_fachada_url: path })
+          .update({ foto_fachada_url: uploadData.path })
           .eq('id', comercio.id)
-      } else {
+      } else if (uploadError) {
         console.error('Error subiendo fachada:', uploadError.message)
       }
     } catch (e) {
