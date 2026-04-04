@@ -29,13 +29,15 @@ export default async function DashboardPage() {
   const distriId = profile?.distri_id
   if (!distriId) redirect('/auth')
 
-  // Gondoleros activos y históricos desde solicitudes (nuevo modelo multi-distri)
   const NULL_UUID = '00000000-0000-0000-0000-000000000000'
-  const [gondoleroIds, todosIds] = await Promise.all([
-    getGondolerosDeDistri(distriId, admin, false), // solo aprobada
-    getGondolerosDeDistri(distriId, admin, true),  // aprobada + terminada
+  // Campañas propias: fuente de verdad para visibilidad de fotos
+  // Gondoleros activos: solo para alerta de inactividad
+  const [gondoleroIds, todasCampanasRes] = await Promise.all([
+    getGondolerosDeDistri(distriId, admin, false),
+    admin.from('campanas').select('id').eq('distri_id', distriId),
   ])
-  const safeIds = todosIds.length > 0 ? todosIds : [NULL_UUID]
+  const campanaIds = (todasCampanasRes.data ?? []).map((c: { id: string }) => c.id)
+  const safeIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
 
   // Date helpers
   const hoyInicio = new Date()
@@ -55,16 +57,16 @@ export default async function DashboardPage() {
     { data: fSem },
   ] = await Promise.all([
     admin.from('fotos').select('*', { count: 'exact', head: true })
-      .in('gondolero_id', safeIds)
+      .in('campana_id', safeIds)
       .gte('created_at', hoyInicio.toISOString()),
     admin.from('fotos').select('*', { count: 'exact', head: true })
-      .in('gondolero_id', safeIds)
+      .in('campana_id', safeIds)
       .eq('estado', 'pendiente'),
     admin.from('fotos').select('gondolero_id, campana_id')
-      .in('gondolero_id', safeIds)
+      .in('campana_id', safeIds)
       .gte('created_at', hoyInicio.toISOString()),
     admin.from('fotos').select('comercio_id')
-      .in('gondolero_id', safeIds)
+      .in('campana_id', safeIds)
       .gte('created_at', semanaAtras.toISOString()),
   ])
 
@@ -92,11 +94,11 @@ export default async function DashboardPage() {
   const alertasPreview: { tipo: string; descripcion: string; href: string }[] = []
   let alertasTotal = 0
 
-  // Quiebres de stock — usa safeIds (actuales + históricos)
+  // Quiebres de stock — fotos de campañas propias
   const { data: qRaw } = await admin
     .from('fotos')
     .select('comercio_id, comercios(nombre)')
-    .in('gondolero_id', safeIds)
+    .in('campana_id', safeIds)
     .eq('declaracion', 'producto_no_encontrado')
     .eq('estado', 'aprobada')
     .gte('created_at', sieteAtras.toISOString())

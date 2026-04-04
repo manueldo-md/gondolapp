@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { CheckCircle2, Clock, MapPin, User, X, Info } from 'lucide-react'
 import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
-import { getGondolerosDeDistri } from '@/lib/utils-distri'
+
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { GondolasTabs } from './gondolas-tabs'
@@ -179,21 +179,7 @@ export default async function GondolasPage({
   const distriId = profile?.distri_id ?? null
   console.log('[gondolas] distriId:', distriId)
 
-  // Nuevo modelo: fotos visibles = campañas propias AND gondoleros vinculados (activos + históricos)
-  // Cada distri solo ve fotos en sus propias campañas, de sus propios gondoleros.
-  const gondoleroIds = await getGondolerosDeDistri(distriId ?? '', admin, true) // aprobada + terminada
-
-  // Perfiles de gondoleros para el filtro desplegable
-  let todosGondoleroRows: { id: string; nombre: string | null; alias: string | null }[] = []
-  if (gondoleroIds.length > 0) {
-    const { data: gondoleroProfiles } = await admin
-      .from('profiles')
-      .select('id, nombre, alias')
-      .in('id', gondoleroIds)
-    todosGondoleroRows = (gondoleroProfiles ?? []) as { id: string; nombre: string | null; alias: string | null }[]
-  }
-
-  // Campañas propias de esta distribuidora
+  // Campañas propias de esta distribuidora — fuente de verdad para visibilidad de fotos
   const { data: campanasDistri } = await admin
     .from('campanas')
     .select('id, nombre')
@@ -201,6 +187,23 @@ export default async function GondolasPage({
     .order('nombre', { ascending: true })
 
   const campanaIds = (campanasDistri ?? []).map((c: { id: string }) => c.id)
+
+  // Gondoleros para el filtro desplegable — participantes en campañas propias
+  let todosGondoleroRows: { id: string; nombre: string | null; alias: string | null }[] = []
+  if (campanaIds.length > 0) {
+    const { data: partRows } = await admin
+      .from('participaciones')
+      .select('gondolero_id')
+      .in('campana_id', campanaIds)
+    const gondIdsSet = [...new Set((partRows ?? []).map((p: { gondolero_id: string }) => p.gondolero_id))]
+    if (gondIdsSet.length > 0) {
+      const { data: gondoleroProfiles } = await admin
+        .from('profiles')
+        .select('id, nombre, alias')
+        .in('id', gondIdsSet)
+      todosGondoleroRows = (gondoleroProfiles ?? []) as { id: string; nombre: string | null; alias: string | null }[]
+    }
+  }
 
   // ── Determinar tab activo ──────────────────────────────────────────────────
   const tieneFiltersArchivo = ARCHIVO_PARAMS.some(
@@ -237,13 +240,9 @@ export default async function GondolasPage({
   // ── Query principal ────────────────────────────────────────────────────────
   // UUID imposible para evitar IN() vacío que rompe PostgREST
   const NULL_UUID = '00000000-0000-0000-0000-000000000000'
+  const safeCampanaIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
 
-  // Arrays seguros: nunca vacíos (IN con array vacío genera SQL inválido)
-  const safeGondoleroIds = gondoleroIds.length > 0 ? gondoleroIds : [NULL_UUID]
-  const safeCampanaIds   = campanaIds.length   > 0 ? campanaIds   : [NULL_UUID]
-
-  // AND de visibilidad: campañas propias AND gondoleros vinculados
-  // Cada distri solo ve fotos en sus campañas, de sus gondoleros.
+  // Visibilidad: fotos de campañas propias de esta distribuidora
   let query = admin
     .from('fotos')
     .select(`
@@ -253,8 +252,7 @@ export default async function GondolasPage({
       campana:campanas    ( nombre, tipo ),
       bloque:bloques_foto ( instruccion )
     `)
-    .in('campana_id',   safeCampanaIds)    // ← campañas propias
-    .in('gondolero_id', safeGondoleroIds)  // ← gondoleros vinculados (AND)
+    .in('campana_id', safeCampanaIds)
     .order('created_at', { ascending: false })
     .limit(150)
 
@@ -282,8 +280,7 @@ export default async function GondolasPage({
     .from('fotos')
     .select('*', { count: 'exact', head: true })
     .eq('estado', 'pendiente')
-    .in('campana_id',   safeCampanaIds)
-    .in('gondolero_id', safeGondoleroIds)
+    .in('campana_id', safeCampanaIds)
 
   // Generar URLs firmadas para el bucket privado
   const fotos: FotoPendiente[] = await Promise.all(

@@ -32,11 +32,15 @@ export default async function AlertasPage() {
   const distriId = profile?.distri_id
   if (!distriId) redirect('/auth')
 
-  // Gondoleros activos y históricos desde solicitudes (nuevo modelo multi-distri)
-  const [gondoleroIds, todosGondoleroIds] = await Promise.all([
-    getGondolerosDeDistri(distriId, admin, false), // solo aprobada — para alertas de inactividad
-    getGondolerosDeDistri(distriId, admin, true),  // aprobada + terminada — para quiebres e historial
+  // Gondoleros activos — solo para alerta de inactividad (TIPO 4)
+  // Campañas propias — fuente de verdad para fotos (TIPOs 1 y 2)
+  const [gondoleroIds, todasCampanasRes] = await Promise.all([
+    getGondolerosDeDistri(distriId, admin, false),
+    admin.from('campanas').select('id').eq('distri_id', distriId),
   ])
+  const campanaIds = (todasCampanasRes.data ?? []).map((c: { id: string }) => c.id)
+  const NULL_UUID = '00000000-0000-0000-0000-000000000000'
+  const safeCampanaIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
 
   // Date helpers
   const sieteAtras       = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000)
@@ -101,11 +105,11 @@ export default async function AlertasPage() {
   interface Quiebre { comercioId: string; nombre: string; veces: number; ultimaVez: string }
   let quiebres: Quiebre[] = []
 
-  if (todosGondoleroIds.length > 0) {
+  {
     const { data: qRaw } = await admin
       .from('fotos')
       .select('comercio_id, created_at, comercios(nombre)')
-      .in('gondolero_id', todosGondoleroIds)
+      .in('campana_id', safeCampanaIds)
       .eq('declaracion', 'producto_no_encontrado')
       .eq('estado', 'aprobada')
       .gte('created_at', sieteAtras.toISOString())
@@ -135,11 +139,11 @@ export default async function AlertasPage() {
   interface ComercioSinVisita { id: string; nombre: string; diasSinVisita: number }
   let sinVisita: ComercioSinVisita[] = []
 
-  if (todosGondoleroIds.length > 0) {
+  {
     const { data: fotasRec } = await admin
       .from('fotos')
       .select('comercio_id, created_at')
-      .in('gondolero_id', todosGondoleroIds)
+      .in('campana_id', safeCampanaIds)
       .gte('created_at', sesentaAtras.toISOString())
       .order('created_at', { ascending: false })
       .limit(2000)
