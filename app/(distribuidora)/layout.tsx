@@ -30,6 +30,7 @@ export default async function DistriLayout({
   let hayAlertas = false
   let solicitudesPendientesCount = 0
   let campanasPendientesCount = 0
+  let comerciosPendientesCount = 0
 
   if (profile.distri_id) {
     const admin = createAdminClient(
@@ -66,6 +67,26 @@ export default async function DistriLayout({
       // ignorar
     }
 
+    try {
+      // Contar comercios pendientes de campañas de esta distri
+      const { data: campanaIds } = await admin
+        .from('campanas')
+        .select('id')
+        .eq('distri_id', profile.distri_id)
+      const ids = (campanaIds ?? []).map((c: { id: string }) => c.id)
+      if (ids.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = await (admin as any)
+          .from('comercios')
+          .select('*', { count: 'exact', head: true })
+          .eq('estado', 'pendiente_validacion')
+          .in('campana_id', ids)
+        comerciosPendientesCount = res.count ?? 0
+      }
+    } catch {
+      // ignorar si la columna aún no existe
+    }
+
     const gondIds = (gondRows ?? []).map((g: { id: string }) => g.id)
     if (gondIds.length > 0) {
       const sieteAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -86,6 +107,7 @@ export default async function DistriLayout({
       hayAlertas={hayAlertas}
       solicitudesPendientes={solicitudesPendientesCount}
       campanasPendientes={campanasPendientesCount}
+      comerciosPendientes={comerciosPendientesCount}
     >
       {children}
     </DistriShell>

@@ -560,7 +560,8 @@ function CapturaContent() {
   const [cmComerciosCercanos, setCmComerciosCercanos] = useState<ComercioRow[]>([])
   const [cmBuscandoCercanos,  setCmBuscandoCercanos]  = useState(false)
   const [cmComercioYaExiste,  setCmComercioYaExiste]  = useState<ComercioRow | null>(null)
-  const cmFachadaInputRef = useRef<HTMLInputElement>(null)
+  const cmFachadaInputRef    = useRef<HTMLInputElement>(null)
+  const cmBusquedaHechaRef   = useRef(false)
 
   // Cargar config de compresión al montar
   useEffect(() => {
@@ -749,29 +750,37 @@ function CapturaContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campana?.tipo, paso])
 
-  // Buscar comercios cercanos cuando llegamos al paso comercios-gps y tenemos GPS
+  // Resetear búsqueda al salir del paso
+  useEffect(() => {
+    if (paso !== 'comercios-gps') {
+      cmBusquedaHechaRef.current = false
+    }
+  }, [paso])
+
+  // Buscar comercios cercanos UNA SOLA VEZ cuando el GPS está listo en comercios-gps
   useEffect(() => {
     if (paso !== 'comercios-gps') return
     if (gps.estado !== 'activo' || !gps.posicion) return
+    if (cmBusquedaHechaRef.current) return   // Ya buscamos — no re-ejecutar aunque el GPS actualice
 
-    const buscarCercanos = async () => {
-      setCmBuscandoCercanos(true)
-      const { data } = await supabase
-        .from('comercios')
-        .select('id, nombre, direccion, lat, lng, tipo, validado')
-        .limit(500)
+    cmBusquedaHechaRef.current = true
+    const lat = gps.posicion.lat
+    const lng  = gps.posicion.lng
 
-      if (data) {
-        const cercanos = (data as ComercioRow[]).filter(c => {
-          if (!c.lat || !c.lng) return false
-          return calcularDistanciaMetros(gps.posicion!.lat, gps.posicion!.lng, c.lat, c.lng) <= 20
-        })
-        setCmComerciosCercanos(cercanos)
-      }
-      setCmBuscandoCercanos(false)
-    }
-
-    buscarCercanos()
+    setCmBuscandoCercanos(true)
+    supabase
+      .from('comercios')
+      .select('id, nombre, direccion, lat, lng, tipo, validado')
+      .limit(500)
+      .then(({ data }) => {
+        if (data) {
+          const cercanos = (data as ComercioRow[]).filter(c =>
+            c.lat && c.lng && calcularDistanciaMetros(lat, lng, c.lat, c.lng) <= 20
+          )
+          setCmComerciosCercanos(cercanos)
+        }
+        setCmBuscandoCercanos(false)
+      })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso, gps.estado, gps.posicion?.lat, gps.posicion?.lng])
 

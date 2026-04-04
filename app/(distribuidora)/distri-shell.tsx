@@ -23,12 +23,14 @@ export function DistriShell({
   hayAlertas,
   solicitudesPendientes,
   campanasPendientes = 0,
+  comerciosPendientes = 0,
 }: {
   children: React.ReactNode
   empresa: string
   hayAlertas: boolean
   solicitudesPendientes: number
   campanasPendientes?: number
+  comerciosPendientes?: number
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -70,6 +72,7 @@ export function DistriShell({
             const esAlertas = href === '/distribuidora/alertas'
             const esGondoleros = href === '/distribuidora/gondoleros'
             const esCampanas = href === '/distribuidora/campanas'
+            const esComerciosPendientes = href === '/distribuidora/comercios/pendientes'
             return (
               <Link
                 key={href}
@@ -97,6 +100,13 @@ export function DistriShell({
                     activo ? 'bg-gondo-amber-400/20 text-gondo-amber-400' : 'bg-amber-100 text-amber-700'
                   }`}>
                     {campanasPendientes}
+                  </span>
+                )}
+                {esComerciosPendientes && comerciosPendientes > 0 && (
+                  <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                    activo ? 'bg-gondo-amber-400/20 text-gondo-amber-400' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {comerciosPendientes}
                   </span>
                 )}
               </Link>
