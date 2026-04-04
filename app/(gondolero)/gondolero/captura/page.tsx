@@ -1400,8 +1400,9 @@ function CapturaContent() {
           </div>
 
           {cmErrorMsg && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-1">
               <p className="text-sm text-red-600">{cmErrorMsg}</p>
+              <BotonReportarError errorTecnico={cmErrorMsg} contexto="Guardar comercio nuevo" />
             </div>
           )}
 
@@ -1487,8 +1488,9 @@ function CapturaContent() {
           />
 
           {cmErrorMsg && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-1">
               <p className="text-sm text-red-600">{cmErrorMsg}</p>
+              <BotonReportarError errorTecnico={cmErrorMsg} contexto="Guardar comercio nuevo" />
             </div>
           )}
 
