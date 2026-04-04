@@ -264,8 +264,18 @@ export default async function GondolasPage({
   }
 
   // ── Query principal ────────────────────────────────────────────────────────
-  const hayGondoleros = gondoleroIds.length > 0
-  const hayCampanas   = campanaIds.length > 0
+  // UUID imposible para evitar IN() vacío que rompe PostgREST
+  const NULL_UUID = '00000000-0000-0000-0000-000000000000'
+
+  // Arrays seguros: nunca vacíos (IN con array vacío genera SQL inválido)
+  const safeGondoleroIds = gondoleroIds.length > 0 ? gondoleroIds : [NULL_UUID]
+  const safeCampanaIds   = campanaIds.length   > 0 ? campanaIds   : [NULL_UUID]
+
+  // OR de visibilidad: gondoleros (activos + históricos) OR campañas propias
+  const orVisibilidad = `gondolero_id.in.(${safeGondoleroIds.join(',')}),campana_id.in.(${safeCampanaIds.join(',')})`
+
+  console.log('[gondolas] safeGondoleroIds:', safeGondoleroIds)
+  console.log('[gondolas] safeCampanaIds:', safeCampanaIds)
 
   let query = admin
     .from('fotos')
@@ -276,63 +286,21 @@ export default async function GondolasPage({
       campana:campanas    ( nombre, tipo ),
       bloque:bloques_foto ( instruccion )
     `)
+    .or(orVisibilidad)   // ← restricción de distri aplicada siempre primero
     .order('created_at', { ascending: false })
     .limit(150)
 
+  // Filtros de tab y búsqueda
   if (tabActivo === 'pendiente') {
-    // Tab "Por aprobar": solo pendientes, sin otros filtros
     query = query.eq('estado', 'pendiente')
   } else {
-    // Tab "Archivo completo": aplica filtros activos
-    if (estadoFiltro)      query = query.eq('estado',        estadoFiltro)
-    if (comercioIdFiltro)  query = query.eq('comercio_id',   comercioIdFiltro)
-    if (declaracionFiltro) query = query.eq('declaracion',   declaracionFiltro)
-    if (campanaIdFiltro)   query = query.eq('campana_id',    campanaIdFiltro)
-    if (desdeFiltro)       query = query.gte('created_at',   desdeFiltro)
-    if (hastaFiltro)       query = query.lte('created_at',   hastaFiltro + 'T23:59:59')
-    if (gondoleroIdFiltro) {
-      // Filter by specific gondolero — whether linked or not
-      // Still restrict to distri scope: own campaigns OR currently linked gondoleros
-      query = query.eq('gondolero_id', gondoleroIdFiltro)
-      // Restrict to distri scope to prevent seeing unrelated gondoleros
-      if (hayCampanas && gondoleroIds.includes(gondoleroIdFiltro)) {
-        // gondolero is currently linked: show all their photos
-      } else if (hayCampanas) {
-        // gondolero unlinked: only show photos in own campaigns
-        query = query.in('campana_id', campanaIds)
-      } else if (!gondoleroIds.includes(gondoleroIdFiltro)) {
-        // gondolero unlinked and no own campaigns: nothing to show
-        query = query.in('gondolero_id', [''])
-      }
-    } else {
-      // No gondolero filter: show all fotos from own campaigns + linked gondoleros
-      if (hayGondoleros && hayCampanas) {
-        query = query.or(
-          `gondolero_id.in.(${gondoleroIds.join(',')}),campana_id.in.(${campanaIds.join(',')})`
-        )
-      } else if (hayGondoleros) {
-        query = query.in('gondolero_id', gondoleroIds)
-      } else if (hayCampanas) {
-        query = query.in('campana_id', campanaIds)
-      } else {
-        query = query.in('gondolero_id', [''])
-      }
-    }
-  }
-
-  // Restricción de distribuidora para tab pendiente
-  if (tabActivo === 'pendiente') {
-    if (hayGondoleros && hayCampanas) {
-      query = query.or(
-        `gondolero_id.in.(${gondoleroIds.join(',')}),campana_id.in.(${campanaIds.join(',')})`
-      )
-    } else if (hayGondoleros) {
-      query = query.in('gondolero_id', gondoleroIds)
-    } else if (hayCampanas) {
-      query = query.in('campana_id', campanaIds)
-    } else {
-      query = query.in('gondolero_id', [''])
-    }
+    if (estadoFiltro)      query = query.eq('estado',      estadoFiltro)
+    if (comercioIdFiltro)  query = query.eq('comercio_id', comercioIdFiltro)
+    if (declaracionFiltro) query = query.eq('declaracion', declaracionFiltro)
+    if (campanaIdFiltro)   query = query.eq('campana_id',  campanaIdFiltro)
+    if (desdeFiltro)       query = query.gte('created_at', desdeFiltro)
+    if (hastaFiltro)       query = query.lte('created_at', hastaFiltro + 'T23:59:59')
+    if (gondoleroIdFiltro) query = query.eq('gondolero_id', gondoleroIdFiltro)
   }
 
   const { data, error } = await query
@@ -342,24 +310,11 @@ export default async function GondolasPage({
   const fotosRaw = (data as FotoPendienteRaw[] | null) ?? []
 
   // Count de pendientes (para el badge del tab)
-  let pendienteCount = 0
-  if (hayGondoleros || hayCampanas) {
-    let countQ = admin
-      .from('fotos')
-      .select('*', { count: 'exact', head: true })
-      .eq('estado', 'pendiente')
-    if (hayGondoleros && hayCampanas) {
-      countQ = countQ.or(
-        `gondolero_id.in.(${gondoleroIds.join(',')}),campana_id.in.(${campanaIds.join(',')})`
-      )
-    } else if (hayGondoleros) {
-      countQ = countQ.in('gondolero_id', gondoleroIds)
-    } else {
-      countQ = countQ.in('campana_id', campanaIds)
-    }
-    const { count } = await countQ
-    pendienteCount = count ?? 0
-  }
+  const { count: pendienteCount } = await admin
+    .from('fotos')
+    .select('*', { count: 'exact', head: true })
+    .eq('estado', 'pendiente')
+    .or(orVisibilidad)
 
   // Generar URLs firmadas para el bucket privado
   const fotos: FotoPendiente[] = await Promise.all(
@@ -407,7 +362,7 @@ export default async function GondolasPage({
       </div>
 
       {/* Tabs */}
-      <GondolasTabs tabActivo={tabActivo} pendienteCount={pendienteCount} />
+      <GondolasTabs tabActivo={tabActivo} pendienteCount={pendienteCount ?? 0} />
 
       {/* Banner modo consulta (azul) — llegó desde alertas */}
       {tabActivo === 'archivo' && modoConsulta && (

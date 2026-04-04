@@ -33,6 +33,14 @@ export async function aceptarInvitacion(
 
   if (error) return { error: 'No se pudo completar la vinculación.' }
 
+  // Registrar en historial de solicitudes para visibilidad histórica de fotos
+  await admin
+    .from('gondolero_distri_solicitudes')
+    .upsert(
+      { gondolero_id: gondoleroId, distri_id: distriId, estado: 'aprobada', updated_at: new Date().toISOString() },
+      { onConflict: 'gondolero_id,distri_id' }
+    )
+
   // Notificación al gondolero
   await admin.from('notificaciones').insert({
     gondolero_id: gondoleroId,

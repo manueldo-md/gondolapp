@@ -58,6 +58,25 @@ export async function desvincularseDeDistri(): Promise<{ error?: string }> {
 
   const admin = adminClient()
 
+  // Obtener distri_id actual antes de desvincularse (para guardar historial)
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('distri_id')
+    .eq('id', user.id)
+    .single()
+
+  const antiguoDistriId = profile?.distri_id ?? null
+
+  // Asegurar registro histórico antes de desvincular
+  if (antiguoDistriId) {
+    await admin
+      .from('gondolero_distri_solicitudes')
+      .upsert(
+        { gondolero_id: user.id, distri_id: antiguoDistriId, estado: 'aprobada', updated_at: new Date().toISOString() },
+        { onConflict: 'gondolero_id,distri_id' }
+      )
+  }
+
   const { error } = await admin
     .from('profiles')
     .update({ distri_id: null })
