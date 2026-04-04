@@ -28,6 +28,7 @@ export function InvitarPanel({
   const [isPendingBuscar, startBuscar] = useTransition()
   const [isPendingVincular, startVincular] = useTransition()
   const [vinculadoOk, setVinculadoOk] = useState(false)
+  const [vinculadoNombre, setVinculadoNombre] = useState<string | null>(null)
 
   const handleGenerarLink = () => {
     setLinkError(null)
@@ -67,9 +68,11 @@ export function InvitarPanel({
 
   const handleVincular = () => {
     if (!gondoleroEncontrado) return
+    const nombre = gondoleroEncontrado.alias ?? gondoleroEncontrado.nombre ?? 'El gondolero'
     startVincular(async () => {
       const res = await confirmarVinculacionPorCodigo(gondoleroEncontrado.id, distriId, distriNombre)
       if (res.error) { setCodigoError(res.error); return }
+      setVinculadoNombre(nombre)
       setVinculadoOk(true)
       setGondoleroEncontrado(null)
       setCodigo('')
@@ -145,8 +148,8 @@ export function InvitarPanel({
           <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg mb-3">
             <UserCheck size={15} className="text-green-600 shrink-0" />
             <div>
-              <p className="text-sm font-medium text-green-700">¡Solicitud enviada!</p>
-              <p className="text-xs text-green-600">El gondolero debe aceptarla desde su perfil.</p>
+              <p className="text-sm font-medium text-green-700">Solicitud enviada</p>
+              <p className="text-xs text-green-600">{vinculadoNombre ?? 'El gondolero'} debe aceptarla desde su perfil.</p>
             </div>
           </div>
         )}

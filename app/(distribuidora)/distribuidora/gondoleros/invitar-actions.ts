@@ -54,15 +54,26 @@ export async function vincularPorCodigo(
   // Buscar gondolero por código
   const { data: gondolero } = await admin
     .from('profiles')
-    .select('id, alias, nombre, nivel, distri_id')
+    .select('id, alias, nombre, nivel')
     .eq('codigo_gondolero', codigoGondolero.toUpperCase())
     .eq('tipo_actor', 'gondolero')
     .maybeSingle()
 
   if (!gondolero) return { error: 'Código no encontrado. Verificá que sea correcto.' }
-  if (gondolero.distri_id === distriId) return { error: 'Este gondolero ya está vinculado a tu distribuidora.' }
-  if (gondolero.distri_id && gondolero.distri_id !== distriId) return { error: 'Este gondolero ya está vinculado a otra distribuidora.' }
 
+  // Verificar si ya existe una solicitud aprobada para este par gondolero+distri
+  const { data: solicitudExistente } = await admin
+    .from('gondolero_distri_solicitudes')
+    .select('estado')
+    .eq('gondolero_id', gondolero.id)
+    .eq('distri_id', distriId)
+    .maybeSingle()
+
+  if (solicitudExistente?.estado === 'aprobada') {
+    return { error: 'Este gondolero ya está vinculado a tu distribuidora.' }
+  }
+
+  // Si hay solicitud rechazada, terminada o pendiente → se permite reenviar (upsert)
   return { gondolero: { id: gondolero.id, alias: gondolero.alias, nombre: gondolero.nombre, nivel: gondolero.nivel } }
 }
 
