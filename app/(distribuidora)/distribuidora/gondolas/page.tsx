@@ -176,6 +176,7 @@ export default async function GondolasPage({
     .single()
 
   const distriId = profile?.distri_id ?? null
+  console.log('[gondolas] distriId:', distriId)
 
   // Opción B: fotos visibles = campañas propias (siempre) + gondoleros vinculados (activos o históricos)
   // Las fotos de campañas propias se ven aunque el gondolero se haya desvinculado después.
@@ -188,13 +189,17 @@ export default async function GondolasPage({
     .eq('distri_id', distriId ?? '')
 
   const gondoleroActualesIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
+  console.log('[gondolas] gondoleroIds actuales:', gondoleroActualesIds)
 
   // Gondoleros históricos: alguna vez vinculados (solicitud aprobada), ahora desvinculados
-  const { data: historialSolicitudes } = await admin
+  const { data: historialSolicitudes, error: histError } = await admin
     .from('gondolero_distri_solicitudes')
     .select('gondolero_id')
     .eq('distri_id', distriId ?? '')
     .eq('estado', 'aprobada')
+
+  console.log('[gondolas] históricos de solicitudes:', historialSolicitudes)
+  console.log('[gondolas] histError:', histError)
 
   const historialIds = (historialSolicitudes ?? [])
     .map((s: { gondolero_id: string }) => s.gondolero_id)
@@ -212,6 +217,8 @@ export default async function GondolasPage({
 
   // IDs combinados: activos + históricos
   const gondoleroIds = [...gondoleroActualesIds, ...historialIds]
+  console.log('[gondolas] gondoleroIds históricos (nuevos):', historialIds)
+  console.log('[gondolas] todos gondoleroIds:', gondoleroIds)
   // Todos los rows para el filtro desplegable
   const todosGondoleroRows = [...(gondoleroRows ?? []), ...gondoleroHistoricosRows]
 
@@ -329,7 +336,8 @@ export default async function GondolasPage({
   }
 
   const { data, error } = await query
-  if (error) console.error('Error fetching fotos:', error.message)
+  if (error) console.error('[gondolas] error fetching fotos:', error.message)
+  console.log('[gondolas] fotos encontradas:', data?.length ?? 0, '| tab:', tabActivo)
 
   const fotosRaw = (data as FotoPendienteRaw[] | null) ?? []
 
