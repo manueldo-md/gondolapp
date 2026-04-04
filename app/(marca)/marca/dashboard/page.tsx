@@ -2,19 +2,20 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
-import { Megaphone, Camera, Store, Coins } from 'lucide-react'
+import { Megaphone, Camera, Store, Coins, CheckCircle2, XCircle, Clock, TrendingUp, DollarSign } from 'lucide-react'
 import { formatearFechaHora } from '@/lib/utils'
 import type { EstadoCampana, DeclaracionFoto } from '@/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, valor, icon: Icon, color,
+  label, valor, icon: Icon, color, sub,
 }: {
   label: string
   valor: number | string
   icon: React.ElementType
   color: string
+  sub?: string
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -22,6 +23,7 @@ function StatCard({
         <div>
           <p className="text-sm text-gray-500 mb-1">{label}</p>
           <p className="text-2xl font-bold text-gray-900">{valor}</p>
+          {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
         </div>
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
           <Icon size={18} />
@@ -53,7 +55,8 @@ export default async function DashboardPage() {
 
   const marcaId: string | null = profile?.marca_id ?? null
 
-  // Campañas de esta marca
+  // ── Campañas de esta marca ─────────────────────────────────────────────────
+  // Query: SELECT id, estado FROM campanas WHERE marca_id = $marcaId
   const { data: campanas } = await admin
     .from('campanas')
     .select('id, estado')
@@ -64,9 +67,30 @@ export default async function DashboardPage() {
     (c: { id: string; estado: EstadoCampana }) => c.estado === 'activa'
   ).length
 
-  // Fotos de la última semana
-  let fotosEstaSemana = 0
-  let totalComerciosSet: Set<string> = new Set()
+  // ── Tokens ────────────────────────────────────────────────────────────────
+  // Query: SELECT tokens_disponibles FROM marcas WHERE id = $marcaId
+  let tokens = 0
+  if (marcaId) {
+    const { data: marca } = await admin
+      .from('marcas')
+      .select('tokens_disponibles')
+      .eq('id', marcaId)
+      .single()
+    tokens = marca?.tokens_disponibles ?? 0
+  }
+
+  // ── Fotos de las campañas de la marca ─────────────────────────────────────
+  // Query: SELECT estado, comercio_id, precio_confirmado, storage_path, created_at,
+  //               declaracion, comercio:comercios(nombre)
+  //        FROM fotos
+  //        WHERE campana_id IN ($campanaIds)
+  //        ORDER BY created_at DESC
+  //        LIMIT 300
+  let fotosAprobadas = 0
+  let fotosPendientes = 0
+  let fotosRechazadas = 0
+  let comerciosRelevados = 0
+  let precioPromedio: number | null = null
   let ultimasFotos: Array<{
     id: string
     storage_path: string | null
@@ -77,27 +101,54 @@ export default async function DashboardPage() {
   }> = []
 
   if (campanaIds.length > 0) {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
     const { data: fotasData } = await admin
       .from('fotos')
-      .select('id, storage_path, created_at, declaracion, comercio_id, comercio:comercios(nombre)')
+      .select('id, estado, comercio_id, precio_confirmado, storage_path, created_at, declaracion, comercio:comercios(nombre)')
       .in('campana_id', campanaIds)
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(300)
 
-    const todas = fotasData ?? []
-    fotosEstaSemana = todas.filter(
-      (f: { created_at: string }) => f.created_at >= sevenDaysAgo
-    ).length
+    const todas = (fotasData ?? []) as Array<{
+      id: string
+      estado: string
+      comercio_id: string
+      precio_confirmado: number | null
+      storage_path: string | null
+      created_at: string
+      declaracion: DeclaracionFoto
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      comercio: any
+    }>
 
-    todas.forEach((f: { comercio_id: string }) => totalComerciosSet.add(f.comercio_id))
+    // Contar por estado
+    // (fotos WHERE estado = 'aprobada' / 'pendiente' / 'rechazada')
+    fotosAprobadas = todas.filter(f => f.estado === 'aprobada').length
+    fotosPendientes = todas.filter(f => f.estado === 'pendiente').length
+    fotosRechazadas = todas.filter(f => f.estado === 'rechazada').length
 
-    // Últimas 5 con URLs firmadas
+    // Comercios distinct de fotos aprobadas
+    // (SELECT COUNT(DISTINCT comercio_id) FROM fotos WHERE estado = 'aprobada' AND campana_id IN ...)
+    const comerciosSet = new Set(
+      todas
+        .filter(f => f.estado === 'aprobada')
+        .map(f => f.comercio_id)
+        .filter(Boolean)
+    )
+    comerciosRelevados = comerciosSet.size
+
+    // Precio promedio de fotos aprobadas con precio_confirmado no null
+    // (SELECT AVG(precio_confirmado) FROM fotos WHERE estado = 'aprobada' AND precio_confirmado IS NOT NULL AND campana_id IN ...)
+    const precios = todas
+      .filter(f => f.estado === 'aprobada' && f.precio_confirmado !== null && f.precio_confirmado !== undefined)
+      .map(f => f.precio_confirmado as number)
+    if (precios.length > 0) {
+      precioPromedio = precios.reduce((a, b) => a + b, 0) / precios.length
+    }
+
+    // Últimas 5 fotos con URLs firmadas
     const primeras5 = todas.slice(0, 5)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ultimasFotos = await Promise.all(
-      primeras5.map(async (f: any) => {
+      primeras5.map(async (f) => {
         let signedUrl: string | null = null
         if (f.storage_path) {
           const { data: signed } = await admin.storage
@@ -105,21 +156,20 @@ export default async function DashboardPage() {
             .createSignedUrl(f.storage_path, 3600)
           signedUrl = signed?.signedUrl ?? null
         }
-        return { ...f, signedUrl }
+        return {
+          ...f,
+          comercio: Array.isArray(f.comercio) ? (f.comercio[0] ?? null) : f.comercio,
+          signedUrl,
+        }
       })
     )
   }
 
-  // Tokens
-  let tokens = 0
-  if (marcaId) {
-    const { data: marca } = await admin
-      .from('marcas')
-      .select('tokens_disponibles')
-      .eq('id', marcaId)
-      .single()
-    tokens = marca?.tokens_disponibles ?? 0
-  }
+  // Tasa de aprobación: aprobadas / (aprobadas + rechazadas) * 100
+  const totalRevisadas = fotosAprobadas + fotosRechazadas
+  const tasaAprobacion = totalRevisadas > 0
+    ? Math.round((fotosAprobadas / totalRevisadas) * 100)
+    : null
 
   const DECL_LABEL: Record<DeclaracionFoto, string> = {
     producto_presente:      'Presente',
@@ -135,8 +185,44 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
 
-      {/* Stats */}
+      {/* Stats — fila 1: estado de fotos */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard
+          label="Fotos aprobadas"
+          valor={fotosAprobadas}
+          icon={CheckCircle2}
+          color="bg-green-50 text-green-600"
+        />
+        <StatCard
+          label="Fotos pendientes"
+          valor={fotosPendientes}
+          icon={Clock}
+          color="bg-amber-50 text-amber-500"
+        />
+        <StatCard
+          label="Fotos rechazadas"
+          valor={fotosRechazadas}
+          icon={XCircle}
+          color="bg-red-50 text-red-500"
+        />
+        <StatCard
+          label="Tasa de aprobación"
+          valor={tasaAprobacion !== null ? `${tasaAprobacion}%` : '—'}
+          icon={TrendingUp}
+          color="bg-gondo-indigo-50 text-gondo-indigo-600"
+          sub={totalRevisadas > 0 ? `${totalRevisadas} fotos revisadas` : undefined}
+        />
+      </div>
+
+      {/* Stats — fila 2: cobertura y economía */}
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
+        <StatCard
+          label="Comercios relevados"
+          valor={comerciosRelevados}
+          icon={Store}
+          color="bg-gondo-verde-50 text-gondo-verde-400"
+          sub="con fotos aprobadas"
+        />
         <StatCard
           label="Campañas activas"
           valor={campanasActivas}
@@ -144,17 +230,16 @@ export default async function DashboardPage() {
           color="bg-gondo-indigo-50 text-gondo-indigo-600"
         />
         <StatCard
-          label="Fotos esta semana"
-          valor={fotosEstaSemana}
-          icon={Camera}
+          label="Precio prom. detectado"
+          valor={precioPromedio !== null ? `$${precioPromedio.toFixed(2)}` : '—'}
+          icon={DollarSign}
           color="bg-gondo-blue-50 text-gondo-blue-400"
+          sub={precioPromedio !== null ? 'fotos con precio confirmado' : 'sin datos de precio'}
         />
-        <StatCard
-          label="Comercios relevados"
-          valor={totalComerciosSet.size}
-          icon={Store}
-          color="bg-gondo-verde-50 text-gondo-verde-400"
-        />
+      </div>
+
+      {/* Tokens — separado */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           label="Tokens disponibles"
           valor={tokens}
