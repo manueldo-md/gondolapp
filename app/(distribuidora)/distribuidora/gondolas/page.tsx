@@ -177,16 +177,43 @@ export default async function GondolasPage({
 
   const distriId = profile?.distri_id ?? null
 
-  // Opción B: fotos visibles = campañas propias (siempre) + gondoleros actualmente vinculados
+  // Opción B: fotos visibles = campañas propias (siempre) + gondoleros vinculados (activos o históricos)
   // Las fotos de campañas propias se ven aunque el gondolero se haya desvinculado después.
+  // Las fotos de gondoleros que alguna vez estuvieron vinculados también se mantienen visibles.
 
-  // Gondoleros vinculados a esta distribuidora
+  // Gondoleros actualmente vinculados a esta distribuidora
   const { data: gondoleroRows } = await admin
     .from('profiles')
     .select('id, nombre, alias')
     .eq('distri_id', distriId ?? '')
 
-  const gondoleroIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
+  const gondoleroActualesIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
+
+  // Gondoleros históricos: alguna vez vinculados (solicitud aprobada), ahora desvinculados
+  const { data: historialSolicitudes } = await admin
+    .from('gondolero_distri_solicitudes')
+    .select('gondolero_id')
+    .eq('distri_id', distriId ?? '')
+    .eq('estado', 'aprobada')
+
+  const historialIds = (historialSolicitudes ?? [])
+    .map((s: { gondolero_id: string }) => s.gondolero_id)
+    .filter(id => !gondoleroActualesIds.includes(id))
+
+  // Perfiles de gondoleros históricos (para el filtro de archivo)
+  let gondoleroHistoricosRows: { id: string; nombre: string | null; alias: string | null }[] = []
+  if (historialIds.length > 0) {
+    const { data: histProfiles } = await admin
+      .from('profiles')
+      .select('id, nombre, alias')
+      .in('id', historialIds)
+    gondoleroHistoricosRows = (histProfiles ?? []) as { id: string; nombre: string | null; alias: string | null }[]
+  }
+
+  // IDs combinados: activos + históricos
+  const gondoleroIds = [...gondoleroActualesIds, ...historialIds]
+  // Todos los rows para el filtro desplegable
+  const todosGondoleroRows = [...(gondoleroRows ?? []), ...gondoleroHistoricosRows]
 
   // Campañas propias de esta distribuidora
   const { data: campanasDistri } = await admin
@@ -405,7 +432,7 @@ export default async function GondolasPage({
       {tabActivo === 'archivo' && !modoConsulta && (
         <FiltrosArchivo
           campanas={campanasDistri ?? []}
-          gondoleros={gondoleroRows ?? []}
+          gondoleros={todosGondoleroRows}
           filtros={filtrosActuales}
         />
       )}

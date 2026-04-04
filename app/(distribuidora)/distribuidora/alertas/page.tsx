@@ -38,6 +38,20 @@ export default async function AlertasPage() {
     .eq('tipo_actor', 'gondolero')
   const gondoleroIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
 
+  // Gondoleros históricos: alguna vez vinculados (para quiebres y sin_visita)
+  // Los "inactivos" usan solo gondoleroIds (actuales) — no tiene sentido alertar por desvinculados
+  const { data: historialSol } = await admin
+    .from('gondolero_distri_solicitudes')
+    .select('gondolero_id')
+    .eq('distri_id', distriId)
+    .eq('estado', 'aprobada')
+  const gondoleroActualesSet = new Set(gondoleroIds)
+  const historicosIds = (historialSol ?? [])
+    .map((s: { gondolero_id: string }) => s.gondolero_id)
+    .filter(id => !gondoleroActualesSet.has(id))
+  // IDs para fotos históricas (quiebres y sin visita)
+  const todosGondoleroIds = [...gondoleroIds, ...historicosIds]
+
   // Date helpers
   const sieteAtras       = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000)
   const treintaAtras     = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -101,11 +115,11 @@ export default async function AlertasPage() {
   interface Quiebre { comercioId: string; nombre: string; veces: number; ultimaVez: string }
   let quiebres: Quiebre[] = []
 
-  if (gondoleroIds.length > 0) {
+  if (todosGondoleroIds.length > 0) {
     const { data: qRaw } = await admin
       .from('fotos')
       .select('comercio_id, created_at, comercios(nombre)')
-      .in('gondolero_id', gondoleroIds)
+      .in('gondolero_id', todosGondoleroIds)
       .eq('declaracion', 'producto_no_encontrado')
       .eq('estado', 'aprobada')
       .gte('created_at', sieteAtras.toISOString())
@@ -135,11 +149,11 @@ export default async function AlertasPage() {
   interface ComercioSinVisita { id: string; nombre: string; diasSinVisita: number }
   let sinVisita: ComercioSinVisita[] = []
 
-  if (gondoleroIds.length > 0) {
+  if (todosGondoleroIds.length > 0) {
     const { data: fotasRec } = await admin
       .from('fotos')
       .select('comercio_id, created_at')
-      .in('gondolero_id', gondoleroIds)
+      .in('gondolero_id', todosGondoleroIds)
       .gte('created_at', sesentaAtras.toISOString())
       .order('created_at', { ascending: false })
       .limit(2000)

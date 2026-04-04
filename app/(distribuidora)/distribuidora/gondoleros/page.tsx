@@ -27,6 +27,7 @@ interface GondoleroConStats extends GondoleroRow {
   totalFotos: number
   fotosAprobadas: number
   tasaAprobacion: number
+  vinculadoActual: boolean // true = distri_id = esta distri, false = histórico desvinculado
 }
 
 const NIVEL_LABEL: Record<NivelGondolero, string> = {
@@ -71,17 +72,43 @@ export default async function GondolerosPage({
     if (distriData?.razon_social) distriNombre = distriData.razon_social
   }
 
-  // Gondoleros vinculados
-  const query = admin
-    .from('profiles')
-    .select('id, nombre, alias, nivel, activo, created_at')
-    .eq('tipo_actor', 'gondolero')
-    .order('created_at', { ascending: false })
+  // Gondoleros actualmente vinculados
+  const gondolerosActualesData = distriId
+    ? await admin
+        .from('profiles')
+        .select('id, nombre, alias, nivel, activo, created_at')
+        .eq('tipo_actor', 'gondolero')
+        .eq('distri_id', distriId)
+        .order('created_at', { ascending: false })
+    : { data: null }
+  const gondolerosActuales = (gondolerosActualesData.data as GondoleroRow[] | null) ?? []
+  const actualesIds = new Set(gondolerosActuales.map(g => g.id))
 
-  if (distriId) query.eq('distri_id', distriId)
+  // Gondoleros históricos: alguna vez aprobados, ahora desvinculados
+  let gondolerosHistoricos: GondoleroRow[] = []
+  if (distriId) {
+    const { data: histSol } = await admin
+      .from('gondolero_distri_solicitudes')
+      .select('gondolero_id')
+      .eq('distri_id', distriId)
+      .eq('estado', 'aprobada')
 
-  const { data: gondolerosData } = await query
-  const gondoleros = (gondolerosData as GondoleroRow[] | null) ?? []
+    const historicosIds = (histSol ?? [])
+      .map((s: { gondolero_id: string }) => s.gondolero_id)
+      .filter(id => !actualesIds.has(id))
+
+    if (historicosIds.length > 0) {
+      const { data: histProfiles } = await admin
+        .from('profiles')
+        .select('id, nombre, alias, nivel, activo, created_at')
+        .in('id', historicosIds)
+        .order('created_at', { ascending: false })
+      gondolerosHistoricos = (histProfiles as GondoleroRow[] | null) ?? []
+    }
+  }
+
+  // Lista combinada: actuales primero, luego históricos desvinculados
+  const gondoleros: GondoleroRow[] = [...gondolerosActuales, ...gondolerosHistoricos]
 
   // Stats de fotos
   const ids = gondoleros.map(g => g.id)
@@ -104,7 +131,13 @@ export default async function GondolerosPage({
   const lista: GondoleroConStats[] = gondoleros.map(g => {
     const stats = statsMap[g.id] ?? { total: 0, aprobadas: 0 }
     const tasa = stats.total > 0 ? Math.round((stats.aprobadas / stats.total) * 100) : 0
-    return { ...g, totalFotos: stats.total, fotosAprobadas: stats.aprobadas, tasaAprobacion: tasa }
+    return {
+      ...g,
+      totalFotos: stats.total,
+      fotosAprobadas: stats.aprobadas,
+      tasaAprobacion: tasa,
+      vinculadoActual: actualesIds.has(g.id),
+    }
   })
 
   // Solicitudes pendientes
@@ -153,7 +186,8 @@ export default async function GondolerosPage({
         <div>
           <h2 className="text-xl font-bold text-gray-900">Gondoleros</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            {lista.length} gondolero{lista.length !== 1 ? 's' : ''} vinculado{lista.length !== 1 ? 's' : ''}
+            {gondolerosActuales.length} vinculado{gondolerosActuales.length !== 1 ? 's' : ''}
+            {gondolerosHistoricos.length > 0 && ` · ${gondolerosHistoricos.length} histórico${gondolerosHistoricos.length !== 1 ? 's' : ''}`}
           </p>
         </div>
       </div>
@@ -173,7 +207,7 @@ export default async function GondolerosPage({
               : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
           }`}
         >
-          Vinculados ({lista.length})
+          Gondoleros ({lista.length})
         </a>
         <a
           href="/distribuidora/gondoleros?tab=solicitudes"
@@ -228,13 +262,20 @@ export default async function GondolerosPage({
                   <tr key={g.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gondo-amber-50 flex items-center justify-center shrink-0">
-                          <span className="text-gondo-amber-400 font-bold text-xs">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${g.vinculadoActual ? 'bg-gondo-amber-50' : 'bg-gray-100'}`}>
+                          <span className={`font-bold text-xs ${g.vinculadoActual ? 'text-gondo-amber-400' : 'text-gray-400'}`}>
                             {(g.alias ?? g.nombre ?? '?').charAt(0).toUpperCase()}
                           </span>
                         </div>
                         <div className="min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{g.alias ?? g.nombre ?? 'Sin nombre'}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-gray-900 truncate">{g.alias ?? g.nombre ?? 'Sin nombre'}</p>
+                            {!g.vinculadoActual && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 shrink-0">
+                                Desvinculado
+                              </span>
+                            )}
+                          </div>
                           {g.alias && g.nombre && (
                             <p className="text-xs text-gray-400 truncate">{g.nombre}</p>
                           )}
