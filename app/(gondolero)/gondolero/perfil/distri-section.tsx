@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Loader2, Truck, CheckCircle2 } from 'lucide-react'
+import { Loader2, CheckCircle2 } from 'lucide-react'
 import { desvincularseDeDistri, aceptarVinculacionDistri, rechazarVinculacionDistri } from './distri-actions'
 
 interface DistriActiva {
@@ -81,18 +81,7 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <Truck size={16} className="text-gondo-amber-400" />
-        <h2 className="text-sm font-semibold text-gray-700">
-          {distrisActivas.length > 1 ? 'Mis distribuidoras' : 'Mi distribuidora'}
-        </h2>
-        {invitaciones.length > 0 && (
-          <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500 text-white">
-            {invitaciones.length}
-          </span>
-        )}
-      </div>
+    <div>
 
       {/* ── Invitaciones pendientes de distribuidoras ── */}
       {invitaciones.length > 0 && (

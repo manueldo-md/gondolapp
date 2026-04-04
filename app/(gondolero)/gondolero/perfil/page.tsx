@@ -9,6 +9,7 @@ import { PasswordForm } from './password-form'
 import { LogoutButton } from './logout-button'
 import { DistriSection } from './distri-section'
 import { CodigoGondolero } from './codigo-gondolero'
+import { ColapsableSection } from './colapsable-section'
 
 const NIVEL_COLOR: Record<NivelGondolero, string> = {
   casual: 'bg-gray-100 text-gray-600',
@@ -123,14 +124,18 @@ export default async function PerfilPage() {
 
       <div className="px-4 space-y-4 pt-4">
 
-        {/* ── Mis zonas de trabajo ── */}
+        {/* ── Mis zonas de trabajo — colapsable, cerrada por defecto ── */}
         {todasLasZonas.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-200 p-4">
+          <ColapsableSection
+            title="Mis zonas de trabajo"
+            badge={zonasActuales.length > 0 ? `${zonasActuales.length} zona${zonasActuales.length !== 1 ? 's' : ''}` : null}
+            defaultOpen={false}
+          >
             <ZonasSelector
               todasLasZonas={todasLasZonas as { id: string; nombre: string; tipo: string }[]}
               zonasActuales={zonasActuales}
             />
-          </div>
+          </ColapsableSection>
         )}
 
         {/* ── Mi código de gondolero ── */}
@@ -138,29 +143,40 @@ export default async function PerfilPage() {
           <CodigoGondolero codigo={profile.codigo_gondolero} />
         )}
 
-        {/* ── Mis distribuidoras ── */}
-        <DistriSection
-          distrisActivas={distrisActivas}
-          solicitudPendiente={solicitudPendiente}
-          invitacionesPendientes={invitacionesPendientes}
-          gondoleroId={user.id}
-        />
+        {/* ── Mis distribuidoras — colapsable, cerrada por defecto ── */}
+        <ColapsableSection
+          title={distrisActivas.length > 1 ? 'Mis distribuidoras' : 'Mi distribuidora'}
+          badge={
+            invitacionesPendientes.length > 0
+              ? invitacionesPendientes.length
+              : distrisActivas.length > 0
+                ? distrisActivas.length > 1 ? distrisActivas.length : null
+                : null
+          }
+          badgeColor={invitacionesPendientes.length > 0 ? 'red' : 'verde'}
+          defaultOpen={false}
+        >
+          <DistriSection
+            distrisActivas={distrisActivas}
+            solicitudPendiente={solicitudPendiente}
+            invitacionesPendientes={invitacionesPendientes}
+            gondoleroId={user.id}
+          />
+        </ColapsableSection>
 
-        {/* ── Mis datos ── */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Mis datos</h2>
+        {/* ── Mis datos — abierta por defecto ── */}
+        <ColapsableSection title="Mis datos" defaultOpen={true}>
           <DatosForm
             nombre={profile?.nombre ?? ''}
             celular={profile?.celular ?? ''}
             email={user.email ?? ''}
           />
-        </div>
+        </ColapsableSection>
 
-        {/* ── Seguridad ── */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Seguridad</h2>
+        {/* ── Seguridad — colapsable, cerrada por defecto ── */}
+        <ColapsableSection title="Seguridad" defaultOpen={false}>
           <PasswordForm email={user.email ?? ''} />
-        </div>
+        </ColapsableSection>
 
         {/* ── Cuenta ── */}
         <div className="space-y-3 pt-2">
