@@ -22,9 +22,10 @@ interface ComercioTempItem {
 const TIPOS: { value: TipoComercio; label: string; emoji: string }[] = [
   { value: 'autoservicio', label: 'Autoservicio', emoji: '🏪' },
   { value: 'almacen',      label: 'Almacén',      emoji: '🧺' },
-  { value: 'kiosco',       label: 'Kiosco',        emoji: '🗞️' },
-  { value: 'mayorista',    label: 'Mayorista',     emoji: '📦' },
-  { value: 'otro',         label: 'Otro',          emoji: '🏬' },
+  { value: 'kiosco',       label: 'Kiosco',       emoji: '🗞️' },
+  { value: 'mayorista',    label: 'Mayorista',    emoji: '📦' },
+  { value: 'dietetica',    label: 'Dietética',    emoji: '🥗' },
+  { value: 'otro',         label: 'Otro',         emoji: '🏬' },
 ]
 
 function NuevoComercioForm() {

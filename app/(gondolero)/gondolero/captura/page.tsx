@@ -129,9 +129,10 @@ interface CampanaData {
 
 const TIPOS_COMERCIO: { value: TipoComercio; label: string; emoji: string }[] = [
   { value: 'almacen',      label: 'Almacén',      emoji: '🧺' },
-  { value: 'kiosco',       label: 'Kiosco',        emoji: '🗞️' },
+  { value: 'kiosco',       label: 'Kiosco',       emoji: '🗞️' },
   { value: 'autoservicio', label: 'Autoservicio', emoji: '🏪' },
-  { value: 'otro',         label: 'Otro',          emoji: '🏬' },
+  { value: 'dietetica',    label: 'Dietética',    emoji: '🥗' },
+  { value: 'otro',         label: 'Otro',         emoji: '🏬' },
 ]
 
 // ── Componente cámara (ciclo de vida propio) ──────────────────────────────────

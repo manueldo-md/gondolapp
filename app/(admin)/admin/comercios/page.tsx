@@ -17,6 +17,7 @@ const TIPO_COLOR: Record<TipoComercio, string> = {
   almacen:      'bg-purple-100 text-purple-700',
   kiosco:       'bg-pink-100 text-pink-700',
   mayorista:    'bg-gondo-indigo-50 text-gondo-indigo-600',
+  dietetica:    'bg-green-100 text-green-700',
   otro:         'bg-gray-100 text-gray-600',
 }
 
@@ -25,6 +26,7 @@ const TIPO_LABEL: Record<TipoComercio, string> = {
   almacen:      'Almacén',
   kiosco:       'Kiosco',
   mayorista:    'Mayorista',
+  dietetica:    'Dietética',
   otro:         'Otro',
 }
 
@@ -63,9 +65,10 @@ export default async function ComerciosAdminPage({
   if (conFachada.length > 0) {
     await Promise.all(
       conFachada.map(async (c: { id: string; foto_fachada_url: string }) => {
-        const { data } = await admin.storage
-          .from('fotos-fachada')
-          .createSignedUrl(c.foto_fachada_url, 3600)
+        const path = c.foto_fachada_url
+        // Fachadas de gondoleros → bucket fotos-gondola bajo ruta fachadas/
+        const bucket = path.startsWith('fachadas/') ? 'fotos-gondola' : 'fotos-fachada'
+        const { data } = await admin.storage.from(bucket).createSignedUrl(path, 3600)
         if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
       })
     )

@@ -11,6 +11,7 @@ const TIPO_COLOR: Record<TipoComercio, string> = {
   almacen:      'bg-purple-100 text-purple-700',
   kiosco:       'bg-pink-100 text-pink-700',
   mayorista:    'bg-indigo-100 text-indigo-700',
+  dietetica:    'bg-green-100 text-green-700',
   otro:         'bg-gray-100 text-gray-600',
 }
 
@@ -19,6 +20,7 @@ const TIPO_LABEL: Record<TipoComercio, string> = {
   almacen:      'Almacén',
   kiosco:       'Kiosco',
   mayorista:    'Mayorista',
+  dietetica:    'Dietética',
   otro:         'Otro',
 }
 
@@ -68,7 +70,7 @@ export default async function ComerciosPendientesDistriPage() {
     ? await (admin as any)
         .from('comercios')
         .select(`
-          id, nombre, direccion, tipo, estado, created_at, lat, lng,
+          id, nombre, direccion, tipo, estado, created_at,
           registrado_por, foto_fachada_url, campana_id,
           registrador:profiles!registrado_por(nombre, alias),
           campana:campanas!campana_id(nombre)
@@ -93,28 +95,27 @@ export default async function ComerciosPendientesDistriPage() {
   if (conFachada.length > 0) {
     await Promise.all(
       conFachada.map(async (c: { id: string; foto_fachada_url: string }) => {
-        let signedUrl: string | null = null
-        if (c.foto_fachada_url.startsWith('fachadas/')) {
-          const { data } = await admin.storage.from('fotos-gondola').createSignedUrl(c.foto_fachada_url, 3600)
-          signedUrl = data?.signedUrl ?? null
-        }
-        if (!signedUrl) {
-          const { data } = await admin.storage.from('fotos-fachada').createSignedUrl(c.foto_fachada_url, 3600)
-          signedUrl = data?.signedUrl ?? null
-        }
-        if (signedUrl) fachadasSignedMap[c.id] = signedUrl
+        const path = c.foto_fachada_url
+        const bucket = path.startsWith('fachadas/') ? 'fotos-gondola' : 'fotos-fachada'
+        const { data } = await admin.storage.from(bucket).createSignedUrl(path, 3600)
+        if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
       })
     )
   }
 
-  // Detectar posibles duplicados
+  // Detectar posibles duplicados — lat/lng se obtienen en query separada, solo server-side
+  const comercioIds = comercios.map((c: { id: string }) => c.id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: activos } = await (admin as any)
-    .from('comercios').select('id, lat, lng').eq('estado', 'activo')
+  const [{ data: pendientesGeo }, { data: activos }] = await Promise.all([
+    campanaIds.length > 0 && comercioIds.length > 0
+      ? (admin as any).from('comercios').select('id, lat, lng').in('id', comercioIds)
+      : Promise.resolve({ data: [] }),
+    (admin as any).from('comercios').select('id, lat, lng').eq('estado', 'activo'),
+  ])
 
   const posiblesDuplicados = new Set<string>()
-  if (activos) {
-    for (const c of comercios as { id: string; lat: number; lng: number }[]) {
+  if (pendientesGeo && activos) {
+    for (const c of pendientesGeo as { id: string; lat: number; lng: number }[]) {
       for (const a of activos as { id: string; lat: number; lng: number }[]) {
         if (c.lat && c.lng && a.lat && a.lng && distanciaMetros(c.lat, c.lng, a.lat, a.lng) <= 50) {
           posiblesDuplicados.add(c.id)

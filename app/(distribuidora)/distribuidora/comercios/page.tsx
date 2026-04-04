@@ -32,6 +32,7 @@ const TIPO_LABEL: Record<TipoComercio, string> = {
   almacen:      'Almacén',
   kiosco:       'Kiosco',
   mayorista:    'Mayorista',
+  dietetica:    'Dietética',
   otro:         'Otro',
 }
 
@@ -40,6 +41,7 @@ const TIPO_COLOR: Record<TipoComercio, string> = {
   almacen:      'bg-purple-100 text-purple-700',
   kiosco:       'bg-pink-100 text-pink-700',
   mayorista:    'bg-gondo-indigo-50 text-gondo-indigo-600',
+  dietetica:    'bg-green-100 text-green-700',
   otro:         'bg-gray-100 text-gray-600',
 }
 

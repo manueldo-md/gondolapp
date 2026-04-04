@@ -40,6 +40,7 @@ export type TipoComercio =
   | 'almacen'
   | 'kiosco'
   | 'mayorista'
+  | 'dietetica'
   | 'otro'
 
 export type TipoPremio =
