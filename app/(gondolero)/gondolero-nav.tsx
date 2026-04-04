@@ -16,6 +16,7 @@ function NavItem({
   href, label, icon: Icon, activo,
   esActividad, unreadCount,
   esLogros, unreadLogrosCount,
+  esPerfil, invitacionesPendientesCount,
   enCaptura,
 }: {
   href: string
@@ -26,6 +27,8 @@ function NavItem({
   unreadCount: number
   esLogros: boolean
   unreadLogrosCount: number
+  esPerfil: boolean
+  invitacionesPendientesCount: number
   enCaptura: boolean
 }) {
   const router = useRouter()
@@ -58,6 +61,9 @@ function NavItem({
             <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
               {unreadLogrosCount > 9 ? '9+' : unreadLogrosCount}
             </span>
+          )}
+          {esPerfil && invitacionesPendientesCount > 0 && (
+            <span className="absolute -top-1.5 -right-2 w-3 h-3 bg-red-500 rounded-full border border-white" />
           )}
         </div>
         <span className={`text-[11px] leading-none ${activo ? 'font-semibold' : 'font-normal'}`}>
@@ -99,9 +105,11 @@ function NavItem({
 export function GondoleroNav({
   unreadCount,
   unreadLogrosCount,
+  invitacionesPendientesCount,
 }: {
   unreadCount: number
   unreadLogrosCount: number
+  invitacionesPendientesCount: number
 }) {
   const pathname = usePathname()
   const enCaptura = pathname.includes('/captura')
@@ -120,6 +128,8 @@ export function GondoleroNav({
             unreadCount={unreadCount}
             esLogros={href === '/gondolero/logros'}
             unreadLogrosCount={unreadLogrosCount}
+            esPerfil={href === '/gondolero/perfil'}
+            invitacionesPendientesCount={invitacionesPendientesCount}
             enCaptura={enCaptura}
           />
         ))}

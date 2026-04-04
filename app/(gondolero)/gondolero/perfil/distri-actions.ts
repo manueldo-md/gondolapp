@@ -51,6 +51,53 @@ export async function solicitarVinculacion(
   return {}
 }
 
+export async function aceptarVinculacionDistri(
+  solicitudId: string,
+  gondoleroId: string,
+  distriId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+
+  // Vincular el gondolero a la distribuidora
+  const { error } = await admin
+    .from('profiles')
+    .update({ distri_id: distriId })
+    .eq('id', gondoleroId)
+
+  if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
+
+  // Marcar solicitud como aprobada
+  await admin
+    .from('gondolero_distri_solicitudes')
+    .update({ estado: 'aprobada', updated_at: new Date().toISOString() })
+    .eq('id', solicitudId)
+
+  revalidatePath('/gondolero/perfil')
+  return {}
+}
+
+export async function rechazarVinculacionDistri(
+  solicitudId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+
+  await admin
+    .from('gondolero_distri_solicitudes')
+    .update({ estado: 'rechazada', updated_at: new Date().toISOString() })
+    .eq('id', solicitudId)
+
+  revalidatePath('/gondolero/perfil')
+  return {}
+}
+
 export async function desvincularseDeDistri(): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

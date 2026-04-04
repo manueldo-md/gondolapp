@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { GondoleroNav } from './gondolero-nav'
 import { InstalarAppBanner } from '@/components/mobile/instalar-app-banner'
 import { OfflineSyncBanner } from '@/components/mobile/offline-sync'
@@ -12,12 +13,19 @@ export default async function GondoleroLayout({
 }) {
   let unreadCount = 0
   let unreadLogrosCount = 0
+  let invitacionesPendientesCount = 0
 
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const [notifRes, logrosRes] = await Promise.all([
+      const admin = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+
+      const [notifRes, logrosRes, invitacionesRes] = await Promise.all([
         supabase
           .from('notificaciones')
           .select('*', { count: 'exact', head: true })
@@ -28,9 +36,16 @@ export default async function GondoleroLayout({
           .select('*', { count: 'exact', head: true })
           .eq('gondolero_id', user.id)
           .eq('visto', false),
+        admin
+          .from('gondolero_distri_solicitudes')
+          .select('*', { count: 'exact', head: true })
+          .eq('gondolero_id', user.id)
+          .eq('estado', 'pendiente')
+          .eq('iniciado_por', 'distri'),
       ])
       unreadCount = notifRes.count ?? 0
       unreadLogrosCount = logrosRes.count ?? 0
+      invitacionesPendientesCount = invitacionesRes.count ?? 0
     }
   } catch {
     // Sin conexión o tabla no existe aún — continuar con defaults
@@ -46,7 +61,11 @@ export default async function GondoleroLayout({
           {children}
         </main>
       </OfflineDetector>
-      <GondoleroNav unreadCount={unreadCount} unreadLogrosCount={unreadLogrosCount} />
+      <GondoleroNav
+        unreadCount={unreadCount}
+        unreadLogrosCount={unreadLogrosCount}
+        invitacionesPendientesCount={invitacionesPendientesCount}
+      />
     </div>
   )
 }

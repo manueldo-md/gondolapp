@@ -52,31 +52,32 @@ export default async function PerfilPage() {
     if (distriData) distriActual = { id: profile.distri_id, nombre: distriData.razon_social }
   }
 
-  // Solicitud pendiente (si no tiene distri vinculada)
+  // Solicitud pendiente propia (gondolero solicitó a la distri) y invitaciones de la distri
   let solicitudPendiente: { distri_id: string; distri_nombre: string } | null = null
-  if (!profile?.distri_id) {
-    try {
-      const { data: solicitudData } = await admin
-        .from('gondolero_distri_solicitudes')
-        .select('distri_id, distri:distribuidoras(razon_social)')
-        .eq('gondolero_id', user.id)
-        .eq('estado', 'pendiente')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+  let invitacionesPendientes: { id: string; distri_id: string; distri_nombre: string }[] = []
+  try {
+    const { data: solicitudesData } = await admin
+      .from('gondolero_distri_solicitudes')
+      .select('id, distri_id, iniciado_por, distri:distribuidoras(razon_social)')
+      .eq('gondolero_id', user.id)
+      .eq('estado', 'pendiente')
+      .order('created_at', { ascending: false })
 
-      if (solicitudData) {
-        const distriNombre = Array.isArray(solicitudData.distri)
-          ? (solicitudData.distri as { razon_social: string }[])[0]?.razon_social
-          : (solicitudData.distri as { razon_social: string } | null)?.razon_social
-        solicitudPendiente = {
-          distri_id: solicitudData.distri_id,
-          distri_nombre: distriNombre ?? 'Distribuidora',
-        }
+    for (const s of solicitudesData ?? []) {
+      const sd = s as { id: string; distri_id: string; iniciado_por: string | null; distri: { razon_social: string } | { razon_social: string }[] | null }
+      const distriNombre = Array.isArray(sd.distri)
+        ? (sd.distri as { razon_social: string }[])[0]?.razon_social
+        : (sd.distri as { razon_social: string } | null)?.razon_social
+      const nombre = distriNombre ?? 'Distribuidora'
+
+      if (sd.iniciado_por === 'distri') {
+        invitacionesPendientes.push({ id: sd.id, distri_id: sd.distri_id, distri_nombre: nombre })
+      } else if (!profile?.distri_id && !solicitudPendiente) {
+        solicitudPendiente = { distri_id: sd.distri_id, distri_nombre: nombre }
       }
-    } catch {
-      // Tabla puede no existir aún en la DB — ignorar
     }
+  } catch {
+    // Tabla puede no existir aún en la DB — ignorar
   }
 
   const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
@@ -134,6 +135,8 @@ export default async function PerfilPage() {
         <DistriSection
           distriActual={distriActual}
           solicitudPendiente={solicitudPendiente}
+          invitacionesPendientes={invitacionesPendientes}
+          gondoleroId={user.id}
         />
 
         {/* ── Mis datos ── */}

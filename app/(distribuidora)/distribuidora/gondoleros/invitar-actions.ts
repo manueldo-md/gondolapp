@@ -77,27 +77,22 @@ export async function confirmarVinculacionPorCodigo(
 
   const admin = adminClient()
 
+  // Crear solicitud pendiente — el gondolero debe aceptar desde su perfil
   const { error } = await admin
-    .from('profiles')
-    .update({ distri_id: distriId })
-    .eq('id', gondoleroId)
-
-  if (error) return { error: 'No se pudo vincular. Intentá de nuevo.' }
-
-  // Registrar en historial de solicitudes para visibilidad histórica de fotos
-  await admin
     .from('gondolero_distri_solicitudes')
     .upsert(
-      { gondolero_id: gondoleroId, distri_id: distriId, estado: 'aprobada', updated_at: new Date().toISOString() },
+      { gondolero_id: gondoleroId, distri_id: distriId, estado: 'pendiente', iniciado_por: 'distri', updated_at: new Date().toISOString() },
       { onConflict: 'gondolero_id,distri_id' }
     )
+
+  if (error) return { error: 'No se pudo enviar la invitación. Intentá de nuevo.' }
 
   // Notificación al gondolero
   await admin.from('notificaciones').insert({
     gondolero_id: gondoleroId,
-    tipo: 'vinculacion_nueva',
-    titulo: `¡${distriNombre} te vinculó a su equipo! 🎉`,
-    mensaje: `Ya sos parte del equipo de ${distriNombre}. ¡Bienvenido!`,
+    tipo: 'vinculacion_invitacion',
+    titulo: `📦 ${distriNombre} quiere vincularte`,
+    mensaje: `La distribuidora ${distriNombre} te invitó a unirte a su equipo. Revisá tu perfil para aceptar o rechazar.`,
     leida: false,
   })
 

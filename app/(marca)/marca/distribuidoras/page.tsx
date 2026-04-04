@@ -52,12 +52,18 @@ export default async function MarcaDistribuidorasPage() {
     .eq('id', profile.marca_id)
     .single()
 
+  const activas   = lista.filter(r => r.estado !== 'terminada')
+  const historial = lista.filter(r => r.estado === 'terminada')
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Distribuidoras</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{lista.filter(r => r.estado === 'activa').length} relaciones activas</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {lista.filter(r => r.estado === 'activa').length} relaciones activas
+            {historial.length > 0 && ` · ${historial.length} en historial`}
+          </p>
         </div>
       </div>
 
@@ -73,37 +79,74 @@ export default async function MarcaDistribuidorasPage() {
           <p className="text-xs text-gray-400 mt-1">Invitá una distribuidora para comenzar a colaborar</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                {['Distribuidora', 'Estado', 'Iniciado por', 'Fecha', 'Acciones'].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {lista.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-900">{r.distriNombre ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    <EstadoBadge estado={r.estado} />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-500 capitalize">{r.iniciadoPor ?? '—'}</td>
-                  <td className="px-4 py-3 text-xs text-gray-400">
-                    {new Date(r.createdAt).toLocaleDateString('es-AR')}
-                  </td>
-                  <td className="px-4 py-3">
-                    {r.estado === 'activa' && (
-                      <TerminarRelacionBtn relacionId={r.id} />
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {activas.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    {['Distribuidora', 'Estado', 'Iniciado por', 'Fecha', 'Acciones'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {activas.map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-gray-900">{r.distriNombre ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        <EstadoBadge estado={r.estado} />
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500 capitalize">{r.iniciadoPor ?? '—'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400">
+                        {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.estado === 'activa' && (
+                          <TerminarRelacionBtn relacionId={r.id} />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {historial.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 px-1">Historial</p>
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      {['Distribuidora', 'Estado', 'Iniciado por', 'Fecha'].map(h => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {historial.map(r => (
+                      <tr key={r.id} className="opacity-60">
+                        <td className="px-4 py-3 font-medium text-gray-500">{r.distriNombre ?? '—'}</td>
+                        <td className="px-4 py-3">
+                          <EstadoBadge estado={r.estado} />
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-400 capitalize">{r.iniciadoPor ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-400">
+                          {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

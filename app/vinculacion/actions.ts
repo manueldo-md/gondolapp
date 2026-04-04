@@ -53,3 +53,11 @@ export async function aceptarInvitacion(
   revalidatePath('/gondolero/perfil')
   return {}
 }
+
+export async function rechazarInvitacion(
+  tokenId: string
+): Promise<{ error?: string }> {
+  const admin = adminClient()
+  await admin.from('vinculacion_tokens').update({ usado: true }).eq('id', tokenId)
+  return {}
+}
