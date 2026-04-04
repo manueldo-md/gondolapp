@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { LayoutGrid } from 'lucide-react'
 import type { TipoCampana } from '@/types'
-import { CampanasSections, type CampanaCardData, type AccesoInfo } from './campanas-sections'
+import { CampanasSections, type CampanaCardData } from './campanas-sections'
 
 // CampanaRow: alias del tipo exportado desde campanas-sections
 type CampanaRow = CampanaCardData
@@ -51,7 +51,7 @@ export default async function CampanasPage() {
   const gondoleroNivel = (profileRes.data as { nivel: string } | null)?.nivel ?? 'casual'
   const misDistriIds = (misDistrisRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
 
-  // Relaciones marca-distri activas (para verificar acceso a campañas de marca)
+  // Relaciones marca-distri activas (para filtrar campañas de marca)
   let relacionesMarcaDistri: { marca_id: string; distri_id: string }[] = []
   if (misDistriIds.length > 0) {
     const { data: relRes } = await supabase
@@ -60,6 +60,18 @@ export default async function CampanasPage() {
       .in('distri_id', misDistriIds)
       .eq('estado', 'activa')
     relacionesMarcaDistri = (relRes ?? []) as { marca_id: string; distri_id: string }[]
+  }
+
+  // Función de acceso — decide si el gondolero puede ver esta campaña
+  function tieneAcceso(c: CampanaRow): boolean {
+    const fp = c.financiada_por
+    if (!fp || fp === 'gondolapp') return true
+    if (fp === 'distri') return !!c.distri_id && misDistriIds.includes(c.distri_id)
+    if (fp === 'marca') {
+      if (!c.marca_id) return true
+      return relacionesMarcaDistri.some(r => r.marca_id === c.marca_id)
+    }
+    return false
   }
 
   let query = supabase
@@ -105,36 +117,24 @@ export default async function CampanasPage() {
     lista = (campanas as CampanaRow[] | null) ?? []
   }
 
-  // ── Calcular acceso por campaña ──────────────────────────────────────────────
-  const accesoMap: Record<string, AccesoInfo> = {}
-  for (const c of lista) {
-    const fp = c.financiada_por
-    if (fp === 'gondolapp' || !fp) {
-      accesoMap[c.id] = { ok: true }
-    } else if (fp === 'distri') {
-      const ok = !!c.distri_id && misDistriIds.includes(c.distri_id)
-      accesoMap[c.id] = ok ? { ok: true } : { ok: false, motivo: 'distri' }
-    } else if (fp === 'marca') {
-      if (!c.marca_id) {
-        accesoMap[c.id] = { ok: true }
-      } else {
-        const ok = relacionesMarcaDistri.some(r => r.marca_id === c.marca_id)
-        accesoMap[c.id] = ok ? { ok: true } : { ok: false, motivo: 'marca' }
-      }
-    } else {
-      accesoMap[c.id] = { ok: true }
-    }
-  }
+  // Campañas en las que ya participa el gondolero (activas / completadas)
+  // → se muestran siempre, independientemente del acceso actual
+  const yaSuyas = new Set([...participacionMap.keys()])
 
   const activas     = lista.filter(c => participacionMap.get(c.id) === 'activa')
   const completadas = lista.filter(c => participacionMap.get(c.id) === 'completada')
+  // Disponibles: sin participación activa/completada Y con acceso según financiada_por
   const disponibles = lista.filter(c => {
     const estado = participacionMap.get(c.id)
-    return !estado || estado === 'abandonada'
+    if (estado && estado !== 'abandonada') return false
+    return tieneAcceso(c)
   })
 
   // Record plano para el cliente (Map no es serializable)
   const participacionRecord = Object.fromEntries(participacionMap.entries()) as Record<string, 'activa' | 'completada' | 'abandonada'>
+
+  // Cuenta solo campañas accesibles para el header
+  const totalAccesibles = activas.length + completadas.length + disponibles.length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -144,9 +144,9 @@ export default async function CampanasPage() {
           <LayoutGrid size={20} className="text-gondo-verde-400" />
           <h1 className="text-lg font-bold text-gray-900">Campañas</h1>
         </div>
-        {lista.length > 0 && (
+        {totalAccesibles > 0 && (
           <p className="text-sm text-gray-400 mt-0.5">
-            {lista.length} {lista.length === 1 ? 'campaña activa' : 'campañas activas'}
+            {totalAccesibles} {totalAccesibles === 1 ? 'campaña activa' : 'campañas activas'}
           </p>
         )}
       </div>
@@ -170,7 +170,6 @@ export default async function CampanasPage() {
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}
           participacionRecord={participacionRecord}
-          accesoMap={accesoMap}
         />
       </div>
     </div>
