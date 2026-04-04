@@ -44,7 +44,7 @@ function MisionCard({ p, fotoStats }: { p: ParticipacionRow; fotoStats?: FotoSta
   const progreso = calcularPorcentaje(p.comercios_completados, c.objetivo_comercios ?? 0)
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-transform duration-100 active:scale-[0.98]">
       <div className="p-4 pb-3">
         {/* Badge tipo */}
         <div className="flex items-center justify-between mb-2">
@@ -112,7 +112,7 @@ function MisionCard({ p, fotoStats }: { p: ParticipacionRow; fotoStats?: FotoSta
       <div className="px-4 pb-2">
         <Link
           href={`/gondolero/captura?campana=${c.id}`}
-          className="flex items-center justify-center gap-2 w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-colors min-h-touch"
+          className="flex items-center justify-center gap-2 w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-all duration-100 active:scale-[0.97] min-h-touch"
         >
           Ir a capturar
           <ChevronRight size={16} />

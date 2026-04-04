@@ -37,7 +37,7 @@ function NavItem({
     <>
       <button
         onClick={handleClick}
-        className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 min-h-touch transition-colors ${
+        className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 min-h-touch transition-all duration-150 active:opacity-60 active:scale-95 ${
           activo ? 'text-gondo-verde-400' : 'text-gray-400 hover:text-gray-600'
         }`}
       >

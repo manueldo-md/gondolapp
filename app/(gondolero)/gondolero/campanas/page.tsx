@@ -71,7 +71,7 @@ function CampanaCard({
   const inscripcionProntoCierra = diasInscripcion !== null && diasInscripcion >= 0 && diasInscripcion <= 3
 
   return (
-    <div className={`rounded-2xl shadow-sm border overflow-hidden ${
+    <div className={`rounded-2xl shadow-sm border overflow-hidden transition-transform duration-100 active:scale-[0.98] ${
       participando ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100'
     }`}>
       {/* Header */}
@@ -181,7 +181,7 @@ function CampanaCard({
           href={participando
             ? `/gondolero/misiones/${campana.id}`
             : `/gondolero/campanas/${campana.id}`}
-          className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-colors min-h-touch ${
+          className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
             participando
               ? 'bg-green-600 hover:bg-green-700'
               : participacionEstado === 'completada'

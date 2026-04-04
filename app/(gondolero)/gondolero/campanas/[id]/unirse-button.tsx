@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { XCircle } from 'lucide-react'
+import { XCircle, Loader2 } from 'lucide-react'
 import { unirseACampana } from './actions'
 import { AbandonarBtn } from '../../misiones/abandonar-btn'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
@@ -45,7 +45,7 @@ export function UnirseButton({
       <div className="space-y-1">
         <Link
           href={`/gondolero/misiones/${campanaId}`}
-          className="block w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl text-center shadow-lg text-base transition-colors hover:bg-gondo-verde-600"
+          className="block w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl text-center shadow-lg text-base transition-all duration-100 hover:bg-gondo-verde-600 active:scale-[0.98]"
         >
           Continuar esta misión →
         </Link>
@@ -104,11 +104,14 @@ export function UnirseButton({
       <button
         disabled={pending}
         onClick={handleUnirse}
-        className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-lg text-base transition-colors hover:bg-gondo-verde-600 disabled:opacity-60 min-h-touch"
+        className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-lg text-base transition-all duration-100 hover:bg-gondo-verde-600 active:scale-[0.98] disabled:opacity-60 min-h-touch"
       >
-        {pending
-          ? 'Procesando...'
-          : esReunion
+        {pending ? (
+          <span className="flex items-center justify-center gap-2">
+            <Loader2 size={18} className="animate-spin" />
+            Procesando...
+          </span>
+        ) : esReunion
             ? participacionAnteriorEstado === 'completada'
               ? 'Volver a participar'
               : 'Volver a unirme'
