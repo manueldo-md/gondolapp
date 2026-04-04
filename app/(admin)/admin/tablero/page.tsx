@@ -1,6 +1,6 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
-  Users, Store, Megaphone, Image, Star, Gift, Truck, Tag,
+  Users, Store, Megaphone, Image, Star, Gift, Truck, Tag, Handshake, Clock,
 } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 
@@ -24,6 +24,8 @@ export default async function TablasAdminPage() {
     { count: comercios },
     { data: puntosData },
     { count: canjesPendientes },
+    { count: relacionesActivas },
+    { count: relacionesPendientes },
   ] = await Promise.all([
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('tipo_actor', 'gondolero'),
     admin.from('distribuidoras').select('*', { count: 'exact', head: true }),
@@ -33,6 +35,8 @@ export default async function TablasAdminPage() {
     admin.from('comercios').select('*', { count: 'exact', head: true }),
     admin.from('movimientos_puntos').select('monto').eq('tipo', 'credito'),
     admin.from('canjes').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+    admin.from('marca_distri_relaciones').select('*', { count: 'exact', head: true }).eq('estado', 'activa'),
+    admin.from('marca_distri_relaciones').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
   ])
 
   const fotosList = (fotosStats ?? []) as { estado: string }[]
@@ -89,15 +93,17 @@ export default async function TablasAdminPage() {
     .slice(0, 10)
 
   const METRICAS = [
-    { label: 'Gondoleros',         valor: gondoleros ?? 0,    icon: Users,     color: 'text-gondo-verde-400' },
-    { label: 'Distribuidoras',     valor: distribuidoras ?? 0,icon: Truck,     color: 'text-gondo-amber-400' },
-    { label: 'Marcas',             valor: marcas ?? 0,        icon: Tag,       color: 'text-gondo-indigo-600' },
-    { label: 'Campañas activas',   valor: campanasActivas ?? 0,icon: Megaphone, color: 'text-purple-500' },
-    { label: 'Fotos totales',      valor: fotosTotal,         icon: Image,     color: 'text-gray-500',
+    { label: 'Gondoleros',             valor: gondoleros ?? 0,           icon: Users,      color: 'text-gondo-verde-400' },
+    { label: 'Distribuidoras',         valor: distribuidoras ?? 0,       icon: Truck,      color: 'text-gondo-amber-400' },
+    { label: 'Marcas',                 valor: marcas ?? 0,               icon: Tag,        color: 'text-gondo-indigo-600' },
+    { label: 'Campañas activas',       valor: campanasActivas ?? 0,      icon: Megaphone,  color: 'text-purple-500' },
+    { label: 'Fotos totales',          valor: fotosTotal,                icon: Image,      color: 'text-gray-500',
       sub: `${fotosPendientes} pend · ${fotosAprobadas} apr · ${fotosRechazadas} rech` },
-    { label: 'Comercios mapeados', valor: comercios ?? 0,     icon: Store,     color: 'text-teal-500' },
-    { label: 'Puntos emitidos',    valor: puntosEmitidos,     icon: Star,      color: 'text-yellow-500' },
-    { label: 'Canjes pendientes',  valor: canjesPendientes ?? 0, icon: Gift,  color: 'text-red-500' },
+    { label: 'Comercios mapeados',     valor: comercios ?? 0,            icon: Store,      color: 'text-teal-500' },
+    { label: 'Puntos emitidos',        valor: puntosEmitidos,            icon: Star,       color: 'text-yellow-500' },
+    { label: 'Canjes pendientes',      valor: canjesPendientes ?? 0,     icon: Gift,       color: 'text-red-500' },
+    { label: 'Vinculaciones activas',  valor: relacionesActivas ?? 0,    icon: Handshake,  color: 'text-green-600' },
+    { label: 'Vinculaciones pendientes', valor: relacionesPendientes ?? 0, icon: Clock,    color: 'text-amber-500' },
   ]
 
   const BADGE_COLOR: Record<string, string> = {

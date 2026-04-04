@@ -798,5 +798,34 @@ Esta vinculación es clave para que la distri pueda asignar campañas exclusivas
 
 ---
 
+### Campañas conjuntas marca ↔ distribuidora
+**Concepto:** Una marca y una distribuidora con relación activa pueden crear campañas conjuntas donde ambas partes co-financian o co-gestionan la campaña. La distribuidora aporta la red de gondoleros, la marca aporta el producto y los precios objetivo.
+
+**Flujo propuesto:**
+1. Relación marca ↔ distribuidora debe estar en estado `activa`
+2. Marca crea campaña conjunta y selecciona la distribuidora socia
+3. Sistema genera campaña con `tipo: 'conjunta'`, referenciando ambos IDs
+4. Distribuidora recibe notificación y puede aprobar/rechazar participar
+5. Si aprueba: campaña queda `activa`, visible para gondoleros de esa distribuidora
+6. Si rechaza: marca puede invitar a otra distribuidora
+7. Métricas separadas por actor (fotos de gondoleros de esa distri vs. externos)
+
+**Diferencia con modelo actual:** Hoy una campaña tiene `distri_id` O `marca_id` pero no ambos de forma estructurada. Las conjuntas requieren co-ownership con permisos diferenciados.
+
+**Prerrequisitos:** Relacionamiento formal marca ↔ distribuidora completado y con estado `activa`.
+
+### Términos y condiciones en relacionamiento
+**Estado:** Checkbox presente en `app/vinculacion-marca/page.tsx` al aceptar una invitación.
+
+**Texto placeholder actual:** "Acepto los términos y condiciones de uso de GondolApp y autorizo el intercambio de información comercial entre las partes."
+
+**Pendiente de legal:** El texto definitivo de los TyC debe ser redactado y aprobado por el equipo legal antes del lanzamiento a producción. El checkbox y la infraestructura (campos `acepto_tyc_marca`, `acepto_tyc_distri` en `marca_distri_relaciones`) ya están implementados.
+
+**Campos en DB:**
+- `acepto_tyc_marca boolean DEFAULT false` — se actualiza cuando la marca acepta
+- `acepto_tyc_distri boolean DEFAULT false` — se actualiza cuando la distribuidora acepta
+
+---
+
 *Última actualización: Abril 2026*
 *Versión del documento: 1.1*
