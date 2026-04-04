@@ -24,6 +24,8 @@ type CampanaDetalle = {
   nombre: string
   tipo: TipoCampana
   financiada_por: string
+  distri_id: string | null
+  marca_id: string | null
   puntos_por_foto: number
   fecha_inicio: string | null
   fecha_fin: string | null
@@ -77,7 +79,7 @@ export default async function CampanaDetallePage({
   const { data: campanaData } = await supabase
     .from('campanas')
     .select(`
-      id, nombre, tipo, financiada_por,
+      id, nombre, tipo, financiada_por, distri_id, marca_id,
       puntos_por_foto, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
       objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
@@ -101,14 +103,15 @@ export default async function CampanaDetallePage({
       .maybeSingle(),
     supabase
       .from('profiles')
-      .select('nivel')
+      .select('nivel, distri_id')
       .eq('id', user.id)
       .single(),
   ])
 
   const c = campanaData as unknown as CampanaDetalle
   const participacion = participacionData as { id: string; estado: string } | null
-  const gondoleroNivel = (profileData as { nivel: string } | null)?.nivel ?? 'casual'
+  const gondoleroNivel = (profileData as { nivel: string; distri_id: string | null } | null)?.nivel ?? 'casual'
+  const gondoleroDistriId = (profileData as { nivel: string; distri_id: string | null } | null)?.distri_id ?? null
 
   const yaUnido        = participacion?.estado === 'activa'
   const participacionAnteriorEstado = (
@@ -117,8 +120,11 @@ export default async function CampanaDetallePage({
 
   const dias         = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
   const progreso     = calcularPorcentaje(c.comercios_relevados, c.objetivo_comercios ?? 0)
-  const marcaNombre  = c.marca?.razon_social ?? 'GondolApp'
   const bloques      = [...(c.bloques_foto ?? [])].sort((a, b) => a.orden - b.orden)
+
+  // Badge de creador
+  const esMiDistri = !!(c.distri_id && gondoleroDistriId && c.distri_id === gondoleroDistriId)
+  const esGondolApp = c.financiada_por === 'gondolapp' || (!c.distri_id && !c.marca_id)
 
   // Restricciones de acceso
   const nivelMinimo       = c.nivel_minimo ?? 'casual'
@@ -152,9 +158,16 @@ export default async function CampanaDetallePage({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[c.tipo]}`}>
             {labelTipoCampana(c.tipo)}
           </span>
-          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-            {marcaNombre}
-          </span>
+          {esMiDistri && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
+              📦 Tu distribuidora
+            </span>
+          )}
+          {!esMiDistri && esGondolApp && (
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+              GondolApp
+            </span>
+          )}
           {nivelMinimo !== 'casual' && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600">
               Nivel {NIVEL_LABEL[nivelMinimo]} requerido

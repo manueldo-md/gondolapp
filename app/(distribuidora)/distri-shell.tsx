@@ -19,10 +19,12 @@ export function DistriShell({
   children,
   empresa,
   hayAlertas,
+  solicitudesPendientes,
 }: {
   children: React.ReactNode
   empresa: string
   hayAlertas: boolean
+  solicitudesPendientes: number
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -62,6 +64,7 @@ export function DistriShell({
           {NAV.map(({ href, label, icon: Icon }) => {
             const activo = pathname.startsWith(href)
             const esAlertas = href === '/distribuidora/alertas'
+            const esGondoleros = href === '/distribuidora/gondoleros'
             return (
               <Link
                 key={href}
@@ -76,6 +79,13 @@ export function DistriShell({
                 {label}
                 {esAlertas && hayAlertas && (
                   <span className="ml-auto w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                )}
+                {esGondoleros && solicitudesPendientes > 0 && (
+                  <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                    activo ? 'bg-gondo-amber-400/20 text-gondo-amber-400' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {solicitudesPendientes}
+                  </span>
                 )}
               </Link>
             )

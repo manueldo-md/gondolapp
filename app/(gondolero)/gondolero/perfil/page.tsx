@@ -7,6 +7,7 @@ import { ZonasSelector } from './zonas-selector'
 import { DatosForm } from './datos-form'
 import { PasswordForm } from './password-form'
 import { LogoutButton } from './logout-button'
+import { DistriSection } from './distri-section'
 
 const NIVEL_COLOR: Record<NivelGondolero, string> = {
   casual: 'bg-gray-100 text-gray-600',
@@ -30,24 +31,59 @@ export default async function PerfilPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const [profileRes, zonasRes, gondoleroZonasRes] = await Promise.all([
+  const [profileRes, zonasRes, gondoleroZonasRes, distribuidorasRes] = await Promise.all([
     admin.from('profiles')
       .select('nombre, alias, nivel, distri_id, celular')
       .eq('id', user.id).single(),
     admin.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre'),
     admin.from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id),
+    admin.from('distribuidoras').select('id, razon_social').eq('validada', true).order('razon_social'),
   ])
 
   const profile = profileRes.data
   const todasLasZonas = zonasRes.data ?? []
   const zonasActuales = (gondoleroZonasRes.data ?? []).map((gz: { zona_id: string }) => gz.zona_id)
+  const distribuidoras = (distribuidorasRes.data ?? []) as { id: string; razon_social: string }[]
 
   // Nombre de distribuidora si está vinculado
-  let distriNombre: string | null = null
+  let distriActual: { id: string; nombre: string } | null = null
   if (profile?.distri_id) {
-    const { data: distri } = await admin
-      .from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single()
-    distriNombre = distri?.razon_social ?? null
+    const distri = distribuidoras.find(d => d.id === profile.distri_id)
+    if (distri) {
+      distriActual = { id: distri.id, nombre: distri.razon_social }
+    } else {
+      // distri no validada o no encontrada en la lista, buscar por id
+      const { data: distriData } = await admin
+        .from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single()
+      if (distriData) distriActual = { id: profile.distri_id, nombre: distriData.razon_social }
+    }
+  }
+
+  // Solicitud pendiente (si no tiene distri vinculada)
+  let solicitudPendiente: { distri_id: string; distri_nombre: string } | null = null
+  if (!profile?.distri_id) {
+    try {
+      const { data: solicitudData } = await admin
+        .from('gondolero_distri_solicitudes')
+        .select('distri_id, distri:distribuidoras(razon_social)')
+        .eq('gondolero_id', user.id)
+        .eq('estado', 'pendiente')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (solicitudData) {
+        const distriNombre = Array.isArray(solicitudData.distri)
+          ? (solicitudData.distri as { razon_social: string }[])[0]?.razon_social
+          : (solicitudData.distri as { razon_social: string } | null)?.razon_social
+        solicitudPendiente = {
+          distri_id: solicitudData.distri_id,
+          distri_nombre: distriNombre ?? 'Distribuidora',
+        }
+      }
+    } catch {
+      // Tabla puede no existir aún en la DB — ignorar
+    }
   }
 
   const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
@@ -77,8 +113,8 @@ export default async function PerfilPage() {
             {profile?.alias && (
               <p className="text-sm text-gray-400">@{profile.alias}</p>
             )}
-            {distriNombre && (
-              <p className="text-xs text-gray-400 mt-0.5 truncate">🚛 {distriNombre}</p>
+            {distriActual && (
+              <p className="text-xs text-gray-400 mt-0.5 truncate">🚛 {distriActual.nombre}</p>
             )}
           </div>
         </div>
@@ -95,6 +131,13 @@ export default async function PerfilPage() {
             />
           </div>
         )}
+
+        {/* ── Mi distribuidora ── */}
+        <DistriSection
+          distriActual={distriActual}
+          distribuidoras={distribuidoras}
+          solicitudPendiente={solicitudPendiente}
+        />
 
         {/* ── Mis datos ── */}
         <div className="bg-white rounded-2xl border border-gray-200 p-4">

@@ -20,6 +20,7 @@ export interface CampanaCardData {
   nombre: string
   tipo: TipoCampana
   marca_id: string | null
+  distri_id: string | null
   financiada_por: string
   puntos_por_foto: number
   fecha_fin: string | null
@@ -59,16 +60,17 @@ function CampanaCard({
   campana,
   participacionEstado,
   gondoleroNivel,
+  gondoleroDistriId,
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
   gondoleroNivel: string
+  gondoleroDistriId: string | null
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
   const progreso = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
   const cantBloques = campana.bloques_foto.length
-  const marcaNombre = campana.marca?.razon_social ?? 'GondolApp'
   const nueva = !participando && (Date.now() - new Date(campana.created_at).getTime() < SIETE_DIAS_MS)
   const nivelMinimo = campana.nivel_minimo ?? 'casual'
   const nivelOk = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
@@ -78,6 +80,10 @@ function CampanaCard({
     campana.comercios_relevados / campana.tope_total_comercios > 0.8
   const diasInscripcion = campana.fecha_limite_inscripcion ? diasRestantes(campana.fecha_limite_inscripcion) : null
   const inscripcionProntoCierra = diasInscripcion !== null && diasInscripcion >= 0 && diasInscripcion <= 3
+
+  // Badge de creador — solo mostrar si es mi distribuidora o GondolApp
+  const esMiDistri = !!(campana.distri_id && gondoleroDistriId && campana.distri_id === gondoleroDistriId)
+  const esGondolApp = campana.financiada_por === 'gondolapp' || (!campana.distri_id && !campana.marca_id)
 
   return (
     <div className={`rounded-2xl shadow-sm border overflow-hidden transition-transform duration-100 active:scale-[0.98] ${
@@ -89,9 +95,16 @@ function CampanaCard({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[campana.tipo]}`}>
             {labelTipoCampana(campana.tipo)}
           </span>
-          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-            {marcaNombre}
-          </span>
+          {esMiDistri && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
+              📦 Tu distribuidora
+            </span>
+          )}
+          {!esMiDistri && esGondolApp && (
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+              GondolApp
+            </span>
+          )}
           {participando && (
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
               <CheckCircle2 size={10} />
@@ -271,12 +284,14 @@ export function CampanasSections({
   completadas,
   disponibles,
   gondoleroNivel,
+  gondoleroDistriId,
   participacionRecord,
 }: {
   activas: CampanaCardData[]
   completadas: CampanaCardData[]
   disponibles: CampanaCardData[]
   gondoleroNivel: string
+  gondoleroDistriId: string | null
   participacionRecord: Record<string, 'activa' | 'completada' | 'abandonada'>
 }) {
   const hayAlgo = activas.length + completadas.length + disponibles.length > 0
@@ -312,6 +327,7 @@ export function CampanasSections({
               campana={c}
               participacionEstado="activa"
               gondoleroNivel={gondoleroNivel}
+              gondoleroDistriId={gondoleroDistriId}
             />
           ))}
         </Seccion>
@@ -332,6 +348,7 @@ export function CampanasSections({
               campana={c}
               participacionEstado={participacionRecord[c.id]}
               gondoleroNivel={gondoleroNivel}
+              gondoleroDistriId={gondoleroDistriId}
             />
           ))}
         </Seccion>
@@ -352,6 +369,7 @@ export function CampanasSections({
               campana={c}
               participacionEstado="completada"
               gondoleroNivel={gondoleroNivel}
+              gondoleroDistriId={gondoleroDistriId}
             />
           ))}
         </Seccion>

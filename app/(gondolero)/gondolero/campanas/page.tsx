@@ -31,7 +31,7 @@ export default async function CampanasPage() {
       .in('estado', ['activa', 'completada', 'abandonada']),
     supabase
       .from('profiles')
-      .select('nivel')
+      .select('nivel, distri_id')
       .eq('id', user.id)
       .single(),
   ])
@@ -43,13 +43,14 @@ export default async function CampanasPage() {
       participacionMap.set(p.campana_id, p.estado as 'activa' | 'completada' | 'abandonada')
     }
   }
-  const gondoleroNivel = (profileRes.data as { nivel: string } | null)?.nivel ?? 'casual'
+  const gondoleroNivel = (profileRes.data as { nivel: string; distri_id: string | null } | null)?.nivel ?? 'casual'
+  const gondoleroDistriId = (profileRes.data as { nivel: string; distri_id: string | null } | null)?.distri_id ?? null
   const campanaIdsActivas = new Set([...participacionMap.entries()].filter(([, e]) => e === 'activa').map(([id]) => id))
 
   let query = supabase
     .from('campanas')
     .select(`
-      id, nombre, tipo, marca_id, financiada_por,
+      id, nombre, tipo, marca_id, distri_id, financiada_por,
       puntos_por_foto, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
       tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
       nivel_minimo, es_abierta, created_at,
@@ -131,6 +132,7 @@ export default async function CampanasPage() {
           completadas={completadas}
           disponibles={disponibles}
           gondoleroNivel={gondoleroNivel}
+          gondoleroDistriId={gondoleroDistriId}
           participacionRecord={participacionRecord}
         />
       </div>

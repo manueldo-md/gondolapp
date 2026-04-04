@@ -28,6 +28,7 @@ export default async function DistriLayout({
 
   let empresa = 'Mi distribuidora'
   let hayAlertas = false
+  let solicitudesPendientesCount = 0
 
   if (profile.distri_id) {
     const admin = createAdminClient(
@@ -41,6 +42,17 @@ export default async function DistriLayout({
       admin.from('profiles').select('id').eq('distri_id', profile.distri_id).eq('tipo_actor', 'gondolero'),
     ])
     if (distri?.razon_social) empresa = distri.razon_social
+
+    try {
+      const solicitudesRes = await admin
+        .from('gondolero_distri_solicitudes')
+        .select('*', { count: 'exact', head: true })
+        .eq('distri_id', profile.distri_id)
+        .eq('estado', 'pendiente')
+      solicitudesPendientesCount = solicitudesRes.count ?? 0
+    } catch {
+      // Tabla puede no existir aún en la DB — ignorar
+    }
 
     const gondIds = (gondRows ?? []).map((g: { id: string }) => g.id)
     if (gondIds.length > 0) {
@@ -56,5 +68,13 @@ export default async function DistriLayout({
     }
   }
 
-  return <DistriShell empresa={empresa} hayAlertas={hayAlertas}>{children}</DistriShell>
+  return (
+    <DistriShell
+      empresa={empresa}
+      hayAlertas={hayAlertas}
+      solicitudesPendientes={solicitudesPendientesCount}
+    >
+      {children}
+    </DistriShell>
+  )
 }
