@@ -23,17 +23,39 @@ export async function generarLinkInvitacionMarca(
 
   const admin = adminClient()
 
+  // Verificar marca_id del perfil del usuario (seguridad + diagnóstico)
+  const { data: profile, error: profileError } = await admin
+    .from('profiles')
+    .select('marca_id')
+    .eq('id', user.id)
+    .single()
+
+  console.log('[generarLink] user.id:', user.id)
+  console.log('[generarLink] profile:', profile)
+  console.log('[generarLink] profileError:', profileError)
+  console.log('[generarLink] marcaId (param):', marcaId)
+
+  if (!profile?.marca_id) {
+    console.error('[generarLink] marca_id es null en el perfil del usuario')
+    return { error: 'Tu perfil no tiene una marca vinculada. Contactá al administrador.' }
+  }
+
+  // Usar siempre el marca_id del perfil, no el parámetro del cliente
+  const marcaIdSeguro = profile.marca_id
+
   const token = crypto.randomUUID().replace(/-/g, '').substring(0, 24)
   const expiraAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
   const { error } = await admin.from('marca_distri_tokens').insert({
     token,
     iniciado_por: 'marca',
-    marca_id: marcaId,
+    marca_id: marcaIdSeguro,
     expira_at: expiraAt,
   })
 
-  if (error) return { error: 'No se pudo generar el link' }
+  console.log('[generarLink] insert error:', error)
+
+  if (error) return { error: `No se pudo generar el link: ${error.message}` }
 
   const link = `${process.env.NEXT_PUBLIC_APP_URL}/vinculacion-marca?token=${token}`
   return { link }

@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Link2, Loader2, Check, Copy } from 'lucide-react'
 import { generarLinkInvitacionDistri } from './actions'
+import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 
 interface Props {
   distriId: string
@@ -45,7 +46,10 @@ export function InvitarMarcaPanel({ distriId, distriNombre }: Props) {
       <p className="text-xs text-gray-500 mb-4">Generá un link de invitación para enviar a una marca. Válido por 7 días.</p>
 
       {error && (
-        <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">{error}</p>
+        <div className="bg-red-50 px-3 py-2 rounded-lg mb-3">
+          <p className="text-xs text-red-600">{error}</p>
+          <BotonReportarError errorTecnico={error} contexto="distribuidora/marcas — generarLinkInvitacion" />
+        </div>
       )}
 
       {!link ? (

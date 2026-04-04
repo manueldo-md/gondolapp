@@ -33,7 +33,10 @@ export async function generarLinkInvitacionDistri(
     expira_at: expiraAt,
   })
 
-  if (error) return { error: 'No se pudo generar el link' }
+  console.log('[generarLinkDistri] distriId:', distriId)
+  console.log('[generarLinkDistri] insert error:', error)
+
+  if (error) return { error: `No se pudo generar el link: ${error.message}` }
 
   const link = `${process.env.NEXT_PUBLIC_APP_URL}/vinculacion-marca?token=${token}`
   return { link }
