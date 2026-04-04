@@ -213,12 +213,21 @@ export async function crearUsuario(payload: {
   if (authError) return { error: authError.message }
 
   // Asegurarse que el profile quede bien (por si el trigger no corrió aún)
-  await admin.from('profiles').update({
+  const profileUpdate: Record<string, unknown> = {
     tipo_actor: payload.tipo_actor,
     nombre: payload.nombre,
     distri_id: distriId,
     marca_id: marcaId,
-  }).eq('id', authData.user.id)
+  }
+
+  // Generar código personal para gondoleros
+  if (payload.tipo_actor === 'gondolero') {
+    const prefix = payload.nombre.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase() || 'GOND'
+    const suffix = Math.floor(Math.random() * 9999).toString().padStart(4, '0')
+    profileUpdate.codigo_gondolero = `${prefix}-${suffix}`
+  }
+
+  await admin.from('profiles').update(profileUpdate).eq('id', authData.user.id)
 
   revalidatePath('/admin/usuarios')
   revalidatePath('/admin/marcas')

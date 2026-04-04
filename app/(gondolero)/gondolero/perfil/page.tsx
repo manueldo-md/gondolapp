@@ -138,12 +138,8 @@ export default async function PerfilPage() {
           </ColapsableSection>
         )}
 
-        {/* ── Mi código de gondolero ── */}
-        {profile?.codigo_gondolero && (
-          <CodigoGondolero codigo={profile.codigo_gondolero} />
-        )}
-
-        {/* ── Mis distribuidoras — colapsable, cerrada por defecto ── */}
+        {/* ── Mi distribuidora — colapsable, cerrada por defecto ── */}
+        {/* Incluye código personal siempre (aunque sea null) */}
         <ColapsableSection
           title={distrisActivas.length > 1 ? 'Mis distribuidoras' : 'Mi distribuidora'}
           badge={
@@ -156,6 +152,7 @@ export default async function PerfilPage() {
           badgeColor={invitacionesPendientes.length > 0 ? 'red' : 'verde'}
           defaultOpen={false}
         >
+          <CodigoGondolero codigo={profile?.codigo_gondolero ?? null} />
           <DistriSection
             distrisActivas={distrisActivas}
             solicitudPendiente={solicitudPendiente}
