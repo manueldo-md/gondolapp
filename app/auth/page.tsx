@@ -8,6 +8,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { schemaLogin, schemaRegistro, type LoginForm, type RegistroForm } from '@/lib/validations'
 import type { TipoActor } from '@/types'
+import { generarAlias } from '@/lib/aliases'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,16 @@ function AuthContent() {
     setCargando(true)
     setError(null)
 
+    // Para gondoleros: generar alias único antes de crear la cuenta
+    let alias: string | null = null
+    if (data.tipo_actor === 'gondolero') {
+      try {
+        alias = await generarAlias(supabase)
+      } catch {
+        // Si falla la generación del alias, continuar sin él — se puede asignar después
+      }
+    }
+
     const { data: signUpData, error: err } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
@@ -117,6 +128,7 @@ function AuthContent() {
         data: {
           tipo_actor: data.tipo_actor,
           nombre: data.nombre,
+          alias: alias,
           celular: data.celular || null,
           distri_id: data.distri_id || null,
         },

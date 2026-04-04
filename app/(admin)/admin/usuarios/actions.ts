@@ -5,6 +5,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoActor } from '@/types'
+import { generarAlias } from '@/lib/aliases'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -116,6 +117,43 @@ export async function editarPerfilAdmin(
 
   revalidatePath('/admin/usuarios')
   return {}
+}
+
+/**
+ * Asigna alias únicos a todos los gondoleros que aún no tienen uno.
+ * Retorna la cantidad de aliases asignados.
+ */
+export async function asignarAliasExistentes(): Promise<{ asignados: number; error?: string }> {
+  const admin = await getAdmin()
+
+  // Obtener todos los gondoleros sin alias
+  const { data: gondoleros, error } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('tipo_actor', 'gondolero')
+    .is('alias', null)
+
+  if (error) return { asignados: 0, error: error.message }
+  if (!gondoleros || gondoleros.length === 0) return { asignados: 0 }
+
+  let asignados = 0
+
+  // Asignar alias a cada gondolero secuencialmente para garantizar unicidad
+  for (const gondolero of gondoleros) {
+    try {
+      const alias = await generarAlias(admin)
+      const { error: updateError } = await admin
+        .from('profiles')
+        .update({ alias })
+        .eq('id', gondolero.id)
+      if (!updateError) asignados++
+    } catch {
+      // Continuar con el siguiente si falla uno
+    }
+  }
+
+  revalidatePath('/admin/usuarios')
+  return { asignados }
 }
 
 export async function eliminarUsuario(userId: string): Promise<{ error?: string }> {

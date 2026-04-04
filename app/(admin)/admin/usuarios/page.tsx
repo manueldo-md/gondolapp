@@ -3,6 +3,7 @@ import { tiempoRelativo } from '@/lib/utils'
 import type { TipoActor } from '@/types'
 import { NuevoUsuarioModal } from './nuevo-usuario-modal'
 import { AccionesUsuario } from './acciones-usuario'
+import { AsignarAliasBtn } from './asignar-alias-btn'
 
 function adminClient() {
   return createAdminClient(
@@ -37,7 +38,7 @@ export default async function UsuariosPage({
   let query = admin
     .from('profiles')
     .select(`
-      id, nombre, celular, tipo_actor, nivel, puntos_disponibles, created_at, distri_id, marca_id,
+      id, nombre, alias, celular, tipo_actor, nivel, puntos_disponibles, created_at, distri_id, marca_id,
       distri:distribuidoras(razon_social, cuit),
       marca:marcas(razon_social, cuit)
     `)
@@ -97,10 +98,13 @@ export default async function UsuariosPage({
           <h1 className="text-xl font-bold text-gray-900">Usuarios</h1>
           <p className="text-sm text-gray-500 mt-0.5">{lista.length} usuarios</p>
         </div>
-        <NuevoUsuarioModal
+        <div className="flex items-center gap-2">
+          <AsignarAliasBtn />
+          <NuevoUsuarioModal
           distribuidoras={(distribuidoras ?? []) as { id: string; razon_social: string }[]}
           marcas={(marcas ?? []) as { id: string; razon_social: string }[]}
         />
+        </div>
       </div>
 
       {/* Filtros */}
@@ -125,7 +129,7 @@ export default async function UsuariosPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Nombre', 'Email', 'Tipo', 'Nivel', 'Vinculado a', 'Estado', 'Registro', 'Acciones'].map(h => (
+                {['Nombre', 'Alias', 'Email', 'Tipo', 'Nivel', 'Vinculado a', 'Estado', 'Registro', 'Acciones'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>
@@ -137,6 +141,15 @@ export default async function UsuariosPage({
                 <tr key={u.id} className={`hover:bg-gray-50 transition-colors ${!u.activo ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
                     {u.nombre ?? '—'}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {u.alias ? (
+                      <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded-lg">
+                        {u.alias}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{u.email}</td>
                   <td className="px-4 py-3">

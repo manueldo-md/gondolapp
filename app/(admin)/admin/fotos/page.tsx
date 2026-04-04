@@ -21,7 +21,7 @@ export default async function FotosAdminPage({
     .from('fotos')
     .select(`
       id, url, storage_path, estado, declaracion, puntos_otorgados, precio_detectado, precio_confirmado, created_at,
-      gondolero:profiles!gondolero_id(nombre),
+      gondolero:profiles!gondolero_id(nombre, alias),
       comercio:comercios(nombre),
       campana:campanas(nombre)
     `)
@@ -66,7 +66,9 @@ export default async function FotosAdminPage({
     id:              f.id,
     estado:          f.estado,
     signedUrl:       signedMap[f.id] ?? null,
-    gondoleroNombre: Array.isArray(f.gondolero) ? f.gondolero[0]?.nombre : f.gondolero?.nombre,
+    gondoleroNombre: Array.isArray(f.gondolero)
+      ? (f.gondolero[0]?.alias ?? f.gondolero[0]?.nombre)
+      : (f.gondolero?.alias ?? f.gondolero?.nombre),
     comercioNombre:  Array.isArray(f.comercio)  ? f.comercio[0]?.nombre  : f.comercio?.nombre,
     campanaNombre:   Array.isArray(f.campana)   ? f.campana[0]?.nombre   : f.campana?.nombre,
     createdAt:       f.created_at,
