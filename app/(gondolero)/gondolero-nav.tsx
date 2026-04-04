@@ -2,17 +2,21 @@
 
 import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutGrid, CheckSquare, BarChart2, User } from 'lucide-react'
+import { LayoutGrid, CheckSquare, BarChart2, Trophy, User } from 'lucide-react'
 
 const TABS = [
   { href: '/gondolero/campanas',  label: 'Campañas',  icon: LayoutGrid  },
   { href: '/gondolero/misiones',  label: 'Misiones',  icon: CheckSquare },
   { href: '/gondolero/actividad', label: 'Actividad', icon: BarChart2   },
+  { href: '/gondolero/logros',    label: 'Logros',    icon: Trophy      },
   { href: '/gondolero/perfil',    label: 'Perfil',    icon: User        },
 ]
 
 function NavItem({
-  href, label, icon: Icon, activo, esActividad, unreadCount, enCaptura,
+  href, label, icon: Icon, activo,
+  esActividad, unreadCount,
+  esLogros, unreadLogrosCount,
+  enCaptura,
 }: {
   href: string
   label: string
@@ -20,6 +24,8 @@ function NavItem({
   activo: boolean
   esActividad: boolean
   unreadCount: number
+  esLogros: boolean
+  unreadLogrosCount: number
   enCaptura: boolean
 }) {
   const router = useRouter()
@@ -46,6 +52,11 @@ function NavItem({
           {esActividad && unreadCount > 0 && (
             <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
               {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+          {esLogros && unreadLogrosCount > 0 && (
+            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+              {unreadLogrosCount > 9 ? '9+' : unreadLogrosCount}
             </span>
           )}
         </div>
@@ -85,7 +96,13 @@ function NavItem({
   )
 }
 
-export function GondoleroNav({ unreadCount }: { unreadCount: number }) {
+export function GondoleroNav({
+  unreadCount,
+  unreadLogrosCount,
+}: {
+  unreadCount: number
+  unreadLogrosCount: number
+}) {
   const pathname = usePathname()
   const enCaptura = pathname.includes('/captura')
 
@@ -101,6 +118,8 @@ export function GondoleroNav({ unreadCount }: { unreadCount: number }) {
             activo={pathname.startsWith(href)}
             esActividad={href === '/gondolero/actividad'}
             unreadCount={unreadCount}
+            esLogros={href === '/gondolero/logros'}
+            unreadLogrosCount={unreadLogrosCount}
             enCaptura={enCaptura}
           />
         ))}

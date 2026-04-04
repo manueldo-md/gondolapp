@@ -11,19 +11,29 @@ export default async function GondoleroLayout({
   children: React.ReactNode
 }) {
   let unreadCount = 0
+  let unreadLogrosCount = 0
+
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { count } = await supabase
-        .from('notificaciones')
-        .select('*', { count: 'exact', head: true })
-        .eq('gondolero_id', user.id)
-        .eq('leida', false)
-      unreadCount = count ?? 0
+      const [notifRes, logrosRes] = await Promise.all([
+        supabase
+          .from('notificaciones')
+          .select('*', { count: 'exact', head: true })
+          .eq('gondolero_id', user.id)
+          .eq('leida', false),
+        supabase
+          .from('gondolero_logros')
+          .select('*', { count: 'exact', head: true })
+          .eq('gondolero_id', user.id)
+          .eq('visto', false),
+      ])
+      unreadCount = notifRes.count ?? 0
+      unreadLogrosCount = logrosRes.count ?? 0
     }
   } catch {
-    // Sin conexión o Supabase no disponible — continuar con defaults
+    // Sin conexión o tabla no existe aún — continuar con defaults
   }
 
   return (
@@ -36,7 +46,7 @@ export default async function GondoleroLayout({
           {children}
         </main>
       </OfflineDetector>
-      <GondoleroNav unreadCount={unreadCount} />
+      <GondoleroNav unreadCount={unreadCount} unreadLogrosCount={unreadLogrosCount} />
     </div>
   )
 }
