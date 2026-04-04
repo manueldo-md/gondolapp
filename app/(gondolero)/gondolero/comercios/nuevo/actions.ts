@@ -79,31 +79,32 @@ export async function crearComercio(formData: FormData) {
   }
 
   // Subir foto de fachada si está presente
-  // Bucket requerido: 'fotos-fachada' (crear en Supabase Storage Dashboard si no existe)
   const fotoFachada = formData.get('foto_fachada') as File | null
   if (fotoFachada && fotoFachada.size > 0) {
     try {
       const arrayBuffer = await fotoFachada.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
-      const path = `fachadas/${comercio.id}.jpg`
+      const storagePath = `fachadas/${comercio.id}.jpg`
 
       const { data: uploadData, error: uploadError } = await admin.storage
         .from('fotos-gondola')
-        .upload(path, buffer, {
-          contentType: 'image/jpeg',
-          upsert: true,
-        })
+        .upload(storagePath, buffer, { contentType: 'image/jpeg', upsert: true })
 
-      if (!uploadError && uploadData?.path) {
-        await admin
+      console.log('[fachada] upload result — path:', uploadData?.path, 'error:', uploadError?.message ?? null)
+
+      if (!uploadError) {
+        // Usar el path confirmado por Storage; si viene null (edge case), usar el path construido
+        const pathAGuardar = uploadData?.path ?? storagePath
+        const { error: updateError } = await admin
           .from('comercios')
-          .update({ foto_fachada_url: uploadData.path })
+          .update({ foto_fachada_url: pathAGuardar })
           .eq('id', comercio.id)
-      } else if (uploadError) {
-        console.error('Error subiendo fachada:', uploadError.message)
+        console.log('[fachada] DB update — path guardado:', pathAGuardar, 'error:', updateError?.message ?? null)
+      } else {
+        console.error('[fachada] Error subiendo a Storage:', uploadError.message)
       }
     } catch (e) {
-      console.error('Excepción subiendo fachada:', e)
+      console.error('[fachada] Excepción:', e)
       // No bloquear el flujo si la foto falla
     }
   }
