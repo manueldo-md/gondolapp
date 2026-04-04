@@ -28,13 +28,29 @@ export default async function DashboardPage() {
   const distriId = profile?.distri_id
   if (!distriId) redirect('/auth')
 
-  // Gondolero IDs for this distri
+  // Gondoleros actuales
   const { data: gondoleroRows } = await admin
     .from('profiles')
     .select('id')
     .eq('distri_id', distriId)
     .eq('tipo_actor', 'gondolero')
   const gondoleroIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
+
+  // Gondoleros históricos (alguna vez vinculados)
+  const { data: historialRows } = await admin
+    .from('gondolero_distri_solicitudes')
+    .select('gondolero_id')
+    .eq('distri_id', distriId)
+    .eq('estado', 'aprobada')
+  const gondoleroActualesSet = new Set(gondoleroIds)
+  const historicosIds = (historialRows ?? [])
+    .map((s: { gondolero_id: string }) => s.gondolero_id)
+    .filter(id => !gondoleroActualesSet.has(id))
+
+  // IDs combinados — nunca vacío (NULL_UUID evita IN() vacío en PostgREST)
+  const NULL_UUID = '00000000-0000-0000-0000-000000000000'
+  const todosIds = [...gondoleroIds, ...historicosIds]
+  const safeIds  = todosIds.length > 0 ? todosIds : [NULL_UUID]
 
   // Date helpers
   const hoyInicio = new Date()
@@ -45,41 +61,36 @@ export default async function DashboardPage() {
   const tresMasAdelante = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
 
   // ── Métricas ──────────────────────────────────────────────────────────────
-  let fotasHoy     = 0
-  let fotasPend    = 0
-  let gondActHoy   = 0
-  let comSemana    = 0
   const fotasHoyPorCampana = new Map<string, number>()
 
-  if (gondoleroIds.length > 0) {
-    const [
-      { count: fHoy },
-      { count: fPend },
-      { data: fHoyDet },
-      { data: fSem },
-    ] = await Promise.all([
-      admin.from('fotos').select('*', { count: 'exact', head: true })
-        .in('gondolero_id', gondoleroIds)
-        .gte('created_at', hoyInicio.toISOString()),
-      admin.from('fotos').select('*', { count: 'exact', head: true })
-        .in('gondolero_id', gondoleroIds)
-        .eq('estado', 'pendiente'),
-      admin.from('fotos').select('gondolero_id, campana_id')
-        .in('gondolero_id', gondoleroIds)
-        .gte('created_at', hoyInicio.toISOString()),
-      admin.from('fotos').select('comercio_id')
-        .in('gondolero_id', gondoleroIds)
-        .gte('created_at', semanaAtras.toISOString()),
-    ])
-    fotasHoy   = fHoy ?? 0
-    fotasPend  = fPend ?? 0
-    gondActHoy = new Set((fHoyDet ?? []).map((f: { gondolero_id: string }) => f.gondolero_id)).size
-    comSemana  = new Set((fSem ?? []).map((f: { comercio_id: string }) => f.comercio_id)).size
-    for (const f of fHoyDet ?? []) {
-      const fo = f as { gondolero_id: string; campana_id: string | null }
-      if (fo.campana_id) {
-        fotasHoyPorCampana.set(fo.campana_id, (fotasHoyPorCampana.get(fo.campana_id) ?? 0) + 1)
-      }
+  const [
+    { count: fotasHoyCount },
+    { count: fotasPendCount },
+    { data: fHoyDet },
+    { data: fSem },
+  ] = await Promise.all([
+    admin.from('fotos').select('*', { count: 'exact', head: true })
+      .in('gondolero_id', safeIds)
+      .gte('created_at', hoyInicio.toISOString()),
+    admin.from('fotos').select('*', { count: 'exact', head: true })
+      .in('gondolero_id', safeIds)
+      .eq('estado', 'pendiente'),
+    admin.from('fotos').select('gondolero_id, campana_id')
+      .in('gondolero_id', safeIds)
+      .gte('created_at', hoyInicio.toISOString()),
+    admin.from('fotos').select('comercio_id')
+      .in('gondolero_id', safeIds)
+      .gte('created_at', semanaAtras.toISOString()),
+  ])
+
+  const fotasHoy   = fotasHoyCount ?? 0
+  const fotasPend  = fotasPendCount ?? 0
+  const gondActHoy = new Set((fHoyDet ?? []).map((f: { gondolero_id: string }) => f.gondolero_id)).size
+  const comSemana  = new Set((fSem ?? []).map((f: { comercio_id: string }) => f.comercio_id)).size
+  for (const f of fHoyDet ?? []) {
+    const fo = f as { gondolero_id: string; campana_id: string | null }
+    if (fo.campana_id) {
+      fotasHoyPorCampana.set(fo.campana_id, (fotasHoyPorCampana.get(fo.campana_id) ?? 0) + 1)
     }
   }
 
@@ -96,32 +107,33 @@ export default async function DashboardPage() {
   const alertasPreview: { tipo: string; descripcion: string; href: string }[] = []
   let alertasTotal = 0
 
-  if (gondoleroIds.length > 0) {
-    const { data: qRaw } = await admin
-      .from('fotos')
-      .select('comercio_id, comercios(nombre)')
-      .in('gondolero_id', gondoleroIds)
-      .eq('declaracion', 'producto_no_encontrado')
-      .eq('estado', 'aprobada')
-      .gte('created_at', sieteAtras.toISOString())
+  // Quiebres de stock — usa safeIds (actuales + históricos)
+  const { data: qRaw } = await admin
+    .from('fotos')
+    .select('comercio_id, comercios(nombre)')
+    .in('gondolero_id', safeIds)
+    .eq('declaracion', 'producto_no_encontrado')
+    .eq('estado', 'aprobada')
+    .gte('created_at', sieteAtras.toISOString())
 
-    const vistos = new Set<string>()
-    for (const f of qRaw ?? []) {
-      const fo = f as unknown as { comercio_id: string; comercios: { nombre: string } | null }
-      if (!vistos.has(fo.comercio_id)) {
-        vistos.add(fo.comercio_id)
-        alertasTotal++
-        if (alertasPreview.length < 3) {
-          alertasPreview.push({
-            tipo: '🔴 Quiebre de stock',
-            descripcion: fo.comercios?.nombre ?? 'Comercio',
-            href: `/distribuidora/gondolas?comercio_id=${fo.comercio_id}&declaracion=producto_no_encontrado`,
-          })
-        }
+  const vistos = new Set<string>()
+  for (const f of qRaw ?? []) {
+    const fo = f as unknown as { comercio_id: string; comercios: { nombre: string } | null }
+    if (!vistos.has(fo.comercio_id)) {
+      vistos.add(fo.comercio_id)
+      alertasTotal++
+      if (alertasPreview.length < 3) {
+        alertasPreview.push({
+          tipo: '🔴 Quiebre de stock',
+          descripcion: fo.comercios?.nombre ?? 'Comercio',
+          href: `/distribuidora/gondolas?comercio_id=${fo.comercio_id}&declaracion=producto_no_encontrado`,
+        })
       }
     }
+  }
 
-    // Gondoleros inactivos
+  // Gondoleros inactivos — solo actuales (alertar por desvinculados no tiene sentido)
+  if (gondoleroIds.length > 0) {
     const { data: gondActivos } = await admin
       .from('fotos').select('gondolero_id')
       .in('gondolero_id', gondoleroIds)
