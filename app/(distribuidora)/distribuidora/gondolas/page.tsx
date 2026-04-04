@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { CheckCircle2, Clock, MapPin, User, X, Info } from 'lucide-react'
 import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
+import { getGondolerosDeDistri } from '@/lib/utils-distri'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { GondolasTabs } from './gondolas-tabs'
@@ -178,49 +179,19 @@ export default async function GondolasPage({
   const distriId = profile?.distri_id ?? null
   console.log('[gondolas] distriId:', distriId)
 
-  // Opción B: fotos visibles = campañas propias (siempre) + gondoleros vinculados (activos o históricos)
-  // Las fotos de campañas propias se ven aunque el gondolero se haya desvinculado después.
-  // Las fotos de gondoleros que alguna vez estuvieron vinculados también se mantienen visibles.
+  // Nuevo modelo: fotos visibles = campañas propias AND gondoleros vinculados (activos + históricos)
+  // Cada distri solo ve fotos en sus propias campañas, de sus propios gondoleros.
+  const gondoleroIds = await getGondolerosDeDistri(distriId ?? '', admin, true) // aprobada + terminada
 
-  // Gondoleros actualmente vinculados a esta distribuidora
-  const { data: gondoleroRows } = await admin
-    .from('profiles')
-    .select('id, nombre, alias')
-    .eq('distri_id', distriId ?? '')
-
-  const gondoleroActualesIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
-  console.log('[gondolas] gondoleroIds actuales:', gondoleroActualesIds)
-
-  // Gondoleros históricos: alguna vez vinculados (solicitud aprobada), ahora desvinculados
-  const { data: historialSolicitudes, error: histError } = await admin
-    .from('gondolero_distri_solicitudes')
-    .select('gondolero_id')
-    .eq('distri_id', distriId ?? '')
-    .eq('estado', 'aprobada')
-
-  console.log('[gondolas] históricos de solicitudes:', historialSolicitudes)
-  console.log('[gondolas] histError:', histError)
-
-  const historialIds = (historialSolicitudes ?? [])
-    .map((s: { gondolero_id: string }) => s.gondolero_id)
-    .filter(id => !gondoleroActualesIds.includes(id))
-
-  // Perfiles de gondoleros históricos (para el filtro de archivo)
-  let gondoleroHistoricosRows: { id: string; nombre: string | null; alias: string | null }[] = []
-  if (historialIds.length > 0) {
-    const { data: histProfiles } = await admin
+  // Perfiles de gondoleros para el filtro desplegable
+  let todosGondoleroRows: { id: string; nombre: string | null; alias: string | null }[] = []
+  if (gondoleroIds.length > 0) {
+    const { data: gondoleroProfiles } = await admin
       .from('profiles')
       .select('id, nombre, alias')
-      .in('id', historialIds)
-    gondoleroHistoricosRows = (histProfiles ?? []) as { id: string; nombre: string | null; alias: string | null }[]
+      .in('id', gondoleroIds)
+    todosGondoleroRows = (gondoleroProfiles ?? []) as { id: string; nombre: string | null; alias: string | null }[]
   }
-
-  // IDs combinados: activos + históricos
-  const gondoleroIds = [...gondoleroActualesIds, ...historialIds]
-  console.log('[gondolas] gondoleroIds históricos (nuevos):', historialIds)
-  console.log('[gondolas] todos gondoleroIds:', gondoleroIds)
-  // Todos los rows para el filtro desplegable
-  const todosGondoleroRows = [...(gondoleroRows ?? []), ...gondoleroHistoricosRows]
 
   // Campañas propias de esta distribuidora
   const { data: campanasDistri } = await admin
@@ -271,12 +242,8 @@ export default async function GondolasPage({
   const safeGondoleroIds = gondoleroIds.length > 0 ? gondoleroIds : [NULL_UUID]
   const safeCampanaIds   = campanaIds.length   > 0 ? campanaIds   : [NULL_UUID]
 
-  // OR de visibilidad: gondoleros (activos + históricos) OR campañas propias
-  const orVisibilidad = `gondolero_id.in.(${safeGondoleroIds.join(',')}),campana_id.in.(${safeCampanaIds.join(',')})`
-
-  console.log('[gondolas] safeGondoleroIds:', safeGondoleroIds)
-  console.log('[gondolas] safeCampanaIds:', safeCampanaIds)
-
+  // AND de visibilidad: campañas propias AND gondoleros vinculados
+  // Cada distri solo ve fotos en sus campañas, de sus gondoleros.
   let query = admin
     .from('fotos')
     .select(`
@@ -286,7 +253,8 @@ export default async function GondolasPage({
       campana:campanas    ( nombre, tipo ),
       bloque:bloques_foto ( instruccion )
     `)
-    .or(orVisibilidad)   // ← restricción de distri aplicada siempre primero
+    .in('campana_id',   safeCampanaIds)    // ← campañas propias
+    .in('gondolero_id', safeGondoleroIds)  // ← gondoleros vinculados (AND)
     .order('created_at', { ascending: false })
     .limit(150)
 
@@ -314,7 +282,8 @@ export default async function GondolasPage({
     .from('fotos')
     .select('*', { count: 'exact', head: true })
     .eq('estado', 'pendiente')
-    .or(orVisibilidad)
+    .in('campana_id',   safeCampanaIds)
+    .in('gondolero_id', safeGondoleroIds)
 
   // Generar URLs firmadas para el bucket privado
   const fotos: FotoPendiente[] = await Promise.all(

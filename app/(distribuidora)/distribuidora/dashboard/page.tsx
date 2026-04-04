@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Camera, Clock, Users, Store, ChevronRight } from 'lucide-react'
 import { diasRestantes, calcularPorcentaje } from '@/lib/utils'
+import { getGondolerosDeDistri } from '@/lib/utils-distri'
 
 function makeAdmin() {
   return createAdminClient(
@@ -28,29 +29,13 @@ export default async function DashboardPage() {
   const distriId = profile?.distri_id
   if (!distriId) redirect('/auth')
 
-  // Gondoleros actuales
-  const { data: gondoleroRows } = await admin
-    .from('profiles')
-    .select('id')
-    .eq('distri_id', distriId)
-    .eq('tipo_actor', 'gondolero')
-  const gondoleroIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
-
-  // Gondoleros históricos (alguna vez vinculados)
-  const { data: historialRows } = await admin
-    .from('gondolero_distri_solicitudes')
-    .select('gondolero_id')
-    .eq('distri_id', distriId)
-    .eq('estado', 'aprobada')
-  const gondoleroActualesSet = new Set(gondoleroIds)
-  const historicosIds = (historialRows ?? [])
-    .map((s: { gondolero_id: string }) => s.gondolero_id)
-    .filter(id => !gondoleroActualesSet.has(id))
-
-  // IDs combinados — nunca vacío (NULL_UUID evita IN() vacío en PostgREST)
+  // Gondoleros activos y históricos desde solicitudes (nuevo modelo multi-distri)
   const NULL_UUID = '00000000-0000-0000-0000-000000000000'
-  const todosIds = [...gondoleroIds, ...historicosIds]
-  const safeIds  = todosIds.length > 0 ? todosIds : [NULL_UUID]
+  const [gondoleroIds, todosIds] = await Promise.all([
+    getGondolerosDeDistri(distriId, admin, false), // solo aprobada
+    getGondolerosDeDistri(distriId, admin, true),  // aprobada + terminada
+  ])
+  const safeIds = todosIds.length > 0 ? todosIds : [NULL_UUID]
 
   // Date helpers
   const hoyInicio = new Date()

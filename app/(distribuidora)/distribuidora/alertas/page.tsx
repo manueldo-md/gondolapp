@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { PackageX, Store, Megaphone, UserX } from 'lucide-react'
 import { diasRestantes, calcularPorcentaje, tiempoRelativo } from '@/lib/utils'
+import { getGondolerosDeDistri } from '@/lib/utils-distri'
 import { IgnorarAlertaBoton } from './ignorar-alerta-boton'
 import { AlertasEnPausa } from './alertas-en-pausa'
 import type { AlertaIgnoradaConNombre } from './alertas-en-pausa'
@@ -31,26 +32,11 @@ export default async function AlertasPage() {
   const distriId = profile?.distri_id
   if (!distriId) redirect('/auth')
 
-  const { data: gondoleroRows } = await admin
-    .from('profiles')
-    .select('id, nombre, alias')
-    .eq('distri_id', distriId)
-    .eq('tipo_actor', 'gondolero')
-  const gondoleroIds = (gondoleroRows ?? []).map((g: { id: string }) => g.id)
-
-  // Gondoleros históricos: alguna vez vinculados (para quiebres y sin_visita)
-  // Los "inactivos" usan solo gondoleroIds (actuales) — no tiene sentido alertar por desvinculados
-  const { data: historialSol } = await admin
-    .from('gondolero_distri_solicitudes')
-    .select('gondolero_id')
-    .eq('distri_id', distriId)
-    .eq('estado', 'aprobada')
-  const gondoleroActualesSet = new Set(gondoleroIds)
-  const historicosIds = (historialSol ?? [])
-    .map((s: { gondolero_id: string }) => s.gondolero_id)
-    .filter(id => !gondoleroActualesSet.has(id))
-  // IDs para fotos históricas (quiebres y sin visita)
-  const todosGondoleroIds = [...gondoleroIds, ...historicosIds]
+  // Gondoleros activos y históricos desde solicitudes (nuevo modelo multi-distri)
+  const [gondoleroIds, todosGondoleroIds] = await Promise.all([
+    getGondolerosDeDistri(distriId, admin, false), // solo aprobada — para alertas de inactividad
+    getGondolerosDeDistri(distriId, admin, true),  // aprobada + terminada — para quiebres e historial
+  ])
 
   // Date helpers
   const sieteAtras       = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000)
@@ -215,7 +201,13 @@ export default async function AlertasPage() {
       .gte('created_at', catorceDiasAtras.toISOString())
     const activoSet = new Set((gondActivos ?? []).map((f: { gondolero_id: string }) => f.gondolero_id))
 
-    const inactivoProfiles = (gondoleroRows ?? []).filter(
+    // Obtener perfiles de gondoleros actuales para el nombre/alias
+    const { data: gondoleroProfiles } = await admin
+      .from('profiles')
+      .select('id, nombre, alias')
+      .in('id', gondoleroIds)
+
+    const inactivoProfiles = (gondoleroProfiles ?? []).filter(
       (g: { id: string }) => !activoSet.has(g.id) && !esIgnorada('gondolero_inactivo', g.id)
     ) as { id: string; nombre: string; alias: string | null }[]
 

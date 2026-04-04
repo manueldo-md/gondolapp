@@ -4,6 +4,12 @@ import { useState, useTransition } from 'react'
 import { Loader2, Truck, CheckCircle2 } from 'lucide-react'
 import { desvincularseDeDistri, aceptarVinculacionDistri, rechazarVinculacionDistri } from './distri-actions'
 
+interface DistriActiva {
+  solicitudId: string
+  distri_id: string
+  distri_nombre: string
+}
+
 interface Invitacion {
   id: string
   distri_id: string
@@ -11,17 +17,18 @@ interface Invitacion {
 }
 
 interface DistriSectionProps {
-  distriActual: { id: string; nombre: string } | null
+  distrisActivas: DistriActiva[]
   solicitudPendiente: { distri_id: string; distri_nombre: string } | null
   invitacionesPendientes: Invitacion[]
   gondoleroId: string
 }
 
-export function DistriSection({ distriActual, solicitudPendiente, invitacionesPendientes, gondoleroId }: DistriSectionProps) {
+export function DistriSection({ distrisActivas: initialDistrisActivas, solicitudPendiente, invitacionesPendientes: initialInvitaciones, gondoleroId }: DistriSectionProps) {
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [confirmarDesvincular, setConfirmarDesvincular] = useState(false)
-  const [invitaciones, setInvitaciones] = useState<Invitacion[]>(invitacionesPendientes)
+  const [confirmDesvincular, setConfirmDesvincular] = useState<string | null>(null) // distri_id confirmando
+  const [distrisActivas, setDistrisActivas] = useState<DistriActiva[]>(initialDistrisActivas)
+  const [invitaciones, setInvitaciones] = useState<Invitacion[]>(initialInvitaciones)
   const [procesandoId, setProcesandoId] = useState<string | null>(null)
 
   const showFeedback = (ok: boolean, msg: string) => {
@@ -29,14 +36,17 @@ export function DistriSection({ distriActual, solicitudPendiente, invitacionesPe
     if (ok) setTimeout(() => setFeedback(null), 4000)
   }
 
-  const handleDesvincular = () => {
+  const handleDesvincular = (distri: DistriActiva) => {
+    setProcesandoId(distri.distri_id)
     startTransition(async () => {
-      const res = await desvincularseDeDistri()
+      const res = await desvincularseDeDistri(distri.distri_id)
+      setProcesandoId(null)
       if (res.error) {
         showFeedback(false, res.error)
       } else {
-        setConfirmarDesvincular(false)
-        showFeedback(true, 'Te desvinculaste correctamente')
+        setConfirmDesvincular(null)
+        setDistrisActivas(prev => prev.filter(d => d.distri_id !== distri.distri_id))
+        showFeedback(true, `Te desvinculaste de ${distri.distri_nombre}`)
       }
     })
   }
@@ -50,6 +60,7 @@ export function DistriSection({ distriActual, solicitudPendiente, invitacionesPe
         showFeedback(false, res.error)
       } else {
         setInvitaciones(prev => prev.filter(i => i.id !== inv.id))
+        setDistrisActivas(prev => [...prev, { solicitudId: inv.id, distri_id: inv.distri_id, distri_nombre: inv.distri_nombre }])
         showFeedback(true, `¡Vinculado a ${inv.distri_nombre}!`)
       }
     })
@@ -73,7 +84,9 @@ export function DistriSection({ distriActual, solicitudPendiente, invitacionesPe
     <div className="bg-white rounded-2xl border border-gray-200 p-4">
       <div className="flex items-center gap-2 mb-3">
         <Truck size={16} className="text-gondo-amber-400" />
-        <h2 className="text-sm font-semibold text-gray-700">Mi distribuidora</h2>
+        <h2 className="text-sm font-semibold text-gray-700">
+          {distrisActivas.length > 1 ? 'Mis distribuidoras' : 'Mi distribuidora'}
+        </h2>
         {invitaciones.length > 0 && (
           <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500 text-white">
             {invitaciones.length}
@@ -111,55 +124,58 @@ export function DistriSection({ distriActual, solicitudPendiente, invitacionesPe
         </div>
       )}
 
-      {/* ── Vinculado ── */}
-      {distriActual ? (
+      {/* ── Distribuidoras activas ── */}
+      {distrisActivas.length > 0 ? (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 size={15} className="text-green-500 shrink-0" />
-              <span className="text-sm font-medium text-gray-800">{distriActual.nombre}</span>
-            </div>
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-600">
-              Vinculado ✓
-            </span>
-          </div>
-
-          {!confirmarDesvincular ? (
-            <button
-              onClick={() => setConfirmarDesvincular(true)}
-              disabled={isPending}
-              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-            >
-              Desvincularme
-            </button>
-          ) : (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
-              <p className="text-xs text-red-700 font-medium mb-2">
-                ¿Confirmás que querés desvincularte de {distriActual.nombre}?
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setConfirmarDesvincular(false)}
-                  disabled={isPending}
-                  className="flex-1 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleDesvincular}
-                  disabled={isPending}
-                  className="flex-1 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-1"
-                >
-                  {isPending ? <Loader2 size={12} className="animate-spin" /> : 'Desvincularme'}
-                </button>
+          {distrisActivas.map(distri => (
+            <div key={distri.distri_id} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-green-500 shrink-0" />
+                  <span className="text-sm font-medium text-gray-800">{distri.distri_nombre}</span>
+                </div>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-600">
+                  Vinculado ✓
+                </span>
               </div>
+
+              {confirmDesvincular !== distri.distri_id ? (
+                <button
+                  onClick={() => setConfirmDesvincular(distri.distri_id)}
+                  disabled={isPending}
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  Desvincularme
+                </button>
+              ) : (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                  <p className="text-xs text-red-700 font-medium mb-2">
+                    ¿Confirmás que querés desvincularte de {distri.distri_nombre}?
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmDesvincular(null)}
+                      disabled={procesandoId === distri.distri_id}
+                      className="flex-1 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => handleDesvincular(distri)}
+                      disabled={procesandoId === distri.distri_id}
+                      className="flex-1 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-1"
+                    >
+                      {procesandoId === distri.distri_id ? <Loader2 size={12} className="animate-spin" /> : 'Desvincularme'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       ) : (
         /* ── Sin distri ── */
         <div className="space-y-3">
-          {/* Solicitud propia pendiente */}
           {solicitudPendiente ? (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
               <p className="text-xs font-semibold text-amber-800 mb-0.5">⏳ Solicitud pendiente</p>

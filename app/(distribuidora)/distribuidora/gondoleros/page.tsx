@@ -72,42 +72,39 @@ export default async function GondolerosPage({
     if (distriData?.razon_social) distriNombre = distriData.razon_social
   }
 
-  // Gondoleros actualmente vinculados
-  const gondolerosActualesData = distriId
-    ? await admin
-        .from('profiles')
-        .select('id, nombre, alias, nivel, activo, created_at')
-        .eq('tipo_actor', 'gondolero')
-        .eq('distri_id', distriId)
-        .order('created_at', { ascending: false })
-    : { data: null }
-  const gondolerosActuales = (gondolerosActualesData.data as GondoleroRow[] | null) ?? []
-  const actualesIds = new Set(gondolerosActuales.map(g => g.id))
-
-  // Gondoleros históricos: alguna vez aprobados, ahora desvinculados
-  let gondolerosHistoricos: GondoleroRow[] = []
+  // Nuevo modelo multi-distri: fuente de verdad = gondolero_distri_solicitudes
+  // Activos = estado 'aprobada', históricos = estado 'terminada'
+  let actualesIds: string[] = []
+  let historicosIds: string[] = []
   if (distriId) {
-    const { data: histSol } = await admin
-      .from('gondolero_distri_solicitudes')
-      .select('gondolero_id')
-      .eq('distri_id', distriId)
-      .eq('estado', 'aprobada')
+    const [actSol, histSol] = await Promise.all([
+      admin.from('gondolero_distri_solicitudes').select('gondolero_id').eq('distri_id', distriId).eq('estado', 'aprobada'),
+      admin.from('gondolero_distri_solicitudes').select('gondolero_id').eq('distri_id', distriId).eq('estado', 'terminada'),
+    ])
+    actualesIds  = (actSol.data  ?? []).map((s: { gondolero_id: string }) => s.gondolero_id)
+    historicosIds = (histSol.data ?? []).map((s: { gondolero_id: string }) => s.gondolero_id)
+  }
 
-    const historicosIds = (histSol ?? [])
-      .map((s: { gondolero_id: string }) => s.gondolero_id)
-      .filter(id => !actualesIds.has(id))
-
-    if (historicosIds.length > 0) {
-      const { data: histProfiles } = await admin
-        .from('profiles')
-        .select('id, nombre, alias, nivel, activo, created_at')
-        .in('id', historicosIds)
-        .order('created_at', { ascending: false })
-      gondolerosHistoricos = (histProfiles as GondoleroRow[] | null) ?? []
+  // Fetch profiles en una sola query
+  const allIds = [...actualesIds, ...historicosIds]
+  let gondolerosActuales: GondoleroRow[]   = []
+  let gondolerosHistoricos: GondoleroRow[] = []
+  if (allIds.length > 0) {
+    const { data: profilesData } = await admin
+      .from('profiles')
+      .select('id, nombre, alias, nivel, activo, created_at')
+      .in('id', allIds)
+      .order('created_at', { ascending: false })
+    const actualesSet  = new Set(actualesIds)
+    const historicosSet = new Set(historicosIds)
+    for (const p of (profilesData ?? []) as GondoleroRow[]) {
+      if (actualesSet.has(p.id))   gondolerosActuales.push(p)
+      else if (historicosSet.has(p.id)) gondolerosHistoricos.push(p)
     }
   }
 
-  // Lista combinada: actuales primero, luego históricos desvinculados
+  // Lista combinada: activos primero, luego históricos desvinculados
+  const actualesIdSet = new Set(actualesIds)
   const gondoleros: GondoleroRow[] = [...gondolerosActuales, ...gondolerosHistoricos]
 
   // Stats de fotos
@@ -136,7 +133,7 @@ export default async function GondolerosPage({
       totalFotos: stats.total,
       fotosAprobadas: stats.aprobadas,
       tasaAprobacion: tasa,
-      vinculadoActual: actualesIds.has(g.id),
+      vinculadoActual: actualesIdSet.has(g.id),
     }
   })
 

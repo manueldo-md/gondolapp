@@ -62,19 +62,19 @@ export async function aceptarVinculacionDistri(
 
   const admin = adminClient()
 
-  // Vincular el gondolero a la distribuidora
+  // Marcar solicitud como aprobada (fuente de verdad en nuevo modelo)
   const { error } = await admin
-    .from('profiles')
-    .update({ distri_id: distriId })
-    .eq('id', gondoleroId)
-
-  if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
-
-  // Marcar solicitud como aprobada
-  await admin
     .from('gondolero_distri_solicitudes')
     .update({ estado: 'aprobada', updated_at: new Date().toISOString() })
     .eq('id', solicitudId)
+
+  if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
+
+  // Actualizar profiles.distri_id solo si no tiene ninguna distri principal aún
+  const { data: profile } = await admin.from('profiles').select('distri_id').eq('id', gondoleroId).single()
+  if (!profile?.distri_id) {
+    await admin.from('profiles').update({ distri_id: distriId }).eq('id', gondoleroId)
+  }
 
   revalidatePath('/gondolero/perfil')
   return {}
@@ -98,38 +98,36 @@ export async function rechazarVinculacionDistri(
   return {}
 }
 
-export async function desvincularseDeDistri(): Promise<{ error?: string }> {
+export async function desvincularseDeDistri(distriId: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
   const admin = adminClient()
 
-  // Obtener distri_id actual antes de desvincularse (para guardar historial)
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('distri_id')
-    .eq('id', user.id)
-    .single()
-
-  const antiguoDistriId = profile?.distri_id ?? null
-
-  // Asegurar registro histórico antes de desvincular
-  if (antiguoDistriId) {
-    await admin
-      .from('gondolero_distri_solicitudes')
-      .upsert(
-        { gondolero_id: user.id, distri_id: antiguoDistriId, estado: 'aprobada', updated_at: new Date().toISOString() },
-        { onConflict: 'gondolero_id,distri_id' }
-      )
-  }
-
+  // Marcar la vinculación como terminada (histórico permanente)
   const { error } = await admin
-    .from('profiles')
-    .update({ distri_id: null })
-    .eq('id', user.id)
+    .from('gondolero_distri_solicitudes')
+    .update({ estado: 'terminada', updated_at: new Date().toISOString() })
+    .eq('gondolero_id', user.id)
+    .eq('distri_id', distriId)
 
   if (error) return { error: 'No se pudo desvincular. Intentá de nuevo.' }
+
+  // Si esta era la distri principal, asignar otra activa como principal (o null)
+  const { data: profile } = await admin.from('profiles').select('distri_id').eq('id', user.id).single()
+  if (profile?.distri_id === distriId) {
+    const { data: otraDistri } = await admin
+      .from('gondolero_distri_solicitudes')
+      .select('distri_id')
+      .eq('gondolero_id', user.id)
+      .eq('estado', 'aprobada')
+      .neq('distri_id', distriId)
+      .limit(1)
+      .maybeSingle()
+
+    await admin.from('profiles').update({ distri_id: otraDistri?.distri_id ?? null }).eq('id', user.id)
+  }
 
   revalidatePath('/gondolero/perfil')
   return {}

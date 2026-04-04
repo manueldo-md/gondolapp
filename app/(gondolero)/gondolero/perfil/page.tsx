@@ -44,40 +44,47 @@ export default async function PerfilPage() {
   const todasLasZonas = zonasRes.data ?? []
   const zonasActuales = (gondoleroZonasRes.data ?? []).map((gz: { zona_id: string }) => gz.zona_id)
 
-  // Nombre de distribuidora si está vinculado
-  let distriActual: { id: string; nombre: string } | null = null
-  if (profile?.distri_id) {
-    const { data: distriData } = await admin
-      .from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single()
-    if (distriData) distriActual = { id: profile.distri_id, nombre: distriData.razon_social }
-  }
-
-  // Solicitud pendiente propia (gondolero solicitó a la distri) y invitaciones de la distri
+  // Distribuidoras activas (muchas a muchas, fuente = solicitudes estado='aprobada')
+  let distrisActivas: { solicitudId: string; distri_id: string; distri_nombre: string }[] = []
   let solicitudPendiente: { distri_id: string; distri_nombre: string } | null = null
   let invitacionesPendientes: { id: string; distri_id: string; distri_nombre: string }[] = []
   try {
     const { data: solicitudesData } = await admin
       .from('gondolero_distri_solicitudes')
-      .select('id, distri_id, iniciado_por, distri:distribuidoras(razon_social)')
+      .select('id, distri_id, estado, iniciado_por, distri:distribuidoras(razon_social)')
       .eq('gondolero_id', user.id)
-      .eq('estado', 'pendiente')
+      .in('estado', ['aprobada', 'pendiente'])
       .order('created_at', { ascending: false })
 
     for (const s of solicitudesData ?? []) {
-      const sd = s as { id: string; distri_id: string; iniciado_por: string | null; distri: { razon_social: string } | { razon_social: string }[] | null }
+      const sd = s as { id: string; distri_id: string; estado: string; iniciado_por: string | null; distri: { razon_social: string } | { razon_social: string }[] | null }
       const distriNombre = Array.isArray(sd.distri)
         ? (sd.distri as { razon_social: string }[])[0]?.razon_social
         : (sd.distri as { razon_social: string } | null)?.razon_social
       const nombre = distriNombre ?? 'Distribuidora'
 
-      if (sd.iniciado_por === 'distri') {
-        invitacionesPendientes.push({ id: sd.id, distri_id: sd.distri_id, distri_nombre: nombre })
-      } else if (!profile?.distri_id && !solicitudPendiente) {
-        solicitudPendiente = { distri_id: sd.distri_id, distri_nombre: nombre }
+      if (sd.estado === 'aprobada') {
+        distrisActivas.push({ solicitudId: sd.id, distri_id: sd.distri_id, distri_nombre: nombre })
+      } else if (sd.estado === 'pendiente') {
+        if (sd.iniciado_por === 'distri') {
+          invitacionesPendientes.push({ id: sd.id, distri_id: sd.distri_id, distri_nombre: nombre })
+        } else if (!solicitudPendiente) {
+          solicitudPendiente = { distri_id: sd.distri_id, distri_nombre: nombre }
+        }
       }
     }
   } catch {
     // Tabla puede no existir aún en la DB — ignorar
+  }
+
+  // Nombre de la distri principal (profiles.distri_id) para el header
+  let distriPrincipalNombre: string | null = null
+  if (profile?.distri_id) {
+    const found = distrisActivas.find(d => d.distri_id === profile.distri_id)
+    distriPrincipalNombre = found?.distri_nombre ?? null
+    if (!distriPrincipalNombre && distrisActivas.length > 0) {
+      distriPrincipalNombre = distrisActivas[0].distri_nombre
+    }
   }
 
   const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
@@ -107,8 +114,8 @@ export default async function PerfilPage() {
             {profile?.alias && (
               <p className="text-sm text-gray-400">@{profile.alias}</p>
             )}
-            {distriActual && (
-              <p className="text-xs text-gray-400 mt-0.5 truncate">🚛 {distriActual.nombre}</p>
+            {distriPrincipalNombre && (
+              <p className="text-xs text-gray-400 mt-0.5 truncate">🚛 {distriPrincipalNombre}{distrisActivas.length > 1 ? ` +${distrisActivas.length - 1}` : ''}</p>
             )}
           </div>
         </div>
@@ -131,9 +138,9 @@ export default async function PerfilPage() {
           <CodigoGondolero codigo={profile.codigo_gondolero} />
         )}
 
-        {/* ── Mi distribuidora ── */}
+        {/* ── Mis distribuidoras ── */}
         <DistriSection
-          distriActual={distriActual}
+          distrisActivas={distrisActivas}
           solicitudPendiente={solicitudPendiente}
           invitacionesPendientes={invitacionesPendientes}
           gondoleroId={user.id}
