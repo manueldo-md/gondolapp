@@ -88,7 +88,7 @@ export async function crearComercio(formData: FormData) {
       const path = `fachadas/${comercio.id}.jpg`
 
       const { error: uploadError } = await admin.storage
-        .from('fotos-fachada')
+        .from('fotos-gondola')
         .upload(path, buffer, {
           contentType: 'image/jpeg',
           upsert: true,

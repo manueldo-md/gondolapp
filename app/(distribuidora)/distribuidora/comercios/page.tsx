@@ -115,10 +115,9 @@ export default async function ComerciosPage() {
   if (conFachada.length > 0) {
     await Promise.all(
       conFachada.map(async (c) => {
-        const path = c.foto_fachada_url!
-        // Las fachadas subidas por gondoleros van al bucket 'fotos-gondola' bajo ruta 'fachadas/'
-        const bucket = path.startsWith('fachadas/') ? 'fotos-gondola' : 'fotos-fachada'
-        const { data } = await admin.storage.from(bucket).createSignedUrl(path, 3600)
+        const { data } = await admin.storage
+          .from('fotos-gondola')
+          .createSignedUrl(c.foto_fachada_url!, 3600)
         if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
       })
     )

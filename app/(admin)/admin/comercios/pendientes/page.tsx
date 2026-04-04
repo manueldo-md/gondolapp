@@ -74,21 +74,10 @@ export default async function ComerciosPendientesPage() {
   if (conFachada.length > 0) {
     await Promise.all(
       conFachada.map(async (c: { id: string; foto_fachada_url: string }) => {
-        // Intentar desde fotos-gondola primero (nuevo flujo), luego fotos-fachada (flujo viejo)
-        let signedUrl: string | null = null
-        if (c.foto_fachada_url.startsWith('fachadas/')) {
-          const { data } = await admin.storage
-            .from('fotos-gondola')
-            .createSignedUrl(c.foto_fachada_url, 3600)
-          signedUrl = data?.signedUrl ?? null
-        }
-        if (!signedUrl) {
-          const { data } = await admin.storage
-            .from('fotos-fachada')
-            .createSignedUrl(c.foto_fachada_url, 3600)
-          signedUrl = data?.signedUrl ?? null
-        }
-        if (signedUrl) fachadasSignedMap[c.id] = signedUrl
+        const { data } = await admin.storage
+          .from('fotos-gondola')
+          .createSignedUrl(c.foto_fachada_url, 3600)
+        if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
       })
     )
   }
