@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Trophy } from 'lucide-react'
-import { calcularPorcentaje } from '@/lib/utils'
 import type { NivelGondolero } from '@/types'
 import { getConfig } from '@/lib/config'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
@@ -26,7 +25,7 @@ const NIVEL_COLOR_BG: Record<NivelGondolero, string> = {
   activo: 'bg-gondo-indigo-50 text-gondo-indigo-600 border-gondo-indigo-100',
   pro:    'bg-amber-50 text-amber-600 border-amber-200',
 }
-const NIVEL_SIGUIENTE: Record<NivelGondolero, string> = {
+const NIVEL_SIGUIENTE_LABEL: Record<NivelGondolero, string> = {
   casual: 'Activo',
   activo: 'Pro',
   pro:    '',
@@ -112,28 +111,54 @@ export default async function LogrosPage() {
     (comerciosRes.data ?? []).map((f: { comercio_id: string | null }) => f.comercio_id).filter(Boolean)
   ).size
 
-  // ── Nivel y progreso ──────────────────────────────────────────────────────
-  const nivel = (profile?.nivel ?? 'casual') as NivelGondolero
-  const puntosDisponibles = profile?.puntos_disponibles ?? 0
+  // ── Nivel real (corrige DB desactualizada) ────────────────────────────────
+  const puntosDisponibles  = profile?.puntos_disponibles ?? 0
   const fotosCasualAActivo = config.niveles.fotosCasualAActivo
   const fotosActivoAPro    = config.niveles.fotosActivoAPro
 
-  const NIVEL_UMBRAL: Record<NivelGondolero, number | null> = {
-    casual: fotosCasualAActivo,
-    activo: fotosActivoAPro,
-    pro:    null,
+  let nivelReal: NivelGondolero = (profile?.nivel ?? 'casual') as NivelGondolero
+  if (fotosAprobadas >= fotosActivoAPro) {
+    nivelReal = 'pro'
+  } else if (fotosAprobadas >= fotosCasualAActivo) {
+    nivelReal = 'activo'
   }
-  const umbralAnterior: Record<NivelGondolero, number> = {
-    casual: 0,
-    activo: fotosCasualAActivo,
-    pro:    fotosActivoAPro,
+
+  // Actualizar DB si está desactualizado (fire-and-forget)
+  if (profile && nivelReal !== profile.nivel) {
+    admin.from('profiles').update({ nivel: nivelReal }).eq('id', user.id)
   }
-  const umbralSiguiente = NIVEL_UMBRAL[nivel]
-  const base = umbralAnterior[nivel]
-  const progreso = umbralSiguiente
-    ? calcularPorcentaje(fotosAprobadas - base, umbralSiguiente - base)
+
+  const nivel = nivelReal   // alias para el resto del componente
+
+  // ── Progreso de 3 nodos ───────────────────────────────────────────────────
+  const fotasParaSiguiente = nivel === 'casual'
+    ? Math.max(0, fotosCasualAActivo - fotosAprobadas)
+    : nivel === 'activo'
+      ? Math.max(0, fotosActivoAPro - fotosAprobadas)
+      : 0
+
+  // Porcentaje de cada segmento de la barra lineal
+  const linea1Pct = nivel === 'casual'
+    ? Math.min(100, Math.round((fotosAprobadas / fotosCasualAActivo) * 100))
     : 100
-  const fotasParaSiguiente = umbralSiguiente ? Math.max(0, umbralSiguiente - fotosAprobadas) : 0
+
+  const linea2Pct = nivel === 'casual'
+    ? 0
+    : nivel === 'activo'
+      ? Math.min(100, Math.round(
+          ((fotosAprobadas - fotosCasualAActivo) / (fotosActivoAPro - fotosCasualAActivo)) * 100
+        ))
+      : 100
+
+  // Label debajo de cada línea
+  const linea1Label = nivel === 'casual'
+    ? `${fotosAprobadas}/${fotosCasualAActivo}`
+    : '✓'
+  const linea2Label = nivel === 'activo'
+    ? `${fotosAprobadas - fotosCasualAActivo}/${fotosActivoAPro - fotosCasualAActivo}`
+    : nivel === 'pro'
+      ? '✓'
+      : `0/${fotosActivoAPro - fotosCasualAActivo}`
 
   const inicial = (profile?.alias ?? profile?.nombre ?? 'G').charAt(0).toUpperCase()
   const nombreMostrar = profile?.alias ?? profile?.nombre ?? 'Gondolero'
@@ -270,7 +295,7 @@ export default async function LogrosPage() {
           </div>
 
           {/* Puntos */}
-          <div className="mb-4">
+          <div className="mb-5">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">
               Puntos disponibles
             </p>
@@ -279,33 +304,97 @@ export default async function LogrosPage() {
             </p>
           </div>
 
-          {/* Barra de progreso */}
-          {umbralSiguiente ? (
-            <div>
-              <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
-                <span className="font-medium">{NIVEL_LABEL[nivel]}</span>
-                <span>
-                  {NIVEL_SIGUIENTE[nivel]} —{' '}
-                  {fotasParaSiguiente > 0
-                    ? `${fotasParaSiguiente} fotos para el siguiente nivel`
-                    : '¡Nivel alcanzado!'
-                  }
+          {/* ── Barra de progreso lineal con 3 nodos ── */}
+          <div>
+            <div className="flex items-start">
+
+              {/* Nodo 1: Casual */}
+              <div className="flex flex-col items-center shrink-0 w-10">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base border-2 ${
+                  nivel === 'casual'
+                    ? 'bg-gondo-verde-400 border-gondo-verde-400 text-white animate-pulse'
+                    : 'bg-gondo-verde-400 border-gondo-verde-400 text-white'
+                }`}>
+                  {nivel === 'casual' ? '🌱' : '✓'}
+                </div>
+                <span className="text-[10px] font-semibold text-gray-500 mt-1 text-center leading-tight">Casual</span>
+              </div>
+
+              {/* Línea 1 */}
+              <div className="flex-1 flex flex-col justify-start pt-[17px] px-1">
+                <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gondo-verde-400 rounded-full transition-all duration-500"
+                    style={{ width: `${linea1Pct}%` }}
+                  />
+                </div>
+                <span className={`text-[10px] mt-0.5 text-center font-medium ${linea1Pct === 100 ? 'text-gondo-verde-600' : 'text-gray-400'}`}>
+                  {linea1Label}
                 </span>
               </div>
-              <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gondo-verde-400 rounded-full transition-all"
-                  style={{ width: `${progreso}%` }}
-                />
+
+              {/* Nodo 2: Activo */}
+              <div className="flex flex-col items-center shrink-0 w-10">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base border-2 ${
+                  nivel === 'activo'
+                    ? 'bg-gondo-verde-400 border-gondo-verde-400 text-white animate-pulse'
+                    : nivel === 'pro'
+                      ? 'bg-gondo-verde-400 border-gondo-verde-400 text-white'
+                      : 'bg-gray-100 border-gray-200 text-gray-400'
+                }`}>
+                  {nivel === 'activo' ? '⚡' : nivel === 'pro' ? '✓' : '⚡'}
+                </div>
+                <span className={`text-[10px] font-semibold mt-1 text-center leading-tight ${nivel !== 'casual' ? 'text-gray-700' : 'text-gray-400'}`}>
+                  Activo
+                </span>
               </div>
-              <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                <span>{base}</span>
-                <span>{umbralSiguiente} fotos</span>
+
+              {/* Línea 2 */}
+              <div className="flex-1 flex flex-col justify-start pt-[17px] px-1">
+                <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gondo-verde-400 rounded-full transition-all duration-500"
+                    style={{ width: `${linea2Pct}%` }}
+                  />
+                </div>
+                <span className={`text-[10px] mt-0.5 text-center font-medium ${linea2Pct === 100 ? 'text-gondo-verde-600' : 'text-gray-400'}`}>
+                  {linea2Label}
+                </span>
               </div>
+
+              {/* Nodo 3: Pro */}
+              <div className="flex flex-col items-center shrink-0 w-10">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base border-2 ${
+                  nivel === 'pro'
+                    ? 'bg-amber-400 border-amber-400 text-white animate-pulse'
+                    : 'bg-gray-100 border-gray-200 text-gray-400'
+                }`}>
+                  🏆
+                </div>
+                <span className={`text-[10px] font-semibold mt-1 text-center leading-tight ${nivel === 'pro' ? 'text-amber-600' : 'text-gray-400'}`}>
+                  Pro
+                </span>
+              </div>
+
             </div>
-          ) : (
-            <p className="text-sm text-amber-600 font-semibold">⭐ Nivel máximo alcanzado</p>
-          )}
+
+            {/* Mensaje debajo */}
+            <p className="text-xs text-center mt-3 font-medium text-gray-600">
+              {nivel === 'casual' && (
+                fotasParaSiguiente > 0
+                  ? `Te faltan ${fotasParaSiguiente} fotos para llegar a ${NIVEL_SIGUIENTE_LABEL[nivel]}`
+                  : `¡Nivel ${NIVEL_SIGUIENTE_LABEL[nivel]} alcanzado!`
+              )}
+              {nivel === 'activo' && (
+                fotasParaSiguiente > 0
+                  ? `Te faltan ${fotasParaSiguiente} fotos para llegar a Pro`
+                  : '¡Nivel Pro alcanzado!'
+              )}
+              {nivel === 'pro' && (
+                <span className="text-amber-600">¡Nivel máximo alcanzado! Sos una leyenda del canal. 🌟</span>
+              )}
+            </p>
+          </div>
         </div>
 
         {/* ── SECCIÓN 2 — Estadísticas 2×2 ── */}
