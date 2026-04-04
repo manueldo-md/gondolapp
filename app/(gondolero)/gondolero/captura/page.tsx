@@ -20,6 +20,7 @@ import {
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
 import { registrarFoto, subirFoto, asegurarBloqueGenerico, obtenerConfigCompresion } from './actions'
 import { crearComercioNuevo, subirFotoFachada } from './actions-comercios'
+import { registrarChecksGPS } from './actions-checks'
 import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 import type { TipoComercio } from '@/types'
@@ -563,6 +564,7 @@ function CapturaContent() {
   const [cmComercioYaExiste,  setCmComercioYaExiste]  = useState<ComercioRow | null>(null)
   const cmFachadaInputRef    = useRef<HTMLInputElement>(null)
   const cmBusquedaHechaRef   = useRef(false)
+  const gpsCheckHechoRef     = useRef(false)
 
   // Cargar config de compresión al montar
   useEffect(() => {
@@ -736,10 +738,26 @@ function CapturaContent() {
 
   // Iniciar GPS al llegar al paso GPS
   useEffect(() => {
-    if (paso === 'gps') gps.solicitar()
+    if (paso === 'gps') {
+      gps.solicitar()
+      gpsCheckHechoRef.current = false  // Resetear al entrar al paso
+    }
     return () => { if (paso !== 'gps') gps.detener() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso])
+
+  // Check GPS silencioso para validación automática de comercios pendientes cercanos
+  useEffect(() => {
+    if (paso !== 'gps') return
+    if (gps.estado !== 'activo' || !gps.posicion) return
+    if (gpsCheckHechoRef.current) return
+
+    gpsCheckHechoRef.current = true
+    const { lat, lng } = gps.posicion
+    // Fire-and-forget: no interrumpe el flujo del gondolero
+    registrarChecksGPS({ lat, lng }).catch(() => { /* silencioso */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso, gps.estado, gps.posicion?.lat, gps.posicion?.lng])
 
   // Para campañas tipo 'comercios': al llegar al paso 'gps' o al elegir el comercio,
   // redirigir al flujo especial 'comercios-gps'

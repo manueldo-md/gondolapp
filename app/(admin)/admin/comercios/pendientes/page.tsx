@@ -54,6 +54,20 @@ export default async function ComerciosPendientesPage() {
     campana_nombre:     Array.isArray(c.campana)     ? c.campana[0]?.nombre     : c.campana?.nombre,
   }))
 
+  // Conteo de checks GPS por comercio
+  const comercioIds = comercios.map((c: { id: string }) => c.id)
+  const checksCountMap: Record<string, number> = {}
+  if (comercioIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: checksData } = await (admin as any)
+      .from('comercios_checks')
+      .select('comercio_id')
+      .in('comercio_id', comercioIds)
+    for (const row of ((checksData ?? []) as { comercio_id: string }[])) {
+      checksCountMap[row.comercio_id] = (checksCountMap[row.comercio_id] ?? 0) + 1
+    }
+  }
+
   // Signed URLs para fotos de fachada (desde bucket fotos-gondola, path fachadas/...)
   const fachadasSignedMap: Record<string, string> = {}
   const conFachada = comercios.filter((c: { foto_fachada_url: string | null }) => c.foto_fachada_url)
@@ -133,7 +147,7 @@ export default async function ComerciosPendientesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Comercio', 'Tipo', 'Campaña', 'Gondolero', 'Fecha', 'Acciones'].map(h => (
+                  {['Comercio', 'Tipo', 'Campaña', 'Gondolero', 'Checks', 'Fecha', 'Acciones'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -201,6 +215,22 @@ export default async function ComerciosPendientesPage() {
                     {/* Gondolero */}
                     <td className="px-4 py-3.5 text-xs text-gray-500">
                       {c.registrador_alias ?? c.registrador_nombre ?? '—'}
+                    </td>
+
+                    {/* Checks GPS */}
+                    <td className="px-4 py-3.5">
+                      {(() => {
+                        const n = checksCountMap[c.id] ?? 0
+                        return n > 0 ? (
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            n >= 2 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                          }`} title={`${n} check${n !== 1 ? 's' : ''} GPS de gondoleros independientes`}>
+                            📍 {n}/2
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )
+                      })()}
                     </td>
 
                     {/* Fecha */}
