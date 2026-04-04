@@ -54,29 +54,45 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
     }
   }
 
-  if (campana.financiada_por === 'marca' && campana.marca_id) {
-    const { data: misDistrisRows } = await admin
-      .from('gondolero_distri_solicitudes')
-      .select('distri_id')
-      .eq('gondolero_id', user.id)
-      .eq('estado', 'aprobada')
+  if (campana.financiada_por === 'marca') {
+    if (campana.distri_id) {
+      // Campaña ejecutada por una distri específica → el gondolero debe estar vinculado a ESA distri
+      const { data: vinculacion } = await admin
+        .from('gondolero_distri_solicitudes')
+        .select('id')
+        .eq('gondolero_id', user.id)
+        .eq('distri_id', campana.distri_id)
+        .eq('estado', 'aprobada')
+        .maybeSingle()
 
-    const misDistriIds = (misDistrisRows ?? []).map(d => (d as { distri_id: string }).distri_id)
+      if (!vinculacion) {
+        return { error: 'Esta campaña es exclusiva para gondoleros de la distribuidora que la ejecuta.' }
+      }
+    } else if (campana.marca_id) {
+      // Campaña de marca sin distri específica → cualquier distri del gondolero vinculada a esa marca
+      const { data: misDistrisRows } = await admin
+        .from('gondolero_distri_solicitudes')
+        .select('distri_id')
+        .eq('gondolero_id', user.id)
+        .eq('estado', 'aprobada')
 
-    if (misDistriIds.length === 0) {
-      return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
-    }
+      const misDistriIds = (misDistrisRows ?? []).map(d => (d as { distri_id: string }).distri_id)
 
-    const { data: relacion } = await admin
-      .from('marca_distri_relaciones')
-      .select('id')
-      .eq('marca_id', campana.marca_id)
-      .in('distri_id', misDistriIds)
-      .eq('estado', 'activa')
-      .limit(1)
+      if (misDistriIds.length === 0) {
+        return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
+      }
 
-    if (!relacion?.length) {
-      return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
+      const { data: relacion } = await admin
+        .from('marca_distri_relaciones')
+        .select('id')
+        .eq('marca_id', campana.marca_id)
+        .in('distri_id', misDistriIds)
+        .eq('estado', 'activa')
+        .limit(1)
+
+      if (!relacion?.length) {
+        return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
+      }
     }
   }
   // ── Fin validación de acceso ─────────────────────────────────────────────────

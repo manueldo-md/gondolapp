@@ -69,6 +69,9 @@ export default async function CampanasPage() {
     if (fp === 'distri') return !!c.distri_id && misDistriIds.includes(c.distri_id)
     if (fp === 'marca') {
       if (!c.marca_id) return true
+      // Si la campaña tiene distri_id → el gondolero debe estar vinculado a ESA distri específica
+      if (c.distri_id) return misDistriIds.includes(c.distri_id)
+      // Si no tiene distri_id → cualquier distri del gondolero vinculada a esa marca
       return relacionesMarcaDistri.some(r => r.marca_id === c.marca_id)
     }
     return false
