@@ -17,6 +17,7 @@ export default async function VinculacionMarcaPage({
   searchParams: { token?: string }
 }) {
   const token = searchParams.token
+  console.log('[vinculacion-marca] token:', token)
 
   if (!token) {
     return (
@@ -31,11 +32,14 @@ export default async function VinculacionMarcaPage({
   const admin = adminClient()
 
   // Validar token
-  const { data: tokenData } = await admin
+  const { data: tokenData, error: tokenError } = await admin
     .from('marca_distri_tokens')
     .select('id, token, iniciado_por, marca_id, distri_id, usado, expira_at')
     .eq('token', token)
     .single()
+
+  console.log('[vinculacion-marca] tokenData:', tokenData)
+  console.log('[vinculacion-marca] tokenError:', tokenError)
 
   if (!tokenData || tokenData.usado || new Date(tokenData.expira_at) < new Date()) {
     return (
@@ -54,6 +58,7 @@ export default async function VinculacionMarcaPage({
   // Verificar usuario autenticado
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  console.log('[vinculacion-marca] user:', user?.id ?? 'no autenticado')
 
   if (!user) {
     redirect(`/auth?redirect=/vinculacion-marca?token=${token}`)

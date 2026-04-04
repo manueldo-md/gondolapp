@@ -10,6 +10,8 @@ const RUTAS_PUBLICAS = [
   '/auth/recuperar',
   '/auth/nueva-password',
   '/offline',
+  '/vinculacion',       // Gondolero acepta invitación de distribuidora
+  '/vinculacion-marca', // Marca/distri aceptan invitación mutua
 ]
 
 // Destino por tipo de actor después del login
