@@ -137,6 +137,133 @@ export async function subirFoto(formData: FormData): Promise<{ url: string }> {
   return { url: urlData.publicUrl }
 }
 
+export interface FotoMisionInput {
+  bloqueId: string
+  storagePath: string
+  url: string
+  declaracion: 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
+  precioConfirmado: number | null
+  timestampDispositivo: string
+  blurScore: number | null
+  respuestas: { campo_id: string; valor: unknown }[]
+}
+
+export interface RegistrarMisionParams {
+  campanaId: string
+  comercioId: string
+  deviceId: string
+  lat: number
+  lng: number
+  puntosTotal: number
+  fotos: FotoMisionInput[]
+}
+
+export async function registrarMision(params: RegistrarMisionParams) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: participacion } = await (supabase as any)
+    .from('participaciones')
+    .select('id, comercios_completados')
+    .eq('campana_id', params.campanaId)
+    .eq('gondolero_id', user.id)
+    .eq('estado', 'activa')
+    .maybeSingle() as { data: { id: string; comercios_completados: number } | null }
+
+  if (!participacion) {
+    throw new Error('No tenés una participación activa en esta campaña.')
+  }
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
+  // 1. Crear la misión
+  const { data: mision, error: misionError } = await db
+    .from('misiones')
+    .insert({
+      campana_id:   params.campanaId,
+      comercio_id:  params.comercioId,
+      gondolero_id: user.id,
+      estado:       'pendiente',
+      puntos_total: params.puntosTotal,
+      bounty_estado: 'retenido',
+    })
+    .select('id')
+    .single()
+
+  if (misionError) {
+    throw new Error('No pudimos crear la misión: ' + misionError.message)
+  }
+
+  const puntosPorFoto = params.fotos.length > 0
+    ? Math.round(params.puntosTotal / params.fotos.length)
+    : 0
+
+  // 2. Insertar fotos vinculadas a la misión
+  for (const foto of params.fotos) {
+    const { data: fotoData, error: fotoError } = await db
+      .from('fotos')
+      .insert({
+        campana_id:            params.campanaId,
+        bloque_id:             foto.bloqueId,
+        gondolero_id:          user.id,
+        comercio_id:           params.comercioId,
+        mision_id:             mision.id,
+        url:                   foto.url,
+        storage_path:          foto.storagePath,
+        lat:                   params.lat,
+        lng:                   params.lng,
+        timestamp_dispositivo: foto.timestampDispositivo,
+        device_id:             params.deviceId,
+        declaracion:           foto.declaracion,
+        precio_confirmado:     foto.precioConfirmado,
+        blur_score:            foto.blurScore ?? null,
+        estado:                'pendiente',
+        puntos_otorgados:      puntosPorFoto,
+      })
+      .select('id')
+      .single()
+
+    if (fotoError) {
+      throw new Error('Error al guardar foto en la misión: ' + fotoError.message)
+    }
+
+    if (foto.respuestas.length > 0) {
+      await db.from('foto_respuestas').insert(
+        foto.respuestas.map(r => ({
+          foto_id:  fotoData.id,
+          campo_id: r.campo_id,
+          valor:    r.valor,
+        }))
+      )
+    }
+  }
+
+  // 3. Acreditar puntos por la misión completa (una sola vez)
+  await db.from('movimientos_puntos').insert({
+    gondolero_id: user.id,
+    tipo:         'credito',
+    monto:        params.puntosTotal,
+    concepto:     `Misión completada (${params.fotos.length} foto${params.fotos.length !== 1 ? 's' : ''})`,
+    campana_id:   params.campanaId,
+  })
+
+  // 4. Incrementar comercios_completados una vez por misión completada
+  await db
+    .from('participaciones')
+    .update({ comercios_completados: (participacion.comercios_completados ?? 0) + 1 })
+    .eq('id', participacion.id)
+
+  return { misionId: mision.id, puntos: params.puntosTotal }
+}
+
 // Devuelve el id de un bloque existente para la campaña, o crea uno genérico si no hay ninguno.
 // Usa el admin client para evitar restricciones RLS al insertar — solo se ejecuta en el servidor.
 export async function asegurarBloqueGenerico(campanaId: string): Promise<string> {

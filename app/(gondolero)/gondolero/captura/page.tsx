@@ -18,7 +18,7 @@ import {
   formatearPuntos,
 } from '@/lib/utils'
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
-import { registrarFoto, subirFoto, asegurarBloqueGenerico, obtenerConfigCompresion } from './actions'
+import { registrarMision, subirFoto, asegurarBloqueGenerico, obtenerConfigCompresion } from './actions'
 import { crearComercioNuevo, subirFotoFachada } from './actions-comercios'
 import { registrarChecksGPS } from './actions-checks'
 import type { ConfigCompresion } from '@/lib/config'
@@ -93,7 +93,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'declaracion' | 'formulario' | 'confirmacion' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'declaracion' | 'formulario' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
 type Declaracion = 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
 
@@ -131,6 +131,18 @@ interface CampanaData {
   puntos_por_foto: number
   bloques: BloqueData[]
   primerBloqueId: string | null  // Usado como fallback para asegurarBloqueGenerico
+}
+
+interface FotoCapturadaLocal {
+  bloqueIdx: number
+  bloqueId: string | null
+  blob: Blob
+  previewUrl: string
+  declaracion: Declaracion
+  precio: string
+  respuestas: Record<string, unknown>
+  blurScore: number | null
+  timestampDispositivo: string
 }
 
 const TIPOS_COMERCIO: { value: TipoComercio; label: string; emoji: string }[] = [
@@ -554,6 +566,7 @@ function CapturaContent() {
   const [blurScore, setBlurScore] = useState<number | null>(null)
   const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
   const [bloqueActualIdx, setBloqueActualIdx] = useState(0)
+  const [fotosCapturadas, setFotosCapturadas] = useState<FotoCapturadaLocal[]>([])
 
   // ── Estado extra para flujo COMERCIOS ─────────────────────────────────────
   const [cmNombre,    setCmNombre]    = useState('')
@@ -831,128 +844,101 @@ function CapturaContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [paso])
 
-  // ── Upload y registro ─────────────────────────────────────────────────────
+  // ── Guardar foto del bloque actual en memoria (sin subir) ────────────────────
 
-  const handleEnviar = async () => {
+  const guardarFotoLocal = () => {
     const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
-    const declaracionFinal = bloqueActual?.tipoContenido === 'ninguno'
-      ? 'producto_presente'
-      : declaracion
-    if (!fotoBlob || !comercio || !campana || !bloqueActual) return
-    if (bloqueActual.tipoContenido !== 'ninguno' && !declaracion) return
+    const declaracionFinal = bloqueActual?.tipoContenido === 'ninguno' ? 'producto_presente' : declaracion
+    if (!fotoBlob || !fotoPreview || !campana) return
+    if (bloqueActual?.tipoContenido !== 'ninguno' && !declaracion) return
 
-    setEnviando(true)
+    const nuevaFoto: FotoCapturadaLocal = {
+      bloqueIdx:             bloqueActualIdx,
+      bloqueId:              bloqueActual?.id ?? null,
+      blob:                  fotoBlob,
+      previewUrl:            fotoPreview,
+      declaracion:           declaracionFinal!,
+      precio,
+      respuestas,
+      blurScore,
+      timestampDispositivo:  new Date().toISOString(),
+    }
+    setFotosCapturadas(prev => [...prev.filter(f => f.bloqueIdx !== bloqueActualIdx), nuevaFoto])
 
-    console.log('[compresión] Antes:', (fotoBlob.size / 1024).toFixed(1), 'KB')
-    const blob = await comprimirImagen(fotoBlob, comprConfig.maxSizeMB, comprConfig.maxWidth, comprConfig.calidad)
-    console.log('[compresión] Después:', (blob.size / 1024).toFixed(1), 'KB')
-    const storagePath = generarPathFoto(campana.id, getDeviceId())
-    const timestampDispositivo = new Date().toISOString()
-    const lat = gps.posicion?.lat ?? 0
-    const lng = gps.posicion?.lng ?? 0
-    const bloqueIdBase = bloqueActual.id
+    // Limpiar estado del bloque actual
+    setFotoBlob(null); setFotoPreview(null)
+    setDeclaracion(null); setPrecio(''); setRespuestas({}); setBlurScore(null)
 
-    const comercioPendienteData = comercio.id.startsWith('temp_')
-      ? comerciosPendientes.find(p => p.tempId === comercio.id)
-      : undefined
-
-    const avanzarSiguienteBloque = () => {
-      setFotoBlob(null); setFotoPreview(null)
-      setDeclaracion(null); setPrecio('')
-      setRespuestas({}); setBlurScore(null)
+    const isLast = bloqueActualIdx >= (campana.bloques.length || 1) - 1
+    if (isLast) {
+      setPaso('mision-resumen')
+    } else {
       setBloqueActualIdx(prev => prev + 1)
       setPaso('camara')
     }
+  }
 
-    const encolarFoto = async (fotoBlob: Blob) => {
-      const reader = new FileReader()
-      reader.onload = async () => {
-        await encolar({
-          campanaId: campana.id,
-          bloqueId: bloqueIdBase,
-          comercioId: comercio.id,
-          storagePath,
-          fotoBase64: reader.result as string,
-          lat, lng,
-          declaracion: declaracionFinal!,
-          precio: precio ? parseFloat(precio) : null,
-          deviceId: getDeviceId(),
-          timestamp: timestampDispositivo,
-          puntosAcreditar: campana.puntos_por_foto,
-          comercioPendiente: comercioPendienteData
-            ? { nombre: comercioPendienteData.nombre, tipo: comercioPendienteData.tipo, direccion: comercioPendienteData.direccion, lat: comercioPendienteData.lat, lng: comercioPendienteData.lng }
-            : undefined,
-        })
-        const isLast = bloqueActualIdx >= campana.bloques.length - 1
-        if (isLast) {
-          setPaso('exito-offline')
-        } else {
-          avanzarSiguienteBloque()
-        }
-        setEnviando(false)
-      }
-      reader.readAsDataURL(fotoBlob)
-    }
+  // ── Enviar misión completa (todas las fotos juntas) ───────────────────────────
 
-    // Si no hay conexión, encolar directamente sin intentar el fetch
+  const handleEnviarMision = async () => {
+    if (!comercio || !campana || fotosCapturadas.length === 0) return
     if (!navigator.onLine) {
-      await encolarFoto(blob)
+      setErrorGlobal('Necesitás conexión a internet para enviar la misión.')
       return
     }
+    setEnviando(true)
+    setErrorGlobal(null)
+
+    const lat = gps.posicion?.lat ?? 0
+    const lng = gps.posicion?.lng ?? 0
+    const deviceId = getDeviceId()
 
     try {
-      // Obtener o crear bloque genérico si la campaña no tiene bloques configurados
-      const bloqueId = bloqueActual.id ?? await asegurarBloqueGenerico(campana.id)
+      // 1. Comprimir y subir todas las fotos en paralelo
+      const uploadResults = await Promise.all(
+        fotosCapturadas.map(async (f) => {
+          console.log('[compresión] Antes:', (f.blob.size / 1024).toFixed(1), 'KB')
+          const compressed = await comprimirImagen(f.blob, comprConfig.maxSizeMB, comprConfig.maxWidth, comprConfig.calidad)
+          console.log('[compresión] Después:', (compressed.size / 1024).toFixed(1), 'KB')
+          const storagePath = generarPathFoto(campana.id, deviceId)
+          const formData = new FormData()
+          formData.append('foto', new File([compressed], 'foto.jpg', { type: 'image/jpeg' }))
+          formData.append('storagePath', storagePath)
+          const { url } = await subirFoto(formData)
+          return { ...f, storagePath, url }
+        })
+      )
 
-      // Subir foto a Storage vía Server Action (service role bypasea RLS)
-      const formData = new FormData()
-      formData.append('foto', new File([blob], 'foto.jpg', { type: 'image/jpeg' }))
-      formData.append('storagePath', storagePath)
-      const { url } = await subirFoto(formData)
+      // 2. Resolver bloque genérico si la campaña no tiene bloques configurados
+      const bloqueGenericoId = campana.bloques.length === 0
+        ? await asegurarBloqueGenerico(campana.id)
+        : null
 
-      // Construir array de respuestas para el servidor
-      const respuestasArray = Object.entries(respuestas)
-        .filter(([, v]) => v !== undefined && v !== null && v !== '')
-        .map(([campo_id, valor]) => ({ campo_id, valor }))
-
-      // Registrar en DB vía Server Action
-      const result = await registrarFoto({
+      // 3. Registrar la misión completa en DB
+      const result = await registrarMision({
         campanaId: campana.id,
-        bloqueId,
         comercioId: comercio.id,
-        storagePath,
-        url,
+        deviceId,
         lat, lng,
-        declaracion: declaracionFinal!,
-        precioConfirmado: precio ? parseFloat(precio) : null,
-        timestampDispositivo,
-        deviceId: getDeviceId(),
-        puntosAcreditar: campana.puntos_por_foto,
-        blurScore,
-        respuestas: respuestasArray.length > 0 ? respuestasArray : undefined,
+        puntosTotal: campana.puntos_por_foto * uploadResults.length,
+        fotos: uploadResults.map(r => ({
+          bloqueId:             r.bloqueId ?? bloqueGenericoId ?? '',
+          storagePath:          r.storagePath,
+          url:                  r.url,
+          declaracion:          r.declaracion,
+          precioConfirmado:     r.precio ? parseFloat(r.precio) : null,
+          timestampDispositivo: r.timestampDispositivo,
+          blurScore:            r.blurScore,
+          respuestas:           Object.entries(r.respuestas)
+            .filter(([, v]) => v !== undefined && v !== null && v !== '')
+            .map(([campo_id, valor]) => ({ campo_id, valor })),
+        })),
       })
 
-      setPuntosGanados(prev => prev + result.puntos)
-      const isLast = bloqueActualIdx >= campana.bloques.length - 1
-      if (isLast) {
-        setPaso('exito')
-      } else {
-        avanzarSiguienteBloque()
-      }
+      setPuntosGanados(result.puntos)
+      setPaso('exito')
     } catch (err) {
-      const esErrorRed = !navigator.onLine ||
-        (err instanceof Error && (
-          err.message.includes('fetch') ||
-          err.message.includes('network') ||
-          err.message.includes('Failed')
-        ))
-
-      if (esErrorRed) {
-        await encolarFoto(blob)
-        return
-      }
-
-      setErrorGlobal(err instanceof Error ? err.message : 'Error al enviar la foto.')
+      setErrorGlobal(err instanceof Error ? err.message : 'Error al enviar la misión.')
     } finally {
       setEnviando(false)
     }
@@ -1085,13 +1071,11 @@ function CapturaContent() {
           <CheckCircle2 size={40} className="text-gondo-verde-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">
-            {(campana?.bloques?.length ?? 1) > 1 ? '¡Fotos enviadas!' : '¡Foto enviada!'}
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">¡Misión completada!</h1>
           <p className="text-gray-500 text-sm">
-            {(campana?.bloques?.length ?? 1) > 1
-              ? `${campana!.bloques.length} fotos en revisión`
-              : 'La foto está en revisión'}
+            {puntosGanados > 0
+              ? `${campana?.bloques?.length ?? 1} foto${(campana?.bloques?.length ?? 1) !== 1 ? 's' : ''} enviada${(campana?.bloques?.length ?? 1) !== 1 ? 's' : ''} a revisión`
+              : 'Las fotos están en revisión'}
           </p>
         </div>
         <div className="flex items-center gap-2 bg-gondo-verde-50 px-6 py-3 rounded-2xl">
@@ -1106,13 +1090,13 @@ function CapturaContent() {
               setFotoBlob(null); setFotoPreview(null)
               setDeclaracion(null); setPrecio('')
               setRespuestas({}); setPuntosGanados(0)
+              setFotosCapturadas([]); setBloqueActualIdx(0)
               setComercio(null); setBusqueda('')
-              setBloqueActualIdx(0)
               setPaso('comercio')
             }}
             className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
           >
-            Capturar otra foto
+            Iniciar otra misión
           </button>
           <button
             onClick={() => router.push('/gondolero/misiones')}
@@ -1144,13 +1128,13 @@ function CapturaContent() {
               setFotoBlob(null); setFotoPreview(null)
               setDeclaracion(null); setPrecio('')
               setRespuestas({}); setPuntosGanados(0)
+              setFotosCapturadas([]); setBloqueActualIdx(0)
               setComercio(null); setBusqueda('')
-              setBloqueActualIdx(0)
               setPaso('comercio')
             }}
             className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
           >
-            Capturar otra foto
+            Iniciar otra misión
           </button>
           <button
             onClick={() => router.push('/gondolero/misiones')}
@@ -1612,13 +1596,13 @@ function CapturaContent() {
   const PASOS_LABEL = esCampanaComercio
     ? ['Ubicación', 'Formulario', 'Fachada']
     : tieneCampos
-      ? ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Formulario', 'Confirmar']
-      : ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar']
+      ? ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Formulario', 'Confirmar', 'Enviar misión']
+      : ['Comercio', 'Ubicación', 'Foto', 'Declaración', 'Confirmar', 'Enviar misión']
   const PASOS_KEY: Paso[] = esCampanaComercio
     ? ['comercios-gps', 'comercios-formulario', 'comercios-fachada']
     : tieneCampos
-      ? ['comercio', 'gps', 'camara', 'declaracion', 'formulario', 'confirmacion']
-      : ['comercio', 'gps', 'camara', 'declaracion', 'confirmacion']
+      ? ['comercio', 'gps', 'camara', 'declaracion', 'formulario', 'confirmacion', 'mision-resumen']
+      : ['comercio', 'gps', 'camara', 'declaracion', 'confirmacion', 'mision-resumen']
   const pasoActualIdx = PASOS_KEY.indexOf(paso)
 
   return (
@@ -1628,8 +1612,23 @@ function CapturaContent() {
         <div className="flex items-center gap-3 mb-3">
           <button
             onClick={() => {
-              if (paso === 'comercio') router.back()
-              else {
+              if (paso === 'comercio') {
+                router.back()
+              } else if (paso === 'mision-resumen') {
+                // Restaurar el último bloque para que el usuario pueda re-revisar
+                const lastFoto = fotosCapturadas[fotosCapturadas.length - 1]
+                if (lastFoto) {
+                  setFotoBlob(lastFoto.blob)
+                  setFotoPreview(lastFoto.previewUrl)
+                  setDeclaracion(lastFoto.declaracion)
+                  setPrecio(lastFoto.precio)
+                  setRespuestas(lastFoto.respuestas)
+                  setBlurScore(lastFoto.blurScore)
+                  setBloqueActualIdx(lastFoto.bloqueIdx)
+                  setFotosCapturadas(prev => prev.slice(0, -1))
+                }
+                setPaso('confirmacion')
+              } else {
                 const prev: Record<Paso, Paso> = {
                   comercio:              'comercio',
                   gps:                   'comercio',
@@ -1638,8 +1637,9 @@ function CapturaContent() {
                   declaracion:           'camara',
                   formulario:            bloqueActual?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
                   confirmacion:          tieneCampos ? 'formulario' : (bloqueActual?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion'),
-                  exito:                 'confirmacion',
-                  'exito-offline':       'confirmacion',
+                  'mision-resumen':      'confirmacion',
+                  exito:                 'mision-resumen',
+                  'exito-offline':       'mision-resumen',
                   'comercios-gps':       'comercio',
                   'comercios-existente': 'comercios-gps',
                   'comercios-formulario':'comercios-gps',
@@ -1841,13 +1841,25 @@ function CapturaContent() {
               })()}
             </div>
 
-            {gps.estado === 'activo' && (
-              <button
-                onClick={() => setPaso('camara')}
-                className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
-              >
-                Continuar — Abrir cámara
-              </button>
+            {gps.estado === 'activo' && campana && (
+              <>
+                {campana.bloques.length > 1 && (
+                  <div className="flex items-center gap-2.5 bg-gondo-verde-50 border border-gondo-verde-200 rounded-xl px-3.5 py-3">
+                    <span className="text-gondo-verde-400 text-lg shrink-0">📋</span>
+                    <p className="text-sm text-gondo-verde-700">
+                      Esta misión requiere <strong>{campana.bloques.length} fotos</strong> en este comercio
+                    </p>
+                  </div>
+                )}
+                <button
+                  onClick={() => setPaso('camara')}
+                  className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
+                >
+                  {campana.bloques.length > 1
+                    ? `Comenzar misión · ${campana.bloques.length} fotos`
+                    : 'Continuar — Abrir cámara'}
+                </button>
+              </>
             )}
           </div>
         )}
@@ -2106,22 +2118,77 @@ function CapturaContent() {
               </div>
             </div>
 
+            <button
+              onClick={guardarFotoLocal}
+              className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch text-base shadow-lg"
+            >
+              {bloqueActualIdx < totalBloques - 1
+                ? `Guardar foto · continuar con foto ${bloqueActualIdx + 2}`
+                : totalBloques > 1 ? 'Listo · ir al resumen de misión' : 'Confirmar y enviar'}
+            </button>
+          </div>
+        )}
+
+        {/* ── MISIÓN RESUMEN — envío final ── */}
+        {paso === 'mision-resumen' && comercio && campana && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-700">Revisá antes de enviar</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {fotosCapturadas.length} foto{fotosCapturadas.length !== 1 ? 's' : ''} listas para enviar
+              </p>
+            </div>
+
+            {/* Comercio */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
+              <MapPin size={16} className="text-gray-400 shrink-0" />
+              <div>
+                <p className="text-xs text-gray-400">Comercio</p>
+                <p className="font-semibold text-gray-900">{comercio.nombre}</p>
+              </div>
+            </div>
+
+            {/* Grid de fotos */}
+            <div className={`grid gap-2 ${fotosCapturadas.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {fotosCapturadas.map((f, i) => (
+                <div key={i} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
+                  <Image src={f.previewUrl} alt={`Foto ${i + 1}`} fill className="object-cover" />
+                  <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium">
+                    Foto {i + 1}
+                  </div>
+                  <div className="absolute bottom-1 right-1 text-base leading-none">
+                    {f.declaracion === 'producto_presente' ? '✅' : f.declaracion === 'producto_no_encontrado' ? '❌' : '🔄'}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Puntos */}
+            <div className="bg-gondo-verde-50 rounded-2xl p-4 flex items-center gap-3">
+              <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
+              <div>
+                <p className="text-xs text-gray-500">Puntos por esta misión</p>
+                <p className="text-lg font-bold text-gondo-verde-400">
+                  +{formatearPuntos(campana.puntos_por_foto * fotosCapturadas.length)} pts
+                </p>
+              </div>
+            </div>
+
             {errorGlobal && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
-                {errorGlobal}
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm space-y-1">
+                <p>{errorGlobal}</p>
+                <BotonReportarError errorTecnico={errorGlobal} />
               </div>
             )}
 
             <button
-              onClick={handleEnviar}
+              onClick={handleEnviarMision}
               disabled={enviando}
               className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-60 min-h-touch text-base shadow-lg"
             >
               {enviando
-                ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando...</span>
-                : bloqueActualIdx < totalBloques - 1
-                  ? `Enviar foto y continuar`
-                  : 'Enviar foto'}
+                ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando misión...</span>
+                : `Enviar misión completa · ${fotosCapturadas.length} foto${fotosCapturadas.length !== 1 ? 's' : ''}`}
             </button>
           </div>
         )}

@@ -59,9 +59,7 @@ function MisionCard({
   const esActiva = p.estado === 'activa'
 
   return (
-    <div className={`rounded-2xl border shadow-sm overflow-hidden transition-transform duration-100 active:scale-[0.98] ${
-      esActiva ? 'bg-white border-gray-100' : 'bg-gray-50 border-gray-200'
-    }`}>
+    <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden transition-transform duration-100 active:scale-[0.98]">
       <div className="p-4 pb-3">
         {/* Badge tipo + tiempo */}
         <div className="flex items-center justify-between mb-2">
@@ -292,8 +290,8 @@ export function MisionesSections({
         <Seccion
           titulo="Completadas"
           badge={completadas.length}
-          badgeColor="bg-gondo-verde-50 text-gondo-verde-600"
-          bgColor="bg-gray-50 border-gray-200"
+          badgeColor="bg-rose-100 text-rose-600"
+          bgColor="bg-rose-50 border-rose-200"
           defaultOpen={false}
         >
           {completadas.map(p => (
