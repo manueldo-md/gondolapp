@@ -44,6 +44,29 @@ export async function generarLinkInvitacionDistri(
   return { link }
 }
 
+export async function verificarTerminarRelacionDistri(
+  relacionId: string
+): Promise<{ campanasBloqueantes: { id: string; nombre: string }[] }> {
+  const admin = adminClient()
+
+  const { data: rel } = await admin
+    .from('marca_distri_relaciones')
+    .select('marca_id, distri_id')
+    .eq('id', relacionId)
+    .single()
+
+  if (!rel?.marca_id || !rel?.distri_id) return { campanasBloqueantes: [] }
+
+  const { data: campanas } = await admin
+    .from('campanas')
+    .select('id, nombre')
+    .eq('marca_id', rel.marca_id)
+    .eq('distri_id', rel.distri_id)
+    .in('estado', ['activa', 'pendiente_aprobacion'])
+
+  return { campanasBloqueantes: (campanas ?? []) as { id: string; nombre: string }[] }
+}
+
 export async function terminarRelacionDistri(
   relacionId: string
 ): Promise<{ error?: string }> {

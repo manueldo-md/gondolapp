@@ -12,6 +12,8 @@ interface ConfirmModalProps {
   onConfirm: () => void
   onCancel: () => void
   loading?: boolean
+  /** 'confirm' (default): Cancelar + Confirmar rojo. 'alert': solo botón Cerrar */
+  mode?: 'confirm' | 'alert'
 }
 
 export function ConfirmModal({
@@ -23,6 +25,7 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
   loading = false,
+  mode = 'confirm',
 }: ConfirmModalProps) {
   // Cerrar con Escape
   useEffect(() => {
@@ -66,25 +69,34 @@ export function ConfirmModal({
         </p>
 
         {/* Botones */}
-        <div className="flex gap-3">
+        {mode === 'alert' ? (
           <button
             onClick={onCancel}
-            disabled={loading}
-            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            className="w-full py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
           >
-            {cancelLabel}
+            Cerrar
           </button>
-          <button
-            onClick={onConfirm}
-            disabled={loading}
-            className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading
-              ? <Loader2 size={14} className="animate-spin" />
-              : confirmLabel
-            }
-          </button>
-        </div>
+        ) : (
+          <div className="flex gap-3">
+            <button
+              onClick={onCancel}
+              disabled={loading}
+              className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              {cancelLabel}
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={loading}
+              className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading
+                ? <Loader2 size={14} className="animate-spin" />
+                : confirmLabel
+              }
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

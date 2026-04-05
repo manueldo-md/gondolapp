@@ -5,6 +5,7 @@ import { Users, Star, CheckCircle2, XCircle } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { SolicitudesTab } from './solicitudes-tab'
 import { InvitarPanel } from './invitar-panel'
+import { GondoleroDesvincularBtn } from './gondolero-desvincular-btn'
 
 function adminClient() {
   return createSupabaseClient(
@@ -252,6 +253,7 @@ export default async function GondolerosPage({
                   <th className="text-right px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Fotos enviadas</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Tasa aprobación</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Estado</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -316,6 +318,16 @@ export default async function GondolerosPage({
                           <XCircle size={14} />
                           <span className="text-xs font-medium">Inactivo</span>
                         </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      {g.vinculadoActual && distriId && (
+                        <GondoleroDesvincularBtn
+                          gondoleroId={g.id}
+                          distriId={distriId}
+                          distriNombre={distriNombre}
+                          gondoleroAlias={g.alias ?? g.nombre ?? 'El gondolero'}
+                        />
                       )}
                     </td>
                   </tr>

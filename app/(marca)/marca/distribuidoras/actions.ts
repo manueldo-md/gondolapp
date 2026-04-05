@@ -63,6 +63,31 @@ export async function generarLinkInvitacionMarca(
   return { link }
 }
 
+export async function verificarTerminarRelacion(
+  relacionId: string
+): Promise<{ campanasBloqueantes: { id: string; nombre: string }[] }> {
+  const admin = adminClient()
+
+  // Obtener marca_id y distri_id de la relación
+  const { data: rel } = await admin
+    .from('marca_distri_relaciones')
+    .select('marca_id, distri_id')
+    .eq('id', relacionId)
+    .single()
+
+  if (!rel?.marca_id || !rel?.distri_id) return { campanasBloqueantes: [] }
+
+  // Campañas activas o pendientes entre esta marca y esta distri
+  const { data: campanas } = await admin
+    .from('campanas')
+    .select('id, nombre')
+    .eq('marca_id', rel.marca_id)
+    .eq('distri_id', rel.distri_id)
+    .in('estado', ['activa', 'pendiente_aprobacion'])
+
+  return { campanasBloqueantes: (campanas ?? []) as { id: string; nombre: string }[] }
+}
+
 export async function terminarRelacion(
   relacionId: string
 ): Promise<{ error?: string }> {

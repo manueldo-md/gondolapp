@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
-import { terminarRelacionDistri } from './actions'
+import { verificarTerminarRelacionDistri, terminarRelacionDistri } from './actions'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
+
+type Estado = 'idle' | 'verificando' | 'bloqueado' | 'confirmando'
 
 interface Props {
   relacionId: string
@@ -12,33 +14,63 @@ interface Props {
 }
 
 export function TerminarRelacionBtn({ relacionId, nombreMarca, nombreDistri }: Props) {
+  const [estado, setEstado] = useState<Estado>('idle')
+  const [campanasBloqueantes, setCampanasBloqueantes] = useState<{ id: string; nombre: string }[]>([])
   const [isPending, startTransition] = useTransition()
-  const [confirming, setConfirming] = useState(false)
+
+  async function handleClickTerminar() {
+    setEstado('verificando')
+    const res = await verificarTerminarRelacionDistri(relacionId)
+    if (res.campanasBloqueantes.length > 0) {
+      setCampanasBloqueantes(res.campanasBloqueantes)
+      setEstado('bloqueado')
+    } else {
+      setEstado('confirmando')
+    }
+  }
 
   function handleConfirmar() {
     startTransition(async () => {
       await terminarRelacionDistri(relacionId)
-      setConfirming(false)
+      setEstado('idle')
     })
   }
+
+  const descBloqueado = campanasBloqueantes.length === 1
+    ? `Existe una campaña activa entre ${nombreDistri} y ${nombreMarca}: "${campanasBloqueantes[0].nombre}". Cerrala antes de terminar la relación.`
+    : `Existen ${campanasBloqueantes.length} campañas activas entre ${nombreDistri} y ${nombreMarca}: ${campanasBloqueantes.map(c => `"${c.nombre}"`).join(', ')}. Cerralas antes de terminar la relación.`
 
   return (
     <>
       <button
-        onClick={() => setConfirming(true)}
-        disabled={isPending}
+        onClick={handleClickTerminar}
+        disabled={isPending || estado === 'verificando'}
         className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-50 flex items-center gap-1"
       >
-        {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Terminar'}
+        {estado === 'verificando'
+          ? <><Loader2 size={11} className="animate-spin" /> Verificando...</>
+          : 'Terminar'
+        }
       </button>
 
+      {/* Modal bloqueante */}
       <ConfirmModal
-        open={confirming}
+        open={estado === 'bloqueado'}
+        mode="alert"
+        title="No se puede terminar la relación"
+        description={descBloqueado}
+        onConfirm={() => {}}
+        onCancel={() => setEstado('idle')}
+      />
+
+      {/* Modal de confirmación */}
+      <ConfirmModal
+        open={estado === 'confirmando'}
         title="¿Terminar esta relación?"
-        description={`Vas a terminar la relación entre ${nombreDistri} y ${nombreMarca}. Los gondoleros de esta distribuidora dejarán de ver las campañas de la marca. Esta acción no se puede deshacer.`}
+        description={`Vas a terminar la relación entre ${nombreDistri} y ${nombreMarca}. Esta acción no se puede deshacer. Asegurate de que no haya pagos pendientes antes de continuar.`}
         confirmLabel="Terminar relación"
         onConfirm={handleConfirmar}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => setEstado('idle')}
         loading={isPending}
       />
     </>
