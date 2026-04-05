@@ -66,6 +66,8 @@ export default async function CampanasPage() {
   function tieneAcceso(c: CampanaRow): boolean {
     const fp = c.financiada_por
     if (!fp || fp === 'gondolapp') return true
+    // Campañas de marca ejecutadas vía GondolApp → visibles para todos los gondoleros
+    if (c.via_ejecucion === 'gondolapp') return true
     if (fp === 'distri') return !!c.distri_id && misDistriIds.includes(c.distri_id)
     if (fp === 'marca') {
       if (!c.marca_id) return true
@@ -80,7 +82,7 @@ export default async function CampanasPage() {
   let query = supabase
     .from('campanas')
     .select(`
-      id, nombre, tipo, marca_id, distri_id, financiada_por,
+      id, nombre, tipo, marca_id, distri_id, financiada_por, via_ejecucion,
       puntos_por_foto, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
       tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
       nivel_minimo, es_abierta, created_at,

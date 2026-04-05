@@ -32,6 +32,7 @@ export interface CampanaCardData {
   min_comercios_para_cobrar: number
   nivel_minimo: string | null
   es_abierta: boolean
+  via_ejecucion: string | null
   created_at: string
   marca: { razon_social: string } | null
   bloques_foto: { id: string }[]

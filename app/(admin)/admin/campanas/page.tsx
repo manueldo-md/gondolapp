@@ -120,7 +120,9 @@ export default async function CampanasAdminPage({
                 return (
                   <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px]">
-                      <p className="truncate">{c.nombre}</p>
+                      <Link href={`/admin/campanas/${c.id}`} className="truncate block hover:text-[#1E1B4B] hover:underline">
+                        {c.nombre}
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${TIPO_COLOR[c.tipo as TipoCampana] ?? 'bg-gray-100 text-gray-500'}`}>
