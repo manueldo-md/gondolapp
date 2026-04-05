@@ -116,16 +116,21 @@ interface CampoBloque {
   orden: number
 }
 
+interface BloqueData {
+  id: string
+  tipoContenido: string
+  instruccion: string
+  solicitarPrecio: boolean
+  campos: CampoBloque[]
+}
+
 interface CampanaData {
   id: string
   nombre: string
   tipo: string
   puntos_por_foto: number
-  primerBloqueId: string | null
-  tipoContenido: string
-  bloqueInstruccion: string
-  bloqueSolicitarPrecio: boolean
-  campos: CampoBloque[]
+  bloques: BloqueData[]
+  primerBloqueId: string | null  // Usado como fallback para asegurarBloqueGenerico
 }
 
 const TIPOS_COMERCIO: { value: TipoComercio; label: string; emoji: string }[] = [
@@ -548,6 +553,7 @@ function CapturaContent() {
   const [puntosGanados, setPuntosGanados] = useState(0)
   const [blurScore, setBlurScore] = useState<number | null>(null)
   const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
+  const [bloqueActualIdx, setBloqueActualIdx] = useState(0)
 
   // ── Estado extra para flujo COMERCIOS ─────────────────────────────────────
   const [cmNombre,    setCmNombre]    = useState('')
@@ -610,20 +616,23 @@ function CapturaContent() {
               id: string; tipo_contenido: string; instruccion: string | null
               solicitar_precio: boolean | null
               bloque_campos: CampoBloque[] | null
+              orden?: number
             }[]
-            const primerBloque = bloques?.[0]
-            const camposRaw = primerBloque?.bloque_campos ?? []
-            const campos: CampoBloque[] = [...camposRaw].sort((a, b) => a.orden - b.orden)
+            const bloquesOrdenados = [...(bloques ?? [])].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+            const bloquesData: BloqueData[] = bloquesOrdenados.map(b => ({
+              id: b.id,
+              tipoContenido: b.tipo_contenido ?? 'propios',
+              instruccion: b.instruccion ?? 'el producto',
+              solicitarPrecio: b.solicitar_precio ?? false,
+              campos: [...(b.bloque_campos ?? [])].sort((a, b) => a.orden - b.orden),
+            }))
             const campanaData: CampanaData = {
               id: d.id,
               nombre: d.nombre,
               tipo: d.tipo ?? 'relevamiento',
               puntos_por_foto: d.puntos_por_foto,
-              primerBloqueId: primerBloque?.id ?? null,
-              tipoContenido: primerBloque?.tipo_contenido ?? 'propios',
-              bloqueInstruccion: primerBloque?.instruccion ?? 'el producto',
-              bloqueSolicitarPrecio: primerBloque?.solicitar_precio ?? false,
-              campos,
+              bloques: bloquesData,
+              primerBloqueId: bloquesData[0]?.id ?? null,
             }
             setCampana(campanaData)
             // Guardar en caché para uso offline futuro
@@ -825,11 +834,12 @@ function CapturaContent() {
   // ── Upload y registro ─────────────────────────────────────────────────────
 
   const handleEnviar = async () => {
-    const declaracionFinal = campana?.tipoContenido === 'ninguno'
+    const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
+    const declaracionFinal = bloqueActual?.tipoContenido === 'ninguno'
       ? 'producto_presente'
       : declaracion
-    if (!fotoBlob || !comercio || !campana) return
-    if (campana.tipoContenido !== 'ninguno' && !declaracion) return
+    if (!fotoBlob || !comercio || !campana || !bloqueActual) return
+    if (bloqueActual.tipoContenido !== 'ninguno' && !declaracion) return
 
     setEnviando(true)
 
@@ -840,11 +850,19 @@ function CapturaContent() {
     const timestampDispositivo = new Date().toISOString()
     const lat = gps.posicion?.lat ?? 0
     const lng = gps.posicion?.lng ?? 0
-    const bloqueIdBase = campana.primerBloqueId ?? ''
+    const bloqueIdBase = bloqueActual.id
 
     const comercioPendienteData = comercio.id.startsWith('temp_')
       ? comerciosPendientes.find(p => p.tempId === comercio.id)
       : undefined
+
+    const avanzarSiguienteBloque = () => {
+      setFotoBlob(null); setFotoPreview(null)
+      setDeclaracion(null); setPrecio('')
+      setRespuestas({}); setBlurScore(null)
+      setBloqueActualIdx(prev => prev + 1)
+      setPaso('camara')
+    }
 
     const encolarFoto = async (fotoBlob: Blob) => {
       const reader = new FileReader()
@@ -865,7 +883,12 @@ function CapturaContent() {
             ? { nombre: comercioPendienteData.nombre, tipo: comercioPendienteData.tipo, direccion: comercioPendienteData.direccion, lat: comercioPendienteData.lat, lng: comercioPendienteData.lng }
             : undefined,
         })
-        setPaso('exito-offline')
+        const isLast = bloqueActualIdx >= campana.bloques.length - 1
+        if (isLast) {
+          setPaso('exito-offline')
+        } else {
+          avanzarSiguienteBloque()
+        }
         setEnviando(false)
       }
       reader.readAsDataURL(fotoBlob)
@@ -879,7 +902,7 @@ function CapturaContent() {
 
     try {
       // Obtener o crear bloque genérico si la campaña no tiene bloques configurados
-      const bloqueId = campana.primerBloqueId ?? await asegurarBloqueGenerico(campana.id)
+      const bloqueId = bloqueActual.id ?? await asegurarBloqueGenerico(campana.id)
 
       // Subir foto a Storage vía Server Action (service role bypasea RLS)
       const formData = new FormData()
@@ -909,8 +932,13 @@ function CapturaContent() {
         respuestas: respuestasArray.length > 0 ? respuestasArray : undefined,
       })
 
-      setPuntosGanados(result.puntos)
-      setPaso('exito')
+      setPuntosGanados(prev => prev + result.puntos)
+      const isLast = bloqueActualIdx >= campana.bloques.length - 1
+      if (isLast) {
+        setPaso('exito')
+      } else {
+        avanzarSiguienteBloque()
+      }
     } catch (err) {
       const esErrorRed = !navigator.onLine ||
         (err instanceof Error && (
@@ -1033,12 +1061,13 @@ function CapturaContent() {
           console.log('Device:', /Android|iPhone|iPad/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop')
           console.log('Blur score:', score, '| Threshold:', BLUR_THRESHOLD)
           console.log('¿Foto borrosa?', score < BLUR_THRESHOLD)
+          const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
           if (score < BLUR_THRESHOLD) {
             console.log('Mostrando advertencia de blur')
             setPaso('blur-advertencia')
-          } else if (campana?.tipoContenido === 'ninguno') {
+          } else if (bloqueActual?.tipoContenido === 'ninguno') {
             setDeclaracion('producto_presente')
-            setPaso(campana.campos.length > 0 ? 'formulario' : 'confirmacion')
+            setPaso((bloqueActual?.campos?.length ?? 0) > 0 ? 'formulario' : 'confirmacion')
           } else {
             setPaso('declaracion')
           }
@@ -1056,8 +1085,14 @@ function CapturaContent() {
           <CheckCircle2 size={40} className="text-gondo-verde-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">¡Foto enviada!</h1>
-          <p className="text-gray-500 text-sm">La foto está en revisión</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">
+            {(campana?.bloques?.length ?? 1) > 1 ? '¡Fotos enviadas!' : '¡Foto enviada!'}
+          </h1>
+          <p className="text-gray-500 text-sm">
+            {(campana?.bloques?.length ?? 1) > 1
+              ? `${campana!.bloques.length} fotos en revisión`
+              : 'La foto está en revisión'}
+          </p>
         </div>
         <div className="flex items-center gap-2 bg-gondo-verde-50 px-6 py-3 rounded-2xl">
           <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400" />
@@ -1070,8 +1105,9 @@ function CapturaContent() {
             onClick={() => {
               setFotoBlob(null); setFotoPreview(null)
               setDeclaracion(null); setPrecio('')
-              setRespuestas({})
+              setRespuestas({}); setPuntosGanados(0)
               setComercio(null); setBusqueda('')
+              setBloqueActualIdx(0)
               setPaso('comercio')
             }}
             className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
@@ -1107,8 +1143,9 @@ function CapturaContent() {
             onClick={() => {
               setFotoBlob(null); setFotoPreview(null)
               setDeclaracion(null); setPrecio('')
-              setRespuestas({})
+              setRespuestas({}); setPuntosGanados(0)
               setComercio(null); setBusqueda('')
+              setBloqueActualIdx(0)
               setPaso('comercio')
             }}
             className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
@@ -1548,9 +1585,10 @@ function CapturaContent() {
             </button>
             <button
               onClick={() => {
-                if (campana?.tipoContenido === 'ninguno') {
+                const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
+                if (bloqueActual?.tipoContenido === 'ninguno') {
                   setDeclaracion('producto_presente')
-                  setPaso(campana.campos.length > 0 ? 'formulario' : 'confirmacion')
+                  setPaso((bloqueActual?.campos?.length ?? 0) > 0 ? 'formulario' : 'confirmacion')
                 } else {
                   setPaso('declaracion')
                 }
@@ -1567,8 +1605,10 @@ function CapturaContent() {
 
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
-  const tieneCampos = (campana?.campos?.length ?? 0) > 0
+  const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
+  const tieneCampos = (bloqueActual?.campos?.length ?? 0) > 0
   const esCampanaComercio = campana?.tipo === 'comercios'
+  const totalBloques = campana?.bloques?.length ?? 1
   const PASOS_LABEL = esCampanaComercio
     ? ['Ubicación', 'Formulario', 'Fachada']
     : tieneCampos
@@ -1596,8 +1636,8 @@ function CapturaContent() {
                   camara:                'gps',
                   'blur-advertencia':    'camara',
                   declaracion:           'camara',
-                  formulario:            campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
-                  confirmacion:          tieneCampos ? 'formulario' : (campana?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion'),
+                  formulario:            bloqueActual?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion',
+                  confirmacion:          tieneCampos ? 'formulario' : (bloqueActual?.tipoContenido === 'ninguno' ? 'camara' : 'declaracion'),
                   exito:                 'confirmacion',
                   'exito-offline':       'confirmacion',
                   'comercios-gps':       'comercio',
@@ -1616,7 +1656,10 @@ function CapturaContent() {
           <div>
             <p className="text-xs text-gray-400 leading-none">{campana?.nombre}</p>
             <p className="text-sm font-semibold text-gray-900">
-              Paso {pasoActualIdx + 1} — {PASOS_LABEL[pasoActualIdx]}
+              {totalBloques > 1 && (
+                <span className="text-gondo-verde-400 mr-1">Foto {bloqueActualIdx + 1}/{totalBloques} —</span>
+              )}
+              {PASOS_LABEL[pasoActualIdx]}
             </p>
           </div>
         </div>
@@ -1848,10 +1891,10 @@ function CapturaContent() {
             </div>
 
             {/* Precio — solo si el bloque lo requiere */}
-            {declaracion === 'producto_presente' && campana?.bloqueSolicitarPrecio && (
+            {declaracion === 'producto_presente' && bloqueActual?.solicitarPrecio && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  ¿A cuánto está {campana.bloqueInstruccion}?
+                  ¿A cuánto está {bloqueActual.instruccion}?
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
@@ -1879,13 +1922,13 @@ function CapturaContent() {
         )}
 
         {/* ── PASO FORMULARIO ── */}
-        {paso === 'formulario' && campana && campana.campos.length > 0 && (
+        {paso === 'formulario' && campana && bloqueActual && bloqueActual.campos.length > 0 && (
           <div className="space-y-5">
             <p className="text-sm font-semibold text-gray-700">
-              Preguntas adicionales ({campana.campos.filter(c => c.obligatorio).length} obligatoria{campana.campos.filter(c => c.obligatorio).length !== 1 ? 's' : ''})
+              Preguntas adicionales ({bloqueActual.campos.filter(c => c.obligatorio).length} obligatoria{bloqueActual.campos.filter(c => c.obligatorio).length !== 1 ? 's' : ''})
             </p>
 
-            {campana.campos.map(campo => {
+            {bloqueActual.campos.map(campo => {
               const val = respuestas[campo.id]
               return (
                 <div key={campo.id} className="space-y-2">
@@ -1996,7 +2039,7 @@ function CapturaContent() {
             })}
 
             {(() => {
-              const camposObligatorios = campana.campos.filter(c => c.obligatorio)
+              const camposObligatorios = bloqueActual.campos.filter(c => c.obligatorio)
               const todosCompletos = camposObligatorios.every(c => {
                 const v = respuestas[c.id]
                 if (v === undefined || v === null || v === '') return false
@@ -2035,7 +2078,7 @@ function CapturaContent() {
                   <p className="text-sm font-medium text-gray-900">{comercio.nombre}</p>
                 </div>
               </div>
-              {campana?.tipoContenido !== 'ninguno' && declaracion && (
+              {bloqueActual?.tipoContenido !== 'ninguno' && declaracion && (
               <div className="flex items-center gap-3 p-3">
                 <span className="text-lg shrink-0">
                   {declaracion === 'producto_presente' ? '✅' : declaracion === 'producto_no_encontrado' ? '❌' : '🔄'}
@@ -2076,7 +2119,9 @@ function CapturaContent() {
             >
               {enviando
                 ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando...</span>
-                : 'Enviar foto'}
+                : bloqueActualIdx < totalBloques - 1
+                  ? `Enviar foto y continuar`
+                  : 'Enviar foto'}
             </button>
           </div>
         )}
