@@ -1,15 +1,12 @@
 'use client'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Visualizaciones CSS/Tailwind puras — sin recharts ni ninguna otra librería
-// de charts. Solo react-leaflet para el mapa.
-// Cargado con dynamic(..., { ssr: false }) desde page.tsx.
+// 100% CSS/Tailwind + React puro. Sin recharts, sin leaflet, sin ninguna
+// librería externa de visualización o mapas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Tooltip as MapTooltip } from 'react-leaflet'
-import 'leaflet/dist/leaflet.css'
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, MapPin } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,110 +63,78 @@ export type DashboardVisualizacionesProps = {
   conPresenciaGlobal: number
 }
 
-// ── Helpers de color ──────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function presenciaColor(pct: number): string {
-  if (pct > 12) return '#166534'
-  if (pct >= 8)  return '#16a34a'
-  if (pct >= 5)  return '#ca8a04'
-  return '#dc2626'
-}
-
-function presenciaLabel(pct: number): string {
-  if (pct > 12) return 'Alta'
-  if (pct >= 8)  return 'Media-alta'
-  if (pct >= 5)  return 'Media'
-  return 'Baja'
-}
-
-function presenciaBadgeClass(pct: number): string {
+function presenciaBadgeClass(pct: number) {
   if (pct > 12) return 'bg-green-100 text-green-800'
   if (pct >= 8)  return 'bg-emerald-50 text-emerald-700'
   if (pct >= 5)  return 'bg-amber-50 text-amber-700'
   return 'bg-red-50 text-red-700'
 }
 
-// ── Mapa de cobertura (react-leaflet) ─────────────────────────────────────────
+function presenciaBarColor(pct: number) {
+  if (pct > 12) return 'bg-green-500'
+  if (pct >= 8)  return 'bg-emerald-400'
+  if (pct >= 5)  return 'bg-amber-400'
+  return 'bg-red-400'
+}
 
-function CoverageMap({ zonas }: { zonas: ZonaMapData[] }) {
-  const zonasConCoords = zonas.filter(z => z.lat !== 0 && z.lng !== 0)
+// ── Cobertura por ciudad (reemplaza mapa Leaflet) ─────────────────────────────
 
-  if (zonasConCoords.length === 0) {
+function CoberturaGrid({ zonas }: { zonas: ZonaMapData[] }) {
+  if (zonas.length === 0) {
     return (
-      <div className="space-y-2">
-        {zonas.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-8">
-            Los puntos de venta aparecerán aquí cuando haya fotos aprobadas con datos de zona.
-          </p>
-        ) : (
-          zonas.map(z => (
-            <div key={z.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg text-sm">
-              <span className="font-medium text-gray-900">{z.nombre}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-gray-500">{z.pdvRelevados} PDV</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
-                  style={{ backgroundColor: presenciaColor(z.presenciaPct) }}>
-                  {z.presenciaPct}%
-                </span>
-              </div>
-            </div>
-          ))
-        )}
+      <div className="py-10 text-center text-sm text-gray-400">
+        Los puntos de venta aparecerán aquí cuando haya fotos aprobadas con datos de zona.
       </div>
     )
   }
 
+  const sorted = [...zonas].sort((a, b) => b.pdvRelevados - a.pdvRelevados)
+
   return (
-    <div className="relative" style={{ height: 420 }}>
-      <MapContainer
-        center={[-34.6, -64.2]}
-        zoom={5}
-        style={{ height: '100%', width: '100%', borderRadius: '12px' }}
-        zoomControl
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        />
-        {zonasConCoords.map(z => (
-          <CircleMarker
-            key={z.id}
-            center={[z.lat, z.lng]}
-            radius={Math.max(8, Math.min(8 + Math.sqrt(z.pdvRelevados) * 3, 30))}
-            fillColor={presenciaColor(z.presenciaPct)}
-            color={presenciaColor(z.presenciaPct)}
-            weight={2} opacity={1} fillOpacity={0.6}
-          >
-            <MapTooltip>
-              <div className="text-xs space-y-0.5">
-                <p className="font-bold text-sm">{z.nombre}</p>
-                <p>PDV: <strong>{z.pdvRelevados}</strong></p>
-                <p>Con presencia: <strong>{z.conPresencia}</strong></p>
-                <p>Presencia: <strong>{z.presenciaPct}%</strong> ({presenciaLabel(z.presenciaPct)})</p>
-                <p>Fotos: <strong>{z.fotosRecibidas}</strong></p>
-              </div>
-            </MapTooltip>
-          </CircleMarker>
-        ))}
-      </MapContainer>
-      <div className="absolute bottom-4 left-4 z-[1000] bg-white rounded-lg shadow px-3 py-2 text-xs space-y-1.5">
-        {[
-          { label: '> 12% — Alta',       color: '#166534' },
-          { label: '8-12% — Media-alta', color: '#16a34a' },
-          { label: '5-8% — Media',       color: '#ca8a04' },
-          { label: '< 5% — Baja',        color: '#dc2626' },
-        ].map(({ label, color }) => (
-          <div key={label} className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-            <span className="text-gray-600">{label}</span>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {sorted.map(z => (
+        <div key={z.id} className="border border-gray-100 rounded-xl p-4 hover:bg-gray-50 transition-colors">
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <MapPin size={14} className="text-gray-400 shrink-0 mt-0.5" />
+              <span className="text-sm font-semibold text-gray-900 truncate">{z.nombre}</span>
+            </div>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${presenciaBadgeClass(z.presenciaPct)}`}>
+              {z.presenciaPct}%
+            </span>
           </div>
-        ))}
-      </div>
+
+          {/* Barra de presencia */}
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
+            <div
+              className={`h-full rounded-full transition-all ${presenciaBarColor(z.presenciaPct)}`}
+              style={{ width: `${Math.min(z.presenciaPct, 100)}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className="text-xs text-gray-400">PDV</p>
+              <p className="text-sm font-bold text-gray-900">{z.pdvRelevados}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Con pres.</p>
+              <p className="text-sm font-bold text-green-700">{z.conPresencia}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Fotos</p>
+              <p className="text-sm font-bold text-gray-600">{z.fotosRecibidas}</p>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
 
-// ── Presencia global — CSS conic-gradient donut ───────────────────────────────
+// ── Presencia global — CSS conic-gradient ─────────────────────────────────────
 
 function PresenciaDonut({ presente, ausente }: { presente: number; ausente: number }) {
   const total = presente + ausente
@@ -187,7 +152,7 @@ function PresenciaDonut({ presente, ausente }: { presente: number; ausente: numb
           <span className="text-2xl font-bold text-gray-900">{pct}%</span>
         </div>
       </div>
-      <div className="flex gap-6 text-sm">
+      <div className="flex gap-5 text-sm">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500" />
           <span className="text-gray-600">{presente} con presencia</span>
@@ -201,7 +166,7 @@ function PresenciaDonut({ presente, ausente }: { presente: number; ausente: numb
   )
 }
 
-// ── Penetración por campaña — barras horizontales CSS ─────────────────────────
+// ── Penetración por campaña — barras horizontales apiladas ────────────────────
 
 function PenetracionBars({ data }: { data: PenetracionData[] }) {
   if (data.length === 0) {
@@ -214,34 +179,27 @@ function PenetracionBars({ data }: { data: PenetracionData[] }) {
 
   return (
     <div className="space-y-4">
-      {/* Leyenda */}
       <div className="flex gap-4 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-green-500" /> Presente</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-red-400" /> No encontrado</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-amber-400" /> Solo competencia</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-green-500" />Presente</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-red-400" />No encontrado</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-amber-400" />Solo competencia</span>
       </div>
-
       {data.map(d => {
-        const pPresente       = d.total > 0 ? (d.presente       / d.total) * 100 : 0
-        const pNoEncontrado   = d.total > 0 ? (d.noEncontrado   / d.total) * 100 : 0
-        const pSoloCompetencia = d.total > 0 ? (d.soloCompetencia / d.total) * 100 : 0
-
+        const pP = d.total > 0 ? (d.presente        / d.total) * 100 : 0
+        const pN = d.total > 0 ? (d.noEncontrado    / d.total) * 100 : 0
+        const pS = d.total > 0 ? (d.soloCompetencia / d.total) * 100 : 0
         return (
           <div key={d.nombre}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-medium text-gray-800 truncate max-w-[60%]">{d.nombre}</span>
-              <span className="text-xs text-gray-500">{d.total} fotos · <span className="font-semibold text-green-700">{d.pct}% presencia</span></span>
+              <span className="text-xs text-gray-500">
+                {d.total} fotos · <span className="font-semibold text-green-700">{d.pct}%</span>
+              </span>
             </div>
             <div className="flex h-5 rounded-md overflow-hidden bg-gray-100">
-              {pPresente > 0 && (
-                <div className="bg-green-500 h-full transition-all" style={{ width: `${pPresente}%` }} title={`Presente: ${d.presente}`} />
-              )}
-              {pNoEncontrado > 0 && (
-                <div className="bg-red-400 h-full transition-all" style={{ width: `${pNoEncontrado}%` }} title={`No encontrado: ${d.noEncontrado}`} />
-              )}
-              {pSoloCompetencia > 0 && (
-                <div className="bg-amber-400 h-full transition-all" style={{ width: `${pSoloCompetencia}%` }} title={`Solo competencia: ${d.soloCompetencia}`} />
-              )}
+              {pP > 0 && <div className="bg-green-500 h-full" style={{ width: `${pP}%` }} title={`Presente: ${d.presente}`} />}
+              {pN > 0 && <div className="bg-red-400  h-full" style={{ width: `${pN}%` }} title={`No encontrado: ${d.noEncontrado}`} />}
+              {pS > 0 && <div className="bg-amber-400 h-full" style={{ width: `${pS}%` }} title={`Solo competencia: ${d.soloCompetencia}`} />}
             </div>
           </div>
         )
@@ -250,7 +208,7 @@ function PenetracionBars({ data }: { data: PenetracionData[] }) {
   )
 }
 
-// ── Tipo de comercio — barras verticales CSS ──────────────────────────────────
+// ── Tipo de comercio — barras paralelas CSS ───────────────────────────────────
 
 function TipoComercioChart({ data }: { data: TipoComercioData[] }) {
   if (data.length === 0 || data.every(d => d.relevados === 0)) {
@@ -264,30 +222,29 @@ function TipoComercioChart({ data }: { data: TipoComercioData[] }) {
   const maxVal = Math.max(...data.map(d => d.relevados), 1)
 
   return (
-    <div className="space-y-3">
-      {/* Leyenda */}
+    <div className="space-y-4">
       <div className="flex gap-4 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-200" /> PDV relevados</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-600" /> Con presencia</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-200" />PDV relevados</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-600" />Con presencia</span>
       </div>
-
       {data.map(d => {
-        const wRelev = (d.relevados   / maxVal) * 100
-        const wPres  = (d.conPresencia / maxVal) * 100
-        const pct    = d.relevados > 0 ? Math.round((d.conPresencia / d.relevados) * 100) : 0
-
+        const wR = (d.relevados    / maxVal) * 100
+        const wP = (d.conPresencia / maxVal) * 100
+        const pct = d.relevados > 0 ? Math.round((d.conPresencia / d.relevados) * 100) : 0
         return (
           <div key={d.tipo}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-medium text-gray-800">{d.label}</span>
-              <span className="text-xs text-gray-500">{d.conPresencia}/{d.relevados} PDV · <span className="font-semibold text-indigo-700">{pct}%</span></span>
+              <span className="text-xs text-gray-500">
+                {d.conPresencia}/{d.relevados} PDV · <span className="font-semibold text-indigo-700">{pct}%</span>
+              </span>
             </div>
             <div className="space-y-1">
-              <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
-                <div className="bg-indigo-200 h-full rounded-full transition-all" style={{ width: `${wRelev}%` }} />
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-200 rounded-full" style={{ width: `${wR}%` }} />
               </div>
-              <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
-                <div className="bg-indigo-600 h-full rounded-full transition-all" style={{ width: `${wPres}%` }} />
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${wP}%` }} />
               </div>
             </div>
           </div>
@@ -297,11 +254,11 @@ function TipoComercioChart({ data }: { data: TipoComercioData[] }) {
   )
 }
 
-// ── Evolución semanal — barras verticales CSS mini ────────────────────────────
+// ── Evolución semanal — mini barras verticales ────────────────────────────────
 
 function EvolucionBars({ data }: { data: EvolucionData[] }) {
-  const maxVal = Math.max(...data.map(d => d.fotos), 1)
   const total  = data.reduce((s, d) => s + d.fotos, 0)
+  const maxVal = Math.max(...data.map(d => d.fotos), 1)
 
   if (total === 0) {
     return (
@@ -315,34 +272,27 @@ function EvolucionBars({ data }: { data: EvolucionData[] }) {
     <div>
       <div className="flex items-end gap-1 h-28">
         {data.map((d, i) => {
-          const h = maxVal > 0 ? Math.max((d.fotos / maxVal) * 100, d.fotos > 0 ? 4 : 0) : 0
+          const h = d.fotos > 0 ? Math.max((d.fotos / maxVal) * 100, 4) : 0
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
-              {/* Tooltip */}
+            <div key={i} className="flex-1 flex flex-col items-center group relative">
               {d.fotos > 0 && (
                 <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                   {d.fotos} fotos
                 </div>
               )}
-              <div
-                className="w-full rounded-t-sm bg-indigo-500 transition-all"
-                style={{ height: `${h}%` }}
-              />
+              <div className="w-full rounded-t-sm bg-indigo-500" style={{ height: `${h}%` }} />
             </div>
           )
         })}
       </div>
-      {/* Labels — solo mostrar cada 2 para no saturar */}
-      <div className="flex gap-1 mt-1">
+      <div className="flex gap-1 mt-1.5">
         {data.map((d, i) => (
           <div key={i} className="flex-1 text-center">
-            {i % 2 === 0 && (
-              <span className="text-[9px] text-gray-400 leading-none">{d.label}</span>
-            )}
+            {i % 3 === 0 && <span className="text-[9px] text-gray-400">{d.label}</span>}
           </div>
         ))}
       </div>
-      <p className="text-xs text-gray-400 mt-2 text-right">{total} fotos en las últimas 12 semanas</p>
+      <p className="text-xs text-gray-400 mt-2 text-right">{total} fotos · últimas 12 semanas</p>
     </div>
   )
 }
@@ -358,7 +308,7 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
   if (rows.length === 0) {
     return (
       <div className="py-12 text-center text-sm text-gray-400">
-        Sin ciudades relevadas aún. Los datos aparecerán cuando haya fotos aprobadas.
+        Sin ciudades relevadas aún.
       </div>
     )
   }
@@ -384,13 +334,13 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
   }
 
   const cols: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
-    { key: 'nombre',         label: 'Ciudad',          align: 'left'  },
-    { key: 'pdvRelevados',   label: 'PDV relevados',   align: 'right' },
-    { key: 'conPresencia',   label: 'Con presencia',   align: 'right' },
-    { key: 'pdvRelevados',   label: 'Sin presencia',   align: 'right' },
-    { key: 'presenciaPct',   label: 'Presencia %',     align: 'right' },
-    { key: 'fotosRecibidas', label: 'Fotos',           align: 'right' },
-    { key: 'ultimaVisita',   label: 'Última visita',   align: 'right' },
+    { key: 'nombre',         label: 'Ciudad',        align: 'left'  },
+    { key: 'pdvRelevados',   label: 'PDV',           align: 'right' },
+    { key: 'conPresencia',   label: 'Con pres.',     align: 'right' },
+    { key: 'pdvRelevados',   label: 'Sin pres.',     align: 'right' },
+    { key: 'presenciaPct',   label: 'Presencia %',   align: 'right' },
+    { key: 'fotosRecibidas', label: 'Fotos',         align: 'right' },
+    { key: 'ultimaVisita',   label: 'Última visita', align: 'right' },
   ]
 
   return (
@@ -453,18 +403,18 @@ export default function DashboardVisualizaciones({
   return (
     <div className="space-y-6">
 
-      {/* Mapa */}
+      {/* Cobertura por ciudad (cards) */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Cobertura por ciudad</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Tamaño = PDV relevados · Color = % presencia</p>
+          <p className="text-xs text-gray-400 mt-0.5">Ordenado por PDV relevados</p>
         </div>
         <div className="p-5">
-          <CoverageMap zonas={zonaMapData} />
+          <CoberturaGrid zonas={zonaMapData} />
         </div>
       </div>
 
-      {/* Presencia global + Penetración por campaña */}
+      {/* Presencia global + Penetración */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-5 py-4 border-b border-gray-100">
@@ -499,7 +449,7 @@ export default function DashboardVisualizaciones({
         </div>
       </div>
 
-      {/* Tabla ciudades */}
+      {/* Tabla de ciudades */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Análisis por ciudad</h3>
