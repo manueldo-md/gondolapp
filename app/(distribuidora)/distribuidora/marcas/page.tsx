@@ -1,8 +1,11 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { InvitarMarcaPanel } from './invitar-panel'
 import { TerminarRelacionBtn } from './terminar-relacion-btn'
+import { ReiniciarRelacionBtnDistri } from './reiniciar-btn'
+import { SolicitudReinicioCardDistri } from './solicitud-reinicio-card'
 
 function adminClient() {
   return createAdminClient(
@@ -52,8 +55,45 @@ export default async function DistriMarcasPage() {
     .eq('id', profile.distri_id)
     .single()
 
+  const relacionIds = lista.map(r => r.id)
+
+  // Solicitudes de reinicio pendientes (iniciadas por marca → distri debe responder)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let solicitudesPendientes: any[] = []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let solicitudesEnviadas: any[] = []
+  if (relacionIds.length > 0) {
+    const { data: solsData } = await admin
+      .from('relacion_reinicio_solicitudes')
+      .select('id, relacion_id, solicitado_por, estado, created_at')
+      .in('relacion_id', relacionIds)
+      .eq('estado', 'pendiente')
+
+    solicitudesPendientes = ((solsData ?? []) as any[]).filter(s => s.solicitado_por === 'marca')
+    solicitudesEnviadas   = ((solsData ?? []) as any[]).filter(s => s.solicitado_por === 'distri')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let solicitudesRechazadas: any[] = []
+  if (relacionIds.length > 0) {
+    const { data: rechData } = await admin
+      .from('relacion_reinicio_solicitudes')
+      .select('relacion_id, solicitado_por, estado')
+      .in('relacion_id', relacionIds)
+      .eq('estado', 'rechazada')
+      .eq('solicitado_por', 'distri')
+    solicitudesRechazadas = rechData ?? []
+  }
+
   const activas   = lista.filter(r => r.estado !== 'terminada')
   const historial = lista.filter(r => r.estado === 'terminada')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const solPendMap = new Map<string, any>()
+  for (const s of solicitudesPendientes) solPendMap.set(s.relacion_id, s)
+
+  const solEnviadaSet   = new Set(solicitudesEnviadas.map((s: any) => s.relacion_id))
+  const solRechazadaSet = new Set(solicitudesRechazadas.map((s: any) => s.relacion_id))
 
   return (
     <div className="space-y-5">
@@ -71,6 +111,25 @@ export default async function DistriMarcasPage() {
         distriId={profile.distri_id}
         distriNombre={distriData?.razon_social ?? profile.nombre ?? 'Mi distribuidora'}
       />
+
+      {/* Banners de solicitudes de reinicio (la marca quiere reiniciar) */}
+      {solicitudesPendientes.length > 0 && (
+        <div className="space-y-3">
+          {solicitudesPendientes.map(sol => {
+            const rel = lista.find(r => r.id === sol.relacion_id)
+            if (!rel) return null
+            return (
+              <SolicitudReinicioCardDistri
+                key={sol.id}
+                solicitudId={sol.id}
+                relacionId={rel.id}
+                marcaNombre={rel.marcaNombre ?? 'La marca'}
+                relacionFechaInicio={rel.createdAt}
+              />
+            )
+          })}
+        </div>
+      )}
 
       {lista.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
@@ -95,7 +154,11 @@ export default async function DistriMarcasPage() {
                 <tbody className="divide-y divide-gray-50">
                   {activas.map(r => (
                     <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-900">{r.marcaNombre ?? '—'}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <Link href={`/distribuidora/marcas/${r.id}`} className="hover:text-[#BA7517] hover:underline">
+                          {r.marcaNombre ?? '—'}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3">
                         <EstadoBadge estado={r.estado} />
                       </td>
@@ -104,13 +167,18 @@ export default async function DistriMarcasPage() {
                         {new Date(r.createdAt).toLocaleDateString('es-AR')}
                       </td>
                       <td className="px-4 py-3">
-                        {r.estado === 'activa' && (
-                          <TerminarRelacionBtn
-                            relacionId={r.id}
-                            nombreMarca={r.marcaNombre ?? 'la marca'}
-                            nombreDistri={distriData?.razon_social ?? 'la distribuidora'}
-                          />
-                        )}
+                        <div className="flex items-center gap-3">
+                          {r.estado === 'activa' && (
+                            <TerminarRelacionBtn
+                              relacionId={r.id}
+                              nombreMarca={r.marcaNombre ?? 'la marca'}
+                              nombreDistri={distriData?.razon_social ?? 'la distribuidora'}
+                            />
+                          )}
+                          <Link href={`/distribuidora/marcas/${r.id}`} className="text-xs text-gray-400 hover:text-gray-700">
+                            Ver →
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -126,7 +194,7 @@ export default async function DistriMarcasPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
-                      {['Marca', 'Estado', 'Iniciado por', 'Fecha'].map(h => (
+                      {['Marca', 'Estado', 'Iniciado por', 'Fecha', 'Acciones'].map(h => (
                         <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">
                           {h}
                         </th>
@@ -134,18 +202,41 @@ export default async function DistriMarcasPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {historial.map(r => (
-                      <tr key={r.id} className="opacity-60">
-                        <td className="px-4 py-3 font-medium text-gray-500">{r.marcaNombre ?? '—'}</td>
-                        <td className="px-4 py-3">
-                          <EstadoBadge estado={r.estado} />
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-400 capitalize">{r.iniciadoPor ?? '—'}</td>
-                        <td className="px-4 py-3 text-xs text-gray-400">
-                          {new Date(r.createdAt).toLocaleDateString('es-AR')}
-                        </td>
-                      </tr>
-                    ))}
+                    {historial.map(r => {
+                      const tieneEnviada   = solEnviadaSet.has(r.id)
+                      const tieneRechazada = solRechazadaSet.has(r.id)
+                      const btnEstado = tieneEnviada ? 'pendiente' as const
+                        : tieneRechazada ? 'rechazada' as const
+                        : null
+                      return (
+                        <tr key={r.id} className="opacity-70 hover:opacity-100 transition-opacity">
+                          <td className="px-4 py-3 font-medium text-gray-500">
+                            <Link href={`/distribuidora/marcas/${r.id}`} className="hover:text-[#BA7517] hover:underline">
+                              {r.marcaNombre ?? '—'}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3">
+                            <EstadoBadge estado={r.estado} />
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-400 capitalize">{r.iniciadoPor ?? '—'}</td>
+                          <td className="px-4 py-3 text-xs text-gray-400">
+                            {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <ReiniciarRelacionBtnDistri
+                                relacionId={r.id}
+                                marcaNombre={r.marcaNombre ?? 'la marca'}
+                                solicitudEstado={btnEstado}
+                              />
+                              <Link href={`/distribuidora/marcas/${r.id}`} className="text-xs text-gray-400 hover:text-gray-700">
+                                Ver →
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -76,9 +76,11 @@ export async function terminarRelacionDistri(
 
   const admin = adminClient()
 
+  const now = new Date().toISOString()
+
   const { error } = await admin
     .from('marca_distri_relaciones')
-    .update({ estado: 'terminada', updated_at: new Date().toISOString() })
+    .update({ estado: 'terminada', fecha_fin: now, updated_at: now })
     .eq('id', relacionId)
 
   if (error) return { error: 'No se pudo terminar la relación' }

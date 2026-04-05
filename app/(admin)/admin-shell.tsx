@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle, Handshake,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -35,6 +35,7 @@ function buildNavSections(erroresNuevos: number, campanasPendientes: number): Na
         { href: '/admin/usuarios',       label: 'Usuarios',       icon: Users },
         { href: '/admin/distribuidoras', label: 'Distribuidoras', icon: Truck },
         { href: '/admin/marcas',         label: 'Marcas',         icon: Tag },
+        { href: '/admin/relaciones',     label: 'Relaciones',     icon: Handshake },
       ],
     },
     {
