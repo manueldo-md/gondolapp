@@ -7,7 +7,6 @@ import {
   LayoutDashboard, Users, Image, Megaphone,
   Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle, Handshake, Bell,
 } from 'lucide-react'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 type NavItem = {
