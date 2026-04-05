@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gondolapp-v1'
+const CACHE_NAME = 'gondolapp-v3'
 const STATIC_URLS = [
   '/',
   '/gondolero/campanas',

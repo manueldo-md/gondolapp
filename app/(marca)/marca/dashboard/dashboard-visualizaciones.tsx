@@ -273,7 +273,8 @@ function EvolucionChart({ data }: { data: EvolucionData[] }) {
             stroke="#4f46e5"
             strokeWidth={2}
             fill="url(#colorFotos)"
-            dot={{ fill: '#4f46e5', r: 3 }}
+            dot={{ fill: '#4f46e5', strokeWidth: 0, r: 3 }}
+            activeDot={{ r: 5, fill: '#4f46e5' }}
           />
         </AreaChart>
       </ResponsiveContainer>
