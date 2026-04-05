@@ -271,6 +271,75 @@ export default async function CampanaAdminDetailPage({
         </div>
       )}
 
+      {/* ── Información de origen ────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+          Origen
+        </h2>
+        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 text-sm">
+          <div>
+            <dt className="text-gray-500 mb-0.5">Creada el</dt>
+            <dd className="font-medium text-gray-900">
+              {new Date(campana.created_at).toLocaleDateString('es-AR', {
+                day: '2-digit', month: 'long', year: 'numeric',
+              })}
+              <span className="block text-xs text-gray-400 font-normal">
+                {new Date(campana.created_at).toLocaleTimeString('es-AR', {
+                  hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-gray-500 mb-0.5">Creada por</dt>
+            <dd className="font-medium text-gray-900">
+              {campana.marca_id
+                ? (marcaNombre ?? 'Marca')
+                : campana.distri_id
+                  ? (distriNombre ?? 'Distribuidora')
+                  : 'GondolApp'
+              }
+            </dd>
+          </div>
+          <div>
+            <dt className="text-gray-500 mb-0.5">Vía de ejecución</dt>
+            <dd className="font-medium text-gray-900">
+              {campana.via_ejecucion === 'distribuidora'
+                ? 'Distribuidora'
+                : campana.via_ejecucion === 'gondolapp'
+                  ? 'GondolApp'
+                  : campana.via_ejecucion ?? '—'
+              }
+            </dd>
+          </div>
+          {campana.distri_id ? (
+            <div>
+              <dt className="text-gray-500 mb-0.5">Distribuidora</dt>
+              <dd>
+                <Link
+                  href={`/admin/distribuidoras/${campana.distri_id}`}
+                  className="font-medium text-[#1E1B4B] hover:underline"
+                >
+                  {distriNombre ?? 'Ver distribuidora'}
+                </Link>
+              </dd>
+            </div>
+          ) : campana.marca_id ? (
+            <div>
+              <dt className="text-gray-500 mb-0.5">Marca</dt>
+              <dd>
+                <Link
+                  href={`/admin/marcas/${campana.marca_id}`}
+                  className="font-medium text-purple-700 hover:underline"
+                >
+                  {marcaNombre ?? 'Ver marca'}
+                </Link>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </div>
+
       {/* ── Info general + Fechas y avance ───────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 

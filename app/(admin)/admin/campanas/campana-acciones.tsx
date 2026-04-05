@@ -101,7 +101,7 @@ export function CampanaAccionesAdmin({
             {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Activar'}
           </button>
         )}
-        {(estadoActual === 'activa' || estadoActual === 'pausada' || estadoActual === 'borrador') && (
+        {(estadoActual === 'activa' || estadoActual === 'pausada' || estadoActual === 'borrador' || estadoActual === 'pendiente_aprobacion') && (
           <button
             disabled={isPending}
             onClick={() => setConfirmCierre(true)}
