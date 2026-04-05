@@ -1,14 +1,58 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
-import Image from 'next/image'
-import { Megaphone, Camera, Store, Coins, CheckCircle2, XCircle, Clock, TrendingUp, DollarSign } from 'lucide-react'
-import { formatearFechaHora } from '@/lib/utils'
-import type { EstadoCampana, DeclaracionFoto } from '@/types'
+import dynamic from 'next/dynamic'
+import {
+  Megaphone, Store, TrendingUp, MapPin,
+  Camera, AlertTriangle, Clock, CheckCircle2,
+} from 'lucide-react'
+import type { CiudadRow } from './ciudad-table'
+import { CiudadTable } from './ciudad-table'
+import type {
+  PenetracionData, TipoComercioData, EvolucionData,
+} from './dashboard-charts'
+import {
+  PenetracionChart, TipoComercioChart, EvolucionChart, PresenciaPieChart,
+} from './dashboard-charts'
+import type { ZonaMapData } from './coverage-map'
+
+// Leaflet necesita dynamic import (no SSR)
+const CoverageMap = dynamic(() => import('./coverage-map').then(m => m.CoverageMap), { ssr: false })
+
+// ── Types internos ────────────────────────────────────────────────────────────
+
+type FotoRow = {
+  id: string
+  campana_id: string
+  comercio_id: string | null
+  declaracion: 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia' | null
+  created_at: string
+}
+
+type ComercioRow = {
+  id: string
+  tipo: string | null
+  zona_id: string | null
+}
+
+type ZonaRow = {
+  id: string
+  nombre: string
+  lat: number | null
+  lng: number | null
+}
+
+type CampanaRow = {
+  id: string
+  nombre: string
+  estado: string
+  fecha_fin: string | null
+  fecha_inicio: string | null
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function StatCard({
+function KpiCard({
   label, valor, icon: Icon, color, sub,
 }: {
   label: string
@@ -33,6 +77,19 @@ function StatCard({
   )
 }
 
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h3 className="font-semibold text-gray-900">{title}</h3>
+      </div>
+      <div className="p-5">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 // ── Página ────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage() {
@@ -46,7 +103,7 @@ export default async function DashboardPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // marca_id del usuario
+  // ── 1. marca_id ─────────────────────────────────────────────────────────────
   const { data: profile } = await admin
     .from('profiles')
     .select('marca_id')
@@ -54,226 +111,453 @@ export default async function DashboardPage() {
     .single()
 
   const marcaId: string | null = profile?.marca_id ?? null
+  if (!marcaId) redirect('/auth')
 
-  // ── Campañas de esta marca ─────────────────────────────────────────────────
-  // Query: SELECT id, estado FROM campanas WHERE marca_id = $marcaId
-  const { data: campanas } = await admin
+  // ── 2. Campañas de esta marca ────────────────────────────────────────────────
+  const { data: campanasRaw } = await admin
     .from('campanas')
-    .select('id, estado')
-    .eq('marca_id', marcaId ?? '')
+    .select('id, nombre, estado, fecha_fin, fecha_inicio')
+    .eq('marca_id', marcaId)
 
-  const campanaIds = (campanas ?? []).map((c: { id: string; estado: EstadoCampana }) => c.id)
-  const campanasActivas = (campanas ?? []).filter(
-    (c: { id: string; estado: EstadoCampana }) => c.estado === 'activa'
-  ).length
-
-  // ── Tokens ────────────────────────────────────────────────────────────────
-  // Query: SELECT tokens_disponibles FROM marcas WHERE id = $marcaId
-  let tokens = 0
-  if (marcaId) {
-    const { data: marca } = await admin
-      .from('marcas')
-      .select('tokens_disponibles')
-      .eq('id', marcaId)
-      .single()
-    tokens = marca?.tokens_disponibles ?? 0
-  }
-
-  // ── Métricas de fotos — conteos directos en DB ────────────────────────────
-  // Se ejecutan en paralelo. Si no hay campañas, devuelven 0 / null sin crashear.
+  const campanas: CampanaRow[] = campanasRaw ?? []
+  const campanaIds = campanas.map(c => c.id)
   const NULL_UUID = '00000000-0000-0000-0000-000000000000'
   const safeIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
 
-  const [aprobadas, pendientes, rechazadas, comerciosRes, precioRes, ultimasFotosRes] =
-    await Promise.all([
-      // SELECT COUNT(*) FROM fotos WHERE campana_id IN (...) AND estado = 'aprobada'
-      admin.from('fotos').select('*', { count: 'exact', head: true })
-        .in('campana_id', safeIds).eq('estado', 'aprobada'),
+  // ── 3. Fotos aprobadas ───────────────────────────────────────────────────────
+  const { data: fotosRaw } = await admin
+    .from('fotos')
+    .select('id, campana_id, comercio_id, declaracion, created_at')
+    .in('campana_id', safeIds)
+    .eq('estado', 'aprobada')
 
-      // SELECT COUNT(*) FROM fotos WHERE campana_id IN (...) AND estado = 'pendiente'
-      admin.from('fotos').select('*', { count: 'exact', head: true })
-        .in('campana_id', safeIds).eq('estado', 'pendiente'),
+  const fotos: FotoRow[] = (fotosRaw ?? []) as FotoRow[]
 
-      // SELECT COUNT(*) FROM fotos WHERE campana_id IN (...) AND estado = 'rechazada'
-      admin.from('fotos').select('*', { count: 'exact', head: true })
-        .in('campana_id', safeIds).eq('estado', 'rechazada'),
+  // ── 4. Comercios referenciados ────────────────────────────────────────────────
+  const comercioIdsSet = new Set(fotos.map(f => f.comercio_id).filter(Boolean) as string[])
+  const comercioIds = [...comercioIdsSet]
 
-      // SELECT comercio_id FROM fotos WHERE campana_id IN (...) AND estado = 'aprobada'
-      // (distinct se computa en JS sobre el array de IDs)
-      admin.from('fotos').select('comercio_id')
-        .in('campana_id', safeIds).eq('estado', 'aprobada'),
+  let comercios: ComercioRow[] = []
+  if (comercioIds.length > 0) {
+    const { data } = await admin
+      .from('comercios')
+      .select('id, tipo, zona_id')
+      .in('id', comercioIds)
+    comercios = (data ?? []) as ComercioRow[]
+  }
 
-      // SELECT ROUND(AVG(precio_confirmado)::numeric, 2) FROM fotos
-      // WHERE campana_id = ANY($campana_ids) AND estado = 'aprobada' AND precio_confirmado IS NOT NULL
-      admin.rpc('avg_precio_confirmado', { campana_ids: safeIds }),
+  // ── 5. Zonas referenciadas ────────────────────────────────────────────────────
+  const zonaIdsSet = new Set(comercios.map(c => c.zona_id).filter(Boolean) as string[])
+  const zonaIds = [...zonaIdsSet]
 
-      // Últimas 5 fotos para el feed visual
-      // SELECT id, storage_path, created_at, declaracion, comercios(nombre)
-      // FROM fotos WHERE campana_id IN (...) ORDER BY created_at DESC LIMIT 5
-      admin.from('fotos')
-        .select('id, storage_path, created_at, declaracion, comercio:comercios(nombre)')
-        .in('campana_id', safeIds)
-        .order('created_at', { ascending: false })
-        .limit(5),
-    ])
+  let zonas: ZonaRow[] = []
+  if (zonaIds.length > 0) {
+    const { data } = await admin
+      .from('zonas')
+      .select('id, nombre, lat, lng')
+      .in('id', zonaIds)
+    zonas = (data ?? []) as ZonaRow[]
+  }
 
-  const fotosAprobadas  = aprobadas.count  ?? 0
-  const fotosPendientes = pendientes.count ?? 0
-  const fotosRechazadas = rechazadas.count ?? 0
-  const comerciosRelevados = new Set(
-    ((comerciosRes.data ?? []) as { comercio_id: string }[])
-      .map(f => f.comercio_id)
-      .filter(Boolean)
-  ).size
-  const precioPromedio: number | null = precioRes.data ?? null
+  // ── 6. Índices para joins en JS ───────────────────────────────────────────────
+  const comercioMap = new Map(comercios.map(c => [c.id, c]))
+  const zonaMap     = new Map(zonas.map(z => [z.id, z]))
 
-  // Tasa de aprobación: aprobadas / (aprobadas + rechazadas) * 100
-  const totalRevisadas = fotosAprobadas + fotosRechazadas
-  const tasaAprobacion = totalRevisadas > 0
-    ? Math.round((fotosAprobadas / totalRevisadas) * 100)
-    : null
+  // ── 7. KPIs globales ──────────────────────────────────────────────────────────
+  const totalFotos     = fotos.length
+  const totalPdv       = comercioIds.length
+  const totalCiudades  = zonaIds.length
+  const campanasActivas = campanas.filter(c => c.estado === 'activa').length
 
-  // Feed visual — últimas 5 con URLs firmadas
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const primeras5 = (ultimasFotosRes.data ?? []) as any[]
-  const ultimasFotos: Array<{
-    id: string
-    storage_path: string | null
-    created_at: string
-    declaracion: DeclaracionFoto
-    comercio: { nombre: string } | null
-    signedUrl: string | null
-  }> = await Promise.all(
-    primeras5.map(async (f) => {
-      let signedUrl: string | null = null
-      if (f.storage_path) {
-        const { data: signed } = await admin.storage
-          .from('fotos-gondola')
-          .createSignedUrl(f.storage_path, 3600)
-        signedUrl = signed?.signedUrl ?? null
-      }
+  const conPresenciaGlobal = fotos.filter(f => f.declaracion === 'producto_presente').length
+  const presenciaPctGlobal = totalFotos > 0
+    ? Math.round((conPresenciaGlobal / totalFotos) * 100)
+    : 0
+
+  // ── 8. Datos por zona (mapa + tabla) ──────────────────────────────────────────
+  type ZonaStat = {
+    pdvSet: Set<string>
+    pdvConPresenciaSet: Set<string>
+    fotosCount: number
+    ultimaFecha: string | null
+  }
+  const zonaStats = new Map<string, ZonaStat>()
+
+  for (const f of fotos) {
+    if (!f.comercio_id) continue
+    const comercio = comercioMap.get(f.comercio_id)
+    if (!comercio?.zona_id) continue
+    const zid = comercio.zona_id
+
+    if (!zonaStats.has(zid)) {
+      zonaStats.set(zid, { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null })
+    }
+    const stat = zonaStats.get(zid)!
+    stat.pdvSet.add(f.comercio_id)
+    stat.fotosCount++
+    if (f.declaracion === 'producto_presente') {
+      stat.pdvConPresenciaSet.add(f.comercio_id)
+    }
+    if (!stat.ultimaFecha || f.created_at > stat.ultimaFecha) {
+      stat.ultimaFecha = f.created_at
+    }
+  }
+
+  const zonaMapData: ZonaMapData[] = zonaIds.map(zid => {
+    const zona  = zonaMap.get(zid)!
+    const stat  = zonaStats.get(zid) ?? { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null }
+    const pdvRelevados = stat.pdvSet.size
+    const conPresencia = stat.pdvConPresenciaSet.size
+    const pct = pdvRelevados > 0 ? Math.round((conPresencia / pdvRelevados) * 100) : 0
+    return {
+      id: zid,
+      nombre: zona.nombre,
+      lat: zona.lat ?? 0,
+      lng: zona.lng ?? 0,
+      pdvRelevados,
+      conPresencia,
+      presenciaPct: pct,
+      fotosRecibidas: stat.fotosCount,
+    }
+  })
+
+  const ciudadRows: CiudadRow[] = zonaIds.map(zid => {
+    const zona  = zonaMap.get(zid)!
+    const stat  = zonaStats.get(zid) ?? { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null }
+    const pdvRelevados = stat.pdvSet.size
+    const conPresencia = stat.pdvConPresenciaSet.size
+    const pct = pdvRelevados > 0 ? Math.round((conPresencia / pdvRelevados) * 100) : 0
+    return {
+      id: zid,
+      nombre: zona.nombre,
+      pdvRelevados,
+      conPresencia,
+      sinPresencia: pdvRelevados - conPresencia,
+      fotosRecibidas: stat.fotosCount,
+      ultimaVisita: stat.ultimaFecha,
+      presenciaPct: pct,
+    }
+  })
+
+  // ── 9. Penetración por campaña ────────────────────────────────────────────────
+  type CampanaStat = { presente: number; noEncontrado: number; soloCompetencia: number }
+  const campanaStatMap = new Map<string, CampanaStat>()
+
+  for (const f of fotos) {
+    if (!campanaStatMap.has(f.campana_id)) {
+      campanaStatMap.set(f.campana_id, { presente: 0, noEncontrado: 0, soloCompetencia: 0 })
+    }
+    const cs = campanaStatMap.get(f.campana_id)!
+    if (f.declaracion === 'producto_presente')      cs.presente++
+    else if (f.declaracion === 'producto_no_encontrado') cs.noEncontrado++
+    else if (f.declaracion === 'solo_competencia')   cs.soloCompetencia++
+  }
+
+  const campanaNameMap = new Map(campanas.map(c => [c.id, c.nombre]))
+  const penetracionData: PenetracionData[] = [...campanaStatMap.entries()]
+    .map(([cid, s]) => {
+      const total = s.presente + s.noEncontrado + s.soloCompetencia
       return {
-        ...f,
-        comercio: Array.isArray(f.comercio) ? (f.comercio[0] ?? null) : f.comercio,
-        signedUrl,
+        nombre: campanaNameMap.get(cid) ?? 'Campaña',
+        presente: s.presente,
+        noEncontrado: s.noEncontrado,
+        soloCompetencia: s.soloCompetencia,
+        total,
+        pct: total > 0 ? Math.round((s.presente / total) * 100) : 0,
       }
     })
-  )
+    .sort((a, b) => b.total - a.total)
 
-  const DECL_LABEL: Record<DeclaracionFoto, string> = {
-    producto_presente:      'Presente',
-    producto_no_encontrado: 'No encontrado',
-    solo_competencia:       'Solo competencia',
+  // ── 10. Presencia por tipo de comercio ────────────────────────────────────────
+  const TIPO_LABELS: Record<string, string> = {
+    autoservicio: 'Autoservicio',
+    almacen:      'Almacén',
+    kiosco:       'Kiosco',
+    mayorista:    'Mayorista',
   }
-  const DECL_COLOR: Record<DeclaracionFoto, string> = {
-    producto_presente:      'bg-green-100 text-green-700',
-    producto_no_encontrado: 'bg-red-100 text-red-700',
-    solo_competencia:       'bg-amber-100 text-amber-700',
+
+  type TipoStat = { pdvSet: Set<string>; pdvConPresenciaSet: Set<string> }
+  const tipoStatsMap = new Map<string, TipoStat>()
+
+  for (const f of fotos) {
+    if (!f.comercio_id) continue
+    const comercio = comercioMap.get(f.comercio_id)
+    const tipo = comercio?.tipo ?? 'otro'
+    if (!tipoStatsMap.has(tipo)) {
+      tipoStatsMap.set(tipo, { pdvSet: new Set(), pdvConPresenciaSet: new Set() })
+    }
+    const ts = tipoStatsMap.get(tipo)!
+    ts.pdvSet.add(f.comercio_id)
+    if (f.declaracion === 'producto_presente') {
+      ts.pdvConPresenciaSet.add(f.comercio_id)
+    }
   }
+
+  const tipoComercioData: TipoComercioData[] = [...tipoStatsMap.entries()]
+    .map(([tipo, ts]) => ({
+      tipo,
+      label: TIPO_LABELS[tipo] ?? tipo,
+      relevados: ts.pdvSet.size,
+      conPresencia: ts.pdvConPresenciaSet.size,
+    }))
+    .sort((a, b) => b.relevados - a.relevados)
+
+  // ── 11. Evolución temporal (semanal, últimas 12 semanas) ──────────────────────
+  const ahora = new Date()
+  const semanas: EvolucionData[] = []
+
+  for (let i = 11; i >= 0; i--) {
+    const start = new Date(ahora)
+    start.setDate(start.getDate() - (i + 1) * 7)
+    const end = new Date(ahora)
+    end.setDate(end.getDate() - i * 7)
+
+    const count = fotos.filter(f => {
+      const t = new Date(f.created_at)
+      return t >= start && t < end
+    }).length
+
+    const label = start.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
+    semanas.push({ label, fotos: count })
+  }
+
+  // ── 12. Alertas automáticas ───────────────────────────────────────────────────
+  type Alerta = { tipo: 'warning' | 'error'; mensaje: string }
+  const alertas: Alerta[] = []
+
+  const hace30 = new Date(ahora)
+  hace30.setDate(hace30.getDate() - 30)
+
+  // Ciudades sin fotos en los últimos 30 días
+  const ciudadesSinActividad = zonaIds.filter(zid => {
+    const stat = zonaStats.get(zid)
+    if (!stat?.ultimaFecha) return true
+    return new Date(stat.ultimaFecha) < hace30
+  })
+  if (ciudadesSinActividad.length > 0) {
+    const nombres = ciudadesSinActividad
+      .map(zid => zonaMap.get(zid)?.nombre ?? 'Ciudad')
+      .slice(0, 3)
+      .join(', ')
+    const extra = ciudadesSinActividad.length > 3 ? ` y ${ciudadesSinActividad.length - 3} más` : ''
+    alertas.push({
+      tipo: 'warning',
+      mensaje: `Sin fotos en los últimos 30 días: ${nombres}${extra}.`,
+    })
+  }
+
+  // Ciudades con presencia < 5%
+  const ciudadesBajaPres = ciudadRows.filter(c => c.pdvRelevados > 0 && c.presenciaPct < 5)
+  if (ciudadesBajaPres.length > 0) {
+    const nombres = ciudadesBajaPres
+      .map(c => `${c.nombre} (${c.presenciaPct}%)`)
+      .slice(0, 3)
+      .join(', ')
+    const extra = ciudadesBajaPres.length > 3 ? ` y ${ciudadesBajaPres.length - 3} más` : ''
+    alertas.push({
+      tipo: 'error',
+      mensaje: `Presencia baja (<5%): ${nombres}${extra}.`,
+    })
+  }
+
+  // Campañas próximas a vencer (< 7 días)
+  const en7 = new Date(ahora)
+  en7.setDate(en7.getDate() + 7)
+  const campanasProxVencer = campanas.filter(c => {
+    if (c.estado !== 'activa' || !c.fecha_fin) return false
+    const fin = new Date(c.fecha_fin)
+    return fin > ahora && fin <= en7
+  })
+  if (campanasProxVencer.length > 0) {
+    const nombres = campanasProxVencer.map(c => c.nombre).slice(0, 3).join(', ')
+    const extra = campanasProxVencer.length > 3 ? ` y ${campanasProxVencer.length - 3} más` : ''
+    alertas.push({
+      tipo: 'warning',
+      mensaje: `Campañas que vencen en menos de 7 días: ${nombres}${extra}.`,
+    })
+  }
+
+  // ── 13. Campañas activas ──────────────────────────────────────────────────────
+  const campanasActivasList = campanas
+    .filter(c => c.estado === 'activa')
+    .sort((a, b) => (a.fecha_fin ?? '').localeCompare(b.fecha_fin ?? ''))
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
 
-      {/* Stats — fila 1: estado de fotos */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard
-          label="Fotos aprobadas"
-          valor={fotosAprobadas}
-          icon={CheckCircle2}
-          color="bg-green-50 text-green-600"
-        />
-        <StatCard
-          label="Fotos pendientes"
-          valor={fotosPendientes}
-          icon={Clock}
-          color="bg-amber-50 text-amber-500"
-        />
-        <StatCard
-          label="Fotos rechazadas"
-          valor={fotosRechazadas}
-          icon={XCircle}
-          color="bg-red-50 text-red-500"
-        />
-        <StatCard
-          label="Tasa de aprobación"
-          valor={tasaAprobacion !== null ? `${tasaAprobacion}%` : '—'}
-          icon={TrendingUp}
-          color="bg-gondo-indigo-50 text-gondo-indigo-600"
-          sub={totalRevisadas > 0 ? `${totalRevisadas} fotos revisadas` : undefined}
-        />
-      </div>
+      {/* ── BLOQUE 7 — Alertas automáticas ── */}
+      {alertas.length > 0 && (
+        <div className="space-y-2">
+          {alertas.map((a, i) => (
+            <div
+              key={i}
+              className={`flex items-start gap-3 px-4 py-3 rounded-xl text-sm font-medium border ${
+                a.tipo === 'error'
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : 'bg-amber-50 border-amber-200 text-amber-800'
+              }`}
+            >
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>{a.mensaje}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-      {/* Stats — fila 2: cobertura y economía */}
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-        <StatCard
-          label="Comercios relevados"
-          valor={comerciosRelevados}
+      {/* ── BLOQUE 1 — KPIs generales ── */}
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+        <KpiCard
+          label="PDV relevados"
+          valor={totalPdv}
           icon={Store}
-          color="bg-gondo-verde-50 text-gondo-verde-400"
+          color="bg-indigo-50 text-indigo-600"
           sub="con fotos aprobadas"
         />
-        <StatCard
+        <KpiCard
+          label="Presencia"
+          valor={totalFotos > 0 ? `${presenciaPctGlobal}%` : '—'}
+          icon={TrendingUp}
+          color="bg-green-50 text-green-600"
+          sub={totalFotos > 0 ? `${conPresenciaGlobal} de ${totalFotos} fotos` : 'sin datos'}
+        />
+        <KpiCard
+          label="Ciudades cubiertas"
+          valor={totalCiudades}
+          icon={MapPin}
+          color="bg-blue-50 text-blue-600"
+        />
+        <KpiCard
           label="Campañas activas"
           valor={campanasActivas}
           icon={Megaphone}
-          color="bg-gondo-indigo-50 text-gondo-indigo-600"
+          color="bg-purple-50 text-purple-600"
         />
-        <StatCard
-          label="Precio prom. detectado"
-          valor={precioPromedio !== null ? `$${precioPromedio.toFixed(2)}` : '—'}
-          icon={DollarSign}
-          color="bg-gondo-blue-50 text-gondo-blue-400"
-          sub={precioPromedio !== null ? 'fotos con precio confirmado' : 'sin datos de precio'}
-        />
-      </div>
-
-      {/* Tokens — separado */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard
-          label="Tokens disponibles"
-          valor={tokens}
-          icon={Coins}
-          color="bg-gondo-amber-50 text-gondo-amber-400"
+        <KpiCard
+          label="Fotos recibidas"
+          valor={totalFotos}
+          icon={Camera}
+          color="bg-gray-100 text-gray-600"
+          sub="aprobadas"
         />
       </div>
 
-      {/* Últimas fotos */}
+      {/* ── BLOQUE 2 — Mapa de cobertura ── */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900">Últimas fotos recibidas</h3>
+          <h3 className="font-semibold text-gray-900">Cobertura por ciudad</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Tamaño = PDV relevados · Color = % presencia
+          </p>
         </div>
-        {ultimasFotos.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-400">
-            Todavía no hay fotos en tus campañas.
+        <div className="p-5">
+          <CoverageMap zonas={zonaMapData} />
+        </div>
+      </div>
+
+      {/* ── Fila: Pie global + Penetración por campaña ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Mini pie */}
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">Presencia global</h3>
+          </div>
+          <div className="p-5">
+            {totalFotos === 0 ? (
+              <div className="flex items-center justify-center h-48 text-sm text-gray-400 text-center px-6">
+                Sin datos de presencia aún.
+              </div>
+            ) : (
+              <PresenciaPieChart
+                presente={conPresenciaGlobal}
+                ausente={totalFotos - conPresenciaGlobal}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Penetración por campaña */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">Penetración por campaña</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Resultado declarado por foto</p>
+          </div>
+          <div className="p-5">
+            <PenetracionChart data={penetracionData} />
+          </div>
+        </div>
+
+      </div>
+
+      {/* ── BLOQUE 4 — Presencia por tipo de comercio ── */}
+      <SectionCard title="Presencia por tipo de comercio">
+        <TipoComercioChart data={tipoComercioData} />
+      </SectionCard>
+
+      {/* ── BLOQUE 5 — Análisis por ciudad ── */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Análisis por ciudad</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Hacé clic en los encabezados para ordenar</p>
+        </div>
+        <CiudadTable rows={ciudadRows} />
+      </div>
+
+      {/* ── BLOQUE 6 — Evolución temporal ── */}
+      <SectionCard title="Evolución semanal de fotos recibidas">
+        <EvolucionChart data={semanas} />
+      </SectionCard>
+
+      {/* ── BLOQUE 8 — Campañas activas ── */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Campañas activas</h3>
+        </div>
+        {campanasActivasList.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-400">
+            No tenés campañas activas en este momento.
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
-            {ultimasFotos.map(f => (
-              <div key={f.id} className="flex items-center gap-4 px-5 py-3">
-                <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-gray-100 shrink-0">
-                  {f.signedUrl ? (
-                    <Image
-                      src={f.signedUrl}
-                      alt="Foto"
-                      fill
-                      className="object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <Camera size={20} className="absolute inset-0 m-auto text-gray-300" />
-                  )}
+            {campanasActivasList.map(c => {
+              const stat = campanaStatMap.get(c.id)
+              const total = stat ? stat.presente + stat.noEncontrado + stat.soloCompetencia : 0
+              const pct   = total > 0 && stat ? Math.round((stat.presente / total) * 100) : null
+
+              let diasRestantes: number | null = null
+              if (c.fecha_fin) {
+                const fin = new Date(c.fecha_fin)
+                diasRestantes = Math.ceil((fin.getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24))
+              }
+
+              return (
+                <div key={c.id} className="flex items-center justify-between px-5 py-3 gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">{c.nombre}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {total} foto{total !== 1 ? 's' : ''} aprobada{total !== 1 ? 's' : ''}
+                      {pct !== null && ` · ${pct}% presencia`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {diasRestantes !== null && (
+                      <span className={`flex items-center gap-1 text-xs font-medium ${
+                        diasRestantes <= 7 ? 'text-red-600' : 'text-gray-400'
+                      }`}>
+                        <Clock size={12} />
+                        {diasRestantes > 0 ? `${diasRestantes}d` : 'Hoy'}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                      <CheckCircle2 size={11} />
+                      Activa
+                    </span>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {(f.comercio as { nombre: string } | null)?.nombre ?? 'Comercio'}
-                  </p>
-                  <p className="text-xs text-gray-400">{formatearFechaHora(f.created_at)}</p>
-                </div>
-                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${DECL_COLOR[f.declaracion]}`}>
-                  {DECL_LABEL[f.declaracion]}
-                </span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
