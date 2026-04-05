@@ -39,20 +39,30 @@ export function NotifBell({
 
   // Suscripción Realtime
   useEffect(() => {
-    if (!actorId && !isAdmin) return
+    if (!actorId && !isAdmin) {
+      console.warn('[NotifBell] sin actorId ni isAdmin — Realtime no suscrito')
+      return
+    }
 
     const supabase = createClient()
     const channelName = isAdmin ? 'notif-realtime-admin' : `notif-realtime-${actorId}`
     const filter = isAdmin ? 'actor_tipo=eq.admin' : `actor_id=eq.${actorId}`
+
+    console.log('[NotifBell] suscribiendo — channel:', channelName, '| filter:', filter)
 
     const channel = supabase
       .channel(channelName)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notificaciones', filter },
-        () => { setCount(prev => prev + 1) }
+        (payload) => {
+          console.log('[NotifBell] evento recibido:', payload)
+          setCount(prev => prev + 1)
+        }
       )
-      .subscribe()
+      .subscribe((status, err) => {
+        console.log('[NotifBell] estado de suscripción:', status, err ?? '')
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [actorId, isAdmin])
