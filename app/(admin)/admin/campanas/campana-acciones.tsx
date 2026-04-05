@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
 import { pausarCampana, cerrarCampana, activarCampana, aprobarCampanaPendiente, rechazarCampanaPendiente } from './actions'
+import { ConfirmModal } from '@/components/shared/confirm-modal'
 
 export function CampanaAccionesAdmin({
   campanaId,
@@ -14,12 +15,20 @@ export function CampanaAccionesAdmin({
   const [isPending, startTransition] = useTransition()
   const [rechazando, setRechazando] = useState(false)
   const [motivo, setMotivo] = useState('')
+  const [confirmCierre, setConfirmCierre] = useState(false)
 
   function handleRechazar() {
     startTransition(async () => {
       await rechazarCampanaPendiente(campanaId, motivo.trim() || undefined)
       setRechazando(false)
       setMotivo('')
+    })
+  }
+
+  function handleCerrar() {
+    startTransition(async () => {
+      await cerrarCampana(campanaId)
+      setConfirmCierre(false)
     })
   }
 
@@ -54,52 +63,64 @@ export function CampanaAccionesAdmin({
   }
 
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      {estadoActual === 'pendiente_aprobacion' && (
-        <>
+    <>
+      <div className="flex gap-1.5 flex-wrap">
+        {estadoActual === 'pendiente_aprobacion' && (
+          <>
+            <button
+              disabled={isPending}
+              onClick={() => startTransition(async () => { await aprobarCampanaPendiente(campanaId) })}
+              className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
+            >
+              {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Aprobar'}
+            </button>
+            <button
+              disabled={isPending}
+              onClick={() => setRechazando(true)}
+              className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+            >
+              Rechazar
+            </button>
+          </>
+        )}
+        {estadoActual === 'activa' && (
           <button
             disabled={isPending}
-            onClick={() => startTransition(async () => { await aprobarCampanaPendiente(campanaId) })}
+            onClick={() => startTransition(async () => { await pausarCampana(campanaId) })}
+            className="px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-semibold rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
+          >
+            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Pausar'}
+          </button>
+        )}
+        {estadoActual === 'pausada' && (
+          <button
+            disabled={isPending}
+            onClick={() => startTransition(async () => { await activarCampana(campanaId) })}
             className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
           >
-            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Aprobar'}
+            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Activar'}
           </button>
+        )}
+        {(estadoActual === 'activa' || estadoActual === 'pausada' || estadoActual === 'borrador') && (
           <button
             disabled={isPending}
-            onClick={() => setRechazando(true)}
-            className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+            onClick={() => setConfirmCierre(true)}
+            className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
           >
-            Rechazar
+            Cerrar
           </button>
-        </>
-      )}
-      {estadoActual === 'activa' && (
-        <button
-          disabled={isPending}
-          onClick={() => startTransition(async () => { await pausarCampana(campanaId) })}
-          className="px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-semibold rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
-        >
-          {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Pausar'}
-        </button>
-      )}
-      {estadoActual === 'pausada' && (
-        <button
-          disabled={isPending}
-          onClick={() => startTransition(async () => { await activarCampana(campanaId) })}
-          className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
-        >
-          {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Activar'}
-        </button>
-      )}
-      {(estadoActual === 'activa' || estadoActual === 'pausada' || estadoActual === 'borrador') && (
-        <button
-          disabled={isPending}
-          onClick={() => startTransition(async () => { await cerrarCampana(campanaId) })}
-          className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
-        >
-          {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Cerrar'}
-        </button>
-      )}
-    </div>
+        )}
+      </div>
+
+      <ConfirmModal
+        open={confirmCierre}
+        title="¿Cerrar esta campaña?"
+        description="Los gondoleros no podrán seguir enviando fotos. Esta acción no se puede deshacer."
+        confirmLabel="Cerrar campaña"
+        onConfirm={handleCerrar}
+        onCancel={() => setConfirmCierre(false)}
+        loading={isPending}
+      />
+    </>
   )
 }

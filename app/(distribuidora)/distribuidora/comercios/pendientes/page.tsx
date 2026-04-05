@@ -195,7 +195,7 @@ export default async function ComerciosPendientesDistriPage() {
                   <td className="px-4 py-3.5 text-xs text-gray-500">{c.registrador_alias ?? c.registrador_nombre ?? '—'}</td>
                   <td className="px-4 py-3.5 text-xs text-gray-400 whitespace-nowrap">{tiempoRelativo(c.created_at)}</td>
                   <td className="px-4 py-3.5">
-                    <AprobarRechazarBtnsDistri comercioId={c.id} />
+                    <AprobarRechazarBtnsDistri comercioId={c.id} nombreComercio={c.nombre} />
                   </td>
                 </tr>
               ))}

@@ -229,7 +229,7 @@ export default async function ComerciosPendientesPage() {
 
                     {/* Acciones */}
                     <td className="px-4 py-3.5">
-                      <AprobarRechazarBtns comercioId={c.id} />
+                      <AprobarRechazarBtns comercioId={c.id} nombreComercio={c.nombre} />
                     </td>
                   </tr>
                 ))}

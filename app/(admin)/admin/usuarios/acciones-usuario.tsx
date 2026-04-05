@@ -29,7 +29,7 @@ interface UsuarioData {
   cuit?: string | null
 }
 
-type ModalType = null | 'password' | 'editar' | 'eliminar' | 'rol'
+type ModalType = null | 'password' | 'editar' | 'eliminar' | 'rol' | 'desactivar'
 const TIPOS_ACTOR: TipoActor[] = ['gondolero', 'fixer', 'distribuidora', 'marca', 'admin']
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -112,13 +112,31 @@ export function AccionesUsuario({
   }
 
   const handleToggleActivo = () => {
-    setMenuOpen(false)
-    const nuevoEstado = !activoLocal
+    if (!activoLocal) {
+      // Reactivar: no necesita confirmación
+      setMenuOpen(false)
+      startTransition(async () => {
+        const res = await toggleActivarCuenta(usuario.id, true)
+        if (!res.error) {
+          setActivoLocal(true)
+          showFeedback(true, 'Cuenta activada')
+        } else {
+          showFeedback(false, res.error)
+        }
+      })
+    } else {
+      // Desactivar: requiere confirmación
+      openModal('desactivar')
+    }
+  }
+
+  const handleConfirmarDesactivar = () => {
     startTransition(async () => {
-      const res = await toggleActivarCuenta(usuario.id, nuevoEstado)
+      const res = await toggleActivarCuenta(usuario.id, false)
+      closeModal()
       if (!res.error) {
-        setActivoLocal(nuevoEstado)
-        showFeedback(true, nuevoEstado ? 'Cuenta activada' : 'Cuenta desactivada')
+        setActivoLocal(false)
+        showFeedback(true, 'Cuenta desactivada')
       } else {
         showFeedback(false, res.error)
       }
@@ -462,6 +480,29 @@ export function AccionesUsuario({
           <button onClick={closeModal} disabled={isPending} className={`${BTN_SECONDARY} mt-4`} style={{ flex: 'none', width: '100%' }}>
             Cancelar
           </button>
+        </ModalBase>
+      )}
+
+      {/* ── MODAL: Desactivar cuenta ─────────────────────────────────────── */}
+      {modal === 'desactivar' && (
+        <ModalBase title="¿Desactivar esta cuenta?" onClose={closeModal}>
+          <div className="flex gap-3 mb-4">
+            <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-sm text-gray-600">
+              El usuario <span className="font-semibold text-gray-900">{usuario.email}</span> no podrá iniciar sesión
+              hasta que la cuenta sea reactivada. Podés revertir esta acción en cualquier momento.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={closeModal} disabled={isPending} className={BTN_SECONDARY}>Cancelar</button>
+            <button
+              onClick={handleConfirmarDesactivar}
+              disabled={isPending}
+              className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:bg-amber-600 transition-colors disabled:opacity-50"
+            >
+              {isPending ? <Loader2 size={14} className="animate-spin" /> : 'Desactivar cuenta'}
+            </button>
+          </div>
         </ModalBase>
       )}
 

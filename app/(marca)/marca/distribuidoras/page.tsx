@@ -105,7 +105,11 @@ export default async function MarcaDistribuidorasPage() {
                       </td>
                       <td className="px-4 py-3">
                         {r.estado === 'activa' && (
-                          <TerminarRelacionBtn relacionId={r.id} />
+                          <TerminarRelacionBtn
+                            relacionId={r.id}
+                            nombreMarca={marcaData?.razon_social ?? 'la marca'}
+                            nombreDistri={r.distriNombre ?? 'la distribuidora'}
+                          />
                         )}
                       </td>
                     </tr>
