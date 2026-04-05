@@ -105,18 +105,18 @@ export function CampanaAccionesAdmin({
           <button
             disabled={isPending}
             onClick={() => setConfirmCierre(true)}
-            className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+            className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
           >
-            Cerrar
+            Suspender campaña
           </button>
         )}
       </div>
 
       <ConfirmModal
         open={confirmCierre}
-        title="¿Cerrar esta campaña?"
+        title="¿Suspender esta campaña?"
         description="Los gondoleros no podrán seguir enviando fotos. Esta acción no se puede deshacer."
-        confirmLabel="Cerrar campaña"
+        confirmLabel="Suspender campaña"
         onConfirm={handleCerrar}
         onCancel={() => setConfirmCierre(false)}
         loading={isPending}
