@@ -33,10 +33,10 @@ interface NotifBase {
 export async function crearNotificacionGondolero(
   gondoleroId: string,
   notif: NotifBase
-) {
+): Promise<{ error: string | null }> {
   const db = adminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (db as any).from('notificaciones').insert({
+  const { error } = await (db as any).from('notificaciones').insert({
     gondolero_id: gondoleroId,
     actor_id:     gondoleroId,
     actor_tipo:   'gondolero',
@@ -46,16 +46,18 @@ export async function crearNotificacionGondolero(
     campana_id:   notif.campanaId ?? null,
     link_destino: notif.linkDestino ?? null,
   })
+  if (error) console.error('[notificaciones] crearNotificacionGondolero error:', error.message, { gondoleroId, tipo: notif.tipo })
+  return { error: error?.message ?? null }
 }
 
 // Para marca (por actor_id = marca_id)
 export async function crearNotificacionMarca(
   marcaId: string,
   notif: NotifBase
-) {
+): Promise<{ error: string | null }> {
   const db = adminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (db as any).from('notificaciones').insert({
+  const { error } = await (db as any).from('notificaciones').insert({
     actor_id:     marcaId,
     actor_tipo:   'marca',
     tipo:         notif.tipo,
@@ -64,16 +66,18 @@ export async function crearNotificacionMarca(
     campana_id:   notif.campanaId ?? null,
     link_destino: notif.linkDestino ?? null,
   })
+  if (error) console.error('[notificaciones] crearNotificacionMarca error:', error.message, { marcaId, tipo: notif.tipo })
+  return { error: error?.message ?? null }
 }
 
 // Para distribuidora (por actor_id = distri_id)
 export async function crearNotificacionDistri(
   distriId: string,
   notif: NotifBase
-) {
+): Promise<{ error: string | null }> {
   const db = adminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (db as any).from('notificaciones').insert({
+  const { error } = await (db as any).from('notificaciones').insert({
     actor_id:     distriId,
     actor_tipo:   'distribuidora',
     tipo:         notif.tipo,
@@ -82,13 +86,15 @@ export async function crearNotificacionDistri(
     campana_id:   notif.campanaId ?? null,
     link_destino: notif.linkDestino ?? null,
   })
+  if (error) console.error('[notificaciones] crearNotificacionDistri error:', error.message, { distriId, tipo: notif.tipo })
+  return { error: error?.message ?? null }
 }
 
 // Para admin (broadcast — actor_tipo = 'admin', actor_id = null)
-export async function crearNotificacionAdmin(notif: NotifBase) {
+export async function crearNotificacionAdmin(notif: NotifBase): Promise<{ error: string | null }> {
   const db = adminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (db as any).from('notificaciones').insert({
+  const { error } = await (db as any).from('notificaciones').insert({
     actor_tipo:   'admin',
     tipo:         notif.tipo,
     titulo:       notif.titulo,
@@ -96,6 +102,8 @@ export async function crearNotificacionAdmin(notif: NotifBase) {
     campana_id:   notif.campanaId ?? null,
     link_destino: notif.linkDestino ?? null,
   })
+  if (error) console.error('[notificaciones] crearNotificacionAdmin error:', error.message, { tipo: notif.tipo })
+  return { error: error?.message ?? null }
 }
 
 // Agrupación: verificar si ya existe notificación del mismo tipo+campaña en la última hora

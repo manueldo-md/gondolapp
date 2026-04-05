@@ -286,14 +286,18 @@ export async function registrarMision(params: RegistrarMisionParams) {
       )
       console.log('[registrarMision] yaNotifDistri:', yaNotifDistri)
       if (!yaNotifDistri) {
-        await crearNotificacionDistri(distriId, {
+        const { error: errDistri } = await crearNotificacionDistri(distriId, {
           tipo:        'gondolero_completo_mision',
           titulo:      'Gondolero completó una misión',
           mensaje:     `Se recibió una misión de "${campanaData?.nombre ?? 'la campaña'}".`,
           campanaId:   params.campanaId,
           linkDestino: `/distribuidora/campanas/${params.campanaId}/resultados`,
         })
-        console.log('[registrarMision] notif distri creada OK')
+        if (errDistri) {
+          console.error('[registrarMision] notif distri FALLÓ:', errDistri)
+        } else {
+          console.log('[registrarMision] notif distri creada OK')
+        }
       }
     }
 
@@ -306,14 +310,18 @@ export async function registrarMision(params: RegistrarMisionParams) {
       )
       console.log('[registrarMision] yaNotifMarca:', yaNotifMarca)
       if (!yaNotifMarca) {
-        await crearNotificacionMarca(marcaId, {
+        const { error: errMarca } = await crearNotificacionMarca(marcaId, {
           tipo:        'nueva_mision_recibida',
           titulo:      'Nueva misión recibida',
           mensaje:     `Hay una nueva misión de "${campanaData?.nombre ?? 'la campaña'}" pendiente de revisión.`,
           campanaId:   params.campanaId,
           linkDestino: `/marca/campanas/${params.campanaId}/resultados`,
         })
-        console.log('[registrarMision] notif marca creada OK')
+        if (errMarca) {
+          console.error('[registrarMision] notif marca FALLÓ:', errMarca)
+        } else {
+          console.log('[registrarMision] notif marca creada OK')
+        }
       }
     }
   } catch (notifError) {
