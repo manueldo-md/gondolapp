@@ -16,8 +16,8 @@ import {
 } from './dashboard-charts'
 import type { ZonaMapData } from './coverage-map'
 
-// Leaflet necesita dynamic import (no SSR)
-const CoverageMap = dynamic(() => import('./coverage-map').then(m => m.CoverageMap), { ssr: false })
+// Leaflet necesita dynamic import con default export (no SSR)
+const MapaCobertura = dynamic(() => import('./mapa-cobertura'), { ssr: false })
 
 // ── Types internos ────────────────────────────────────────────────────────────
 
@@ -452,7 +452,7 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="p-5">
-          <CoverageMap zonas={zonaMapData} />
+          <MapaCobertura zonas={zonaMapData} />
         </div>
       </div>
 
