@@ -117,12 +117,10 @@ function CampanaCard({ c }: { c: CampanaRow }) {
           )}
         </div>
 
-        <Link
-          href={`/marca/campanas/${c.id}`}
-          className="shrink-0 text-xs font-semibold text-gondo-indigo-600 hover:underline"
-        >
-          Ver detalle →
-        </Link>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <Link href={`/marca/campanas/${c.id}/detalle`} className="text-xs font-semibold text-gray-600 hover:underline px-2 py-1 bg-gray-50 rounded-lg border border-gray-200 text-center">Detalle</Link>
+          <Link href={`/marca/campanas/${c.id}/resultados`} className="text-xs font-semibold text-gondo-indigo-600 hover:underline px-2 py-1 bg-gondo-indigo-50 rounded-lg border border-gondo-indigo-100 text-center">Resultados</Link>
+        </div>
       </div>
     </div>
   )

@@ -57,7 +57,7 @@ function CampanaTable({ campanas }: { campanas: CampanaAdmin[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              {['Nombre', 'Tipo', 'Contenido', 'Origen', 'Marca / Distri', 'Avance', 'Días', 'Acciones'].map(h => (
+              {['Nombre', 'Tipo', 'Contenido', 'Origen', 'Marca / Distri', 'Avance', 'Días', ''].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                   {h}
                 </th>
@@ -117,7 +117,11 @@ function CampanaTable({ campanas }: { campanas: CampanaAdmin[] }) {
                     }
                   </td>
                   <td className="px-4 py-3">
-                    <CampanaAccionesAdmin campanaId={c.id} estadoActual={c.estado} />
+                    <div className="flex items-center gap-2">
+                      <Link href={`/admin/campanas/${c.id}/detalle`} className="text-xs font-semibold text-gray-600 hover:underline px-2 py-1 bg-gray-50 rounded-lg border border-gray-200">Detalle</Link>
+                      <Link href={`/admin/campanas/${c.id}/resultados`} className="text-xs font-semibold text-[#1E1B4B] hover:underline px-2 py-1 bg-[#1E1B4B]/5 rounded-lg border border-[#1E1B4B]/10">Resultados</Link>
+                      <CampanaAccionesAdmin campanaId={c.id} estadoActual={c.estado} />
+                    </div>
                   </td>
                 </tr>
               )

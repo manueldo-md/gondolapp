@@ -89,6 +89,7 @@ export default async function CampanasPage() {
       tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
       max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
       marca:marcas ( razon_social ),
+      distri:distribuidoras ( razon_social ),
       bloques_foto ( id )
     `)
     .eq('estado', 'activa')

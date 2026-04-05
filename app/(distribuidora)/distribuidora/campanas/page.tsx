@@ -85,18 +85,16 @@ function PendienteCard({ campana }: { campana: CampanaRow }) {
           </div>
           <AprobacionBtns campanaId={campana.id} />
         </div>
-        <Link
-          href={`/distribuidora/campanas/${campana.id}`}
-          className="shrink-0 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:underline"
-        >
-          Ver detalle →
-        </Link>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <Link href={`/distribuidora/campanas/${campana.id}/detalle`} className="text-xs font-semibold text-gray-600 hover:underline px-2 py-1 bg-gray-50 rounded-lg border border-gray-200 text-center">Detalle</Link>
+          <Link href={`/distribuidora/campanas/${campana.id}/resultados`} className="text-xs font-semibold text-gondo-amber-400 hover:underline px-2 py-1 bg-gondo-amber-50 rounded-lg border border-gondo-amber-200 text-center">Resultados</Link>
+        </div>
       </div>
     </div>
   )
 }
 
-function CampanaCard({ campana }: { campana: CampanaRow }) {
+function CampanaCard({ campana, distriNombre }: { campana: CampanaRow; distriNombre?: string }) {
   const dias     = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
   const progreso = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
   const esPropia = campana.financiada_por === 'distri'
@@ -108,7 +106,7 @@ function CampanaCard({ campana }: { campana: CampanaRow }) {
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${TIPO_COLOR[campana.tipo]}`}>
               {esPropia
-                ? 'Interna'
+                ? (distriNombre ?? 'Interna')
                 : campana.marca?.razon_social
                   ? `Marca · ${campana.marca.razon_social}`
                   : 'Marca'}
@@ -164,12 +162,10 @@ function CampanaCard({ campana }: { campana: CampanaRow }) {
           )}
         </div>
 
-        <Link
-          href={`/distribuidora/campanas/${campana.id}`}
-          className="shrink-0 text-xs font-semibold text-gondo-amber-400 hover:underline"
-        >
-          Ver detalle →
-        </Link>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <Link href={`/distribuidora/campanas/${campana.id}/detalle`} className="text-xs font-semibold text-gray-600 hover:underline px-2 py-1 bg-gray-50 rounded-lg border border-gray-200 text-center">Detalle</Link>
+          <Link href={`/distribuidora/campanas/${campana.id}/resultados`} className="text-xs font-semibold text-gondo-amber-400 hover:underline px-2 py-1 bg-gondo-amber-50 rounded-lg border border-gondo-amber-200 text-center">Resultados</Link>
+        </div>
       </div>
     </div>
   )
@@ -193,6 +189,17 @@ export default async function CampanasPage() {
     .single()
 
   const distriId = profile?.distri_id ?? null
+
+  // Nombre de la distribuidora propia (para mostrar en lugar de "Interna")
+  let distriNombre: string | undefined
+  if (distriId) {
+    const { data: distriRow } = await admin
+      .from('distribuidoras')
+      .select('razon_social')
+      .eq('id', distriId)
+      .single()
+    distriNombre = distriRow?.razon_social ?? undefined
+  }
 
   const { data, error } = await admin
     .from('campanas')
@@ -305,7 +312,7 @@ export default async function CampanasPage() {
               defaultOpen={true}
             >
               <div className="space-y-3 pt-1">
-                {activas.map(c => <CampanaCard key={c.id} campana={c} />)}
+                {activas.map(c => <CampanaCard key={c.id} campana={c} distriNombre={distriNombre} />)}
               </div>
             </SeccionColapsable>
           )}
@@ -320,7 +327,7 @@ export default async function CampanasPage() {
               defaultOpen={false}
             >
               <div className="space-y-3 pt-1">
-                {borradores.map(c => <CampanaCard key={c.id} campana={c} />)}
+                {borradores.map(c => <CampanaCard key={c.id} campana={c} distriNombre={distriNombre} />)}
               </div>
             </SeccionColapsable>
           )}
@@ -335,7 +342,7 @@ export default async function CampanasPage() {
               defaultOpen={false}
             >
               <div className="space-y-3 pt-1">
-                {cerradas.map(c => <CampanaCard key={c.id} campana={c} />)}
+                {cerradas.map(c => <CampanaCard key={c.id} campana={c} distriNombre={distriNombre} />)}
               </div>
             </SeccionColapsable>
           )}

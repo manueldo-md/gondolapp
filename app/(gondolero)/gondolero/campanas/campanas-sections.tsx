@@ -36,6 +36,7 @@ export interface CampanaCardData {
   via_ejecucion: string | null
   created_at: string
   marca: { razon_social: string } | null
+  distri: { razon_social: string } | null
   bloques_foto: { id: string }[]
 }
 
@@ -96,9 +97,7 @@ function CampanaCard({
   const esGondolApp = campana.financiada_por === 'gondolapp' || (!campana.distri_id && !campana.marca_id)
 
   return (
-    <div className={`rounded-2xl shadow-sm border overflow-hidden transition-transform duration-100 active:scale-[0.98] ${
-      participando ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100'
-    }`}>
+    <div className="rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden transition-transform duration-100 active:scale-[0.98]">
       {/* Header */}
       <div className="p-4 pb-3">
         <div className="flex items-center gap-2 mb-2.5 flex-wrap">
@@ -119,7 +118,7 @@ function CampanaCard({
           {/* Origin badges */}
           {esMiDistri && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
-              📦 Tu distribuidora
+              📦 {campana.distri?.razon_social ?? 'Tu distribuidora'}
             </span>
           )}
           {!esMiDistri && esGondolApp && (
