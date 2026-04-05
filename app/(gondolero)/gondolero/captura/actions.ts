@@ -266,43 +266,59 @@ export async function registrarMision(params: RegistrarMisionParams) {
     .update({ comercios_completados: (participacion.comercios_completados ?? 0) + 1 })
     .eq('id', participacion.id)
 
-  // 5. Notificar a la distribuidora y a la marca (con agrupación para evitar spam)
-  // Buscar la campaña para obtener distri_id y marca_id
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: campanaData } = await (db as any)
-    .from('campanas')
-    .select('distri_id, marca_id, nombre')
-    .eq('id', params.campanaId)
-    .single()
+  // 5. Notificar a la distribuidora del gondolero y a la marca de la campaña
+  try {
+    // Obtener en paralelo: distri_id del gondolero + datos de la campaña
+    const [{ data: gondoleroProfile }, { data: campanaData }] = await Promise.all([
+      db.from('profiles').select('distri_id').eq('id', user.id).single(),
+      db.from('campanas').select('marca_id, nombre').eq('id', params.campanaId).single(),
+    ])
 
-  if (campanaData?.distri_id) {
-    const yaNotifDistri = await existeNotifReciente(
-      campanaData.distri_id, 'distribuidora', 'gondolero_completo_mision', params.campanaId
-    )
-    if (!yaNotifDistri) {
-      await crearNotificacionDistri(campanaData.distri_id, {
-        tipo:        'gondolero_completo_mision',
-        titulo:      'Gondolero completó una misión',
-        mensaje:     `Se recibió una misión de "${campanaData.nombre}".`,
-        campanaId:   params.campanaId,
-        linkDestino: `/distribuidora/gondolas`,
-      })
-    }
-  }
+    console.log('[registrarMision] gondoleroProfile:', gondoleroProfile)
+    console.log('[registrarMision] campanaData:', campanaData)
 
-  if (campanaData?.marca_id) {
-    const yaNotifMarca = await existeNotifReciente(
-      campanaData.marca_id, 'marca', 'nueva_mision_recibida', params.campanaId
-    )
-    if (!yaNotifMarca) {
-      await crearNotificacionMarca(campanaData.marca_id, {
-        tipo:        'nueva_mision_recibida',
-        titulo:      'Nueva misión recibida',
-        mensaje:     `Hay una nueva misión de "${campanaData.nombre}" pendiente de revisión.`,
-        campanaId:   params.campanaId,
-        linkDestino: `/marca/gondolas`,
-      })
+    // Notificar a la distribuidora del gondolero (no a la de la campaña)
+    const distriId = gondoleroProfile?.distri_id ?? null
+    console.log('[registrarMision] distriId para notif:', distriId)
+    if (distriId) {
+      const yaNotifDistri = await existeNotifReciente(
+        distriId, 'distribuidora', 'gondolero_completo_mision', params.campanaId
+      )
+      console.log('[registrarMision] yaNotifDistri:', yaNotifDistri)
+      if (!yaNotifDistri) {
+        await crearNotificacionDistri(distriId, {
+          tipo:        'gondolero_completo_mision',
+          titulo:      'Gondolero completó una misión',
+          mensaje:     `Se recibió una misión de "${campanaData?.nombre ?? 'la campaña'}".`,
+          campanaId:   params.campanaId,
+          linkDestino: `/distribuidora/campanas/${params.campanaId}/resultados`,
+        })
+        console.log('[registrarMision] notif distri creada OK')
+      }
     }
+
+    // Notificar a la marca de la campaña
+    const marcaId = campanaData?.marca_id ?? null
+    console.log('[registrarMision] marcaId para notif:', marcaId)
+    if (marcaId) {
+      const yaNotifMarca = await existeNotifReciente(
+        marcaId, 'marca', 'nueva_mision_recibida', params.campanaId
+      )
+      console.log('[registrarMision] yaNotifMarca:', yaNotifMarca)
+      if (!yaNotifMarca) {
+        await crearNotificacionMarca(marcaId, {
+          tipo:        'nueva_mision_recibida',
+          titulo:      'Nueva misión recibida',
+          mensaje:     `Hay una nueva misión de "${campanaData?.nombre ?? 'la campaña'}" pendiente de revisión.`,
+          campanaId:   params.campanaId,
+          linkDestino: `/marca/campanas/${params.campanaId}/resultados`,
+        })
+        console.log('[registrarMision] notif marca creada OK')
+      }
+    }
+  } catch (notifError) {
+    // Las notificaciones no deben romper el flujo principal
+    console.error('[registrarMision] Error al enviar notificaciones:', notifError)
   }
 
   return { misionId: mision.id, puntos: params.puntosTotal }
