@@ -12,6 +12,7 @@ export type TipoNotificacion =
   // Gondolero
   | 'foto_aprobada' | 'foto_rechazada' | 'nivel_subido'
   | 'mision_aprobada' | 'puntos_acreditados' | 'nueva_campana_disponible' | 'comercio_validado'
+  | 'solicitud_aprobada' | 'solicitud_rechazada' | 'desvinculacion_distri'
   // Marca
   | 'campana_aprobada' | 'campana_rechazada' | 'nueva_mision_recibida'
   | 'campana_por_vencer' | 'nueva_distribuidora_vinculada' | 'distribuidora_termino_relacion'

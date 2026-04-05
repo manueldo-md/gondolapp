@@ -39,10 +39,12 @@ export async function aprobarSolicitud(
   // Notificación al gondolero
   await admin.from('notificaciones').insert({
     gondolero_id: gondoleroId,
-    tipo: 'solicitud_aprobada',
-    titulo: '¡Solicitud aprobada! 🎉',
-    mensaje: `Ya sos parte de ${distriNombre}. ¡Bienvenido al equipo!`,
-    leida: false,
+    actor_id:     gondoleroId,
+    actor_tipo:   'gondolero',
+    tipo:         'solicitud_aprobada',
+    titulo:       '¡Solicitud aprobada!',
+    mensaje:      `Ya sos parte de ${distriNombre}. ¡Bienvenido al equipo!`,
+    leida:        false,
   })
 
   revalidatePath('/distribuidora/gondoleros')
@@ -70,10 +72,12 @@ export async function rechazarSolicitud(
   // Notificación al gondolero
   await admin.from('notificaciones').insert({
     gondolero_id: gondoleroId,
-    tipo: 'solicitud_rechazada',
-    titulo: 'Solicitud no aprobada',
-    mensaje: `Tu solicitud a ${distriNombre} no fue aprobada. Podés solicitar otra distribuidora desde tu perfil.`,
-    leida: false,
+    actor_id:     gondoleroId,
+    actor_tipo:   'gondolero',
+    tipo:         'solicitud_rechazada',
+    titulo:       'Solicitud no aprobada',
+    mensaje:      `Tu solicitud a ${distriNombre} no fue aprobada. Podés solicitar otra distribuidora desde tu perfil.`,
+    leida:        false,
   })
 
   revalidatePath('/distribuidora/gondoleros')

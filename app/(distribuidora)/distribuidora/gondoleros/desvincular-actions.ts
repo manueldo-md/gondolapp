@@ -102,10 +102,12 @@ export async function desvincularGondolero(
   try {
     await admin.from('notificaciones').insert({
       gondolero_id: gondoleroId,
-      tipo: 'desvinculacion_distri',
-      titulo: 'Fuiste desvinculado',
-      mensaje: `Tu relación con ${distriNombre} fue terminada. Podés solicitar vinculación a otra distribuidora desde tu perfil.`,
-      leida: false,
+      actor_id:     gondoleroId,
+      actor_tipo:   'gondolero',
+      tipo:         'desvinculacion_distri',
+      titulo:       'Fuiste desvinculado',
+      mensaje:      `Tu relación con ${distriNombre} fue terminada. Podés solicitar vinculación a otra distribuidora desde tu perfil.`,
+      leida:        false,
     })
   } catch { /* ignorar si la notificación falla */ }
 
