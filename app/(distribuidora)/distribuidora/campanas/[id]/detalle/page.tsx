@@ -1,13 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
-import { revalidatePath } from 'next/cache'
-import { Calendar, Target, Coins, MapPin, Camera, Users } from 'lucide-react'
+import { Calendar, Target, Coins, Clock, Users } from 'lucide-react'
 import {
   labelEstadoCampana, colorEstadoCampana, labelTipoCampana, diasRestantes,
 } from '@/lib/utils'
 import type { TipoCampana, EstadoCampana } from '@/types'
 import { CampanaPageNav } from '@/components/campanas/campana-page-nav'
+import { CampanaDraftEditor } from '@/components/campanas/draft-editor'
+import {
+  guardarBorradorDistri,
+  republicarCampanaDistri,
+  descartarCambiosDistri,
+} from './draft-actions'
 
 function adminClient() {
   return createSupabaseClient(
@@ -41,7 +46,8 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
     .select(`
       id, nombre, tipo, estado, financiada_por, fecha_inicio, fecha_fin,
       objetivo_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
-      puntos_por_foto, instruccion, distri_id, marca_id, created_at,
+      puntos_por_foto, instruccion, distri_id, marca_id, created_at, updated_at,
+      tiene_draft, draft_descripcion, draft_bounty, draft_zonas, draft_bloques,
       marca:marcas ( razon_social ),
       bloques_foto ( id, orden, instruccion, tipo_contenido ),
       campana_zonas ( zona_id, zonas ( id, nombre ) )
@@ -66,55 +72,22 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
   }))
 
   const { data: todasZonas } = await admin.from('zonas').select('id, nombre').order('nombre')
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c = campana as any
   const zonaIds = new Set((c.campana_zonas ?? []).map((cz: any) => Array.isArray(cz.zonas) ? cz.zonas[0]?.id : cz.zonas?.id).filter(Boolean))
-  const zonasActuales = (c.campana_zonas ?? []).map((cz: any) => Array.isArray(cz.zonas) ? cz.zonas[0]?.nombre : cz.zonas?.nombre).filter(Boolean)
-  const zonasDisponibles = (todasZonas ?? []).filter((z: any) => !zonaIds.has(z.id))
+  const zonasActuales: string[] = (c.campana_zonas ?? []).map((cz: any) => Array.isArray(cz.zonas) ? cz.zonas[0]?.nombre : cz.zonas?.nombre).filter(Boolean)
+  const zonasDisponibles = (todasZonas ?? []).filter((z: any) => !zonaIds.has(z.id)) as { id: string; nombre: string }[]
+
   const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-  const bloques = (c.bloques_foto ?? []).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+  const bloques = ((c.bloques_foto ?? []) as any[]).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
   const marcaNombre = Array.isArray(c.marca) ? c.marca[0]?.razon_social : c.marca?.razon_social
 
-  const TIPO_CONTENIDO_LABEL: Record<string, string> = {
-    propios: 'Productos propios', competencia: 'Competencia', ambos: 'Ambos', ninguno: 'Ninguno',
-  }
-
-  // ── Inline server actions ────────────────────────────────────────────────────
-
-  async function guardarDescripcion(formData: FormData) {
-    'use server'
-    const instruccion = (formData.get('instruccion') as string)?.trim() ?? ''
-    adminClient().from('campanas').update({ instruccion }).eq('id', params.id).then(() => {})
-    revalidatePath(`/distribuidora/campanas/${params.id}/detalle`)
-  }
-
-  async function guardarPuntos(formData: FormData) {
-    'use server'
-    const nuevos = parseInt(formData.get('puntos') as string, 10)
-    if (isNaN(nuevos) || nuevos <= (c.puntos_por_foto ?? 0)) return
-    adminClient().from('campanas').update({ puntos_por_foto: nuevos }).eq('id', params.id).then(() => {})
-    revalidatePath(`/distribuidora/campanas/${params.id}/detalle`)
-  }
-
-  async function agregarZona(formData: FormData) {
-    'use server'
-    const zonaId = formData.get('zona_id') as string
-    if (!zonaId) return
-    adminClient().from('campana_zonas').insert({ campana_id: params.id, zona_id: zonaId }).then(() => {})
-    revalidatePath(`/distribuidora/campanas/${params.id}/detalle`)
-  }
-
-  async function agregarBloque(formData: FormData) {
-    'use server'
-    const instruccionBloque = (formData.get('instruccion') as string)?.trim()
-    const tipoContenido = (formData.get('tipo_contenido') as string) || 'propios'
-    if (!instruccionBloque) return
-    adminClient().from('bloques_foto').insert({
-      campana_id: params.id, orden: bloques.length + 1,
-      instruccion: instruccionBloque, tipo_contenido: tipoContenido,
-    }).then(() => {})
-    revalidatePath(`/distribuidora/campanas/${params.id}/detalle`)
-  }
+  const fechaCreacion = new Date(c.created_at).toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const fechaModif = c.updated_at && c.updated_at !== c.created_at
+    ? new Date(c.updated_at).toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null
+  const creadorLabel = c.financiada_por === 'distri' ? 'Tu distribuidora' : (marcaNombre ?? 'Marca')
 
   return (
     <div>
@@ -143,7 +116,12 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
           {c.fecha_fin && (
             <div className="flex items-start gap-2">
               <Calendar size={14} className="text-gray-400 mt-0.5 shrink-0" />
-              <div><p className="text-xs text-gray-400">Fin{dias !== null ? ` · ${dias}d` : ''}</p><p className={`font-medium ${dias !== null && dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>{new Date(c.fecha_fin).toLocaleDateString('es-AR')}</p></div>
+              <div>
+                <p className="text-xs text-gray-400">Fin{dias !== null ? ` · ${dias}d` : ''}</p>
+                <p className={`font-medium ${dias !== null && dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
+                  {new Date(c.fecha_fin).toLocaleDateString('es-AR')}
+                </p>
+              </div>
             </div>
           )}
           {c.objetivo_comercios && (
@@ -163,83 +141,63 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
         </div>
       </div>
 
-      {/* Descripción editable */}
+      {/* MEJORA 2 — Bloque de creación */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Descripción / Instrucciones</h3>
-        <form action={guardarDescripcion}>
-          <textarea name="instruccion" defaultValue={c.instruccion ?? ''} rows={3} placeholder="Instrucciones para el gondolero…"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/30 resize-none" />
-          <button type="submit" className="mt-2 px-4 py-2 bg-gondo-amber-400 text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity">
-            Guardar descripción
-          </button>
-        </form>
-      </div>
-
-      {/* Puntos por foto */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">Puntos por foto</h3>
-        <p className="text-xs text-gray-400 mb-3">Solo podés aumentar el bounty.</p>
-        <form action={guardarPuntos} className="flex items-center gap-3">
-          <input type="number" name="puntos" defaultValue={c.puntos_por_foto} min={c.puntos_por_foto}
-            className="w-28 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/30" />
-          <button type="submit" className="px-4 py-2 bg-gondo-amber-400 text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity">
-            Actualizar
-          </button>
-        </form>
-      </div>
-
-      {/* Zonas */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5"><MapPin size={14} className="text-gray-400" />Zonas</h3>
-        {zonasActuales.length > 0 ? (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {zonasActuales.map((z: string) => <span key={z} className="text-xs px-2.5 py-1 bg-gondo-amber-50 text-gondo-amber-400 rounded-full border border-gondo-amber-200">{z}</span>)}
+        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Información de campaña</h3>
+        <dl className="space-y-2 text-sm">
+          <div className="flex items-start gap-2">
+            <Clock size={13} className="text-gray-400 mt-0.5 shrink-0" />
+            <div>
+              <dt className="text-xs text-gray-400">Creada por</dt>
+              <dd className="font-medium text-gray-900">{creadorLabel}</dd>
+            </div>
           </div>
-        ) : <p className="text-xs text-gray-400 mb-3">Sin zonas (visible para todos)</p>}
-        {zonasDisponibles.length > 0 && (
-          <form action={agregarZona} className="flex items-center gap-2">
-            <select name="zona_id" className="rounded-lg border border-gray-200 px-3 py-2 text-sm flex-1">
-              <option value="">Seleccionar zona…</option>
-              {zonasDisponibles.map((z: any) => <option key={z.id} value={z.id}>{z.nombre}</option>)}
-            </select>
-            <button type="submit" className="px-4 py-2 bg-gondo-amber-400 text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap">+ Agregar</button>
-          </form>
-        )}
-      </div>
-
-      {/* Bloques de foto */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5"><Camera size={14} className="text-gray-400" />Bloques de foto ({bloques.length})</h3>
-        {bloques.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {bloques.map((b: any, i: number) => (
-              <div key={b.id} className="flex items-start gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
-                <span className="text-xs font-bold text-gray-400 w-5 shrink-0 pt-0.5">{i + 1}</span>
-                <div className="min-w-0">
-                  <p className="text-sm text-gray-900">{b.instruccion}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{TIPO_CONTENIDO_LABEL[b.tipo_contenido] ?? b.tipo_contenido}</p>
-                </div>
+          <div className="flex items-start gap-2">
+            <Clock size={13} className="text-gray-400 mt-0.5 shrink-0" />
+            <div>
+              <dt className="text-xs text-gray-400">Creada el</dt>
+              <dd className="font-medium text-gray-900">{fechaCreacion}</dd>
+            </div>
+          </div>
+          {fechaModif && (
+            <div className="flex items-start gap-2">
+              <Clock size={13} className="text-gray-400 mt-0.5 shrink-0" />
+              <div>
+                <dt className="text-xs text-gray-400">Última modificación</dt>
+                <dd className="font-medium text-gray-900">{fechaModif}</dd>
               </div>
-            ))}
-          </div>
-        )}
-        <form action={agregarBloque} className="space-y-2">
-          <textarea name="instruccion" rows={2} placeholder="Instrucción del nuevo bloque…"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/30 resize-none" />
-          <div className="flex items-center gap-2">
-            <select name="tipo_contenido" className="rounded-lg border border-gray-200 px-3 py-2 text-sm flex-1">
-              <option value="propios">Productos propios</option>
-              <option value="competencia">Competencia</option>
-              <option value="ambos">Ambos</option>
-            </select>
-            <button type="submit" className="px-4 py-2 bg-gondo-amber-400 text-white text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap">+ Agregar bloque</button>
-          </div>
-        </form>
+            </div>
+          )}
+          {c.tiene_draft && (
+            <div className="flex items-center gap-2 mt-1 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <span className="text-[11px] font-semibold text-amber-700">Tiene borrador guardado sin publicar</span>
+            </div>
+          )}
+        </dl>
       </div>
+
+      {/* MEJORA 1+3 — Editor de draft */}
+      <CampanaDraftEditor
+        campanaId={params.id}
+        instruccionActual={c.instruccion ?? null}
+        puntosActual={c.puntos_por_foto ?? 0}
+        tienesDraft={c.tiene_draft ?? false}
+        draftDescripcion={c.draft_descripcion ?? null}
+        draftBounty={c.draft_bounty ?? null}
+        draftZonasGuardadas={c.draft_zonas ?? null}
+        draftBloquesGuardados={c.draft_bloques ?? null}
+        zonasActuales={zonasActuales}
+        zonasDisponibles={zonasDisponibles}
+        bloquesActuales={bloques.map((b: any) => ({ id: b.id, instruccion: b.instruccion, tipo_contenido: b.tipo_contenido }))}
+        accentColor="amber"
+        guardarBorradorFn={guardarBorradorDistri}
+        republicarFn={republicarCampanaDistri}
+        descartarFn={descartarCambiosDistri}
+      />
 
       {/* Gondoleros participando */}
       {participaciones.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mt-5">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
             <Users size={14} className="text-gray-400" />
             Gondoleros ({participaciones.length})
@@ -247,20 +205,18 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
           <div className="divide-y divide-gray-50">
             {participaciones.map((p: any) => (
               <div key={p.id} className="py-2.5 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {p.gondolero?.alias ?? p.gondolero?.nombre ?? 'Gondolero'}
-                    </p>
-                    <p className="text-xs text-gray-400">{p.comercios_completados} comercios</p>
-                  </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {p.gondolero?.alias ?? p.gondolero?.nombre ?? 'Gondolero'}
+                  </p>
+                  <p className="text-xs text-gray-400">{p.comercios_completados} comercios</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${NIVEL_COLOR[p.gondolero?.nivel ?? 'casual']}`}>
                     {NIVEL_LABEL[p.gondolero?.nivel ?? 'casual']}
                   </span>
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${ESTADO_PART_COLOR[p.estado]}`}>
-                    {ESTADO_PART_LABEL[p.estado]}
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${ESTADO_PART_COLOR[p.estado] ?? 'bg-gray-100 text-gray-500'}`}>
+                    {ESTADO_PART_LABEL[p.estado] ?? p.estado}
                   </span>
                 </div>
               </div>

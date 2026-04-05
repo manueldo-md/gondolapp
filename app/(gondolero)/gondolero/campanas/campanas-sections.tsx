@@ -393,8 +393,8 @@ export function CampanasSections({
         <Seccion
           titulo="Disponibles"
           badge={disponibles.length}
-          badgeColor="bg-gray-100 text-gray-600"
-          bgColor="bg-white border-gray-200"
+          badgeColor="bg-slate-200 text-slate-600"
+          bgColor="bg-slate-100 border-slate-200"
           defaultOpen={true}
         >
           {disponibles.map(c => (
@@ -414,8 +414,8 @@ export function CampanasSections({
         <Seccion
           titulo="Completadas"
           badge={completadas.length}
-          badgeColor="bg-gondo-verde-50 text-gondo-verde-600"
-          bgColor="bg-gray-50 border-gray-200"
+          badgeColor="bg-rose-100 text-rose-600"
+          bgColor="bg-rose-50 border-rose-200"
           defaultOpen={false}
         >
           {completadas.map(c => (
