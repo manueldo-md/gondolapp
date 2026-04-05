@@ -113,6 +113,7 @@ export default async function DistriLayout({
   return (
     <DistriShell
       empresa={empresa}
+      distriId={profile.distri_id}
       hayAlertas={hayAlertas}
       solicitudesPendientes={solicitudesPendientesCount}
       campanasPendientes={campanasPendientesCount}

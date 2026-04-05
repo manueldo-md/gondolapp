@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutDashboard, Megaphone, Images, LogOut, Coins, UserCog, Building2, Bell } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { NotifBell } from '@/components/notificaciones/notif-bell'
 
 const NAV = [
   { href: '/marca/dashboard',        label: 'Dashboard',        icon: LayoutDashboard },
@@ -17,11 +18,13 @@ const NAV = [
 export function MarcaShell({
   children,
   empresa,
+  marcaId,
   tokensDisponibles,
   unreadNotifs = 0,
 }: {
   children: React.ReactNode
   empresa: string
+  marcaId: string
   tokensDisponibles: number
   unreadNotifs?: number
 }) {
@@ -98,14 +101,12 @@ export function MarcaShell({
         <header className="sticky top-0 z-10 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
           <h1 className="font-semibold text-gray-900 text-base">{seccionActual}</h1>
           <div className="flex items-center gap-3">
-            <Link href="/marca/notificaciones" className="relative p-1.5 text-gray-400 hover:text-gray-700 transition-colors">
-              <Bell size={18} />
-              {unreadNotifs > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-0.5 leading-none">
-                  {unreadNotifs > 99 ? '99+' : unreadNotifs}
-                </span>
-              )}
-            </Link>
+            <NotifBell
+              initialCount={unreadNotifs}
+              href="/marca/notificaciones"
+              actorId={marcaId}
+              className="text-gray-400 hover:text-gray-700"
+            />
             <div className="flex items-center gap-1.5 bg-gondo-indigo-50 text-gondo-indigo-600 px-3 py-1.5 rounded-full">
               <Coins size={14} />
               <span className="text-sm font-semibold">{tokensDisponibles} tokens</span>

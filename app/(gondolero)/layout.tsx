@@ -14,11 +14,13 @@ export default async function GondoleroLayout({
   let unreadCount = 0
   let unreadLogrosCount = 0
   let invitacionesPendientesCount = 0
+  let userId: string | undefined
 
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
+      userId = user.id
       const admin = createAdminClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -65,6 +67,7 @@ export default async function GondoleroLayout({
         unreadCount={unreadCount}
         unreadLogrosCount={unreadLogrosCount}
         invitacionesPendientesCount={invitacionesPendientesCount}
+        userId={userId}
       />
     </div>
   )

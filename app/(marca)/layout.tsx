@@ -55,7 +55,12 @@ export default async function MarcaLayout({
   }
 
   return (
-    <MarcaShell empresa={empresa} tokensDisponibles={tokensDisponibles} unreadNotifs={unreadNotifs}>
+    <MarcaShell
+      empresa={empresa}
+      marcaId={profile.marca_id}
+      tokensDisponibles={tokensDisponibles}
+      unreadNotifs={unreadNotifs}
+    >
       {children}
     </MarcaShell>
   )

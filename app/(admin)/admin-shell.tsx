@@ -8,6 +8,7 @@ import {
   Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle, Handshake, Bell,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { NotifBell } from '@/components/notificaciones/notif-bell'
 
 type NavItem = {
   href: string
@@ -182,14 +183,12 @@ export function AdminShell({
               </Link>
             )
           })()}
-          <Link href="/admin/notificaciones" className="relative p-1.5 text-white/60 hover:text-white transition-colors">
-            <Bell size={18} />
-            {unreadNotifs > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-0.5 leading-none">
-                {unreadNotifs > 99 ? '99+' : unreadNotifs}
-              </span>
-            )}
-          </Link>
+          <NotifBell
+            initialCount={unreadNotifs}
+            href="/admin/notificaciones"
+            isAdmin
+            className="text-white/60 hover:text-white"
+          />
           <span className="text-white/60 text-sm hidden sm:inline">{nombre}</span>
         </div>
       </header>

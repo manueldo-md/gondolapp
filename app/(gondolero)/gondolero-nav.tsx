@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutGrid, CheckSquare, BarChart2, Trophy, User } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 const TABS = [
   { href: '/gondolero/campanas',  label: 'Campañas',  icon: LayoutGrid  },
@@ -103,16 +104,44 @@ function NavItem({
 }
 
 export function GondoleroNav({
-  unreadCount,
+  unreadCount: initialUnreadCount,
   unreadLogrosCount,
   invitacionesPendientesCount,
+  userId,
 }: {
   unreadCount: number
   unreadLogrosCount: number
   invitacionesPendientesCount: number
+  userId?: string
 }) {
   const pathname = usePathname()
   const enCaptura = pathname.includes('/captura')
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount)
+
+  // Sincronizar cuando el layout re-renderiza (ej: después de marcar leídas)
+  useEffect(() => {
+    setUnreadCount(initialUnreadCount)
+  }, [initialUnreadCount])
+
+  // Realtime: incrementar badge cuando llega una notificación nueva
+  useEffect(() => {
+    if (!userId) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`notif-gondolero-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notificaciones',
+          filter: `gondolero_id=eq.${userId}`,
+        },
+        () => { setUnreadCount(prev => prev + 1) }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [userId])
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 safe-area-inset-bottom">
