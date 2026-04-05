@@ -17,10 +17,29 @@ const nextConfig = {
 
   // Headers de seguridad
   async headers() {
+    const csp = [
+      "default-src 'self'",
+      // unsafe-eval requerido por Supabase Realtime (usa eval() internamente)
+      // unsafe-inline requerido por Next.js (inline scripts de hidratación)
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+      // wss://*.supabase.co requerido para WebSockets de Realtime
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "img-src 'self' blob: data: https://*.supabase.co",
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self' data:",
+      "media-src 'self' blob:",
+      // blob: requerido para preview de fotos capturadas con la cámara
+      "worker-src 'self' blob:",
+    ].join('; ')
+
     return [
       {
         source: '/(.*)',
         headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: csp,
+          },
           {
             key: 'X-Frame-Options',
             value: 'DENY',
