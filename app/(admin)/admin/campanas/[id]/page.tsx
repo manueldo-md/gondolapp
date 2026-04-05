@@ -45,7 +45,7 @@ export default async function CampanaAdminDetailPage({
       marca:marcas ( razon_social ),
       distri:distribuidoras ( razon_social ),
       bloques_foto ( id, orden, instruccion, tipo_contenido,
-        preguntas_bloque ( id, orden, texto, tipo_respuesta, opciones )
+        bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio )
       ),
       campana_zonas ( zona_id, zonas ( nombre ) )
     `)
@@ -264,19 +264,22 @@ export default async function CampanaAdminDetailPage({
                   <p className="text-sm text-gray-700">{bloque.instruccion}</p>
                 )}
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {bloque.preguntas_bloque?.length > 0 && (
+                {bloque.bloque_campos?.length > 0 && (
                   <div className="mt-2 space-y-1.5 pl-3 border-l-2 border-gray-100">
-                    <p className="text-xs font-semibold text-gray-400">Preguntas</p>
+                    <p className="text-xs font-semibold text-gray-400">Campos</p>
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {bloque.preguntas_bloque.sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0)).map((preg: any) => (
-                      <div key={preg.id} className="text-xs text-gray-600">
-                        <span className="font-medium">{preg.orden}. {preg.texto}</span>
-                        {preg.tipo_respuesta && (
-                          <span className="ml-1.5 text-gray-400">({preg.tipo_respuesta})</span>
+                    {bloque.bloque_campos.sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0)).map((campo: any) => (
+                      <div key={campo.id} className="text-xs text-gray-600">
+                        <span className="font-medium">{campo.pregunta}</span>
+                        {campo.tipo && (
+                          <span className="ml-1.5 text-gray-400">({campo.tipo})</span>
                         )}
-                        {preg.opciones?.length > 0 && (
+                        {campo.obligatorio && (
+                          <span className="ml-1.5 text-red-400">*</span>
+                        )}
+                        {campo.opciones?.length > 0 && (
                           <span className="ml-1.5 text-gray-400">
-                            — {preg.opciones.join(', ')}
+                            — {Array.isArray(campo.opciones) ? campo.opciones.join(', ') : campo.opciones}
                           </span>
                         )}
                       </div>
