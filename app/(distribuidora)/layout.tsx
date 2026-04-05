@@ -31,6 +31,7 @@ export default async function DistriLayout({
   let solicitudesPendientesCount = 0
   let campanasPendientesCount = 0
   let comerciosPendientesCount = 0
+  let unreadNotifsCount = 0
 
   if (profile.distri_id) {
     const admin = createAdminClient(
@@ -39,10 +40,18 @@ export default async function DistriLayout({
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    const [{ data: distri }, { data: gondRows }] = await Promise.all([
+    const [{ data: distri }, { data: gondRows }, { count: unreadCount }] = await Promise.all([
       admin.from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single(),
       admin.from('profiles').select('id').eq('distri_id', profile.distri_id).eq('tipo_actor', 'gondolero'),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (admin as any)
+        .from('notificaciones')
+        .select('*', { count: 'exact', head: true })
+        .eq('actor_id', profile.distri_id)
+        .eq('actor_tipo', 'distribuidora')
+        .eq('leida', false),
     ])
+    unreadNotifsCount = unreadCount ?? 0
     if (distri?.razon_social) empresa = distri.razon_social
 
     try {
@@ -108,6 +117,7 @@ export default async function DistriLayout({
       solicitudesPendientes={solicitudesPendientesCount}
       campanasPendientes={campanasPendientesCount}
       comerciosPendientes={comerciosPendientesCount}
+      unreadNotifs={unreadNotifsCount}
     >
       {children}
     </DistriShell>

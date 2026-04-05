@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { crearNotificacionMarca } from '@/lib/notificaciones'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -83,12 +84,48 @@ export async function cerrarCampana(campanaId: string) {
 
 export async function aprobarCampanaPendiente(campanaId: string) {
   const admin = await getAdmin()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campana } = await (admin as any)
+    .from('campanas')
+    .select('nombre, marca_id')
+    .eq('id', campanaId)
+    .single()
+
   await admin.from('campanas').update({ estado: 'activa' }).eq('id', campanaId)
+
+  if (campana?.marca_id) {
+    await crearNotificacionMarca(campana.marca_id, {
+      tipo:        'campana_aprobada',
+      titulo:      '¡Campaña aprobada!',
+      mensaje:     `"${campana.nombre}" está activa y disponible para gondoleros.`,
+      campanaId:   campanaId,
+      linkDestino: `/marca/campanas/${campanaId}`,
+    })
+  }
+
   revalidatePath('/admin/campanas')
 }
 
 export async function rechazarCampanaPendiente(campanaId: string, motivo?: string) {
   const admin = await getAdmin()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campana } = await (admin as any)
+    .from('campanas')
+    .select('nombre, marca_id')
+    .eq('id', campanaId)
+    .single()
+
   await admin.from('campanas').update({ estado: 'borrador', motivo_rechazo: motivo ?? null }).eq('id', campanaId)
+
+  if (campana?.marca_id) {
+    await crearNotificacionMarca(campana.marca_id, {
+      tipo:        'campana_rechazada',
+      titulo:      'Campaña rechazada',
+      mensaje:     motivo ? `"${campana.nombre}" fue rechazada: ${motivo}` : `"${campana.nombre}" fue rechazada. Revisá los detalles y volvé a enviarla.`,
+      campanaId:   campanaId,
+      linkDestino: `/marca/campanas/${campanaId}`,
+    })
+  }
+
   revalidatePath('/admin/campanas')
 }

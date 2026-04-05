@@ -6,15 +6,16 @@ import { Images, Users, Store, Megaphone, LogOut, UserCog, LayoutDashboard, Bell
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
-  { href: '/distribuidora/dashboard',  label: 'Dashboard',   icon: LayoutDashboard },
-  { href: '/distribuidora/gondolas',   label: 'Gondolas',    icon: Images          },
-  { href: '/distribuidora/campanas',   label: 'Campanas',    icon: Megaphone       },
-  { href: '/distribuidora/gondoleros', label: 'Gondoleros',  icon: Users           },
-  { href: '/distribuidora/comercios',  label: 'Comercios',   icon: Store           },
-  { href: '/distribuidora/comercios/pendientes', label: 'Comercios pendientes', icon: Store },
-  { href: '/distribuidora/alertas',    label: 'Alertas',     icon: Bell            },
-  { href: '/distribuidora/marcas',     label: 'Marcas',      icon: Tag             },
-  { href: '/distribuidora/cuenta',     label: 'Mi cuenta',   icon: UserCog         },
+  { href: '/distribuidora/dashboard',       label: 'Dashboard',            icon: LayoutDashboard },
+  { href: '/distribuidora/gondolas',        label: 'Gondolas',             icon: Images          },
+  { href: '/distribuidora/campanas',        label: 'Campanas',             icon: Megaphone       },
+  { href: '/distribuidora/gondoleros',      label: 'Gondoleros',           icon: Users           },
+  { href: '/distribuidora/comercios',       label: 'Comercios',            icon: Store           },
+  { href: '/distribuidora/comercios/pendientes', label: 'Comercios pendientes', icon: Store      },
+  { href: '/distribuidora/alertas',         label: 'Alertas',              icon: Bell            },
+  { href: '/distribuidora/marcas',          label: 'Marcas',               icon: Tag             },
+  { href: '/distribuidora/notificaciones',  label: 'Notificaciones',       icon: Bell            },
+  { href: '/distribuidora/cuenta',          label: 'Mi cuenta',            icon: UserCog         },
 ]
 
 export function DistriShell({
@@ -24,6 +25,7 @@ export function DistriShell({
   solicitudesPendientes,
   campanasPendientes = 0,
   comerciosPendientes = 0,
+  unreadNotifs = 0,
 }: {
   children: React.ReactNode
   empresa: string
@@ -31,6 +33,7 @@ export function DistriShell({
   solicitudesPendientes: number
   campanasPendientes?: number
   comerciosPendientes?: number
+  unreadNotifs?: number
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -130,8 +133,16 @@ export function DistriShell({
       <div className="ml-60 flex-1 flex flex-col min-h-screen">
 
         {/* Topbar */}
-        <header className="sticky top-0 z-10 h-16 bg-white border-b border-gray-200 flex items-center px-6 shrink-0">
+        <header className="sticky top-0 z-10 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
           <h1 className="font-semibold text-gray-900 text-base">{seccionActual}</h1>
+          <Link href="/distribuidora/notificaciones" className="relative p-1.5 text-gray-400 hover:text-gray-700 transition-colors">
+            <Bell size={18} />
+            {unreadNotifs > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-0.5 leading-none">
+                {unreadNotifs > 99 ? '99+' : unreadNotifs}
+              </span>
+            )}
+          </Link>
         </header>
 
         <main className="flex-1 p-6">

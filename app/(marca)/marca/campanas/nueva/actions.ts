@@ -5,6 +5,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
+import { crearNotificacionAdmin } from '@/lib/notificaciones'
 
 const COSTO_CREACION = 15
 
@@ -138,6 +139,15 @@ export async function crearCampana(formData: FormData) {
       distri_id:  distriId,
     })
   }
+
+  // Notificar al admin que hay una campaña nueva pendiente de aprobación
+  await crearNotificacionAdmin({
+    tipo:        'admin_campana_pendiente',
+    titulo:      'Nueva campaña pendiente de aprobación',
+    mensaje:     `"${formData.get('nombre')}" fue enviada por una marca.`,
+    campanaId:   campanaId,
+    linkDestino: `/admin/campanas`,
+  })
 
   revalidatePath('/marca/campanas')
   redirect(`/marca/campanas/${campanaId}`)

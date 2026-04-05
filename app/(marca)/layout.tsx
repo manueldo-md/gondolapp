@@ -25,6 +25,7 @@ export default async function MarcaLayout({
 
   let empresa = 'Mi marca'
   let tokensDisponibles = 0
+  let unreadNotifs = 0
 
   if (profile.marca_id) {
     const admin = createSupabaseClient(
@@ -32,19 +33,29 @@ export default async function MarcaLayout({
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
-    const { data: marca } = await admin
-      .from('marcas')
-      .select('razon_social, tokens_disponibles')
-      .eq('id', profile.marca_id)
-      .single()
+    const [{ data: marca }, { count: unreadCount }] = await Promise.all([
+      admin
+        .from('marcas')
+        .select('razon_social, tokens_disponibles')
+        .eq('id', profile.marca_id)
+        .single(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (admin as any)
+        .from('notificaciones')
+        .select('*', { count: 'exact', head: true })
+        .eq('actor_id', profile.marca_id)
+        .eq('actor_tipo', 'marca')
+        .eq('leida', false),
+    ])
     if (marca) {
       empresa = marca.razon_social ?? empresa
       tokensDisponibles = marca.tokens_disponibles ?? 0
     }
+    unreadNotifs = unreadCount ?? 0
   }
 
   return (
-    <MarcaShell empresa={empresa} tokensDisponibles={tokensDisponibles}>
+    <MarcaShell empresa={empresa} tokensDisponibles={tokensDisponibles} unreadNotifs={unreadNotifs}>
       {children}
     </MarcaShell>
   )

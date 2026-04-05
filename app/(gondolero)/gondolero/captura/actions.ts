@@ -4,6 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { getConfigCompresion, type ConfigCompresion } from '@/lib/config'
+import {
+  crearNotificacionDistri,
+  crearNotificacionMarca,
+  existeNotifReciente,
+} from '@/lib/notificaciones'
 
 export async function obtenerConfigCompresion(): Promise<ConfigCompresion> {
   return getConfigCompresion()
@@ -260,6 +265,45 @@ export async function registrarMision(params: RegistrarMisionParams) {
     .from('participaciones')
     .update({ comercios_completados: (participacion.comercios_completados ?? 0) + 1 })
     .eq('id', participacion.id)
+
+  // 5. Notificar a la distribuidora y a la marca (con agrupación para evitar spam)
+  // Buscar la campaña para obtener distri_id y marca_id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campanaData } = await (db as any)
+    .from('campanas')
+    .select('distri_id, marca_id, nombre')
+    .eq('id', params.campanaId)
+    .single()
+
+  if (campanaData?.distri_id) {
+    const yaNotifDistri = await existeNotifReciente(
+      campanaData.distri_id, 'distribuidora', 'gondolero_completo_mision', params.campanaId
+    )
+    if (!yaNotifDistri) {
+      await crearNotificacionDistri(campanaData.distri_id, {
+        tipo:        'gondolero_completo_mision',
+        titulo:      'Gondolero completó una misión',
+        mensaje:     `Se recibió una misión de "${campanaData.nombre}".`,
+        campanaId:   params.campanaId,
+        linkDestino: `/distribuidora/gondolas`,
+      })
+    }
+  }
+
+  if (campanaData?.marca_id) {
+    const yaNotifMarca = await existeNotifReciente(
+      campanaData.marca_id, 'marca', 'nueva_mision_recibida', params.campanaId
+    )
+    if (!yaNotifMarca) {
+      await crearNotificacionMarca(campanaData.marca_id, {
+        tipo:        'nueva_mision_recibida',
+        titulo:      'Nueva misión recibida',
+        mensaje:     `Hay una nueva misión de "${campanaData.nombre}" pendiente de revisión.`,
+        campanaId:   params.campanaId,
+        linkDestino: `/marca/gondolas`,
+      })
+    }
+  }
 
   return { misionId: mision.id, puntos: params.puntosTotal }
 }

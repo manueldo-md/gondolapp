@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle, Handshake,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle, Handshake, Bell,
 } from 'lucide-react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 type NavItem = {
@@ -52,8 +53,9 @@ function buildNavSections(erroresNuevos: number, campanasPendientes: number): Na
     {
       label: 'Sistema',
       items: [
-        { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
-        { href: '/admin/errores',       label: 'Errores',       icon: AlertTriangle, badge: erroresNuevos },
+        { href: '/admin/notificaciones', label: 'Notificaciones', icon: Bell },
+        { href: '/admin/configuracion',  label: 'Configuración',  icon: Settings },
+        { href: '/admin/errores',        label: 'Errores',        icon: AlertTriangle, badge: erroresNuevos },
       ],
     },
   ]
@@ -65,6 +67,7 @@ export function AdminShell({
   canjesPendientes,
   erroresNuevos = 0,
   campanasPendientes = 0,
+  unreadNotifs = 0,
   children,
 }: {
   nombre: string
@@ -72,6 +75,7 @@ export function AdminShell({
   canjesPendientes: number
   erroresNuevos?: number
   campanasPendientes?: number
+  unreadNotifs?: number
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -179,6 +183,14 @@ export function AdminShell({
               </Link>
             )
           })()}
+          <Link href="/admin/notificaciones" className="relative p-1.5 text-white/60 hover:text-white transition-colors">
+            <Bell size={18} />
+            {unreadNotifs > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-0.5 leading-none">
+                {unreadNotifs > 99 ? '99+' : unreadNotifs}
+              </span>
+            )}
+          </Link>
           <span className="text-white/60 text-sm hidden sm:inline">{nombre}</span>
         </div>
       </header>
