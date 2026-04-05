@@ -1,6 +1,6 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
 import { pausarCampana, cerrarCampana, activarCampana, aprobarCampanaPendiente, rechazarCampanaPendiente } from './actions'
 
@@ -12,6 +12,46 @@ export function CampanaAccionesAdmin({
   estadoActual: string
 }) {
   const [isPending, startTransition] = useTransition()
+  const [rechazando, setRechazando] = useState(false)
+  const [motivo, setMotivo] = useState('')
+
+  function handleRechazar() {
+    startTransition(async () => {
+      await rechazarCampanaPendiente(campanaId, motivo.trim() || undefined)
+      setRechazando(false)
+      setMotivo('')
+    })
+  }
+
+  if (rechazando) {
+    return (
+      <div className="space-y-1.5 min-w-[220px]">
+        <textarea
+          value={motivo}
+          onChange={e => setMotivo(e.target.value)}
+          placeholder="Motivo (opcional)..."
+          rows={2}
+          className="w-full px-2 py-1.5 text-xs border border-red-200 rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-red-400 bg-white"
+        />
+        <div className="flex gap-1.5">
+          <button
+            disabled={isPending}
+            onClick={handleRechazar}
+            className="px-2.5 py-1 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Confirmar'}
+          </button>
+          <button
+            disabled={isPending}
+            onClick={() => { setRechazando(false); setMotivo('') }}
+            className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-1.5 flex-wrap">
@@ -26,10 +66,10 @@ export function CampanaAccionesAdmin({
           </button>
           <button
             disabled={isPending}
-            onClick={() => startTransition(async () => { await rechazarCampanaPendiente(campanaId) })}
+            onClick={() => setRechazando(true)}
             className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
           >
-            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Rechazar'}
+            Rechazar
           </button>
         </>
       )}

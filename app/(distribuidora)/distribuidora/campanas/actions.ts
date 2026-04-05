@@ -52,7 +52,7 @@ export async function aprobarCampana(campanaId: string): Promise<{ error?: strin
   return {}
 }
 
-export async function rechazarCampana(campanaId: string): Promise<{ error?: string }> {
+export async function rechazarCampana(campanaId: string, motivo?: string): Promise<{ error?: string }> {
   const { admin, distriId } = await getDistriAdmin()
 
   // Verificar que la campaña pertenece a esta distri y está pendiente
@@ -68,7 +68,7 @@ export async function rechazarCampana(campanaId: string): Promise<{ error?: stri
 
   const { error } = await admin
     .from('campanas')
-    .update({ estado: 'cancelada' })
+    .update({ estado: 'borrador', motivo_rechazo: motivo ?? null })
     .eq('id', campanaId)
 
   if (error) return { error: error.message }

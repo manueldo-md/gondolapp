@@ -39,6 +39,12 @@ export async function crearCampana(formData: FormData) {
     return { error: 'Tokens insuficientes para crear la campaña. Necesitás al menos 15 tokens.' }
   }
 
+  // Vía de ejecución
+  const viaEjecucion = (formData.get('via_ejecucion') as string) || 'distribuidora'
+  const distriId = viaEjecucion === 'distribuidora'
+    ? (formData.get('distri_id') as string) || null
+    : null
+
   // Crear campaña
   const { data: campana, error: errCampana } = await admin
     .from('campanas')
@@ -53,8 +59,10 @@ export async function crearCampana(formData: FormData) {
       max_comercios_por_gondolero: parseInt(formData.get('max_comercios_por_gondolero') as string) || 20,
       min_comercios_para_cobrar: parseInt(formData.get('min_comercios_para_cobrar') as string) || 3,
       marca_id:                  marcaId,
+      distri_id:                 distriId,
       financiada_por:            'marca',
       estado:                    'pendiente_aprobacion',
+      via_ejecucion:             viaEjecucion,
       tokens_creacion:           COSTO_CREACION,
     })
     .select('id')
@@ -123,6 +131,14 @@ export async function crearCampana(formData: FormData) {
     campana_id: campanaId,
   })
 
+  // Si es vía distribuidora con distri_id, crear token de invitación
+  if (viaEjecucion === 'distribuidora' && distriId) {
+    await admin.from('campana_tokens').insert({
+      campana_id: campanaId,
+      distri_id:  distriId,
+    })
+  }
+
   revalidatePath('/marca/campanas')
-  redirect('/marca/campanas')
+  redirect(`/marca/campanas/${campanaId}`)
 }

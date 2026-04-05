@@ -24,6 +24,8 @@ interface CampanaRow {
   puntos_por_foto: number
   created_at: string
   gondoleroCount: number
+  motivo_rechazo: string | null
+  via_ejecucion: string | null
 }
 
 export default async function CampanasPage() {
@@ -49,13 +51,15 @@ export default async function CampanasPage() {
     .from('campanas')
     .select(`
       id, nombre, tipo, estado, fecha_inicio, fecha_fin,
-      objetivo_comercios, comercios_relevados, puntos_por_foto, created_at
+      objetivo_comercios, comercios_relevados, puntos_por_foto, created_at,
+      motivo_rechazo, via_ejecucion
     `)
     .eq('marca_id', marcaId ?? '')
     .order('created_at', { ascending: false })
 
   if (error) console.error('Error fetching campanas:', error.message)
   const campanasSinCount = (data ?? []) as Omit<CampanaRow, 'gondoleroCount'>[]
+
 
   // Conteos de gondoleros por campaña
   const campanaIds = campanasSinCount.map(c => c.id)
@@ -133,8 +137,12 @@ export default async function CampanasPage() {
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${TIPO_COLOR[c.tipo]}`}>
                         {labelTipoCampana(c.tipo)}
                       </span>
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${colorEstadoCampana(c.estado)}`}>
-                        {labelEstadoCampana(c.estado)}
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                        c.estado === 'borrador' && c.motivo_rechazo
+                          ? 'bg-red-50 text-red-700 border-red-200'
+                          : colorEstadoCampana(c.estado)
+                      }`}>
+                        {c.estado === 'borrador' && c.motivo_rechazo ? 'Rechazada' : labelEstadoCampana(c.estado)}
                       </span>
                     </div>
 

@@ -40,8 +40,8 @@ export async function aprobarCampanaPendiente(campanaId: string) {
   revalidatePath('/admin/campanas')
 }
 
-export async function rechazarCampanaPendiente(campanaId: string) {
+export async function rechazarCampanaPendiente(campanaId: string, motivo?: string) {
   const admin = await getAdmin()
-  await admin.from('campanas').update({ estado: 'cancelada' }).eq('id', campanaId)
+  await admin.from('campanas').update({ estado: 'borrador', motivo_rechazo: motivo ?? null }).eq('id', campanaId)
   revalidatePath('/admin/campanas')
 }
