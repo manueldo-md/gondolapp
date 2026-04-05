@@ -269,18 +269,26 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // 5. Notificar a la distribuidora del gondolero y a la marca de la campaña
   try {
     // Obtener en paralelo: distri_id del gondolero + datos de la campaña
-    const [{ data: gondoleroProfile }, { data: campanaData }] = await Promise.all([
+    const [
+      { data: gondoleroProfile, error: profileError },
+      { data: campanaData, error: campanaError },
+    ] = await Promise.all([
       db.from('profiles').select('distri_id').eq('id', user.id).single(),
       db.from('campanas').select('marca_id, nombre').eq('id', params.campanaId).single(),
     ])
 
-    console.log('[registrarMision] gondoleroProfile:', gondoleroProfile)
-    console.log('[registrarMision] campanaData:', campanaData)
+    if (profileError) console.error('[registrarMision] error al leer profile del gondolero:', profileError.message)
+    if (campanaError) console.error('[registrarMision] error al leer campaña:', campanaError.message)
+
+    console.log('[registrarMision] gondoleroProfile completo:', JSON.stringify(gondoleroProfile))
+    console.log('[registrarMision] campanaData completo:', JSON.stringify(campanaData))
 
     // Notificar a la distribuidora del gondolero (no a la de la campaña)
-    const distriId = gondoleroProfile?.distri_id ?? null
-    console.log('[registrarMision] distriId para notif:', distriId)
-    if (distriId) {
+    const distriId: string | null = gondoleroProfile?.distri_id ?? null
+    console.log('[registrarMision] distri_id del gondolero:', distriId, '— tipo:', typeof distriId)
+    if (!distriId) {
+      console.warn('[registrarMision] gondolero sin distri_id vinculado — omitiendo notif distribuidora. userId:', user.id)
+    } else {
       const yaNotifDistri = await existeNotifReciente(
         distriId, 'distribuidora', 'gondolero_completo_mision', params.campanaId
       )
