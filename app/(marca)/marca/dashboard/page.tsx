@@ -7,17 +7,40 @@ import {
   Camera, AlertTriangle, Clock, CheckCircle2,
 } from 'lucide-react'
 import type { CiudadRow } from './ciudad-table'
-import { CiudadTable } from './ciudad-table'
-import type {
-  PenetracionData, TipoComercioData, EvolucionData,
-} from './dashboard-charts'
-import {
-  PenetracionChart, TipoComercioChart, EvolucionChart, PresenciaPieChart,
-} from './dashboard-charts'
+import type { PenetracionData, TipoComercioData, EvolucionData } from './dashboard-charts'
 import type { ZonaMapData } from './coverage-map'
 
-// Leaflet necesita dynamic import con default export (no SSR)
-const MapaCobertura = dynamic(() => import('./mapa-cobertura'), { ssr: false })
+// Skeleton compartido para loading states
+function ChartSkeleton({ h = 48 }: { h?: number }) {
+  return <div className={`h-${h} bg-gray-100 animate-pulse rounded-lg`} />
+}
+
+// Todos los componentes de visualización con ssr:false
+// (recharts y leaflet acceden a window/document en mount)
+const MapaCobertura = dynamic(() => import('./mapa-cobertura'), {
+  ssr: false,
+  loading: () => <ChartSkeleton h={96} />,
+})
+const ChartPenetracion = dynamic(() => import('./chart-penetracion'), {
+  ssr: false,
+  loading: () => <ChartSkeleton h={48} />,
+})
+const ChartTipoComercio = dynamic(() => import('./chart-tipo-comercio'), {
+  ssr: false,
+  loading: () => <ChartSkeleton h={48} />,
+})
+const ChartEvolucion = dynamic(() => import('./chart-evolucion'), {
+  ssr: false,
+  loading: () => <ChartSkeleton h={48} />,
+})
+const ChartPresenciaPie = dynamic(() => import('./chart-presencia-pie'), {
+  ssr: false,
+  loading: () => <ChartSkeleton h={36} />,
+})
+const TablaCiudades = dynamic(() => import('./tabla-ciudades'), {
+  ssr: false,
+  loading: () => <ChartSkeleton h={48} />,
+})
 
 // ── Types internos ────────────────────────────────────────────────────────────
 
@@ -470,7 +493,7 @@ export default async function DashboardPage() {
                 Sin datos de presencia aún.
               </div>
             ) : (
-              <PresenciaPieChart
+              <ChartPresenciaPie
                 presente={conPresenciaGlobal}
                 ausente={totalFotos - conPresenciaGlobal}
               />
@@ -485,7 +508,7 @@ export default async function DashboardPage() {
             <p className="text-xs text-gray-400 mt-0.5">Resultado declarado por foto</p>
           </div>
           <div className="p-5">
-            <PenetracionChart data={penetracionData} />
+            <ChartPenetracion data={penetracionData} />
           </div>
         </div>
 
@@ -493,7 +516,7 @@ export default async function DashboardPage() {
 
       {/* ── BLOQUE 4 — Presencia por tipo de comercio ── */}
       <SectionCard title="Presencia por tipo de comercio">
-        <TipoComercioChart data={tipoComercioData} />
+        <ChartTipoComercio data={tipoComercioData} />
       </SectionCard>
 
       {/* ── BLOQUE 5 — Análisis por ciudad ── */}
@@ -502,12 +525,12 @@ export default async function DashboardPage() {
           <h3 className="font-semibold text-gray-900">Análisis por ciudad</h3>
           <p className="text-xs text-gray-400 mt-0.5">Hacé clic en los encabezados para ordenar</p>
         </div>
-        <CiudadTable rows={ciudadRows} />
+        <TablaCiudades rows={ciudadRows} />
       </div>
 
       {/* ── BLOQUE 6 — Evolución temporal ── */}
       <SectionCard title="Evolución semanal de fotos recibidas">
-        <EvolucionChart data={semanas} />
+        <ChartEvolucion data={semanas} />
       </SectionCard>
 
       {/* ── BLOQUE 8 — Campañas activas ── */}
