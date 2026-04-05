@@ -1,21 +1,17 @@
 'use client'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ESTE ARCHIVO es el único punto de entrada para recharts + leaflet.
-// Se carga SIEMPRE con dynamic(() => import('./dashboard-visualizaciones'), { ssr: false })
-// de modo que ninguna de estas librerías se evalúa durante el SSR de Next.js.
+// Visualizaciones CSS/Tailwind puras — sin recharts ni ninguna otra librería
+// de charts. Solo react-leaflet para el mapa.
+// Cargado con dynamic(..., { ssr: false }) desde page.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, AreaChart, Area, Cell, PieChart, Pie, Legend,
-} from 'recharts'
 import { MapContainer, TileLayer, CircleMarker, Tooltip as MapTooltip } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 
-// ── Types (copiados para evitar cross-imports que rompan el tree-shaking) ────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type ZonaMapData = {
   id: string
@@ -86,10 +82,17 @@ function presenciaLabel(pct: number): string {
   return 'Baja'
 }
 
-// ── Mapa de cobertura ─────────────────────────────────────────────────────────
+function presenciaBadgeClass(pct: number): string {
+  if (pct > 12) return 'bg-green-100 text-green-800'
+  if (pct >= 8)  return 'bg-emerald-50 text-emerald-700'
+  if (pct >= 5)  return 'bg-amber-50 text-amber-700'
+  return 'bg-red-50 text-red-700'
+}
+
+// ── Mapa de cobertura (react-leaflet) ─────────────────────────────────────────
 
 function CoverageMap({ zonas }: { zonas: ZonaMapData[] }) {
-  const zonasConCoords = zonas.filter(z => z.lat != null && z.lng != null)
+  const zonasConCoords = zonas.filter(z => z.lat !== 0 && z.lng !== 0)
 
   if (zonasConCoords.length === 0) {
     return (
@@ -104,10 +107,8 @@ function CoverageMap({ zonas }: { zonas: ZonaMapData[] }) {
               <span className="font-medium text-gray-900">{z.nombre}</span>
               <div className="flex items-center gap-3">
                 <span className="text-gray-500">{z.pdvRelevados} PDV</span>
-                <span
-                  className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
-                  style={{ backgroundColor: presenciaColor(z.presenciaPct) }}
-                >
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+                  style={{ backgroundColor: presenciaColor(z.presenciaPct) }}>
                   {z.presenciaPct}%
                 </span>
               </div>
@@ -118,12 +119,10 @@ function CoverageMap({ zonas }: { zonas: ZonaMapData[] }) {
     )
   }
 
-  const center: [number, number] = [-34.6, -64.2]
-
   return (
     <div className="relative" style={{ height: 420 }}>
       <MapContainer
-        center={center}
+        center={[-34.6, -64.2]}
         zoom={5}
         style={{ height: '100%', width: '100%', borderRadius: '12px' }}
         zoomControl
@@ -139,17 +138,15 @@ function CoverageMap({ zonas }: { zonas: ZonaMapData[] }) {
             radius={Math.max(8, Math.min(8 + Math.sqrt(z.pdvRelevados) * 3, 30))}
             fillColor={presenciaColor(z.presenciaPct)}
             color={presenciaColor(z.presenciaPct)}
-            weight={2}
-            opacity={1}
-            fillOpacity={0.6}
+            weight={2} opacity={1} fillOpacity={0.6}
           >
             <MapTooltip>
               <div className="text-xs space-y-0.5">
                 <p className="font-bold text-sm">{z.nombre}</p>
-                <p>PDV relevados: <strong>{z.pdvRelevados}</strong></p>
+                <p>PDV: <strong>{z.pdvRelevados}</strong></p>
                 <p>Con presencia: <strong>{z.conPresencia}</strong></p>
                 <p>Presencia: <strong>{z.presenciaPct}%</strong> ({presenciaLabel(z.presenciaPct)})</p>
-                <p>Fotos recibidas: <strong>{z.fotosRecibidas}</strong></p>
+                <p>Fotos: <strong>{z.fotosRecibidas}</strong></p>
               </div>
             </MapTooltip>
           </CircleMarker>
@@ -172,151 +169,180 @@ function CoverageMap({ zonas }: { zonas: ZonaMapData[] }) {
   )
 }
 
-// ── Penetración por campaña ───────────────────────────────────────────────────
+// ── Presencia global — CSS conic-gradient donut ───────────────────────────────
 
-function PenetracionChart({ data }: { data: PenetracionData[] }) {
-  if (data.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-48 text-sm text-gray-400 text-center px-6">
-        Activá campañas para empezar a relevar la presencia de tus productos en góndola.
-      </div>
-    )
-  }
-
-  const chartData = data.map(d => ({
-    nombre: d.nombre.length > 28 ? d.nombre.slice(0, 25) + '…' : d.nombre,
-    'Presente': d.presente,
-    'No encontrado': d.noEncontrado,
-    'Solo competencia': d.soloCompetencia,
-    pct: d.pct,
-  }))
+function PresenciaDonut({ presente, ausente }: { presente: number; ausente: number }) {
+  const total = presente + ausente
+  if (total === 0) return null
+  const pct = Math.round((presente / total) * 100)
+  const deg = Math.round((presente / total) * 360)
 
   return (
-    <div style={{ height: Math.max(120, data.length * 52 + 40) }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 40, left: 8, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-          <XAxis type="number" tick={{ fontSize: 11 }} />
-          <YAxis type="category" dataKey="nombre" width={160} tick={{ fontSize: 11 }} />
-          <Tooltip
-            contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-            formatter={(val: number, name: string) => [`${val} fotos`, name]}
-          />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="Presente"          stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="No encontrado"     stackId="a" fill="#f87171" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="Solo competencia"  stackId="a" fill="#fbbf24" radius={[0, 4, 4, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="flex flex-col items-center gap-4 py-4">
+      <div
+        className="relative w-32 h-32 rounded-full"
+        style={{ background: `conic-gradient(#22c55e 0deg ${deg}deg, #fca5a5 ${deg}deg 360deg)` }}
+      >
+        <div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center">
+          <span className="text-2xl font-bold text-gray-900">{pct}%</span>
+        </div>
+      </div>
+      <div className="flex gap-6 text-sm">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-green-500" />
+          <span className="text-gray-600">{presente} con presencia</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-red-300" />
+          <span className="text-gray-600">{ausente} sin presencia</span>
+        </div>
+      </div>
     </div>
   )
 }
 
-// ── Tipo de comercio ──────────────────────────────────────────────────────────
+// ── Penetración por campaña — barras horizontales CSS ─────────────────────────
+
+function PenetracionBars({ data }: { data: PenetracionData[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="text-sm text-gray-400 text-center py-8">
+        Activá campañas para empezar a relevar la presencia de tus productos en góndola.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Leyenda */}
+      <div className="flex gap-4 text-xs text-gray-500">
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-green-500" /> Presente</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-red-400" /> No encontrado</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-amber-400" /> Solo competencia</span>
+      </div>
+
+      {data.map(d => {
+        const pPresente       = d.total > 0 ? (d.presente       / d.total) * 100 : 0
+        const pNoEncontrado   = d.total > 0 ? (d.noEncontrado   / d.total) * 100 : 0
+        const pSoloCompetencia = d.total > 0 ? (d.soloCompetencia / d.total) * 100 : 0
+
+        return (
+          <div key={d.nombre}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-gray-800 truncate max-w-[60%]">{d.nombre}</span>
+              <span className="text-xs text-gray-500">{d.total} fotos · <span className="font-semibold text-green-700">{d.pct}% presencia</span></span>
+            </div>
+            <div className="flex h-5 rounded-md overflow-hidden bg-gray-100">
+              {pPresente > 0 && (
+                <div className="bg-green-500 h-full transition-all" style={{ width: `${pPresente}%` }} title={`Presente: ${d.presente}`} />
+              )}
+              {pNoEncontrado > 0 && (
+                <div className="bg-red-400 h-full transition-all" style={{ width: `${pNoEncontrado}%` }} title={`No encontrado: ${d.noEncontrado}`} />
+              )}
+              {pSoloCompetencia > 0 && (
+                <div className="bg-amber-400 h-full transition-all" style={{ width: `${pSoloCompetencia}%` }} title={`Solo competencia: ${d.soloCompetencia}`} />
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Tipo de comercio — barras verticales CSS ──────────────────────────────────
 
 function TipoComercioChart({ data }: { data: TipoComercioData[] }) {
   if (data.length === 0 || data.every(d => d.relevados === 0)) {
     return (
-      <div className="flex items-center justify-center h-48 text-sm text-gray-400 text-center px-6">
+      <p className="text-sm text-gray-400 text-center py-8">
         Los datos de tipo de comercio aparecerán cuando haya fotos aprobadas.
-      </div>
+      </p>
     )
   }
+
+  const maxVal = Math.max(...data.map(d => d.relevados), 1)
+
   return (
-    <div style={{ height: 240 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="relevados"    name="PDV relevados" fill="#c7d2fe" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="conPresencia" name="Con presencia" fill="#4f46e5" radius={[3, 3, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="space-y-3">
+      {/* Leyenda */}
+      <div className="flex gap-4 text-xs text-gray-500">
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-200" /> PDV relevados</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-600" /> Con presencia</span>
+      </div>
+
+      {data.map(d => {
+        const wRelev = (d.relevados   / maxVal) * 100
+        const wPres  = (d.conPresencia / maxVal) * 100
+        const pct    = d.relevados > 0 ? Math.round((d.conPresencia / d.relevados) * 100) : 0
+
+        return (
+          <div key={d.tipo}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-gray-800">{d.label}</span>
+              <span className="text-xs text-gray-500">{d.conPresencia}/{d.relevados} PDV · <span className="font-semibold text-indigo-700">{pct}%</span></span>
+            </div>
+            <div className="space-y-1">
+              <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
+                <div className="bg-indigo-200 h-full rounded-full transition-all" style={{ width: `${wRelev}%` }} />
+              </div>
+              <div className="flex h-3 rounded-full overflow-hidden bg-gray-100">
+                <div className="bg-indigo-600 h-full rounded-full transition-all" style={{ width: `${wPres}%` }} />
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-// ── Evolución temporal ────────────────────────────────────────────────────────
+// ── Evolución semanal — barras verticales CSS mini ────────────────────────────
 
-function EvolucionChart({ data }: { data: EvolucionData[] }) {
-  if (data.length === 0 || data.every(d => d.fotos === 0)) {
+function EvolucionBars({ data }: { data: EvolucionData[] }) {
+  const maxVal = Math.max(...data.map(d => d.fotos), 1)
+  const total  = data.reduce((s, d) => s + d.fotos, 0)
+
+  if (total === 0) {
     return (
-      <div className="flex items-center justify-center h-48 text-sm text-gray-400 text-center px-6">
+      <p className="text-sm text-gray-400 text-center py-8">
         La evolución temporal aparecerá cuando haya fotos recibidas en tus campañas.
-      </div>
+      </p>
     )
   }
-  return (
-    <div style={{ height: 220 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
-          <defs>
-            <linearGradient id="colorFotos" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor="#4f46e5" stopOpacity={0.15} />
-              <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-          <Tooltip
-            contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-            formatter={(val: number) => [`${val} fotos`, 'Fotos recibidas']}
-          />
-          <Area
-            type="monotone"
-            dataKey="fotos"
-            name="Fotos recibidas"
-            stroke="#4f46e5"
-            strokeWidth={2}
-            fill="url(#colorFotos)"
-            dot={{ fill: '#4f46e5', strokeWidth: 0, r: 3 }}
-            activeDot={{ r: 5, fill: '#4f46e5' }}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
-// ── Pie de presencia global ───────────────────────────────────────────────────
-
-function PresenciaPieChart({ presente, ausente }: { presente: number; ausente: number }) {
-  const total = presente + ausente
-  if (total === 0) return null
-
-  const data = [
-    { name: 'Con presencia', value: presente, color: '#22c55e' },
-    { name: 'Sin presencia', value: ausente,  color: '#f87171' },
-  ]
 
   return (
-    <div style={{ height: 140 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            innerRadius={38}
-            outerRadius={56}
-            paddingAngle={2}
-            dataKey="value"
-          >
-            {data.map((entry, i) => (
-              <Cell key={i} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip
-            contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-            formatter={(val: number) => [`${val} PDV`, '']}
-          />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-        </PieChart>
-      </ResponsiveContainer>
+    <div>
+      <div className="flex items-end gap-1 h-28">
+        {data.map((d, i) => {
+          const h = maxVal > 0 ? Math.max((d.fotos / maxVal) * 100, d.fotos > 0 ? 4 : 0) : 0
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+              {/* Tooltip */}
+              {d.fotos > 0 && (
+                <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                  {d.fotos} fotos
+                </div>
+              )}
+              <div
+                className="w-full rounded-t-sm bg-indigo-500 transition-all"
+                style={{ height: `${h}%` }}
+              />
+            </div>
+          )
+        })}
+      </div>
+      {/* Labels — solo mostrar cada 2 para no saturar */}
+      <div className="flex gap-1 mt-1">
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 text-center">
+            {i % 2 === 0 && (
+              <span className="text-[9px] text-gray-400 leading-none">{d.label}</span>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-gray-400 mt-2 text-right">{total} fotos en las últimas 12 semanas</p>
     </div>
   )
 }
@@ -324,19 +350,6 @@ function PresenciaPieChart({ presente, ausente }: { presente: number; ausente: n
 // ── Tabla de ciudades ─────────────────────────────────────────────────────────
 
 type SortKey = 'nombre' | 'pdvRelevados' | 'conPresencia' | 'presenciaPct' | 'fotosRecibidas' | 'ultimaVisita'
-
-function PresenciaBadge({ pct }: { pct: number }) {
-  const cfg =
-    pct > 12 ? { label: `${pct}%`, className: 'bg-green-100 text-green-800' } :
-    pct >= 8  ? { label: `${pct}%`, className: 'bg-emerald-50 text-emerald-700' } :
-    pct >= 5  ? { label: `${pct}%`, className: 'bg-amber-50 text-amber-700' } :
-                { label: `${pct}%`, className: 'bg-red-50 text-red-700' }
-  return (
-    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${cfg.className}`}>
-      {cfg.label}
-    </span>
-  )
-}
 
 function CiudadTable({ rows }: { rows: CiudadRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('pdvRelevados')
@@ -356,8 +369,8 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
   }
 
   const sorted = [...rows].sort((a, b) => {
-    const av: string | number = a[sortKey] ?? ''
-    const bv: string | number = b[sortKey] ?? ''
+    const av = a[sortKey] ?? ''
+    const bv = b[sortKey] ?? ''
     if (typeof av === 'string' && typeof bv === 'string')
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
     return sortDir === 'asc' ? Number(av) - Number(bv) : Number(bv) - Number(av)
@@ -374,9 +387,9 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
     { key: 'nombre',         label: 'Ciudad',          align: 'left'  },
     { key: 'pdvRelevados',   label: 'PDV relevados',   align: 'right' },
     { key: 'conPresencia',   label: 'Con presencia',   align: 'right' },
-    { key: 'pdvRelevados',   label: 'Sin presencia',   align: 'right' }, // sorted by pdvRelevados
+    { key: 'pdvRelevados',   label: 'Sin presencia',   align: 'right' },
     { key: 'presenciaPct',   label: 'Presencia %',     align: 'right' },
-    { key: 'fotosRecibidas', label: 'Fotos recibidas', align: 'right' },
+    { key: 'fotosRecibidas', label: 'Fotos',           align: 'right' },
     { key: 'ultimaVisita',   label: 'Última visita',   align: 'right' },
   ]
 
@@ -388,13 +401,13 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
             {cols.map((col, i) => (
               <th
                 key={`${col.key}-${i}`}
-                className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700 transition-colors ${col.align === 'right' ? 'text-right' : 'text-left'}`}
                 onClick={() => handleSort(col.key)}
+                className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700 transition-colors ${col.align === 'right' ? 'text-right' : 'text-left'}`}
               >
                 <span className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
                   {col.align === 'right' && <SortIcon col={col.key} />}
                   {col.label}
-                  {col.align === 'left' && <SortIcon col={col.key} />}
+                  {col.align === 'left'  && <SortIcon col={col.key} />}
                 </span>
               </th>
             ))}
@@ -407,7 +420,11 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
               <td className="px-4 py-3 text-right font-semibold text-gray-900">{r.pdvRelevados}</td>
               <td className="px-4 py-3 text-right text-green-700 font-medium">{r.conPresencia}</td>
               <td className="px-4 py-3 text-right text-red-600 font-medium">{r.sinPresencia}</td>
-              <td className="px-4 py-3 text-right"><PresenciaBadge pct={r.presenciaPct} /></td>
+              <td className="px-4 py-3 text-right">
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${presenciaBadgeClass(r.presenciaPct)}`}>
+                  {r.presenciaPct}%
+                </span>
+              </td>
               <td className="px-4 py-3 text-right text-gray-700">{r.fotosRecibidas}</td>
               <td className="px-4 py-3 text-right text-xs text-gray-400">
                 {r.ultimaVisita
@@ -422,21 +439,7 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
   )
 }
 
-// ── Sección wrapper ───────────────────────────────────────────────────────────
-
-function SectionCard({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200">
-      <div className="px-5 py-4 border-b border-gray-100">
-        <h3 className="font-semibold text-gray-900">{title}</h3>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-      </div>
-      <div className="p-5">{children}</div>
-    </div>
-  )
-}
-
-// ── Componente principal (default export) ─────────────────────────────────────
+// ── Componente principal ──────────────────────────────────────────────────────
 
 export default function DashboardVisualizaciones({
   zonaMapData,
@@ -461,34 +464,42 @@ export default function DashboardVisualizaciones({
         </div>
       </div>
 
-      {/* Pie + Penetración */}
+      {/* Presencia global + Penetración por campaña */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <SectionCard title="Presencia global">
-          {totalFotos === 0 ? (
-            <div className="flex items-center justify-center h-48 text-sm text-gray-400 text-center px-6">
-              Sin datos de presencia aún.
-            </div>
-          ) : (
-            <PresenciaPieChart presente={conPresenciaGlobal} ausente={totalFotos - conPresenciaGlobal} />
-          )}
-        </SectionCard>
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">Presencia global</h3>
+          </div>
+          <div className="p-5">
+            {totalFotos === 0
+              ? <p className="text-sm text-gray-400 text-center py-8">Sin datos aún.</p>
+              : <PresenciaDonut presente={conPresenciaGlobal} ausente={totalFotos - conPresenciaGlobal} />
+            }
+          </div>
+        </div>
+
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200">
           <div className="px-5 py-4 border-b border-gray-100">
             <h3 className="font-semibold text-gray-900">Penetración por campaña</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Resultado declarado por foto</p>
+            <p className="text-xs text-gray-400 mt-0.5">Resultado declarado por foto aprobada</p>
           </div>
           <div className="p-5">
-            <PenetracionChart data={penetracionData} />
+            <PenetracionBars data={penetracionData} />
           </div>
         </div>
       </div>
 
       {/* Tipo de comercio */}
-      <SectionCard title="Presencia por tipo de comercio">
-        <TipoComercioChart data={tipoComercioData} />
-      </SectionCard>
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Presencia por tipo de comercio</h3>
+        </div>
+        <div className="p-5">
+          <TipoComercioChart data={tipoComercioData} />
+        </div>
+      </div>
 
-      {/* Tabla de ciudades */}
+      {/* Tabla ciudades */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Análisis por ciudad</h3>
@@ -497,10 +508,16 @@ export default function DashboardVisualizaciones({
         <CiudadTable rows={ciudadRows} />
       </div>
 
-      {/* Evolución */}
-      <SectionCard title="Evolución semanal de fotos recibidas">
-        <EvolucionChart data={semanas} />
-      </SectionCard>
+      {/* Evolución semanal */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Evolución semanal de fotos recibidas</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Últimas 12 semanas</p>
+        </div>
+        <div className="p-5">
+          <EvolucionBars data={semanas} />
+        </div>
+      </div>
 
     </div>
   )
