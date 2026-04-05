@@ -935,6 +935,9 @@ function CapturaContent() {
         })),
       })
 
+      // Liberar object URLs ahora que ya no se necesitan
+      fotosCapturadas.forEach(f => URL.revokeObjectURL(f.previewUrl))
+
       setPuntosGanados(result.puntos)
       setPaso('exito')
     } catch (err) {
@@ -992,9 +995,14 @@ function CapturaContent() {
     }
   }
 
-  // Limpiar preview URL al desmontar
+  // Limpiar preview URL al desmontar — solo si NO está guardada en fotosCapturadas
   useEffect(() => {
-    return () => { if (fotoPreview) URL.revokeObjectURL(fotoPreview) }
+    return () => {
+      if (fotoPreview && !fotosCapturadas.some(f => f.previewUrl === fotoPreview)) {
+        URL.revokeObjectURL(fotoPreview)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fotoPreview])
 
   // ── Estados de carga / error globales ─────────────────────────────────────
