@@ -2,12 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Camera, Clock, MapPin, Target, User, Users, Link2, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Camera, Clock, MapPin, Target, User, Link2, AlertCircle, TrendingUp } from 'lucide-react'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import {
   labelEstadoCampana, colorEstadoCampana,
   labelTipoCampana, calcularPorcentaje,
-  diasRestantes, formatearFechaHora, tiempoRelativo,
+  diasRestantes, formatearFechaHora,
 } from '@/lib/utils'
 import type { DeclaracionFoto, EstadoFoto, TipoCampana, EstadoCampana } from '@/types'
 import { MarcaFotoAcciones } from '../../gondolas/foto-acciones'
@@ -55,23 +55,6 @@ const ESTADO_LABEL: Record<EstadoFoto, string> = {
   en_revision: 'En revisión',
 }
 
-const NIVEL_COLOR: Record<string, string> = {
-  casual: 'bg-gray-100 text-gray-600',
-  activo: 'bg-blue-100 text-blue-700',
-  pro:    'bg-amber-100 text-amber-700',
-}
-const NIVEL_LABEL: Record<string, string> = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
-
-const ESTADO_PART_COLOR: Record<string, string> = {
-  activa:     'bg-blue-100 text-blue-700',
-  completada: 'bg-green-100 text-green-700',
-  abandonada: 'bg-gray-100 text-gray-500',
-}
-const ESTADO_PART_LABEL: Record<string, string> = {
-  activa:     'Activa',
-  completada: 'Completada',
-  abandonada: 'Abandonada',
-}
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
@@ -95,7 +78,7 @@ export default async function MarcaCampanaDetallePage({
   // Campaña
   const { data: campana, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, min_comercios_para_cobrar, via_ejecucion, motivo_rechazo')
+    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, min_comercios_para_cobrar, via_ejecucion, motivo_rechazo, marca_id')
     .eq('id', params.id)
     .single()
 
@@ -118,18 +101,15 @@ export default async function MarcaCampanaDetallePage({
     }
   }
 
-  // Gondoleros participando
-  const { data: partData } = await admin
-    .from('participaciones')
-    .select('id, estado, comercios_completados, puntos_acumulados, joined_at, gondolero:profiles(nombre, alias, nivel)')
-    .eq('campana_id', params.id)
-    .order('joined_at', { ascending: false })
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const participaciones = ((partData ?? []) as any[]).map((p: any) => ({
-    ...p,
-    gondolero: Array.isArray(p.gondolero) ? (p.gondolero[0] ?? null) : p.gondolero,
-  }))
+  // Otras campañas de esta marca
+  const { data: marcaCampanas } = await admin
+    .from('campanas')
+    .select('id, nombre, tipo, estado, comercios_relevados, objetivo_comercios, fecha_fin')
+    .eq('marca_id', (campana as any).marca_id ?? '')
+    .neq('id', params.id)
+    .order('created_at', { ascending: false })
+    .limit(6)
+  const otrasCampanas = (marcaCampanas ?? []) as any[]
 
   // Fotos con filtro de tab
   const tab = searchParams.tab ?? ''
@@ -172,6 +152,10 @@ export default async function MarcaCampanaDetallePage({
     acc[f.estado] = (acc[f.estado] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
+
+  const fotosAprobadas = counts['aprobada'] ?? 0
+  const totalPuntos = (campana.puntos_por_foto ?? 0) * fotosAprobadas
+  const costoPorFoto = fotosAprobadas > 0 ? campana.puntos_por_foto ?? 0 : null
 
   return (
     <div>
@@ -223,10 +207,6 @@ export default async function MarcaCampanaDetallePage({
               <span>{campana.comercios_relevados} / {campana.objetivo_comercios} comercios</span>
             </div>
           )}
-          <div className="flex items-center gap-1">
-            <Users size={12} />
-            <span>{participaciones.length} gondolero{participaciones.length !== 1 ? 's' : ''}</span>
-          </div>
         </div>
 
         {/* Barra de progreso */}
@@ -251,7 +231,7 @@ export default async function MarcaCampanaDetallePage({
             { label: 'Fotos totales', value: Object.values(counts).reduce((a, b) => a + b, 0) },
             { label: 'Aprobadas',     value: counts['aprobada']  ?? 0, color: 'text-green-600' },
             { label: 'Pendientes',    value: counts['pendiente'] ?? 0, color: 'text-amber-600' },
-            { label: 'Gondoleros',    value: participaciones.length },
+            { label: 'Rechazadas',    value: counts['rechazada'] ?? 0, color: 'text-red-600' },
           ].map(m => (
             <div key={m.label} className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
               <p className={`text-2xl font-bold ${m.color ?? 'text-gray-900'}`}>{m.value}</p>
@@ -307,58 +287,24 @@ export default async function MarcaCampanaDetallePage({
         </div>
       )}
 
-      {/* Gondoleros participando */}
+      {/* Métricas expandidas */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-          <Users size={14} className="text-gray-400" />
-          Gondoleros participando ({participaciones.length})
+        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4 flex items-center gap-1.5">
+          <TrendingUp size={14} />
+          Métricas
         </h3>
-        {participaciones.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">
-            Todavía nadie se unió a esta campaña.
-          </p>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {participaciones.map((p: {
-              id: string
-              estado: string
-              comercios_completados: number
-              puntos_acumulados: number
-              joined_at: string
-              gondolero: { nombre: string | null; alias: string | null; nivel: string } | null
-            }) => (
-              <div key={p.id} className="flex items-center justify-between py-3 gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                    <span className="text-xs font-bold text-gray-500">
-                      {(p.gondolero?.alias ?? p.gondolero?.nombre ?? '?').charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {p.gondolero?.alias ?? p.gondolero?.nombre ?? 'Gondolero'}
-                      </p>
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${NIVEL_COLOR[p.gondolero?.nivel ?? 'casual']}`}>
-                        {NIVEL_LABEL[p.gondolero?.nivel ?? 'casual']}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-400">
-                      {p.comercios_completados}/{campana.min_comercios_para_cobrar ?? '?'} comercios
-                      {' · '}{p.puntos_acumulados.toLocaleString('es-AR')} pts
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${ESTADO_PART_COLOR[p.estado] ?? 'bg-gray-100 text-gray-500'}`}>
-                    {ESTADO_PART_LABEL[p.estado] ?? p.estado}
-                  </span>
-                  <p className="text-[10px] text-gray-400">{tiempoRelativo(p.joined_at)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {[
+            { label: 'Puntos entregados', value: totalPuntos.toLocaleString('es-AR'), color: 'text-[#1D9E75]' },
+            { label: 'Costo por foto', value: costoPorFoto !== null ? `${costoPorFoto} pts` : '—', color: 'text-gray-900' },
+            { label: 'Fotos válidas', value: (counts['aprobada'] ?? 0).toString(), color: 'text-green-600' },
+          ].map(m => (
+            <div key={m.label} className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+              <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">{m.label}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Tabs de fotos */}
@@ -449,6 +395,32 @@ export default async function MarcaCampanaDetallePage({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Mis campañas */}
+      {otrasCampanas.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mt-6">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+            Mis otras campañas
+          </h3>
+          <div className="divide-y divide-gray-50">
+            {otrasCampanas.map((oc: any) => (
+              <div key={oc.id} className="flex items-center justify-between py-3 gap-3">
+                <Link href={`/marca/campanas/${oc.id}`} className="text-sm font-medium text-gray-900 hover:text-gondo-indigo-600 truncate">
+                  {oc.nombre}
+                </Link>
+                <div className="flex items-center gap-2 shrink-0">
+                  {oc.objetivo_comercios && (
+                    <span className="text-xs text-gray-400">{oc.comercios_relevados}/{oc.objetivo_comercios}</span>
+                  )}
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${colorEstadoCampana(oc.estado as EstadoCampana)}`}>
+                    {labelEstadoCampana(oc.estado as EstadoCampana)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

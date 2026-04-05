@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Camera, Clock, MapPin, Target, User, Users } from 'lucide-react'
+import { ArrowLeft, Camera, Clock, MapPin, Target, TrendingUp, User, Users } from 'lucide-react'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import {
   labelEstadoCampana, colorEstadoCampana,
@@ -96,7 +96,7 @@ export default async function CampanaDetallePage({
   // Campaña
   const { data: campana, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, financiada_por, min_comercios_para_cobrar, marca:marcas(razon_social)')
+    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, instruccion, financiada_por, min_comercios_para_cobrar, distri_id, marca:marcas(razon_social)')
     .eq('id', params.id)
     .single()
 
@@ -162,6 +162,23 @@ export default async function CampanaDetallePage({
     acc[f.estado] = (acc[f.estado] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
+
+  const fotosAprobadas = counts['aprobada'] ?? 0
+  const totalPuntos = (campana.puntos_por_foto ?? 0) * fotosAprobadas
+  const costoPorFoto = fotosAprobadas > 0 ? campana.puntos_por_foto ?? 0 : null
+  const gondolerosActivos = participaciones.filter((p: any) => p.estado === 'activa').length
+
+  // Otras campañas de esta distribuidora
+  const campanaDistriId = (campana as any).distri_id ?? null
+  const { data: otrasDistriData } = campanaDistriId ? await admin
+    .from('campanas')
+    .select('id, nombre, tipo, estado, comercios_relevados, objetivo_comercios, fecha_fin')
+    .eq('distri_id', campanaDistriId)
+    .neq('id', params.id)
+    .order('created_at', { ascending: false })
+    .limit(6)
+    : { data: null }
+  const otrasCampanas = (otrasDistriData ?? []) as any[]
 
   return (
     <div>
@@ -308,6 +325,27 @@ export default async function CampanaDetallePage({
         )}
       </div>
 
+      {/* Métricas de la campaña */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4 flex items-center gap-1.5">
+          <TrendingUp size={14} />
+          Métricas
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Puntos entregados', value: totalPuntos.toLocaleString('es-AR'), color: 'text-gondo-amber-400' },
+            { label: 'Costo por foto', value: costoPorFoto !== null ? `${costoPorFoto} pts` : '—', color: 'text-gray-900' },
+            { label: 'Fotos aprobadas', value: (counts['aprobada'] ?? 0).toString(), color: 'text-green-600' },
+            { label: 'Gondoleros activos', value: gondolerosActivos.toString(), color: 'text-blue-600' },
+          ].map(m => (
+            <div key={m.label} className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+              <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">{m.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
         <TabFilter tabActivo={tab} counts={counts} />
@@ -398,6 +436,42 @@ export default async function CampanaDetallePage({
           ))}
         </div>
       )}
+
+      {/* Mis otras campañas */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 mt-6">
+        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+          Mis otras campañas
+        </h3>
+        {otrasCampanas.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            Esta es la única campaña activa.
+          </p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {otrasCampanas.map((oc: any) => {
+              const ocDias = oc.fecha_fin ? diasRestantes(oc.fecha_fin) : null
+              return (
+                <div key={oc.id} className="flex items-center justify-between py-3 gap-3">
+                  <Link href={`/distribuidora/campanas/${oc.id}`} className="text-sm font-medium text-gray-900 hover:text-gondo-amber-400 truncate">
+                    {oc.nombre}
+                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {oc.objetivo_comercios && (
+                      <span className="text-xs text-gray-400">{oc.comercios_relevados}/{oc.objetivo_comercios}</span>
+                    )}
+                    {ocDias !== null && (
+                      <span className={`text-xs ${ocDias <= 3 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{ocDias}d</span>
+                    )}
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${colorEstadoCampana(oc.estado as EstadoCampana)}`}>
+                      {labelEstadoCampana(oc.estado as EstadoCampana)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
