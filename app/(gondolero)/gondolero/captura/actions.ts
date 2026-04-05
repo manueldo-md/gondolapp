@@ -168,6 +168,15 @@ export async function registrarMision(params: RegistrarMisionParams) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
+  // ── LOG DE ENTRADA ────────────────────────────────────────────────────────
+  console.log('[registrarMision] START', {
+    campanaId:  params.campanaId,
+    comercioId: params.comercioId,
+    userId:     user.id,
+    fotoCount:  params.fotos.length,
+    puntosTotal: params.puntosTotal,
+  })
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: participacion } = await (supabase as any)
     .from('participaciones')
@@ -268,13 +277,13 @@ export async function registrarMision(params: RegistrarMisionParams) {
 
   // 5. Notificar a la distribuidora del gondolero y a la marca de la campaña
   try {
-    // Obtener en paralelo: distri_id del gondolero + datos de la campaña
+    // Obtener en paralelo: perfil completo del gondolero + datos de la campaña
     const [
       { data: gondoleroProfile, error: profileError },
       { data: campanaData, error: campanaError },
     ] = await Promise.all([
-      db.from('profiles').select('distri_id').eq('id', user.id).single(),
-      db.from('campanas').select('marca_id, nombre').eq('id', params.campanaId).single(),
+      db.from('profiles').select('distri_id, tipo_actor, nombre').eq('id', user.id).single(),
+      db.from('campanas').select('marca_id, distri_id, nombre, estado').eq('id', params.campanaId).single(),
     ])
 
     if (profileError) console.error('[registrarMision] error al leer profile del gondolero:', profileError.message)
