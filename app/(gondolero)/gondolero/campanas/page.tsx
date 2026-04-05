@@ -26,7 +26,7 @@ export default async function CampanasPage() {
   const [participacionesRes, profileRes, misDistrisRes] = await Promise.all([
     supabase
       .from('participaciones')
-      .select('campana_id, estado')
+      .select('campana_id, estado, comercios_completados')
       .eq('gondolero_id', user.id)
       .in('estado', ['activa', 'completada', 'abandonada']),
     supabase
@@ -42,9 +42,11 @@ export default async function CampanasPage() {
   ])
 
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
-  for (const p of (participacionesRes.data ?? []) as { campana_id: string; estado: string }[]) {
+  const comerciosCompletadosMap = new Map<string, number>()
+  for (const p of (participacionesRes.data ?? []) as { campana_id: string; estado: string; comercios_completados: number }[]) {
     if (!participacionMap.has(p.campana_id) || p.estado === 'activa') {
       participacionMap.set(p.campana_id, p.estado as 'activa' | 'completada' | 'abandonada')
+      comerciosCompletadosMap.set(p.campana_id, p.comercios_completados ?? 0)
     }
   }
 
@@ -85,7 +87,7 @@ export default async function CampanasPage() {
       id, nombre, tipo, marca_id, distri_id, financiada_por, via_ejecucion,
       puntos_por_foto, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
       tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
-      nivel_minimo, es_abierta, created_at,
+      max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
       marca:marcas ( razon_social ),
       bloques_foto ( id )
     `)
@@ -135,8 +137,9 @@ export default async function CampanasPage() {
     return tieneAcceso(c)
   })
 
-  // Record plano para el cliente (Map no es serializable)
+  // Records planos para el cliente (Map no es serializable)
   const participacionRecord = Object.fromEntries(participacionMap.entries()) as Record<string, 'activa' | 'completada' | 'abandonada'>
+  const comerciosCompletadosRecord = Object.fromEntries(comerciosCompletadosMap.entries()) as Record<string, number>
 
   // Cuenta solo campañas accesibles para el header
   const totalAccesibles = activas.length + completadas.length + disponibles.length
@@ -175,6 +178,7 @@ export default async function CampanasPage() {
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}
           participacionRecord={participacionRecord}
+          comerciosCompletadosRecord={comerciosCompletadosRecord}
         />
       </div>
     </div>

@@ -30,6 +30,53 @@ export async function activarCampana(campanaId: string) {
 
 export async function cerrarCampana(campanaId: string) {
   const admin = await getAdmin()
+
+  // Liberar puntos retenidos de todos los gondoleros en esta campaña
+  const { data: fotosRetenidas } = await admin
+    .from('fotos')
+    .select('id, gondolero_id, puntos_otorgados')
+    .eq('campana_id', campanaId)
+    .eq('bounty_estado', 'retenido')
+
+  if (fotosRetenidas && fotosRetenidas.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fRet = fotosRetenidas as any[]
+
+    // Agrupar por gondolero
+    const porGondolero: Record<string, number> = {}
+    for (const f of fRet) {
+      if (!f.gondolero_id) continue
+      porGondolero[f.gondolero_id] = (porGondolero[f.gondolero_id] ?? 0) + (f.puntos_otorgados ?? 0)
+    }
+
+    // Marcar todas como acreditadas
+    const idsRetenidos = fRet.map((f: { id: string }) => f.id)
+    await admin.from('fotos').update({ bounty_estado: 'acreditado' }).in('id', idsRetenidos)
+
+    // Acreditar puntos a cada gondolero
+    for (const [gondoleroId, puntos] of Object.entries(porGondolero)) {
+      if (puntos <= 0) continue
+      await admin.from('movimientos_puntos').insert({
+        gondolero_id: gondoleroId,
+        tipo: 'credito',
+        monto: puntos,
+        concepto: 'Puntos liberados al cierre de campaña',
+        campana_id: campanaId,
+      })
+      await admin.rpc('incrementar_puntos', {
+        p_gondolero_id: gondoleroId,
+        p_monto: puntos,
+      })
+      await admin.from('notificaciones').insert({
+        gondolero_id: gondoleroId,
+        tipo: 'foto_aprobada',
+        titulo: '💰 Puntos acreditados',
+        mensaje: `Se acreditaron ${puntos} puntos de la campaña al cierre de la misma.`,
+        campana_id: campanaId,
+      })
+    }
+  }
+
   await admin.from('campanas').update({ estado: 'cerrada' }).eq('id', campanaId)
   revalidatePath('/admin/campanas')
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import {
-  Star, Clock, Camera, CheckCircle2, ChevronDown,
+  Star, Clock, Camera, CheckCircle2, ChevronDown, DollarSign,
 } from 'lucide-react'
 import {
   labelTipoCampana,
@@ -30,6 +30,7 @@ export interface CampanaCardData {
   comercios_relevados: number
   instruccion: string | null
   min_comercios_para_cobrar: number
+  max_comercios_por_gondolero: number
   nivel_minimo: string | null
   es_abierta: boolean
   via_ejecucion: string | null
@@ -62,11 +63,13 @@ function CampanaCard({
   participacionEstado,
   gondoleroNivel,
   misDistriIds,
+  gondoleroComerciosCompletados,
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
   gondoleroNivel: string
   misDistriIds: string[]
+  gondoleroComerciosCompletados?: number
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
@@ -75,6 +78,13 @@ function CampanaCard({
   const nueva = !participando && (Date.now() - new Date(campana.created_at).getTime() < SIETE_DIAS_MS)
   const nivelMinimo = campana.nivel_minimo ?? 'casual'
   const nivelOk = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
+
+  // Progreso propio del gondolero (solo para "en curso")
+  const maxPropios = campana.max_comercios_por_gondolero
+  const minPropios = campana.min_comercios_para_cobrar
+  const completadosPropios = gondoleroComerciosCompletados ?? 0
+  const progresoPropios = maxPropios > 0 ? Math.min(100, Math.round((completadosPropios / maxPropios) * 100)) : 0
+  const minPct = maxPropios > 0 ? Math.min(100, Math.round((minPropios / maxPropios) * 100)) : 0
 
   const cupoLleno = !!(campana.tope_total_comercios != null && campana.comercios_relevados >= campana.tope_total_comercios)
   const ultimosCupos = !cupoLleno && campana.tope_total_comercios != null &&
@@ -95,6 +105,18 @@ function CampanaCard({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[campana.tipo]}`}>
             {labelTipoCampana(campana.tipo)}
           </span>
+          {/* Content badges */}
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+            <Camera size={10} />
+            Foto
+          </span>
+          {campana.tipo === 'precio' && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gondo-amber-50 text-gondo-amber-400">
+              <DollarSign size={10} />
+              Precio
+            </span>
+          )}
+          {/* Origin badges */}
           {esMiDistri && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
               📦 Tu distribuidora
@@ -108,7 +130,7 @@ function CampanaCard({
           {participando && (
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
               <CheckCircle2 size={10} />
-              Participando
+              En curso
             </span>
           )}
           {participacionEstado === 'completada' && (
@@ -179,9 +201,9 @@ function CampanaCard({
         )}
       </div>
 
-      {/* Barra de progreso */}
+      {/* Barra de progreso campaña global */}
       {campana.objetivo_comercios !== null && campana.objetivo_comercios > 0 && (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-2">
           <div className="flex justify-between items-center mb-1.5">
             <span className="text-xs text-gray-400">Comercios relevados</span>
             <span className="text-xs font-medium text-gray-600">
@@ -192,6 +214,37 @@ function CampanaCard({
             <div
               className="h-full bg-gondo-verde-400 rounded-full transition-all"
               style={{ width: `${progreso}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Barra de progreso propio (solo en curso) */}
+      {participando && maxPropios > 0 && (
+        <div className="px-4 pb-4">
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-xs text-gray-500 font-medium">Tu avance</span>
+            <span className="text-xs font-semibold text-gray-700">
+              {completadosPropios} / {maxPropios}
+              {completadosPropios >= minPropios
+                ? <span className="text-gondo-verde-600 ml-1">✓ Mínimo alcanzado</span>
+                : <span className="text-amber-500 ml-1">· mínimo {minPropios}</span>
+              }
+            </span>
+          </div>
+          <div className="relative h-2 bg-gray-100 rounded-full overflow-hidden">
+            {/* Indicador del mínimo */}
+            {minPct > 0 && minPct < 100 && (
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10"
+                style={{ left: `${minPct}%` }}
+              />
+            )}
+            <div
+              className={`h-full rounded-full transition-all ${
+                completadosPropios >= minPropios ? 'bg-gondo-verde-400' : 'bg-amber-400'
+              }`}
+              style={{ width: `${progresoPropios}%` }}
             />
           </div>
         </div>
@@ -286,6 +339,7 @@ export function CampanasSections({
   gondoleroNivel,
   misDistriIds,
   participacionRecord,
+  comerciosCompletadosRecord,
 }: {
   activas: CampanaCardData[]
   completadas: CampanaCardData[]
@@ -293,6 +347,7 @@ export function CampanasSections({
   gondoleroNivel: string
   misDistriIds: string[]
   participacionRecord: Record<string, 'activa' | 'completada' | 'abandonada'>
+  comerciosCompletadosRecord: Record<string, number>
 }) {
   const hayAlgo = activas.length + completadas.length + disponibles.length > 0
 
@@ -312,10 +367,10 @@ export function CampanasSections({
 
   return (
     <div className="space-y-4">
-      {/* ── Mis campañas activas ── */}
+      {/* ── En curso ── */}
       {activas.length > 0 && (
         <Seccion
-          titulo="Mis campañas activas"
+          titulo="En curso"
           badge={activas.length}
           badgeColor="bg-green-100 text-green-700"
           bgColor="bg-green-50 border-green-200"
@@ -328,6 +383,7 @@ export function CampanasSections({
               participacionEstado="activa"
               gondoleroNivel={gondoleroNivel}
               misDistriIds={misDistriIds}
+              gondoleroComerciosCompletados={comerciosCompletadosRecord[c.id] ?? 0}
             />
           ))}
         </Seccion>
@@ -336,7 +392,7 @@ export function CampanasSections({
       {/* ── Disponibles ── */}
       {disponibles.length > 0 && (
         <Seccion
-          titulo="Campañas disponibles"
+          titulo="Disponibles"
           badge={disponibles.length}
           badgeColor="bg-gray-100 text-gray-600"
           bgColor="bg-white border-gray-200"
