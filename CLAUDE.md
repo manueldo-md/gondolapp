@@ -883,5 +883,23 @@ Las distribuidoras no pagan la plataforma con dinero sino que ganan tokens hacie
 
 ---
 
+### GondIA — Asistente de campañas con IA (V3)
+
+Agente de IA integrado en los paneles de marca y distribuidora.
+El usuario le describe su objetivo comercial en lenguaje natural ("quiero mejorar presencia de Flow Cereal en kioscos de Córdoba") y el agente lo orienta, sugiere configuraciones y puede llegar a armar la campaña lista para publicar.
+
+El agente conoce el funcionamiento completo de la plataforma y aprende de los resultados históricos de campañas anteriores para hacer recomendaciones basadas en evidencia real.
+
+**Prerequisito clave:** Requiere masa crítica de data histórica para ser útil — activar cuando haya mínimo 6 meses de campañas reales.
+
+**Capacidades previstas:**
+- Interpretar objetivos comerciales en lenguaje natural
+- Sugerir tipo de campaña, zonas, bloques de foto y bounty óptimo en base a historial
+- Pre-completar el formulario de nueva campaña con la configuración sugerida
+- Explicar por qué recomienda cada parámetro ("en kioscos de Córdoba el bounty mínimo efectivo fue de 15 pts")
+- Integración con Claude API (claude-opus-4-6 o claude-sonnet-4-6 según latencia requerida)
+
+---
+
 *Última actualización: Abril 2026*
 *Versión del documento: 1.1*
