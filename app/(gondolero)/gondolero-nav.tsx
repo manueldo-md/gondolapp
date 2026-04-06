@@ -2,12 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutGrid, CheckSquare, BarChart2, Trophy, User } from 'lucide-react'
+import { LayoutGrid, BarChart2, Trophy, User } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const TABS = [
   { href: '/gondolero/campanas',  label: 'Campañas',  icon: LayoutGrid  },
-  { href: '/gondolero/misiones',  label: 'Misiones',  icon: CheckSquare },
   { href: '/gondolero/actividad', label: 'Actividad', icon: BarChart2   },
   { href: '/gondolero/logros',    label: 'Logros',    icon: Trophy      },
   { href: '/gondolero/perfil',    label: 'Perfil',    icon: User        },

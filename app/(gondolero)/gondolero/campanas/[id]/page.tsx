@@ -41,6 +41,14 @@ type CampanaDetalle = {
   bloques_foto: BloqueFotoRow[]
 }
 
+type MisionRow = {
+  id: string
+  estado: string
+  puntos_total: number
+  created_at: string
+  comercio: { nombre: string; direccion: string | null } | null
+}
+
 const COLORES_TIPO: Record<TipoCampana, string> = {
   relevamiento: 'bg-gondo-indigo-50 text-gondo-indigo-600',
   precio:       'bg-gondo-amber-50 text-gondo-amber-400',
@@ -53,6 +61,13 @@ const COLORES_TIPO: Record<TipoCampana, string> = {
 
 const NIVEL_ORDEN: Record<string, number> = { casual: 0, activo: 1, pro: 2 }
 const NIVEL_LABEL: Record<string, string>  = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
+
+const ESTADO_MISION: Record<string, { label: string; color: string }> = {
+  pendiente: { label: 'En revisión', color: 'bg-amber-50 text-amber-600' },
+  aprobada:  { label: 'Aprobada',    color: 'bg-green-50 text-green-600' },
+  rechazada: { label: 'Rechazada',   color: 'bg-red-50 text-red-500'    },
+  parcial:   { label: 'Parcial',     color: 'bg-blue-50 text-blue-600'  },
+}
 
 function ReqRow({ ok, text }: { ok: boolean; text: string }) {
   return (
@@ -139,9 +154,6 @@ export default async function CampanaDetallePage({
     sinAcceso = true
     motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.'
   } else if (c.financiada_por === 'marca' && c.marca_id) {
-    // Necesitamos verificar relaciones marca-distri — usamos misDistriIds que ya tenemos
-    // (la verificación completa ocurre server-side en el action; aquí mostramos el estado)
-    // Solo bloqueamos si el gondolero no tiene distris vinculadas
     if (misDistriIds.length === 0) {
       sinAcceso = true
       motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.'
@@ -157,12 +169,24 @@ export default async function CampanaDetallePage({
     ? calcularPorcentaje(c.comercios_relevados, c.tope_total_comercios)
     : null
 
-  // ¿Puede unirse? (sin contar participación anterior que es re-join)
   const puedeUnirse = nivelOk && !inscripcionCerrada && !cupoLleno && !sinAcceso
 
-  // Mostrar panel de acceso cuando no está activo
   const mostrarPanelAcceso = !yaUnido
   const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || sinAcceso || !!participacionAnteriorEstado
+
+  // ── Misiones del gondolero en esta campaña ────────────────────────────────────
+  let misiones: MisionRow[] = []
+  if (yaUnido) {
+    const { data: misionesData } = await supabase
+      .from('misiones')
+      .select('id, estado, puntos_total, created_at, comercio:comercios ( nombre, direccion )')
+      .eq('campana_id', params.id)
+      .eq('gondolero_id', user.id)
+      .order('created_at', { ascending: false })
+    misiones = (misionesData as MisionRow[] | null) ?? []
+  }
+
+  const alcanzeLimite = misiones.length >= c.max_comercios_por_gondolero
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -210,20 +234,9 @@ export default async function CampanaDetallePage({
 
         {/* ── Ya participando ── */}
         {yaUnido && (
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 size={18} className="text-green-600" />
-              <div>
-                <p className="text-sm font-semibold text-green-800">Ya estás participando</p>
-                <p className="text-xs text-green-600">Podés ver tu progreso en Mis misiones</p>
-              </div>
-            </div>
-            <Link
-              href={`/gondolero/captura?campana=${c.id}`}
-              className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-900"
-            >
-              Capturar <ChevronRight size={13} />
-            </Link>
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-2">
+            <CheckCircle2 size={18} className="text-green-600 shrink-0" />
+            <p className="text-sm font-semibold text-green-800">Ya estás participando en esta campaña</p>
           </div>
         )}
 
@@ -293,12 +306,85 @@ export default async function CampanaDetallePage({
           </div>
         )}
 
-        {/* Panel de acceso / condiciones */}
+        {/* ── Sección de misiones (solo para participantes activos) ── */}
+        {yaUnido && (
+          <>
+            {/* Dos contadores: campaña general + mis misiones */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
+                <p className="text-2xl font-bold text-gondo-verde-400">{c.comercios_relevados}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">comercios<br/>en la campaña</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
+                <p className="text-2xl font-bold text-gray-700">{misiones.length}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">
+                  {misiones.length === 1 ? 'misión tuya' : 'misiones tuyas'}<br/>
+                  <span className="text-gray-300">(máx {c.max_comercios_por_gondolero})</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Botón Nueva misión o límite alcanzado */}
+            {!alcanzeLimite && !cupoLleno ? (
+              <Link
+                href={`/gondolero/captura?campana=${c.id}`}
+                className="flex items-center justify-center gap-2 w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-sm text-base hover:bg-gondo-verde-600 transition-colors"
+              >
+                <Camera size={18} />
+                Nueva misión
+              </Link>
+            ) : (
+              <div className="bg-gray-50 rounded-2xl border border-gray-200 p-4 text-center">
+                <p className="text-sm font-semibold text-gray-600">
+                  {cupoLleno ? 'Campaña sin cupos disponibles' : 'Alcanzaste el límite de misiones'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {cupoLleno
+                    ? 'El cupo total de la campaña está completo.'
+                    : `Completaste el máximo de ${c.max_comercios_por_gondolero} comercios para esta campaña.`}
+                </p>
+              </div>
+            )}
+
+            {/* Lista de misiones */}
+            {misiones.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-4">
+                <h2 className="text-sm font-semibold text-gray-700 mb-3">Tus misiones</h2>
+                <div className="space-y-3">
+                  {misiones.map(mision => (
+                    <div key={mision.id} className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">
+                          {mision.comercio?.nombre ?? 'Comercio'}
+                        </p>
+                        {mision.comercio?.direccion && (
+                          <p className="text-xs text-gray-400 truncate">{mision.comercio.direccion}</p>
+                        )}
+                        <p className="text-xs text-gray-400">{formatearFecha(mision.created_at)}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_MISION[mision.estado]?.color ?? 'bg-gray-100 text-gray-500'}`}>
+                          {ESTADO_MISION[mision.estado]?.label ?? mision.estado}
+                        </span>
+                        {mision.puntos_total > 0 && (
+                          <span className="text-xs font-semibold text-gondo-verde-400">
+                            +{formatearPuntos(mision.puntos_total)} pts
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Panel de acceso / condiciones (solo para no participantes) */}
         {mostrarPanelAcceso && (hayRestricciones || !yaUnido) && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">Condiciones de acceso</h2>
             <div className="space-y-2.5">
-              {/* Inscripción */}
               {c.fecha_limite_inscripcion ? (
                 <ReqRow
                   ok={!inscripcionCerrada}
@@ -310,7 +396,6 @@ export default async function CampanaDetallePage({
                 <ReqRow ok text="Inscripción abierta" />
               )}
 
-              {/* Cupos */}
               {c.tope_total_comercios != null && (
                 <ReqRow
                   ok={!cupoLleno}
@@ -320,7 +405,6 @@ export default async function CampanaDetallePage({
                 />
               )}
 
-              {/* Nivel */}
               {nivelMinimo !== 'casual' && (
                 <ReqRow
                   ok={nivelOk}
@@ -330,7 +414,6 @@ export default async function CampanaDetallePage({
                 />
               )}
 
-              {/* Mínimo de comercios */}
               <div className="flex items-center gap-2.5">
                 <MapPin size={15} className="text-gondo-verde-400 shrink-0" />
                 <span className="text-sm text-gray-600">
@@ -347,8 +430,8 @@ export default async function CampanaDetallePage({
           </div>
         )}
 
-        {/* Cupo total (barra visual) */}
-        {c.tope_total_comercios != null && (
+        {/* Cupo total (barra visual) — solo para no participantes */}
+        {!yaUnido && c.tope_total_comercios != null && (
           <div className={`rounded-2xl border p-4 ${cupoLleno ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-sm font-semibold text-gray-700">Cupo disponible</h2>
@@ -368,8 +451,8 @@ export default async function CampanaDetallePage({
           </div>
         )}
 
-        {/* Progreso general */}
-        {c.objetivo_comercios !== null && c.objetivo_comercios > 0 && (
+        {/* Progreso general — solo para no participantes */}
+        {!yaUnido && c.objetivo_comercios !== null && c.objetivo_comercios > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-sm font-semibold text-gray-700">Progreso general</h2>
@@ -386,21 +469,23 @@ export default async function CampanaDetallePage({
 
       </div>
 
-      {/* CTA fijo al fondo */}
-      <div className="fixed bottom-16 left-0 right-0 px-4 pb-2 bg-gradient-to-t from-gray-50 via-gray-50 pt-4">
-        <UnirseButton
-          campanaId={c.id}
-          yaUnido={yaUnido}
-          inscripcionCerrada={inscripcionCerrada}
-          cupoLleno={cupoLleno}
-          nivelOk={nivelOk}
-          nivelMinimo={nivelMinimo}
-          gondoleroNivel={gondoleroNivel}
-          participacionAnteriorEstado={participacionAnteriorEstado}
-          sinAcceso={sinAcceso}
-          motivoSinAcceso={motivoSinAcceso}
-        />
-      </div>
+      {/* CTA fijo al fondo — solo para usuarios no unidos */}
+      {!yaUnido && (
+        <div className="fixed bottom-16 left-0 right-0 px-4 pb-2 bg-gradient-to-t from-gray-50 via-gray-50 pt-4">
+          <UnirseButton
+            campanaId={c.id}
+            yaUnido={yaUnido}
+            inscripcionCerrada={inscripcionCerrada}
+            cupoLleno={cupoLleno}
+            nivelOk={nivelOk}
+            nivelMinimo={nivelMinimo}
+            gondoleroNivel={gondoleroNivel}
+            participacionAnteriorEstado={participacionAnteriorEstado}
+            sinAcceso={sinAcceso}
+            motivoSinAcceso={motivoSinAcceso}
+          />
+        </div>
+      )}
 
     </div>
   )
