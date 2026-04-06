@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { ArrowLeft, Navigation, Loader2, MapPin, Camera, ImageOff } from 'lucide-react'
 import { get, set } from 'idb-keyval'
+import { createClient } from '@/lib/supabase/client'
 import { crearComercio } from './actions'
 import { comprimirImagen } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
@@ -17,6 +18,7 @@ interface ComercioTempItem {
   lat: number
   lng: number
   timestamp: number
+  localidad_id?: number | null
 }
 
 const TIPOS: { value: TipoComercio; label: string; emoji: string }[] = [
@@ -49,6 +51,14 @@ function NuevoComercioForm() {
   const [gpsError,  setGpsError]  = useState<string | null>(null)
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null)
 
+  // ── Localidad (selector jerárquico) ────────────────────────────────────────
+  const [provincias,    setProvincias]    = useState<{ id: number; nombre: string }[]>([])
+  const [departamentos, setDepartamentos] = useState<{ id: number; nombre: string }[]>([])
+  const [localidades,   setLocalidades]   = useState<{ id: number; nombre: string }[]>([])
+  const [provinciaId,   setProvinciaId]   = useState<number | ''>('')
+  const [departamentoId, setDepartamentoId] = useState<number | ''>('')
+  const [localidadId,   setLocalidadId]   = useState<number | null>(null)
+
   // ── Foto de fachada ────────────────────────────────────────────────────────
   const [fotoPreview,  setFotoPreview]  = useState<string | null>(null)
   const [fotoBlob,     setFotoBlob]     = useState<Blob | null>(null)
@@ -59,6 +69,26 @@ function NuevoComercioForm() {
   useEffect(() => {
     return () => { if (fotoPreview) URL.revokeObjectURL(fotoPreview) }
   }, [fotoPreview])
+
+  // Cargar provincias al montar
+  useEffect(() => {
+    createClient().from('provincias').select('id, nombre').order('nombre')
+      .then(({ data }) => setProvincias(data ?? []))
+  }, [])
+
+  // Cargar departamentos al cambiar provincia
+  useEffect(() => {
+    if (!provinciaId) { setDepartamentos([]); setDepartamentoId(''); setLocalidades([]); setLocalidadId(null); return }
+    createClient().from('departamentos').select('id, nombre').eq('provincia_id', provinciaId).order('nombre')
+      .then(({ data }) => { setDepartamentos(data ?? []); setDepartamentoId(''); setLocalidades([]); setLocalidadId(null) })
+  }, [provinciaId])
+
+  // Cargar localidades al cambiar departamento
+  useEffect(() => {
+    if (!departamentoId) { setLocalidades([]); setLocalidadId(null); return }
+    createClient().from('localidades').select('id, nombre').eq('departamento_id', departamentoId).order('nombre')
+      .then(({ data }) => { setLocalidades(data ?? []); setLocalidadId(null) })
+  }, [departamentoId])
 
   // Pedir GPS automáticamente al abrir
   useEffect(() => {
@@ -140,6 +170,7 @@ function NuevoComercioForm() {
           lat: lat!,
           lng: lng!,
           timestamp: Date.now(),
+          localidad_id: localidadId,
         })
         await set('comercios_pendientes', pendientes)
         const params = new URLSearchParams()
@@ -164,6 +195,7 @@ function NuevoComercioForm() {
     fd.set('lat',        String(lat))
     fd.set('lng',        String(lng))
     fd.set('campana_id', campanaId)
+    if (localidadId) fd.set('localidad_id', String(localidadId))
 
     if (conFoto && fotoBlob) {
       fd.set('foto_fachada', fotoBlob, 'fachada.jpg')
@@ -402,6 +434,50 @@ function NuevoComercioForm() {
             className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
             autoComplete="street-address"
           />
+        </div>
+
+        {/* Localidad */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">
+            Localidad <span className="text-gray-400 font-normal">(opcional — ayuda a filtrar campañas)</span>
+          </label>
+          <div className="space-y-2">
+            <select
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base bg-white"
+              value={provinciaId}
+              onChange={e => {
+                setProvinciaId(e.target.value ? Number(e.target.value) : '')
+              }}
+            >
+              <option value="">Provincia…</option>
+              {provincias.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+            {provinciaId !== '' && (
+              <select
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base bg-white"
+                value={departamentoId}
+                onChange={e => setDepartamentoId(e.target.value ? Number(e.target.value) : '')}
+              >
+                <option value="">Departamento…</option>
+                {departamentos.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+              </select>
+            )}
+            {departamentoId !== '' && localidades.length > 0 && (
+              <select
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base bg-white"
+                value={localidadId ?? ''}
+                onChange={e => setLocalidadId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Localidad…</option>
+                {localidades.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+              </select>
+            )}
+          </div>
+          {localidadId && (
+            <p className="text-xs text-gondo-verde-400 font-medium pl-1">
+              ✓ {localidades.find(l => l.id === localidadId)?.nombre} seleccionada
+            </p>
+          )}
         </div>
 
         {/* Error */}

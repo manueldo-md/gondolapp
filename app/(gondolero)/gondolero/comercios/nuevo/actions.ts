@@ -17,12 +17,14 @@ export async function crearComercio(formData: FormData) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const nombre    = (formData.get('nombre') as string)?.trim()
-  const tipo      = formData.get('tipo') as TipoComercio
-  const direccion = (formData.get('direccion') as string)?.trim() || null
-  const latStr    = formData.get('lat') as string
-  const lngStr    = formData.get('lng') as string
-  const campanaId = formData.get('campana_id') as string | null
+  const nombre     = (formData.get('nombre') as string)?.trim()
+  const tipo       = formData.get('tipo') as TipoComercio
+  const direccion  = (formData.get('direccion') as string)?.trim() || null
+  const latStr     = formData.get('lat') as string
+  const lngStr     = formData.get('lng') as string
+  const campanaId  = formData.get('campana_id') as string | null
+  const localidadStr = formData.get('localidad_id') as string | null
+  const localidadId  = localidadStr ? Number(localidadStr) : null
 
   if (!nombre) return { error: 'El nombre del comercio es obligatorio.' }
   if (!tipo)   return { error: 'Seleccioná el tipo de comercio.' }
@@ -34,29 +36,6 @@ export async function crearComercio(formData: FormData) {
     return { error: 'Necesitamos tu ubicación GPS para registrar el comercio. Activá el GPS e intentá de nuevo.' }
   }
 
-  // Obtener zona_id por defecto (Entre Ríos) si no hay zona detectada
-  const { data: zona } = await admin
-    .from('zonas')
-    .select('id')
-    .eq('nombre', 'Entre Ríos')
-    .limit(1)
-    .single()
-
-  // Si no existe "Entre Ríos", usar cualquier zona disponible
-  let zonaId: string | null = zona?.id ?? null
-  if (!zonaId) {
-    const { data: primeraZona } = await admin
-      .from('zonas')
-      .select('id')
-      .limit(1)
-      .single()
-    zonaId = primeraZona?.id ?? null
-  }
-
-  if (!zonaId) {
-    return { error: 'No hay zonas configuradas en el sistema. Contactá al equipo de GondolApp.' }
-  }
-
   // INSERT en comercios
   const { data: comercio, error: errInsert } = await admin
     .from('comercios')
@@ -66,7 +45,7 @@ export async function crearComercio(formData: FormData) {
       direccion,
       lat,
       lng,
-      zona_id:        zonaId,
+      localidad_id:   localidadId,
       registrado_por: user.id,
       validado:       false,
     })
@@ -123,6 +102,7 @@ export async function crearComercioOffline(datos: {
   direccion: string | null
   lat: number
   lng: number
+  localidad_id?: number | null
 }): Promise<{ id?: string; error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -134,26 +114,17 @@ export async function crearComercioOffline(datos: {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const { data: zona } = await admin
-    .from('zonas').select('id').eq('nombre', 'Entre Ríos').limit(1).single()
-  let zonaId: string | null = zona?.id ?? null
-  if (!zonaId) {
-    const { data: primeraZona } = await admin.from('zonas').select('id').limit(1).single()
-    zonaId = primeraZona?.id ?? null
-  }
-  if (!zonaId) return { error: 'No hay zonas configuradas.' }
-
   const { data: comercio, error } = await admin
     .from('comercios')
     .insert({
-      nombre: datos.nombre,
-      tipo: datos.tipo,
-      direccion: datos.direccion,
-      lat: datos.lat,
-      lng: datos.lng,
-      zona_id: zonaId,
+      nombre:         datos.nombre,
+      tipo:           datos.tipo,
+      direccion:      datos.direccion,
+      lat:            datos.lat,
+      lng:            datos.lng,
+      localidad_id:   datos.localidad_id ?? null,
       registrado_por: user.id,
-      validado: false,
+      validado:       false,
     })
     .select('id')
     .single()
