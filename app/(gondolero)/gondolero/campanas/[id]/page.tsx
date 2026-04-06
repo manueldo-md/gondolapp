@@ -107,7 +107,7 @@ export default async function CampanaDetallePage({
 
   if (!campanaData) notFound()
 
-  const [{ data: participacionData }, { data: profileData }, { data: misDistrisData }] = await Promise.all([
+  const [{ data: participacionData }, { data: profileData }, { data: misDistrisData }, { data: misionesData }] = await Promise.all([
     supabase
       .from('participaciones')
       .select('id, estado')
@@ -126,14 +126,21 @@ export default async function CampanaDetallePage({
       .select('distri_id')
       .eq('gondolero_id', user.id)
       .eq('estado', 'aprobada'),
+    supabase
+      .from('misiones')
+      .select('id, estado, puntos_total, created_at, comercio:comercios ( nombre, direccion )')
+      .eq('campana_id', params.id)
+      .eq('gondolero_id', user.id)
+      .order('created_at', { ascending: false }),
   ])
 
   const c = campanaData as unknown as CampanaDetalle
   const participacion = participacionData as { id: string; estado: string } | null
   const gondoleroNivel = (profileData as { nivel: string } | null)?.nivel ?? 'casual'
   const misDistriIds = (misDistrisData ?? []).map((d: { distri_id: string }) => d.distri_id)
+  const misiones = (misionesData as MisionRow[] | null) ?? []
 
-  const yaUnido        = participacion?.estado === 'activa'
+  const yaUnido        = participacion?.estado === 'activa' || misiones.length > 0
   const participacionAnteriorEstado = (
     participacion?.estado === 'completada' || participacion?.estado === 'abandonada'
   ) ? participacion.estado as 'completada' | 'abandonada' : null
@@ -173,18 +180,6 @@ export default async function CampanaDetallePage({
 
   const mostrarPanelAcceso = !yaUnido
   const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || sinAcceso || !!participacionAnteriorEstado
-
-  // ── Misiones del gondolero en esta campaña ────────────────────────────────────
-  let misiones: MisionRow[] = []
-  if (yaUnido) {
-    const { data: misionesData } = await supabase
-      .from('misiones')
-      .select('id, estado, puntos_total, created_at, comercio:comercios ( nombre, direccion )')
-      .eq('campana_id', params.id)
-      .eq('gondolero_id', user.id)
-      .order('created_at', { ascending: false })
-    misiones = (misionesData as MisionRow[] | null) ?? []
-  }
 
   const alcanzeLimite = misiones.length >= c.max_comercios_por_gondolero
 
