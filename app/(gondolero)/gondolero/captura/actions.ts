@@ -178,16 +178,33 @@ export async function registrarMision(params: RegistrarMisionParams) {
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: participacion } = await (supabase as any)
-    .from('participaciones')
-    .select('id, comercios_completados')
-    .eq('campana_id', params.campanaId)
-    .eq('gondolero_id', user.id)
-    .eq('estado', 'activa')
-    .maybeSingle() as { data: { id: string; comercios_completados: number } | null }
+  const db0 = supabase as any
 
-  if (!participacion) {
-    throw new Error('No tenés una participación activa en esta campaña.')
+  // Verificar que la campaña existe y está activa
+  const { data: campana, error: campanaErr } = await db0
+    .from('campanas')
+    .select('id, estado, max_comercios_por_gondolero')
+    .eq('id', params.campanaId)
+    .single()
+
+  if (campanaErr || !campana) {
+    throw new Error('La campaña no existe.')
+  }
+  if (campana.estado !== 'activa') {
+    throw new Error('La campaña no está activa.')
+  }
+
+  // Verificar que el gondolero no superó el máximo de comercios permitido
+  if (campana.max_comercios_por_gondolero) {
+    const { count } = await db0
+      .from('misiones')
+      .select('id', { count: 'exact', head: true })
+      .eq('campana_id', params.campanaId)
+      .eq('gondolero_id', user.id)
+
+    if ((count ?? 0) >= campana.max_comercios_por_gondolero) {
+      throw new Error(`Ya completaste el máximo de ${campana.max_comercios_por_gondolero} comercios en esta campaña.`)
+    }
   }
 
   const admin = createSupabaseClient(
@@ -269,13 +286,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
     campana_id:   params.campanaId,
   })
 
-  // 4. Incrementar comercios_completados una vez por misión completada
-  await db
-    .from('participaciones')
-    .update({ comercios_completados: (participacion.comercios_completados ?? 0) + 1 })
-    .eq('id', participacion.id)
-
-  // 5. Notificar a la distribuidora del gondolero y a la marca de la campaña
+  // 4. Notificar a la distribuidora del gondolero y a la marca de la campaña (no bloquea el flujo)
   try {
     // Obtener en paralelo: perfil completo del gondolero + datos de la campaña
     const [
