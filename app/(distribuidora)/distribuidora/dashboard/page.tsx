@@ -2,9 +2,24 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Camera, Clock, Users, Store, ChevronRight } from 'lucide-react'
-import { diasRestantes, calcularPorcentaje } from '@/lib/utils'
+import {
+  Users, Store, Megaphone, Camera, Star, CheckCircle2,
+  AlertTriangle, ChevronRight, MapPin, Package, TrendingUp, Clock,
+} from 'lucide-react'
+import { diasRestantes, formatearPuntos } from '@/lib/utils'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
+
+// ── Tipos internos ─────────────────────────────────────────────────────────────
+
+type GondoleroProfile = {
+  id: string
+  alias: string | null
+  nombre: string | null
+  nivel: string | null
+  fotos_aprobadas: number | null
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function makeAdmin() {
   return createAdminClient(
@@ -14,6 +29,29 @@ function makeAdmin() {
   )
 }
 
+const NULL_UUID = '00000000-0000-0000-0000-000000000000'
+function safe(ids: string[]) { return ids.length > 0 ? ids : [NULL_UUID] }
+
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+function fmtSemana(d: Date) { return `${d.getDate()} ${MESES[d.getMonth()]}` }
+
+const TIPO_LABEL: Record<string, string> = {
+  autoservicio: 'Autoservicio',
+  almacen:      'Almacén',
+  kiosco:       'Kiosco',
+  mayorista:    'Mayorista',
+  dietetica:    'Dietética',
+  otro:         'Otro',
+}
+
+const NIVEL_BADGE: Record<string, string> = {
+  casual: 'bg-gray-100 text-gray-500',
+  activo: 'bg-blue-50 text-blue-600',
+  pro:    'bg-purple-50 text-purple-600',
+}
+
+// ── Página ─────────────────────────────────────────────────────────────────────
+
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -21,269 +59,666 @@ export default async function DashboardPage() {
 
   const admin = makeAdmin()
 
+  // distri_id del usuario
   const { data: profile } = await admin
-    .from('profiles')
-    .select('distri_id')
-    .eq('id', user.id)
-    .single()
+    .from('profiles').select('distri_id').eq('id', user.id).single()
   const distriId = profile?.distri_id
   if (!distriId) redirect('/auth')
 
-  const NULL_UUID = '00000000-0000-0000-0000-000000000000'
-  // Campañas propias: fuente de verdad para visibilidad de fotos
-  // Gondoleros activos: solo para alerta de inactividad
-  const [gondoleroIds, todasCampanasRes] = await Promise.all([
-    getGondolerosDeDistri(distriId, admin, false),
-    admin.from('campanas').select('id').eq('distri_id', distriId),
-  ])
-  const campanaIds = (todasCampanasRes.data ?? []).map((c: { id: string }) => c.id)
-  const safeIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
+  // Gondoleros vinculados (activos)
+  const gondoleroIds = await getGondolerosDeDistri(distriId, admin, false)
+  const safeGond = safe(gondoleroIds)
 
-  // Date helpers
-  const hoyInicio = new Date()
-  hoyInicio.setHours(0, 0, 0, 0)
-  const semanaAtras  = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000)
-  const sieteAtras   = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000)
-  const catDiasAtras = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
-  const tresMasAdelante = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+  // ── Fechas de referencia ──────────────────────────────────────────────────
+  const ahora        = new Date()
+  const mesInicio    = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  const hace14d      = new Date(Date.now() - 14 * 86400_000)
+  const hace30d      = new Date(Date.now() - 30 * 86400_000)
+  const hace56d      = new Date(Date.now() - 56 * 86400_000)  // 8 semanas
+  const en7d         = new Date(Date.now() +  7 * 86400_000)
 
-  // ── Métricas ──────────────────────────────────────────────────────────────
-  const fotasHoyPorCampana = new Map<string, number>()
-
+  // ── Consultas en paralelo ─────────────────────────────────────────────────
   const [
-    { count: fotasHoyCount },
-    { count: fotasPendCount },
-    { data: fHoyDet },
-    { data: fSem },
+    gondoleroProfilesRes,
+    fotosEsteMesRes,
+    misionesEsteMesRes,
+    misiones90dRes,
+    misiones8semRes,
+    movPuntosRes,
+    campanasActivasRes,
+    comerciosPendientesRes,
+    fotos14dRes,
   ] = await Promise.all([
-    admin.from('fotos').select('*', { count: 'exact', head: true })
-      .in('campana_id', safeIds)
-      .gte('created_at', hoyInicio.toISOString()),
-    admin.from('fotos').select('*', { count: 'exact', head: true })
-      .in('campana_id', safeIds)
-      .eq('estado', 'pendiente'),
-    admin.from('fotos').select('gondolero_id, campana_id')
-      .in('campana_id', safeIds)
-      .gte('created_at', hoyInicio.toISOString()),
-    admin.from('fotos').select('comercio_id')
-      .in('campana_id', safeIds)
-      .gte('created_at', semanaAtras.toISOString()),
+    // Perfiles de gondoleros
+    admin.from('profiles')
+      .select('id, alias, nombre, nivel, fotos_aprobadas')
+      .in('id', safeGond),
+
+    // Fotos de este mes (para KPIs + stats por gondolero)
+    admin.from('fotos')
+      .select('id, gondolero_id, estado, created_at')
+      .in('gondolero_id', safeGond)
+      .gte('created_at', mesInicio.toISOString()),
+
+    // Misiones de este mes
+    admin.from('misiones')
+      .select('id, gondolero_id, estado, puntos_total, created_at')
+      .in('gondolero_id', safeGond)
+      .gte('created_at', mesInicio.toISOString()),
+
+    // Misiones aprobadas últimos 90 días (cobertura por localidad + tipo)
+    admin.from('misiones')
+      .select(`
+        id, gondolero_id, created_at,
+        comercio:comercios ( id, tipo, localidad_id, localidades ( id, nombre ) )
+      `)
+      .in('gondolero_id', safeGond)
+      .eq('estado', 'aprobada')
+      .gte('created_at', hace56d.toISOString()),
+
+    // Misiones aprobadas últimas 8 semanas (gráfico de evolución)
+    admin.from('misiones')
+      .select('id, created_at')
+      .in('gondolero_id', safeGond)
+      .eq('estado', 'aprobada')
+      .gte('created_at', hace56d.toISOString()),
+
+    // Movimientos de puntos este mes
+    admin.from('movimientos_puntos')
+      .select('monto')
+      .in('gondolero_id', safeGond)
+      .eq('tipo', 'credito')
+      .gte('created_at', mesInicio.toISOString()),
+
+    // Campañas activas propias
+    admin.from('campanas')
+      .select('id, nombre, tipo, objetivo_comercios, comercios_relevados, fecha_fin')
+      .eq('distri_id', distriId)
+      .eq('estado', 'activa')
+      .order('fecha_fin', { ascending: true }),
+
+    // Comercios sin validar registrados por gondoleros de la distri
+    admin.from('comercios')
+      .select('id, nombre, tipo, direccion, created_at')
+      .in('registrado_por', safeGond)
+      .eq('validado', false)
+      .order('created_at', { ascending: false })
+      .limit(5),
+
+    // Actividad reciente (14 días) para badge inactivo
+    admin.from('fotos')
+      .select('gondolero_id')
+      .in('gondolero_id', safeGond)
+      .gte('created_at', hace14d.toISOString()),
   ])
 
-  const fotasHoy   = fotasHoyCount ?? 0
-  const fotasPend  = fotasPendCount ?? 0
-  const gondActHoy = new Set((fHoyDet ?? []).map((f: { gondolero_id: string }) => f.gondolero_id)).size
-  const comSemana  = new Set((fSem ?? []).map((f: { comercio_id: string }) => f.comercio_id)).size
-  for (const f of fHoyDet ?? []) {
-    const fo = f as { gondolero_id: string; campana_id: string | null }
-    if (fo.campana_id) {
-      fotasHoyPorCampana.set(fo.campana_id, (fotasHoyPorCampana.get(fo.campana_id) ?? 0) + 1)
-    }
-  }
+  // ── Datos procesados ──────────────────────────────────────────────────────
 
-  // ── Campañas activas ──────────────────────────────────────────────────────
-  const { data: campanasRaw } = await admin
-    .from('campanas')
-    .select('id, nombre, objetivo_comercios, comercios_relevados, fecha_fin')
-    .eq('distri_id', distriId)
-    .eq('estado', 'activa')
-    .order('fecha_fin', { ascending: true })
-  const campanas = campanasRaw ?? []
+  const gondoleroProfiles = (gondoleroProfilesRes.data ?? []) as GondoleroProfile[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fotosEsteMes       = (fotosEsteMesRes.data  ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const misionesEsteMes    = (misionesEsteMesRes.data ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const misiones90d        = (misiones90dRes.data   ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const misiones8sem       = (misiones8semRes.data  ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const movPuntos          = (movPuntosRes.data     ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const campanasActivas    = (campanasActivasRes.data ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const comerciosPendientes = (comerciosPendientesRes.data ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fotos14d           = (fotos14dRes.data ?? []) as any[]
 
-  // ── Preview de alertas ────────────────────────────────────────────────────
-  const alertasPreview: { tipo: string; descripcion: string; href: string }[] = []
-  let alertasTotal = 0
+  // ── KPIs ──────────────────────────────────────────────────────────────────
 
-  // Quiebres de stock — fotos de campañas propias
-  const { data: qRaw } = await admin
-    .from('fotos')
-    .select('comercio_id, comercios(nombre)')
-    .in('campana_id', safeIds)
-    .eq('declaracion', 'producto_no_encontrado')
-    .eq('estado', 'aprobada')
-    .gte('created_at', sieteAtras.toISOString())
+  const gondolerosTotales  = gondoleroIds.length
+  const misionesEsteMesAprobadas = misionesEsteMes.filter((m: { estado: string }) => m.estado === 'aprobada').length
+  const fotasMes           = fotosEsteMes.length
+  const puntosMes          = movPuntos.reduce((sum: number, m: { monto: number }) => sum + (m.monto ?? 0), 0)
+  const comerciosRelevadosMes = new Set(
+    misiones90d
+      .filter((m: { created_at: string }) => new Date(m.created_at) >= mesInicio)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((m: any) => m.comercio?.id)
+      .filter(Boolean)
+  ).size
 
-  const vistos = new Set<string>()
-  for (const f of qRaw ?? []) {
-    const fo = f as unknown as { comercio_id: string; comercios: { nombre: string } | null }
-    if (!vistos.has(fo.comercio_id)) {
-      vistos.add(fo.comercio_id)
-      alertasTotal++
-      if (alertasPreview.length < 3) {
-        alertasPreview.push({
-          tipo: '🔴 Quiebre de stock',
-          descripcion: fo.comercios?.nombre ?? 'Comercio',
-          href: `/distribuidora/gondolas?comercio_id=${fo.comercio_id}&declaracion=producto_no_encontrado`,
-        })
-      }
-    }
-  }
+  // ── Set de gondoleros activos (14 días) ───────────────────────────────────
 
-  // Gondoleros inactivos — solo actuales (alertar por desvinculados no tiene sentido)
-  if (gondoleroIds.length > 0) {
-    const { data: gondActivos } = await admin
-      .from('fotos').select('gondolero_id')
-      .in('gondolero_id', gondoleroIds)
-      .gte('created_at', catDiasAtras.toISOString())
-    const activoSet = new Set((gondActivos ?? []).map((f: { gondolero_id: string }) => f.gondolero_id))
-    const inactivosCnt = gondoleroIds.filter(id => !activoSet.has(id)).length
-    alertasTotal += inactivosCnt
-    if (inactivosCnt > 0 && alertasPreview.length < 3) {
-      alertasPreview.push({
-        tipo: '🟡 Gondolero inactivo',
-        descripcion: `${inactivosCnt} sin actividad en 14 días`,
-        href: '/distribuidora/gondoleros',
-      })
-    }
-  }
-
-  // Campañas en riesgo
-  const campanasRiesgo = campanas.filter(c =>
-    c.fecha_fin &&
-    new Date(c.fecha_fin) < tresMasAdelante &&
-    c.objetivo_comercios != null &&
-    (c.comercios_relevados ?? 0) < c.objetivo_comercios * 0.5
+  const gondolerosActivos14Set = new Set(
+    fotos14d.map((f: { gondolero_id: string }) => f.gondolero_id)
   )
-  alertasTotal += campanasRiesgo.length
-  for (const c of campanasRiesgo) {
-    if (alertasPreview.length < 3) {
-      alertasPreview.push({
-        tipo: '🟠 Campaña en riesgo',
-        descripcion: c.nombre,
-        href: `/distribuidora/campanas/${c.id}`,
-      })
-    }
+  const gondolerosInactivos14 = gondoleroIds.filter(id => !gondolerosActivos14Set.has(id)).length
+
+  // ── Bloque 2: Cobertura por localidad ────────────────────────────────────
+
+  type LocalidadStats = {
+    id: number | null
+    nombre: string
+    comerciosIds: Set<string>
+    misionesCount: number
+    ultimaActividad: Date
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  return (
-    <div className="space-y-6 max-w-5xl">
+  const localidadesMap = new Map<string, LocalidadStats>()
 
-      {/* ── Métricas del día ── */}
+  for (const m of misiones90d) {
+    const comercio = m.comercio
+    if (!comercio) continue
+    const localidad = comercio.localidades
+    const key = localidad?.id != null ? String(localidad.id) : 'sin_localidad'
+    const nombre = localidad?.nombre ?? 'Sin localidad asignada'
+
+    if (!localidadesMap.has(key)) {
+      localidadesMap.set(key, {
+        id:              localidad?.id ?? null,
+        nombre,
+        comerciosIds:    new Set(),
+        misionesCount:   0,
+        ultimaActividad: new Date(m.created_at),
+      })
+    }
+    const stats = localidadesMap.get(key)!
+    if (comercio.id) stats.comerciosIds.add(comercio.id)
+    stats.misionesCount++
+    const f = new Date(m.created_at)
+    if (f > stats.ultimaActividad) stats.ultimaActividad = f
+  }
+
+  const localidades = Array.from(localidadesMap.values())
+    .sort((a, b) => b.comerciosIds.size - a.comerciosIds.size)
+    .slice(0, 10)
+
+  // ── Bloque 3: Actividad de gondoleros ────────────────────────────────────
+
+  const gondolerosConStats = gondoleroProfiles
+    .map(gond => {
+      const misFotos    = fotosEsteMes.filter((f: { gondolero_id: string }) => f.gondolero_id === gond.id)
+      const misAprobadas = misFotos.filter((f: { estado: string }) => f.estado === 'aprobada').length
+      const misMisiones = misionesEsteMes.filter(
+        (m: { gondolero_id: string; estado: string }) => m.gondolero_id === gond.id && m.estado === 'aprobada'
+      ).length
+      const tasa = misFotos.length > 0
+        ? Math.round((misAprobadas / misFotos.length) * 100)
+        : null
+      const activo14 = gondolerosActivos14Set.has(gond.id)
+      return { ...gond, fotasAprobMes: misAprobadas, misionesMes: misMisiones, totalFotasMes: misFotos.length, tasa, activo14 }
+    })
+    .sort((a, b) => b.misionesMes - a.misionesMes)
+
+  // ── Bloque 5: Tipo de comercio ────────────────────────────────────────────
+
+  const tipoCount: Record<string, number> = {}
+  for (const m of misiones90d) {
+    const tipo = m.comercio?.tipo ?? 'otro'
+    tipoCount[tipo] = (tipoCount[tipo] ?? 0) + 1
+  }
+  const tiposOrdenados = Object.entries(tipoCount)
+    .sort(([, a], [, b]) => b - a)
+  const maxTipo = tiposOrdenados[0]?.[1] ?? 1
+
+  // ── Bloque 6: Evolución semanal (últimas 8 semanas) ───────────────────────
+
+  const semanas = Array.from({ length: 8 }, (_, i) => {
+    const inicio = new Date(Date.now() - (7 - i) * 7 * 86400_000)
+    const fin    = new Date(inicio.getTime() + 7 * 86400_000)
+    return { inicio, fin, label: fmtSemana(inicio), count: 0 }
+  })
+  for (const m of misiones8sem) {
+    const fecha = new Date(m.created_at)
+    const s = semanas.find(s => fecha >= s.inicio && fecha < s.fin)
+    if (s) s.count++
+  }
+  const maxSemana = Math.max(...semanas.map(s => s.count), 1)
+
+  // ── Bloque 7: Alertas ─────────────────────────────────────────────────────
+
+  const campanasVencenProx = campanasActivas.filter((c: { fecha_fin: string | null }) =>
+    c.fecha_fin && new Date(c.fecha_fin) <= en7d
+  )
+  const pendientesValidacion = comerciosPendientes.length
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-8 max-w-5xl">
+
+      {/* ── BLOQUE 1: KPIs ──────────────────────────────────────────────── */}
       <section>
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Métricas del día</h2>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-          <MetricCard label="Fotos recibidas hoy"    value={fotasHoy}   icon={Camera} />
-          <MetricCard label="Pendientes de revisión" value={fotasPend}  icon={Clock}  highlight={fotasPend > 0} href="/distribuidora/gondolas" />
-          <MetricCard label="Gondoleros activos hoy" value={gondActHoy} icon={Users}  />
-          <MetricCard label="Comercios esta semana"  value={comSemana}  icon={Store}  />
+        <SeccionHeader titulo="Resumen del mes" />
+        <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
+          <KpiCard
+            label="Gondoleros vinculados"
+            valor={gondolerosTotales}
+            icon={Users}
+            color="bg-gondo-amber-50 text-gondo-amber-400"
+            sub={gondolerosInactivos14 > 0 ? `${gondolerosInactivos14} inactivos >14d` : 'Todos activos'}
+          />
+          <KpiCard
+            label="Comercios este mes"
+            valor={comerciosRelevadosMes}
+            icon={Store}
+            color="bg-gondo-verde-50 text-gondo-verde-400"
+            sub="por tus gondoleros"
+          />
+          <KpiCard
+            label="Campañas activas"
+            valor={campanasActivas.length}
+            icon={Megaphone}
+            color="bg-indigo-50 text-indigo-500"
+            href="/distribuidora/campanas"
+          />
+          <KpiCard
+            label="Fotos recibidas"
+            valor={fotasMes}
+            icon={Camera}
+            color="bg-blue-50 text-blue-500"
+            href="/distribuidora/gondolas"
+          />
+          <KpiCard
+            label="Puntos emitidos"
+            valor={formatearPuntos(puntosMes)}
+            icon={Star}
+            color="bg-yellow-50 text-yellow-500"
+            sub="a tus gondoleros"
+          />
+          <KpiCard
+            label="Misiones completadas"
+            valor={misionesEsteMesAprobadas}
+            icon={CheckCircle2}
+            color="bg-gondo-verde-50 text-gondo-verde-400"
+          />
         </div>
       </section>
 
-      {/* ── Campañas activas ── */}
-      {campanas.length > 0 && (
+      {/* ── BLOQUE 7: Alertas ───────────────────────────────────────────── */}
+      {(gondolerosInactivos14 > 0 || campanasVencenProx.length > 0 || pendientesValidacion > 0) && (
         <section>
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Campañas activas</h2>
-          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
-            {campanas.map(c => {
-              const progreso = calcularPorcentaje(c.comercios_relevados ?? 0, c.objetivo_comercios ?? 0)
-              const dias     = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-              const fotasHoyC = fotasHoyPorCampana.get(c.id) ?? 0
-              return (
-                <div key={c.id} className="px-4 py-3.5">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-gray-900 truncate mr-3">{c.nombre}</span>
-                    <div className="flex items-center gap-3 shrink-0">
-                      {fotasHoyC > 0 && (
-                        <span className="text-xs font-semibold text-gondo-verde-400">+{fotasHoyC} hoy</span>
-                      )}
-                      {dias !== null && (
-                        <span className={`text-xs font-medium ${dias <= 3 ? 'text-red-500' : 'text-gray-400'}`}>
-                          {dias === 0 ? 'Último día' : `${dias}d`}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {c.objetivo_comercios ? (
-                    <>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gondo-amber-400 rounded-full transition-all"
-                          style={{ width: `${progreso}%` }}
-                        />
-                      </div>
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        {c.comercios_relevados ?? 0} / {c.objetivo_comercios} comercios
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-[11px] text-gray-400">Sin objetivo definido</p>
-                  )}
-                </div>
-              )
-            })}
+          <SeccionHeader titulo="Alertas" />
+          <div className="bg-white rounded-xl border border-amber-200 divide-y divide-gray-50">
+            {gondolerosInactivos14 > 0 && (
+              <AlertaRow
+                emoji="🟡"
+                texto={`${gondolerosInactivos14} gondolero${gondolerosInactivos14 > 1 ? 's' : ''} sin actividad en los últimos 14 días`}
+                href="/distribuidora/gondoleros"
+              />
+            )}
+            {campanasVencenProx.map((c: { id: string; nombre: string; fecha_fin: string }) => (
+              <AlertaRow
+                key={c.id}
+                emoji="🔴"
+                texto={`Campaña "${c.nombre}" vence en ${diasRestantes(c.fecha_fin)} días`}
+                href={`/distribuidora/campanas/${c.id}`}
+              />
+            ))}
+            {pendientesValidacion > 0 && (
+              <AlertaRow
+                emoji="🏪"
+                texto={`${pendientesValidacion} comercio${pendientesValidacion > 1 ? 's' : ''} pendiente${pendientesValidacion > 1 ? 's' : ''} de validación`}
+                href="/distribuidora/comercios"
+              />
+            )}
           </div>
         </section>
       )}
 
-      {/* ── Alertas (preview) ── */}
+      {/* ── BLOQUE 4: Campañas activas ──────────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Alertas activas</h2>
-            {alertasTotal > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                {alertasTotal}
-              </span>
-            )}
-          </div>
-          <Link
-            href="/distribuidora/alertas"
-            className="text-sm text-gondo-amber-400 font-medium flex items-center gap-0.5 hover:underline"
-          >
-            Ver todas <ChevronRight size={14} />
+          <SeccionHeader titulo="Campañas activas" inline />
+          <Link href="/distribuidora/campanas" className="text-xs text-gondo-amber-400 font-medium flex items-center gap-0.5 hover:underline">
+            Ver todas <ChevronRight size={12} />
           </Link>
         </div>
-
-        {alertasTotal === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 px-4 py-6 text-center">
-            <p className="text-sm text-gray-500">✅ Sin alertas activas</p>
-          </div>
+        {campanasActivas.length === 0 ? (
+          <Vacio texto="No hay campañas activas" />
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
-            {alertasPreview.map((a, i) => (
-              <Link
-                key={i}
-                href={a.href}
-                className="flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors cursor-pointer"
-              >
-                <div>
-                  <p className="text-[11px] font-semibold text-gray-400">{a.tipo}</p>
-                  <p className="text-sm text-gray-800 mt-0.5">{a.descripcion}</p>
-                </div>
-                <ChevronRight size={15} className="text-gray-400 shrink-0" />
-              </Link>
-            ))}
+            {campanasActivas.map((c: { id: string; nombre: string; objetivo_comercios: number | null; comercios_relevados: number | null; fecha_fin: string | null }) => {
+              const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+              const progreso = c.objetivo_comercios
+                ? Math.min(100, Math.round(((c.comercios_relevados ?? 0) / c.objetivo_comercios) * 100))
+                : null
+              return (
+                <Link key={c.id} href={`/distribuidora/campanas/${c.id}`} className="block px-4 py-3.5 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-semibold text-gray-900 truncate mr-3">{c.nombre}</span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {dias !== null && (
+                        <span className={`text-xs font-medium ${dias <= 3 ? 'text-red-500' : 'text-gray-400'}`}>
+                          {dias === 0 ? 'Hoy vence' : `${dias}d`}
+                        </span>
+                      )}
+                      <ChevronRight size={14} className="text-gray-300" />
+                    </div>
+                  </div>
+                  {progreso !== null ? (
+                    <>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gondo-amber-400 rounded-full"
+                          style={{ width: `${progreso}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        {c.comercios_relevados ?? 0} / {c.objetivo_comercios} comercios ({progreso}%)
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-gray-400">{c.comercios_relevados ?? 0} comercios relevados</p>
+                  )}
+                </Link>
+              )
+            })}
           </div>
         )}
       </section>
+
+      {/* ── BLOQUE 3: Actividad de gondoleros ──────────────────────────── */}
+      <section>
+        <SeccionHeader titulo="Actividad de gondoleros — este mes" />
+        {gondolerosConStats.length === 0 ? (
+          <Vacio texto="No tenés gondoleros vinculados aún" />
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">Gondolero</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Misiones</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Fotos apr.</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Tasa</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {gondolerosConStats.map(g => (
+                    <tr key={g.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-gondo-amber-50 flex items-center justify-center text-[11px] font-bold text-gondo-amber-400 shrink-0">
+                            {(g.alias ?? g.nombre ?? '?').charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-800 text-sm leading-tight">
+                              {g.alias ?? g.nombre ?? 'Sin nombre'}
+                            </p>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${NIVEL_BADGE[g.nivel ?? 'casual']}`}>
+                              {(g.nivel ?? 'casual').charAt(0).toUpperCase() + (g.nivel ?? 'casual').slice(1)}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`text-sm font-bold ${g.misionesMes > 0 ? 'text-gondo-verde-400' : 'text-gray-300'}`}>
+                          {g.misionesMes}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`text-sm font-bold ${g.fotasAprobMes > 0 ? 'text-gray-700' : 'text-gray-300'}`}>
+                          {g.fotasAprobMes}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {g.tasa !== null ? (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            g.tasa >= 80 ? 'bg-green-50 text-green-600' :
+                            g.tasa >= 50 ? 'bg-amber-50 text-amber-600' :
+                            'bg-red-50 text-red-500'
+                          }`}>
+                            {g.tasa}%
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {g.activo14 ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-600">Activo</span>
+                        ) : (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">Inactivo</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <Link href="/distribuidora/gondoleros" className="text-xs text-gondo-amber-400 font-medium hover:underline flex items-center gap-0.5">
+                Ver todos los gondoleros <ChevronRight size={12} />
+              </Link>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        {/* ── BLOQUE 2: Cobertura por localidad ──────────────────────── */}
+        <section>
+          <SeccionHeader titulo="Cobertura por localidad" sub="Últimas 8 semanas" />
+          {localidades.length === 0 ? (
+            <Vacio texto="Sin datos de localidades aún" />
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
+              {localidades.map((loc, i) => {
+                const activa = loc.ultimaActividad >= hace30d
+                return (
+                  <div key={i} className="px-4 py-3 flex items-center gap-3">
+                    <MapPin size={14} className={`shrink-0 ${activa ? 'text-gondo-verde-400' : 'text-gray-300'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-gray-800 truncate">{loc.nombre}</p>
+                        {!activa && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 shrink-0">
+                            Inactiva 30d
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        {loc.comerciosIds.size} comercio{loc.comerciosIds.size !== 1 ? 's' : ''} · {loc.misionesCount} misión{loc.misionesCount !== 1 ? 'es' : ''}
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-gray-400 shrink-0">
+                      {loc.ultimaActividad.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ── BLOQUE 8: Comercios pendientes de validación ────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <SeccionHeader titulo="Comercios a validar" inline />
+              {comerciosPendientes.length > 0 && (
+                <span className="ml-2 text-xs bg-gondo-amber-400 text-white font-bold px-2 py-0.5 rounded-full">
+                  {comerciosPendientes.length}
+                </span>
+              )}
+            </div>
+            <Link href="/distribuidora/comercios" className="text-xs text-gondo-amber-400 font-medium flex items-center gap-0.5 hover:underline">
+              Ver todos <ChevronRight size={12} />
+            </Link>
+          </div>
+          {comerciosPendientes.length === 0 ? (
+            <Vacio texto="✅ Todos los comercios están validados" />
+          ) : (
+            <div className="bg-white rounded-xl border border-amber-200 divide-y divide-gray-50">
+              {comerciosPendientes.map((c: { id: string; nombre: string; tipo: string | null; created_at: string }) => (
+                <div key={c.id} className="px-4 py-3 flex items-center gap-3">
+                  <Package size={14} className="text-gondo-amber-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{c.nombre}</p>
+                    <p className="text-[11px] text-gray-400">
+                      {TIPO_LABEL[c.tipo ?? 'otro'] ?? 'Comercio'} · {new Date(c.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 shrink-0">
+                    Pendiente
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        {/* ── BLOQUE 5: Tipo de comercio ──────────────────────────────── */}
+        <section>
+          <SeccionHeader titulo="Cobertura por tipo de comercio" sub="Últimas 8 semanas" />
+          {tiposOrdenados.length === 0 ? (
+            <Vacio texto="Sin datos de cobertura aún" />
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+              {tiposOrdenados.map(([tipo, count]) => (
+                <BarraHorizontal
+                  key={tipo}
+                  label={TIPO_LABEL[tipo] ?? tipo}
+                  count={count}
+                  max={maxTipo}
+                  color="bg-gondo-amber-400"
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── BLOQUE 6: Evolución semanal ─────────────────────────────── */}
+        <section>
+          <SeccionHeader titulo="Misiones completadas por semana" sub="Últimas 8 semanas" />
+          {misiones8sem.length === 0 ? (
+            <Vacio texto="Sin actividad en las últimas 8 semanas" />
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+              {semanas.map((s, i) => (
+                <BarraHorizontal
+                  key={i}
+                  label={s.label}
+                  count={s.count}
+                  max={maxSemana}
+                  color={i === semanas.length - 1 ? 'bg-gondo-verde-400' : 'bg-gondo-amber-400'}
+                  labelWidth="w-16"
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+      </div>
 
     </div>
   )
 }
 
-function MetricCard({
-  label,
-  value,
-  icon: Icon,
-  highlight,
-  href,
+// ── Sub-componentes ────────────────────────────────────────────────────────────
+
+function SeccionHeader({
+  titulo, sub, inline,
+}: {
+  titulo: string
+  sub?: string
+  inline?: boolean
+}) {
+  if (inline) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{titulo}</h2>
+        {sub && <span className="text-[10px] text-gray-400">· {sub}</span>}
+      </div>
+    )
+  }
+  return (
+    <div className="mb-3">
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest">{titulo}</h2>
+      {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
+function KpiCard({
+  label, valor, icon: Icon, color, sub, href,
 }: {
   label: string
-  value: number
+  valor: number | string
   icon: React.ElementType
-  highlight?: boolean
+  color: string
+  sub?: string
   href?: string
 }) {
   const inner = (
-    <div className={`bg-white rounded-xl border p-4 ${highlight ? 'border-gondo-amber-400' : 'border-gray-200'} ${href ? 'hover:bg-gray-50 transition-colors cursor-pointer' : ''}`}>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon size={15} className={highlight ? 'text-gondo-amber-400' : 'text-gray-400'} />
-        <span className="text-xs text-gray-500">{label}</span>
+    <div className={`bg-white rounded-xl border border-gray-200 p-5 ${href ? 'hover:bg-gray-50 transition-colors cursor-pointer' : ''}`}>
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-gray-500 mb-1 leading-tight">{label}</p>
+          <p className="text-2xl font-bold text-gray-900">{valor}</p>
+          {sub && <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">{sub}</p>}
+        </div>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ml-3 ${color}`}>
+          <Icon size={18} />
+        </div>
       </div>
-      <p className={`text-3xl font-bold ${highlight ? 'text-gondo-amber-400' : 'text-gray-900'}`}>{value}</p>
     </div>
   )
   if (href) return <Link href={href}>{inner}</Link>
   return inner
+}
+
+function AlertaRow({ emoji, texto, href }: { emoji: string; texto: string; href: string }) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center justify-between px-4 py-3 hover:bg-amber-50/50 transition-colors"
+    >
+      <div className="flex items-center gap-3">
+        <span className="text-base">{emoji}</span>
+        <p className="text-sm text-gray-800">{texto}</p>
+      </div>
+      <ChevronRight size={14} className="text-gray-400 shrink-0" />
+    </Link>
+  )
+}
+
+function BarraHorizontal({
+  label, count, max, color, labelWidth = 'w-24',
+}: {
+  label: string
+  count: number
+  max: number
+  color: string
+  labelWidth?: string
+}) {
+  const pct = max > 0 ? Math.max((count / max) * 100, count > 0 ? 3 : 0) : 0
+  return (
+    <div className="flex items-center gap-3">
+      <span className={`text-[11px] text-gray-600 shrink-0 ${labelWidth}`}>{label}</span>
+      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${color}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[11px] font-semibold text-gray-600 w-7 text-right shrink-0">{count}</span>
+    </div>
+  )
+}
+
+function Vacio({ texto }: { texto: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center">
+      <p className="text-sm text-gray-400">{texto}</p>
+    </div>
+  )
 }
