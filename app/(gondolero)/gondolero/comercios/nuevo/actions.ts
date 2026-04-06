@@ -37,24 +37,33 @@ export async function crearComercio(formData: FormData) {
   }
 
   // INSERT en comercios
+  // Construimos el objeto dinámicamente para no incluir localidad_id
+  // si es null (evita error si la columna aún no existe en la DB).
+  const insertData: Record<string, unknown> = {
+    nombre,
+    tipo,
+    direccion,
+    lat,
+    lng,
+    registrado_por: user.id,
+    validado:       false,
+  }
+  if (localidadId !== null) insertData.localidad_id = localidadId
+
   const { data: comercio, error: errInsert } = await admin
     .from('comercios')
-    .insert({
-      nombre,
-      tipo,
-      direccion,
-      lat,
-      lng,
-      localidad_id:   localidadId,
-      registrado_por: user.id,
-      validado:       false,
-    })
+    .insert(insertData)
     .select('id')
     .single()
 
   if (errInsert) {
-    console.error('Error creando comercio:', errInsert)
-    return { error: 'No se pudo guardar el comercio. Intentá de nuevo.' }
+    console.error('[crearComercio] Error INSERT comercio:', {
+      code:    errInsert.code,
+      message: errInsert.message,
+      details: errInsert.details,
+      hint:    errInsert.hint,
+    })
+    return { error: `No se pudo guardar el comercio. (${errInsert.code}: ${errInsert.message})` }
   }
 
   // Subir foto de fachada si está presente
@@ -114,21 +123,31 @@ export async function crearComercioOffline(datos: {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
+  const insertData: Record<string, unknown> = {
+    nombre:         datos.nombre,
+    tipo:           datos.tipo,
+    direccion:      datos.direccion,
+    lat:            datos.lat,
+    lng:            datos.lng,
+    registrado_por: user.id,
+    validado:       false,
+  }
+  if (datos.localidad_id != null) insertData.localidad_id = datos.localidad_id
+
   const { data: comercio, error } = await admin
     .from('comercios')
-    .insert({
-      nombre:         datos.nombre,
-      tipo:           datos.tipo,
-      direccion:      datos.direccion,
-      lat:            datos.lat,
-      lng:            datos.lng,
-      localidad_id:   datos.localidad_id ?? null,
-      registrado_por: user.id,
-      validado:       false,
-    })
+    .insert(insertData)
     .select('id')
     .single()
 
-  if (error) return { error: 'No se pudo guardar el comercio.' }
+  if (error) {
+    console.error('[crearComercioOffline] Error INSERT comercio:', {
+      code:    error.code,
+      message: error.message,
+      details: error.details,
+      hint:    error.hint,
+    })
+    return { error: `No se pudo guardar el comercio. (${error.code}: ${error.message})` }
+  }
   return { id: comercio.id }
 }
