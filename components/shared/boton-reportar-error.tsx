@@ -22,16 +22,21 @@ export function BotonReportarError({
   function enviar() {
     if (!descripcion.trim()) return
     start(async () => {
-      await reportarError({
-        url:           window.location.href,
-        descripcion:   descripcion.trim(),
-        errorTecnico,
-        contexto:      {
-          userAgent: navigator.userAgent,
-          timestamp: new Date().toISOString(),
-          ...(contexto ? { extra: contexto } : {}),
-        },
-      })
+      try {
+        await reportarError({
+          url:         window.location.href,
+          descripcion: descripcion.trim(),
+          errorTecnico,
+          contexto:    {
+            userAgent: navigator.userAgent,
+            timestamp: new Date().toISOString(),
+            ...(contexto ? { extra: contexto } : {}),
+          },
+        })
+      } catch {
+        // Si falla el envío, igual mostramos confirmación al usuario —
+        // no queremos que vea un estado roto.
+      }
       setEnviado(true)
     })
   }
@@ -85,6 +90,7 @@ export function BotonReportarError({
                 )}
                 <div className="flex gap-3">
                   <button
+                    type="button"
                     onClick={cerrar}
                     disabled={isPending}
                     className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
@@ -92,6 +98,7 @@ export function BotonReportarError({
                     Cancelar
                   </button>
                   <button
+                    type="button"
                     onClick={enviar}
                     disabled={isPending || !descripcion.trim()}
                     className="flex-1 py-3 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
