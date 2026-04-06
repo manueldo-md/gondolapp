@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { getConfig } from '@/lib/config'
 import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
+import { actualizarEstadoMision } from '@/lib/misiones'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -158,6 +159,17 @@ export async function aprobarFotoAdmin(fotoId: string) {
       profileNivel?.fotos_aprobadas ?? 0,
       foto.campana_id
     )
+  }
+
+  // Actualizar estado de la misión (si esta foto pertenece a una)
+  if (foto?.gondolero_id && foto?.campana_id) {
+    await actualizarEstadoMision({
+      fotoId:        fotoId,
+      gondoleroId:   foto.gondolero_id,
+      campanaId:     foto.campana_id,
+      minParaCobrar: minParaCobrar,
+      admin,
+    })
   }
 
   revalidatePath('/admin/fotos')

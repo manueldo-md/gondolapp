@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { getConfig } from '@/lib/config'
 import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
+import { actualizarEstadoMision } from '@/lib/misiones'
 
 function adminClient() {
   return createSupabaseClient(
@@ -171,6 +172,15 @@ export async function aprobarFotoMarca(fotoId: string) {
       foto.campana_id
     )
   }
+
+  // 9. Actualizar estado de la misión (si esta foto pertenece a una)
+  await actualizarEstadoMision({
+    fotoId:        fotoId,
+    gondoleroId:   foto.gondolero_id,
+    campanaId:     foto.campana_id,
+    minParaCobrar: campana.min_comercios_para_cobrar ?? 1,
+    admin,
+  })
 
   revalidatePath('/marca/gondolas')
 }

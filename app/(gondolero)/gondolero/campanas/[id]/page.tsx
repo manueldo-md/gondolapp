@@ -44,6 +44,7 @@ type CampanaDetalle = {
 type MisionRow = {
   id: string
   estado: string
+  bounty_estado: string | null
   puntos_total: number
   created_at: string
   comercio: { nombre: string; direccion: string | null } | null
@@ -129,7 +130,7 @@ export default async function CampanaDetallePage({
       .eq('estado', 'aprobada'),
     supabase
       .from('misiones')
-      .select('id, estado, puntos_total, created_at, comercio:comercios ( nombre, direccion )')
+      .select('id, estado, bounty_estado, puntos_total, created_at, comercio:comercios ( nombre, direccion )')
       .eq('campana_id', params.id)
       .eq('gondolero_id', user.id)
       .order('created_at', { ascending: false }),
@@ -183,6 +184,10 @@ export default async function CampanaDetallePage({
   const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || sinAcceso || !!participacionAnteriorEstado
 
   const alcanzeLimite = misiones.length >= c.max_comercios_por_gondolero
+
+  // Para mostrar info de retención de puntos en cada misión
+  const misionesAprobadasCount = misiones.filter(m => m.estado === 'aprobada').length
+  const faltanParaCobrar = Math.max(0, c.min_comercios_para_cobrar - misionesAprobadasCount)
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -367,13 +372,28 @@ export default async function CampanaDetallePage({
                         <p className="text-xs text-gray-400">{formatearFecha(mision.created_at)}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
+                        {/* Estado de la misión */}
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_MISION[mision.estado]?.color ?? 'bg-gray-100 text-gray-500'}`}>
                           {ESTADO_MISION[mision.estado]?.label ?? mision.estado}
                         </span>
-                        {mision.puntos_total > 0 && (
-                          <span className="text-xs font-semibold text-gondo-verde-400">
-                            +{formatearPuntos(mision.puntos_total)} pts
-                          </span>
+                        {/* Estado de los puntos — solo cuando la misión está aprobada */}
+                        {mision.estado === 'aprobada' && mision.puntos_total > 0 && (
+                          mision.bounty_estado === 'acreditado' ? (
+                            <span className="text-xs font-semibold text-gondo-verde-400">
+                              +{formatearPuntos(mision.puntos_total)} pts acreditados
+                            </span>
+                          ) : (
+                            <div className="text-right">
+                              <span className="text-xs font-medium text-amber-600 block">
+                                {formatearPuntos(mision.puntos_total)} pts retenidos
+                              </span>
+                              {faltanParaCobrar > 0 && (
+                                <span className="text-[10px] text-gray-400 block leading-tight">
+                                  +{faltanParaCobrar} {faltanParaCobrar === 1 ? 'misión' : 'misiones'} para cobrar
+                                </span>
+                              )}
+                            </div>
+                          )
                         )}
                       </div>
                     </div>
