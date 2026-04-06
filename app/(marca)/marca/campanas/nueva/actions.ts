@@ -116,10 +116,12 @@ export async function crearCampana(formData: FormData) {
     .update({ tokens_disponibles: (marca?.tokens_disponibles ?? 0) - COSTO_CREACION })
     .eq('id', marcaId)
 
-  // Guardar zonas de la campaña
-  const zonaIds = formData.getAll('zona_ids') as string[]
-  if (zonaIds.length > 0) {
-    await admin.from('campana_zonas').insert(zonaIds.map(zona_id => ({ campana_id: campanaId, zona_id })))
+  // Guardar zonas de la campaña (nuevo sistema de localidades)
+  const localidadIds = formData.getAll('localidad_ids').map(Number).filter(Boolean)
+  if (localidadIds.length > 0) {
+    await admin.from('campana_localidades').insert(
+      localidadIds.map(localidad_id => ({ campana_id: campanaId, localidad_id }))
+    )
   }
 
   // Registrar movimiento

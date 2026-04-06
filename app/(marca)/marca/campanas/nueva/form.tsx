@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Check, Loader2, Building2, Sparkles } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { crearCampana } from './actions'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
+import { SelectorZona } from '@/components/shared/selector-zona'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -65,13 +65,7 @@ export function NuevaCampanaForm({
   const [paso, setPaso] = useState<1 | 2 | 3>(1)
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [zonas, setZonas] = useState<{ id: string; nombre: string; tipo: string }[]>([])
-  const [zonasSeleccionadas, setZonasSeleccionadas] = useState<string[]>([])
-
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre').then(({ data }) => setZonas(data ?? []))
-  }, [])
+  const [localidadesSeleccionadas, setLocalidadesSeleccionadas] = useState<number[]>([])
 
   const [campos, setCampos] = useState<CampoBloque[]>([])
 
@@ -113,7 +107,7 @@ export function NuevaCampanaForm({
     })
     fd.set('solicitar_precio', s1.solicitar_precio ? 'true' : 'false')
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
-    zonasSeleccionadas.forEach(id => fd.append('zona_ids', id))
+    localidadesSeleccionadas.forEach(id => fd.append('localidad_ids', String(id)))
     fd.set('campos_json', JSON.stringify(campos))
     fd.set('via_ejecucion', s3.via_ejecucion)
     if (s3.via_ejecucion === 'distribuidora' && s3.distri_id) {
@@ -382,29 +376,10 @@ export function NuevaCampanaForm({
             </div>
 
             {/* Zonas */}
-            {zonas.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Zonas de la campaña <span className="text-gray-400 font-normal">(opcional — vacío = todas)</span>
-                </label>
-                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-50">
-                  {zonas.map(z => (
-                    <label key={z.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={zonasSeleccionadas.includes(z.id)}
-                        onChange={() => setZonasSeleccionadas(prev =>
-                          prev.includes(z.id) ? prev.filter(x => x !== z.id) : [...prev, z.id]
-                        )}
-                        className="w-4 h-4 accent-gondo-indigo-600 shrink-0"
-                      />
-                      <span className="text-sm text-gray-700">{z.nombre}</span>
-                      <span className="ml-auto text-[10px] text-gray-400 capitalize">{z.tipo}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
+            <SelectorZona
+              localidadesSeleccionadas={localidadesSeleccionadas}
+              onSeleccionadas={setLocalidadesSeleccionadas}
+            />
           </>
         )}
 

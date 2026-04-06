@@ -5,7 +5,7 @@ import { User } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { getConfig } from '@/lib/config'
 import { calcularNivelMensual } from '@/lib/nivel'
-import { ZonasSelector } from './zonas-selector'
+import { LocalidadesSelector } from './zonas-selector'
 import { DatosForm } from './datos-form'
 import { PasswordForm } from './password-form'
 import { LogoutButton } from './logout-button'
@@ -38,12 +38,11 @@ export default async function PerfilPage() {
   const ahora = new Date()
   const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
 
-  const [profileRes, zonasRes, gondoleroZonasRes, fotosEsteMesRes, config] = await Promise.all([
+  const [profileRes, gondoleroLocalidadesRes, fotosEsteMesRes, config] = await Promise.all([
     admin.from('profiles')
       .select('nombre, alias, nivel, distri_id, celular, codigo_gondolero')
       .eq('id', user.id).single(),
-    admin.from('zonas').select('id, nombre, tipo').order('tipo').order('nombre'),
-    admin.from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id),
+    admin.from('gondolero_localidades').select('localidad_id').eq('gondolero_id', user.id),
     admin.from('fotos')
       .select('id', { count: 'exact', head: true })
       .eq('gondolero_id', user.id)
@@ -53,8 +52,7 @@ export default async function PerfilPage() {
   ])
 
   const profile = profileRes.data
-  const todasLasZonas = zonasRes.data ?? []
-  const zonasActuales = (gondoleroZonasRes.data ?? []).map((gz: { zona_id: string }) => gz.zona_id)
+  const localidadesActuales = (gondoleroLocalidadesRes.data ?? []).map((gl: { localidad_id: number }) => gl.localidad_id)
 
   // Distribuidoras activas (muchas a muchas, fuente = solicitudes estado='aprobada')
   let distrisActivas: { solicitudId: string; distri_id: string; distri_nombre: string }[] = []
@@ -142,18 +140,13 @@ export default async function PerfilPage() {
       <div className="px-4 space-y-4 pt-4">
 
         {/* ── Mis zonas de trabajo — colapsable, cerrada por defecto ── */}
-        {todasLasZonas.length > 0 && (
-          <ColapsableSection
-            title="Mis zonas de trabajo"
-            badge={zonasActuales.length > 0 ? `${zonasActuales.length} zona${zonasActuales.length !== 1 ? 's' : ''}` : null}
-            defaultOpen={false}
-          >
-            <ZonasSelector
-              todasLasZonas={todasLasZonas as { id: string; nombre: string; tipo: string }[]}
-              zonasActuales={zonasActuales}
-            />
-          </ColapsableSection>
-        )}
+        <ColapsableSection
+          title="Mis zonas de trabajo"
+          badge={localidadesActuales.length > 0 ? `${localidadesActuales.length} zona${localidadesActuales.length !== 1 ? 's' : ''}` : null}
+          defaultOpen={false}
+        >
+          <LocalidadesSelector localidadesActuales={localidadesActuales} />
+        </ColapsableSection>
 
         {/* ── Mi distribuidora — colapsable, cerrada por defecto ── */}
         {/* Incluye código personal siempre (aunque sea null) */}

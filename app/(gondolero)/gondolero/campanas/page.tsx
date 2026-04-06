@@ -22,13 +22,14 @@ export default async function CampanasPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const { data: gondoleroZonas } = await supabase
-    .from('gondolero_zonas')
-    .select('zona_id')
-    .eq('gondolero_id', user.id)
+  const [gondoleroZonasRes, gondoleroLocalidadesRes] = await Promise.all([
+    supabase.from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id),
+    supabase.from('gondolero_localidades').select('localidad_id').eq('gondolero_id', user.id),
+  ])
 
-  const zonaIds = (gondoleroZonas ?? []).map((gz: { zona_id: string }) => gz.zona_id)
-  const tieneZonas = zonaIds.length > 0
+  const zonaIds = (gondoleroZonasRes.data ?? []).map((gz: { zona_id: string }) => gz.zona_id)
+  const localidadIds = (gondoleroLocalidadesRes.data ?? []).map((gl: { localidad_id: number }) => gl.localidad_id)
+  const tieneZonas = zonaIds.length > 0 || localidadIds.length > 0
 
   const [participacionesRes, profileRes, misDistrisRes, misionesRes] = await Promise.all([
     supabase
@@ -106,20 +107,35 @@ export default async function CampanasPage() {
   let listaActivas: CampanaRow[] = []
 
   if (tieneZonas) {
-    const { data: campanaZonas } = await supabase
-      .from('campana_zonas')
-      .select('campana_id')
-      .in('zona_id', zonaIds)
+    // Campañas que coinciden con las zonas del gondolero (ambos sistemas)
+    const [campanaZonasOldRes, campanaZonasNewRes] = await Promise.all([
+      zonaIds.length > 0
+        ? supabase.from('campana_zonas').select('campana_id').in('zona_id', zonaIds)
+        : Promise.resolve({ data: [] as { campana_id: string }[] }),
+      localidadIds.length > 0
+        ? supabase.from('campana_localidades').select('campana_id').in('localidad_id', localidadIds)
+        : Promise.resolve({ data: [] as { campana_id: string }[] }),
+    ])
 
-    const campanaIdsConZona = (campanaZonas ?? []).map((cz: { campana_id: string }) => cz.campana_id)
+    const campanaIdsConZona = [
+      ...(campanaZonasOldRes.data ?? []).map((cz: { campana_id: string }) => cz.campana_id),
+      ...(campanaZonasNewRes.data ?? []).map((cl: { campana_id: string }) => cl.campana_id),
+    ]
+
     const { data: campanas, error } = await query
     if (error) console.error('Error fetching campanas:', error.message)
 
     const todas = (campanas as CampanaRow[] | null) ?? []
-    const { data: todasCampanaZonas } = await supabase
-      .from('campana_zonas')
-      .select('campana_id')
-    const campanasConAlgunaZona = new Set((todasCampanaZonas ?? []).map((cz: { campana_id: string }) => cz.campana_id))
+
+    // Todas las campañas que tienen alguna zona asignada (para saber cuáles son "abiertas por default")
+    const [todasZonasOldRes, todasZonasNewRes] = await Promise.all([
+      supabase.from('campana_zonas').select('campana_id'),
+      supabase.from('campana_localidades').select('campana_id'),
+    ])
+    const campanasConAlgunaZona = new Set([
+      ...(todasZonasOldRes.data ?? []).map((cz: { campana_id: string }) => cz.campana_id),
+      ...(todasZonasNewRes.data ?? []).map((cl: { campana_id: string }) => cl.campana_id),
+    ])
 
     listaActivas = todas.filter(c =>
       (c as unknown as { es_abierta: boolean }).es_abierta ||
@@ -189,7 +205,7 @@ export default async function CampanasPage() {
         <div className="mx-4 mt-4 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
           <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
           <p className="text-sm text-amber-800">
-            Seleccioná tus zonas de trabajo en tu{' '}
+            Seleccioná tus localidades de trabajo en tu{' '}
             <a href="/gondolero/perfil" className="font-semibold underline">Perfil</a>{' '}
             para ver solo las campañas de tu ciudad.
           </p>

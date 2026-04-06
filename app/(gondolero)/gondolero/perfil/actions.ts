@@ -90,7 +90,7 @@ export async function actualizarPerfil({ nombre, celular }: { nombre: string; ce
   revalidatePath('/gondolero/perfil')
 }
 
-export async function actualizarZonasGondolero(zonaIds: string[]) {
+export async function actualizarLocalidadesGondolero(localidadIds: number[]) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -101,12 +101,12 @@ export async function actualizarZonasGondolero(zonaIds: string[]) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Reemplazar todas las zonas del gondolero
-  await admin.from('gondolero_zonas').delete().eq('gondolero_id', user.id)
+  // Reemplazar todas las localidades del gondolero
+  await admin.from('gondolero_localidades').delete().eq('gondolero_id', user.id)
 
-  if (zonaIds.length > 0) {
-    await admin.from('gondolero_zonas').insert(
-      zonaIds.map(zona_id => ({ gondolero_id: user.id, zona_id }))
+  if (localidadIds.length > 0) {
+    await admin.from('gondolero_localidades').insert(
+      localidadIds.map(localidad_id => ({ gondolero_id: user.id, localidad_id }))
     )
   }
 
