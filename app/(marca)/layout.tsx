@@ -23,6 +23,8 @@ export default async function MarcaLayout({
 
   if (!profile || profile.tipo_actor !== 'marca') redirect('/auth')
 
+  console.log('[MarcaLayout] profile.marca_id:', profile.marca_id, '| tipo_actor:', profile.tipo_actor)
+
   let empresa = 'Mi marca'
   let tokensDisponibles = 0
   let unreadNotifs = 0
@@ -52,6 +54,7 @@ export default async function MarcaLayout({
       tokensDisponibles = marca.tokens_disponibles ?? 0
     }
     unreadNotifs = unreadCount ?? 0
+    console.log('[MarcaLayout] unreadNotifs:', unreadNotifs, '| marcaId pasado al shell:', profile.marca_id)
   }
 
   return (

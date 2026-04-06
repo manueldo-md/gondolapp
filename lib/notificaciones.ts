@@ -116,7 +116,7 @@ export async function existeNotifReciente(
   campanaId: string
 ): Promise<boolean> {
   const db = adminClient()
-  const haceUnaHora = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const hace15min = new Date(Date.now() - 15 * 60 * 1000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { count } = await (db as any)
     .from('notificaciones')
@@ -125,7 +125,7 @@ export async function existeNotifReciente(
     .eq('actor_tipo', actorTipo)
     .eq('tipo', tipo)
     .eq('campana_id', campanaId)
-    .gte('created_at', haceUnaHora)
+    .gte('created_at', hace15min)
 
   return (count ?? 0) > 0
 }
