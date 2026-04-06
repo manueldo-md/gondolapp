@@ -901,5 +901,57 @@ El agente conoce el funcionamiento completo de la plataforma y aprende de los re
 
 ---
 
+### Módulo de Campañas de Incentivo y Engagement (V2/V3)
+
+#### 1. Campañas de Incentivo Marca → Vendedores (via Distribuidora)
+
+Las marcas pueden crear campañas de incentivo dirigidas a los gondoleros/vendedores de las distribuidoras que las representan.
+
+- **Concursos internos con ranking:** los gondoleros compiten entre sí por cantidad de misiones completadas, fotos aprobadas, cobertura de puntos de venta, etc.
+- **Scope configurable:** competencia nacional, por provincia, por distribuidora
+- **Ranking especial por campaña de incentivo**, separado del ranking general de la plataforma
+- **Premios definidos por la marca** — no son puntos del sistema sino premios físicos o monetarios externos (efectivo, productos, viajes, etc.)
+- La distribuidora actúa como canal de comunicación y validación, pero la marca financia y define las reglas del concurso
+
+**Consideraciones técnicas:**
+- Nuevo campo `tipo` en campanas: `'incentivo'`
+- Nueva tabla `rankings_incentivo` con snapshot periódico de posiciones
+- Los premios no pasan por `movimientos_puntos` — son registros informativos para que la marca/distri los gestione externamente
+- Integración con el sistema de notificaciones para alertar a gondoleros de su posición en el ranking
+
+#### 2. Campañas de Presencia con Materiales POP
+
+Las marcas pueden crear campañas para distribuir materiales físicos en comercios:
+
+- Remeras, merchandising, exhibidores, material POP, folletería
+- El gondolero o fixer confirma la entrega con foto del material instalado en el comercio
+- El comercio recibe el material gratis como incentivo a participar
+- La marca tiene visibilidad de cuántos puntos de venta tienen su material activo en tiempo real
+- Integrable con el sistema de fixers (V2) para instalación de exhibidores con par antes/después
+
+**Consideraciones técnicas:**
+- Nuevo `tipo` de bloque de foto: `'confirmacion_pop'`
+- Nueva tabla `entregas_pop` (campana_id, comercio_id, gondolero_id, foto_id, estado)
+- El mapa de calor de material activo es un output de alto valor para las marcas
+
+#### 3. Campañas Directas a Comercios
+
+Las marcas pueden crear campañas para incentivar a los comercios a participar activamente en GondolApp:
+
+- Incentivos para que el comercio confirme qué marcas y SKUs vende
+- Descuentos, bonificaciones o créditos para comercios verificados en la plataforma
+- El comercio se convierte en actor activo (no solo pasivo relevado por gondoleros)
+- Base para el módulo de **Commerce Offline** (Peldaño 5 del plan de negocio)
+- Genera el **efecto red** necesario para que los comercios quieran estar en el mapa de GondolApp
+- Datos auto-declarados por el comercio complementan los datos relevados por gondoleros
+
+**Consideraciones técnicas:**
+- Nuevo `tipo_actor`: `'comercio'` en profiles, con acceso a una interfaz simplificada
+- Los comercios se auto-registran o son invitados por gondoleros/distris
+- Nueva tabla `stock_declarado` (comercio_id, marca_id, sku, confirmado_at)
+- Prerequisito: el mapa de comercios debe tener masa crítica (≥500 comercios verificados) para que tenga valor para las marcas
+
+---
+
 *Última actualización: Abril 2026*
-*Versión del documento: 1.1*
+*Versión del documento: 1.2*
