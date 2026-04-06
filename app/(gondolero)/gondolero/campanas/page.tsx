@@ -132,10 +132,10 @@ export default async function CampanasPage() {
     listaActivas = (campanas as CampanaRow[] | null) ?? []
   }
 
-  // ── Sección 1: En curso ───────────────────────────────────────────────────────
-  // Activas con al menos una misión O participación activa, ordenadas por fecha_fin ASC
-  const enCurso = listaActivas
-    .filter(c => misionCampanaIds.has(c.id) || participacionMap.get(c.id) === 'activa')
+  // ── Sección 1: Mis campañas ──────────────────────────────────────────────────
+  // Activas donde el gondolero tiene AL MENOS UNA MISIÓN, ordenadas por fecha_fin ASC
+  const misCampanas = listaActivas
+    .filter(c => misionCampanaIds.has(c.id))
     .sort((a, b) => {
       if (!a.fecha_fin && !b.fecha_fin) return 0
       if (!a.fecha_fin) return 1
@@ -143,51 +143,32 @@ export default async function CampanasPage() {
       return new Date(a.fecha_fin).getTime() - new Date(b.fecha_fin).getTime()
     })
 
-  const enCursoIds = new Set(enCurso.map(c => c.id))
+  const misCampanasIds = new Set(misCampanas.map(c => c.id))
 
   // ── Sección 2: Disponibles ────────────────────────────────────────────────────
-  // Activas donde el gondolero no participó todavía y tiene acceso (ya en created_at DESC)
-  const disponibles = listaActivas.filter(c => !enCursoIds.has(c.id) && tieneAcceso(c))
+  // Activas sin misiones del gondolero y con acceso, ya en created_at DESC
+  const disponibles = listaActivas.filter(c => !misCampanasIds.has(c.id) && tieneAcceso(c))
 
-  // ── Sección 3: Cerradas ───────────────────────────────────────────────────────
-  // Campañas cerradas/suspendidas donde el gondolero tiene misiones
+  // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
+  // Cerradas/suspendidas donde el gondolero tiene misiones
   const activaIds = new Set(listaActivas.map(c => c.id))
-  const cerradasPotenciales = [...misionCampanaIds].filter(id => !activaIds.has(id))
+  const finalizadasPotenciales = [...misionCampanaIds].filter(id => !activaIds.has(id))
 
-  let cerradas: CampanaRow[] = []
-  if (cerradasPotenciales.length > 0) {
-    const { data: cerradasData } = await supabase
+  let finalizadas: CampanaRow[] = []
+  if (finalizadasPotenciales.length > 0) {
+    const { data: finalizadasData } = await supabase
       .from('campanas')
       .select(CAMPANA_SELECT)
       .in('estado', ['cerrada', 'suspendida'])
-      .in('id', cerradasPotenciales)
+      .in('id', finalizadasPotenciales)
       .order('fecha_fin', { ascending: false })
-    cerradas = (cerradasData as CampanaRow[] | null) ?? []
+    finalizadas = (finalizadasData as CampanaRow[] | null) ?? []
   }
 
-  // Para cards "En curso": participacionEstado efectivo (usar 'activa' si solo tienen misiones)
-  const effectiveParticipacionRecord: Record<string, 'activa' | 'completada' | 'abandonada'> = {}
-  for (const [id, estado] of participacionMap.entries()) {
-    effectiveParticipacionRecord[id] = estado
-  }
-  for (const c of enCurso) {
-    if (!effectiveParticipacionRecord[c.id] || effectiveParticipacionRecord[c.id] === 'abandonada') {
-      if (misionCampanaIds.has(c.id)) {
-        effectiveParticipacionRecord[c.id] = 'activa'
-      }
-    }
-  }
+  // Progreso por campaña: contar misiones directamente
+  const comerciosCompletadosRecord: Record<string, number> = Object.fromEntries(misionesCountMap.entries())
 
-  // comerciosCompletados: usar el mayor entre participaciones y misiones
-  const comerciosCompletadosRecord: Record<string, number> = {}
-  for (const [id, count] of comerciosCompletadosMap.entries()) {
-    comerciosCompletadosRecord[id] = count
-  }
-  for (const [id, count] of misionesCountMap.entries()) {
-    comerciosCompletadosRecord[id] = Math.max(comerciosCompletadosRecord[id] ?? 0, count)
-  }
-
-  const totalActivas = enCurso.length + disponibles.length
+  const totalActivas = misCampanas.length + disponibles.length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -217,12 +198,11 @@ export default async function CampanasPage() {
 
       <div className="px-4 py-4">
         <CampanasSections
-          enCurso={enCurso}
+          misCampanas={misCampanas}
           disponibles={disponibles}
-          cerradas={cerradas}
+          finalizadas={finalizadas}
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}
-          participacionRecord={effectiveParticipacionRecord}
           comerciosCompletadosRecord={comerciosCompletadosRecord}
         />
       </div>

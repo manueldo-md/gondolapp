@@ -130,16 +130,6 @@ function CampanaCard({
               En curso
             </span>
           )}
-          {participacionEstado === 'completada' && (
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-600">
-              Completada ✓
-            </span>
-          )}
-          {participacionEstado === 'abandonada' && (
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-              Abandonada — podés volver
-            </span>
-          )}
           {!nivelOk && !participando && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-500">
               Requiere nivel {NIVEL_LABEL[nivelMinimo]}
@@ -253,22 +243,12 @@ function CampanaCard({
           className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
             participando
               ? 'bg-green-600 hover:bg-green-700'
-              : participacionEstado === 'completada'
-                ? 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
-                : participacionEstado === 'abandonada'
-                  ? 'bg-gray-500 hover:bg-gray-600'
-                  : !nivelOk
-                    ? 'bg-gray-300 cursor-not-allowed'
-                    : 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
+              : !nivelOk
+                ? 'bg-gray-300 cursor-not-allowed'
+                : 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
           }`}
         >
-          {participando
-            ? 'Continuar →'
-            : participacionEstado === 'completada'
-              ? 'Volver a participar'
-              : participacionEstado === 'abandonada'
-                ? 'Volver a unirme'
-                : 'Ver campaña'}
+          {participando ? 'Continuar →' : 'Ver campaña'}
         </Link>
       </div>
     </div>
@@ -380,23 +360,21 @@ function Seccion({
 // ── CampanasSections ───────────────────────────────────────────────────────────
 
 export function CampanasSections({
-  enCurso,
+  misCampanas,
   disponibles,
-  cerradas,
+  finalizadas,
   gondoleroNivel,
   misDistriIds,
-  participacionRecord,
   comerciosCompletadosRecord,
 }: {
-  enCurso: CampanaCardData[]
+  misCampanas: CampanaCardData[]
   disponibles: CampanaCardData[]
-  cerradas: CampanaCardData[]
+  finalizadas: CampanaCardData[]
   gondoleroNivel: string
   misDistriIds: string[]
-  participacionRecord: Record<string, 'activa' | 'completada' | 'abandonada'>
   comerciosCompletadosRecord: Record<string, number>
 }) {
-  const hayAlgo = enCurso.length + disponibles.length + cerradas.length > 0
+  const hayAlgo = misCampanas.length + disponibles.length + finalizadas.length > 0
 
   if (!hayAlgo) {
     return (
@@ -415,21 +393,21 @@ export function CampanasSections({
   return (
     <div className="space-y-4">
 
-      {/* ── En curso ── */}
-      {enCurso.length > 0 && (
+      {/* ── Mis campañas ── */}
+      {misCampanas.length > 0 && (
         <Seccion
-          titulo="En curso"
-          badge={enCurso.length}
+          titulo="Mis campañas"
+          badge={misCampanas.length}
           badgeColor="bg-green-100 text-green-700"
           bgColor="bg-green-50"
           borderColor="border-green-200"
           defaultOpen={true}
         >
-          {enCurso.map(c => (
+          {misCampanas.map(c => (
             <CampanaCard
               key={c.id}
               campana={c}
-              participacionEstado={participacionRecord[c.id]}
+              participacionEstado="activa"
               gondoleroNivel={gondoleroNivel}
               misDistriIds={misDistriIds}
               gondoleroComerciosCompletados={comerciosCompletadosRecord[c.id] ?? 0}
@@ -452,7 +430,6 @@ export function CampanasSections({
             <CampanaCard
               key={c.id}
               campana={c}
-              participacionEstado={participacionRecord[c.id]}
               gondoleroNivel={gondoleroNivel}
               misDistriIds={misDistriIds}
             />
@@ -460,17 +437,17 @@ export function CampanasSections({
         </Seccion>
       )}
 
-      {/* ── Cerradas ── */}
-      {cerradas.length > 0 && (
+      {/* ── Finalizadas ── */}
+      {finalizadas.length > 0 && (
         <Seccion
-          titulo="Cerradas"
-          badge={cerradas.length}
+          titulo="Finalizadas"
+          badge={finalizadas.length}
           badgeColor="bg-rose-100 text-rose-600"
           bgColor="bg-rose-50"
           borderColor="border-rose-200"
           defaultOpen={false}
         >
-          {cerradas.map(c => (
+          {finalizadas.map(c => (
             <CampanaCardCerrada
               key={c.id}
               campana={c}
@@ -480,8 +457,8 @@ export function CampanasSections({
         </Seccion>
       )}
 
-      {/* Estado vacío de disponibles cuando solo hay en curso */}
-      {disponibles.length === 0 && cerradas.length === 0 && enCurso.length > 0 && (
+      {/* Estado vacío de disponibles cuando solo hay en mis campañas */}
+      {disponibles.length === 0 && finalizadas.length === 0 && misCampanas.length > 0 && (
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <div className="text-4xl mb-3">🎉</div>
           <p className="text-sm font-semibold text-gray-700">
