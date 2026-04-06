@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { crearCampanaAdmin } from './actions'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
-import { SelectorZona } from '@/components/shared/selector-zona'
+import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ export default function NuevaCampanaAdminPage() {
   const [paso, setPaso] = useState<1 | 2>(1)
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [localidadesSeleccionadas, setLocalidadesSeleccionadas] = useState<number[]>([])
+  const [grupos, setGrupos] = useState<GrupoZona[]>([])
   const [campos, setCampos] = useState<CampoBloque[]>([])
 
   const [s1, setS1] = useState<Step1>({
@@ -84,7 +84,7 @@ export default function NuevaCampanaAdminPage() {
     })
     fd.set('solicitar_precio', s1.solicitar_precio ? 'true' : 'false')
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
-    localidadesSeleccionadas.forEach(id => fd.append('localidad_ids', String(id)))
+    grupos.flatMap(g => g.localidadIds).forEach(id => fd.append('localidad_ids', String(id)))
     fd.set('campos_json', JSON.stringify(campos))
 
     startTransition(async () => {
@@ -345,9 +345,10 @@ export default function NuevaCampanaAdminPage() {
 
             {/* Zonas */}
             <SelectorZona
-              localidadesSeleccionadas={localidadesSeleccionadas}
-              onSeleccionadas={setLocalidadesSeleccionadas}
-              accentClass={`focus:ring-2 focus:ring-[#1E1B4B]/20 focus:border-[#1E1B4B]`}
+              grupos={grupos}
+              onGrupos={setGrupos}
+              accentClass="focus:ring-2 focus:ring-[#1E1B4B]/20 focus:border-[#1E1B4B]"
+              addBtnClass="bg-[#1E1B4B] hover:bg-[#2d2a6e] text-white"
             />
 
             {/* Error */}

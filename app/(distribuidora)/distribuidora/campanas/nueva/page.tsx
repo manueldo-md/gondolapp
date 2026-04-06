@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Loader2 } from 'lucide-react'
 import { crearCampanaInterna } from './actions'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
-import { SelectorZona } from '@/components/shared/selector-zona'
+import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 
 export default function NuevaCampanaPage() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [localidadesSeleccionadas, setLocalidadesSeleccionadas] = useState<number[]>([])
+  const [grupos, setGrupos] = useState<GrupoZona[]>([])
   const [solicitarPrecio, setSolicitarPrecio] = useState(false)
 
   const [campos, setCampos] = useState<CampoBloque[]>([])
@@ -39,7 +39,7 @@ export default function NuevaCampanaPage() {
 
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => fd.set(k, v))
-    localidadesSeleccionadas.forEach(id => fd.append('localidad_ids', String(id)))
+    grupos.flatMap(g => g.localidadIds).forEach(id => fd.append('localidad_ids', String(id)))
     fd.set('solicitar_precio', solicitarPrecio ? 'true' : 'false')
     fd.set('campos_json', JSON.stringify(campos))
 
@@ -230,9 +230,10 @@ export default function NuevaCampanaPage() {
 
           {/* Zonas */}
           <SelectorZona
-            localidadesSeleccionadas={localidadesSeleccionadas}
-            onSeleccionadas={setLocalidadesSeleccionadas}
+            grupos={grupos}
+            onGrupos={setGrupos}
             accentClass="focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400"
+            addBtnClass="bg-gondo-amber-400 hover:opacity-90 text-white"
           />
 
           {errorMsg && (

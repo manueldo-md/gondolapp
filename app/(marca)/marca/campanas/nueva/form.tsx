@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Loader2, Building2, Sparkles } from 'luci
 import { crearCampana } from './actions'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
-import { SelectorZona } from '@/components/shared/selector-zona'
+import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ export function NuevaCampanaForm({
   const [paso, setPaso] = useState<1 | 2 | 3>(1)
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [localidadesSeleccionadas, setLocalidadesSeleccionadas] = useState<number[]>([])
+  const [grupos, setGrupos] = useState<GrupoZona[]>([])
 
   const [campos, setCampos] = useState<CampoBloque[]>([])
 
@@ -107,7 +107,7 @@ export function NuevaCampanaForm({
     })
     fd.set('solicitar_precio', s1.solicitar_precio ? 'true' : 'false')
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
-    localidadesSeleccionadas.forEach(id => fd.append('localidad_ids', String(id)))
+    grupos.flatMap(g => g.localidadIds).forEach(id => fd.append('localidad_ids', String(id)))
     fd.set('campos_json', JSON.stringify(campos))
     fd.set('via_ejecucion', s3.via_ejecucion)
     if (s3.via_ejecucion === 'distribuidora' && s3.distri_id) {
@@ -377,8 +377,8 @@ export function NuevaCampanaForm({
 
             {/* Zonas */}
             <SelectorZona
-              localidadesSeleccionadas={localidadesSeleccionadas}
-              onSeleccionadas={setLocalidadesSeleccionadas}
+              grupos={grupos}
+              onGrupos={setGrupos}
             />
           </>
         )}
