@@ -5,6 +5,7 @@ import Link from 'next/link'
 import {
   Users, Store, Megaphone, Camera, Star, CheckCircle2,
   AlertTriangle, ChevronRight, MapPin, Package, TrendingUp, Clock,
+  PackageX,
 } from 'lucide-react'
 import { diasRestantes, formatearPuntos } from '@/lib/utils'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
@@ -72,6 +73,7 @@ export default async function DashboardPage() {
   // ── Fechas de referencia ──────────────────────────────────────────────────
   const ahora        = new Date()
   const mesInicio    = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  const hace7d       = new Date(Date.now() -  7 * 86400_000)
   const hace14d      = new Date(Date.now() - 14 * 86400_000)
   const hace30d      = new Date(Date.now() - 30 * 86400_000)
   const hace56d      = new Date(Date.now() - 56 * 86400_000)  // 8 semanas
@@ -88,6 +90,8 @@ export default async function DashboardPage() {
     campanasActivasRes,
     comerciosPendientesRes,
     fotos14dRes,
+    quiebreStockRes,
+    alertasIgnoradasRes,
   ] = await Promise.all([
     // Perfiles de gondoleros
     admin.from('profiles')
@@ -150,6 +154,24 @@ export default async function DashboardPage() {
       .select('gondolero_id')
       .in('gondolero_id', safeGond)
       .gte('created_at', hace14d.toISOString()),
+
+    // Quiebre de stock: fotos con producto no encontrado, últimos 7 días
+    admin.from('fotos')
+      .select('comercio_id, created_at, comercios(nombre)')
+      .in('gondolero_id', safeGond)
+      .eq('declaracion', 'producto_no_encontrado')
+      .eq('estado', 'aprobada')
+      .gte('created_at', hace7d.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(500),
+
+    // Alertas ignoradas tipo quiebre_stock para esta distri
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any).from('alertas_ignoradas')
+      .select('referencia_id')
+      .eq('distri_id', distriId)
+      .eq('tipo', 'quiebre_stock')
+      .gt('ignorada_hasta', new Date().toISOString()),
   ])
 
   // ── Datos procesados ──────────────────────────────────────────────────────
@@ -171,6 +193,10 @@ export default async function DashboardPage() {
   const comerciosPendientes = (comerciosPendientesRes.data ?? []) as any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fotos14d           = (fotos14dRes.data ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const quiebreStockFotos  = (quiebreStockRes.data  ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ignoradasIds       = new Set((alertasIgnoradasRes.data ?? []).map((i: any) => i.referencia_id as string))
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
 
@@ -281,6 +307,27 @@ export default async function DashboardPage() {
   )
   const pendientesValidacion = comerciosPendientes.length
 
+  // Quiebre de stock: agrupar por comercio, excluir ignoradas
+  type QuiebreStock = { comercioId: string; nombre: string; veces: number; ultimaVez: string }
+  const quiebreMap = new Map<string, QuiebreStock>()
+  for (const f of quiebreStockFotos) {
+    if (ignoradasIds.has(f.comercio_id)) continue
+    const entry = quiebreMap.get(f.comercio_id)
+    if (entry) {
+      entry.veces++
+    } else {
+      quiebreMap.set(f.comercio_id, {
+        comercioId: f.comercio_id,
+        nombre:     f.comercios?.nombre ?? 'Comercio',
+        veces:      1,
+        ultimaVez:  f.created_at,
+      })
+    }
+  }
+  const quiebresStock = Array.from(quiebreMap.values())
+    .sort((a, b) => b.veces - a.veces)
+    .slice(0, 5)
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -336,9 +383,56 @@ export default async function DashboardPage() {
       </section>
 
       {/* ── BLOQUE 7: Alertas ───────────────────────────────────────────── */}
-      {(gondolerosInactivos14 > 0 || campanasVencenProx.length > 0 || pendientesValidacion > 0) && (
-        <section>
-          <SeccionHeader titulo="Alertas" />
+      <section>
+        <SeccionHeader titulo="Alertas" />
+
+        {/* Quiebre de stock — siempre visible */}
+        <div className="mb-3">
+          <div className="flex items-center gap-2 mb-2">
+            <PackageX size={13} className={quiebresStock.length > 0 ? 'text-red-500' : 'text-gray-300'} />
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+              Quiebre de stock · últimos 7 días
+            </span>
+            {quiebresStock.length > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {quiebresStock.length}
+              </span>
+            )}
+          </div>
+          {quiebresStock.length === 0 ? (
+            <div className="bg-white rounded-xl border border-green-200 px-4 py-3">
+              <p className="text-sm text-green-600 font-medium">✅ Sin alertas de stock activas</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-red-200 divide-y divide-gray-50">
+              {quiebresStock.map((q: QuiebreStock) => (
+                <Link
+                  key={q.comercioId}
+                  href={`/distribuidora/gondolas?comercio_id=${q.comercioId}&declaracion=producto_no_encontrado`}
+                  className="flex items-center justify-between px-4 py-3 hover:bg-red-50/40 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{q.nombre}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      No encontrado {q.veces} {q.veces === 1 ? 'vez' : 'veces'} · última vez{' '}
+                      {new Date(q.ultimaVez).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
+                    </p>
+                  </div>
+                  <ChevronRight size={14} className="text-gray-300 shrink-0 ml-3" />
+                </Link>
+              ))}
+              <Link
+                href="/distribuidora/alertas"
+                className="block px-4 py-2.5 text-center text-xs text-gondo-amber-400 font-medium hover:underline"
+              >
+                Ver todas las alertas →
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* Otras alertas operativas */}
+        {(gondolerosInactivos14 > 0 || campanasVencenProx.length > 0 || pendientesValidacion > 0) && (
           <div className="bg-white rounded-xl border border-amber-200 divide-y divide-gray-50">
             {gondolerosInactivos14 > 0 && (
               <AlertaRow
@@ -363,8 +457,8 @@ export default async function DashboardPage() {
               />
             )}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* ── BLOQUE 4: Campañas activas ──────────────────────────────────── */}
       <section>
