@@ -16,7 +16,6 @@ interface ComercioTempItem {
   direccion: string | null
   lat: number
   lng: number
-  localidad_id?: number | null
   timestamp: number
 }
 
@@ -92,12 +91,11 @@ export function OfflineSyncBanner() {
       for (const cp of comerciosRestantes) {
         try {
           await crearComercioOffline({
-            nombre:      cp.nombre,
-            tipo:        cp.tipo,
-            direccion:   cp.direccion,
-            lat:         cp.lat,
-            lng:         cp.lng,
-            localidad_id: cp.localidad_id ?? null,
+            nombre:    cp.nombre,
+            tipo:      cp.tipo,
+            direccion: cp.direccion,
+            lat:       cp.lat,
+            lng:       cp.lng,
           })
           comerciosSincronizados.push(cp.tempId)
         } catch {
