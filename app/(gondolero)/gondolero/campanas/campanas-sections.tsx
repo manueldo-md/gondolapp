@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import {
-  Star, Clock, Camera, CheckCircle2, ChevronDown, DollarSign,
+  Star, Clock, Camera, CheckCircle2, ChevronDown, ChevronRight, DollarSign,
 } from 'lucide-react'
 import {
   labelTipoCampana,
@@ -34,6 +34,7 @@ export interface CampanaCardData {
   nivel_minimo: string | null
   es_abierta: boolean
   via_ejecucion: string | null
+  estado?: string
   created_at: string
   marca: { razon_social: string } | null
   distri: { razon_social: string } | null
@@ -57,7 +58,7 @@ const COLORES_TIPO: Record<TipoCampana, string> = {
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000
 
-// ── CampanaCard ────────────────────────────────────────────────────────────────
+// ── CampanaCard (full) ─────────────────────────────────────────────────────────
 
 function CampanaCard({
   campana,
@@ -80,7 +81,6 @@ function CampanaCard({
   const nivelMinimo = campana.nivel_minimo ?? 'casual'
   const nivelOk = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
 
-  // Progreso propio del gondolero (solo para "en curso")
   const maxPropios = campana.max_comercios_por_gondolero
   const minPropios = campana.min_comercios_para_cobrar
   const completadosPropios = gondoleroComerciosCompletados ?? 0
@@ -104,7 +104,6 @@ function CampanaCard({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[campana.tipo]}`}>
             {labelTipoCampana(campana.tipo)}
           </span>
-          {/* Content badges */}
           <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
             <Camera size={10} />
             Foto
@@ -115,7 +114,6 @@ function CampanaCard({
               Precio
             </span>
           )}
-          {/* Origin badges */}
           {esMiDistri && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
               📦 {campana.distri?.razon_social ?? 'Tu distribuidora'}
@@ -200,7 +198,7 @@ function CampanaCard({
         )}
       </div>
 
-      {/* Barra de progreso campaña global */}
+      {/* Barra progreso campaña global */}
       {campana.objetivo_comercios !== null && campana.objetivo_comercios > 0 && (
         <div className="px-4 pb-2">
           <div className="flex justify-between items-center mb-1.5">
@@ -218,7 +216,7 @@ function CampanaCard({
         </div>
       )}
 
-      {/* Barra de progreso propio (solo en curso) */}
+      {/* Barra progreso propio (solo en curso) */}
       {participando && maxPropios > 0 && (
         <div className="px-4 pb-4">
           <div className="flex justify-between items-center mb-1.5">
@@ -232,7 +230,6 @@ function CampanaCard({
             </span>
           </div>
           <div className="relative h-2 bg-gray-100 rounded-full overflow-hidden">
-            {/* Indicador del mínimo */}
             {minPct > 0 && minPct < 100 && (
               <div
                 className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10"
@@ -252,9 +249,7 @@ function CampanaCard({
       {/* CTA */}
       <div className="px-4 pb-4">
         <Link
-          href={participando
-            ? `/gondolero/misiones/${campana.id}`
-            : `/gondolero/campanas/${campana.id}`}
+          href={`/gondolero/campanas/${campana.id}`}
           className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
             participando
               ? 'bg-green-600 hover:bg-green-700'
@@ -280,6 +275,57 @@ function CampanaCard({
   )
 }
 
+// ── CampanaCardCerrada (compacta) ──────────────────────────────────────────────
+
+function CampanaCardCerrada({
+  campana,
+  misDistriIds,
+}: {
+  campana: CampanaCardData
+  misDistriIds: string[]
+}) {
+  const esMiDistri = !!campana.distri_id && misDistriIds.includes(campana.distri_id)
+  const suspendida = campana.estado === 'suspendida'
+
+  return (
+    <Link
+      href={`/gondolero/campanas/${campana.id}`}
+      className="flex items-center gap-3 bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 transition-transform duration-100 active:scale-[0.98]"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${COLORES_TIPO[campana.tipo]}`}>
+            {labelTipoCampana(campana.tipo)}
+          </span>
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+            suspendida ? 'bg-gray-100 text-gray-500' : 'bg-rose-100 text-rose-600'
+          }`}>
+            {suspendida ? 'Suspendida' : 'Cerrada'}
+          </span>
+          {esMiDistri && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
+              📦 Tu distribuidora
+            </span>
+          )}
+        </div>
+        <p className="text-sm font-semibold text-gray-700 truncate">{campana.nombre}</p>
+        <div className="flex items-center gap-3 mt-1">
+          <span className="flex items-center gap-1 text-xs text-gondo-verde-400 font-medium">
+            <Star size={10} className="fill-gondo-verde-400" />
+            {formatearPuntos(campana.puntos_por_foto)} pts/foto
+          </span>
+          {campana.fecha_fin && (
+            <span className="text-xs text-gray-400">
+              Venció {new Date(campana.fecha_fin).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          )}
+        </div>
+      </div>
+      <ChevronRight size={16} className="text-gray-300 shrink-0" />
+    </Link>
+  )
+}
+
 // ── Sección colapsable ─────────────────────────────────────────────────────────
 
 function Seccion({
@@ -287,6 +333,7 @@ function Seccion({
   badge,
   badgeColor,
   bgColor,
+  borderColor,
   children,
   defaultOpen = true,
 }: {
@@ -294,13 +341,14 @@ function Seccion({
   badge: number
   badgeColor: string
   bgColor: string
+  borderColor: string
   children: React.ReactNode
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
 
   return (
-    <div className={`rounded-2xl overflow-hidden border ${bgColor}`}>
+    <div className={`rounded-2xl overflow-hidden border ${bgColor} ${borderColor}`}>
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-3.5"
@@ -321,7 +369,7 @@ function Seccion({
         className="overflow-hidden transition-all duration-300 ease-in-out"
         style={{ maxHeight: open ? '4000px' : '0px' }}
       >
-        <div className="px-4 pb-4 space-y-4">
+        <div className="px-4 pb-4 space-y-3">
           {children}
         </div>
       </div>
@@ -332,23 +380,23 @@ function Seccion({
 // ── CampanasSections ───────────────────────────────────────────────────────────
 
 export function CampanasSections({
-  activas,
-  completadas,
+  enCurso,
   disponibles,
+  cerradas,
   gondoleroNivel,
   misDistriIds,
   participacionRecord,
   comerciosCompletadosRecord,
 }: {
-  activas: CampanaCardData[]
-  completadas: CampanaCardData[]
+  enCurso: CampanaCardData[]
   disponibles: CampanaCardData[]
+  cerradas: CampanaCardData[]
   gondoleroNivel: string
   misDistriIds: string[]
   participacionRecord: Record<string, 'activa' | 'completada' | 'abandonada'>
   comerciosCompletadosRecord: Record<string, number>
 }) {
-  const hayAlgo = activas.length + completadas.length + disponibles.length > 0
+  const hayAlgo = enCurso.length + disponibles.length + cerradas.length > 0
 
   if (!hayAlgo) {
     return (
@@ -366,20 +414,22 @@ export function CampanasSections({
 
   return (
     <div className="space-y-4">
+
       {/* ── En curso ── */}
-      {activas.length > 0 && (
+      {enCurso.length > 0 && (
         <Seccion
           titulo="En curso"
-          badge={activas.length}
+          badge={enCurso.length}
           badgeColor="bg-green-100 text-green-700"
-          bgColor="bg-green-50 border-green-200"
+          bgColor="bg-green-50"
+          borderColor="border-green-200"
           defaultOpen={true}
         >
-          {activas.map(c => (
+          {enCurso.map(c => (
             <CampanaCard
               key={c.id}
               campana={c}
-              participacionEstado="activa"
+              participacionEstado={participacionRecord[c.id]}
               gondoleroNivel={gondoleroNivel}
               misDistriIds={misDistriIds}
               gondoleroComerciosCompletados={comerciosCompletadosRecord[c.id] ?? 0}
@@ -394,7 +444,8 @@ export function CampanasSections({
           titulo="Disponibles"
           badge={disponibles.length}
           badgeColor="bg-slate-200 text-slate-600"
-          bgColor="bg-slate-100 border-slate-200"
+          bgColor="bg-slate-100"
+          borderColor="border-slate-200"
           defaultOpen={true}
         >
           {disponibles.map(c => (
@@ -409,29 +460,28 @@ export function CampanasSections({
         </Seccion>
       )}
 
-      {/* ── Completadas ── */}
-      {completadas.length > 0 && (
+      {/* ── Cerradas ── */}
+      {cerradas.length > 0 && (
         <Seccion
-          titulo="Completadas"
-          badge={completadas.length}
+          titulo="Cerradas"
+          badge={cerradas.length}
           badgeColor="bg-rose-100 text-rose-600"
-          bgColor="bg-rose-50 border-rose-200"
+          bgColor="bg-rose-50"
+          borderColor="border-rose-200"
           defaultOpen={false}
         >
-          {completadas.map(c => (
-            <CampanaCard
+          {cerradas.map(c => (
+            <CampanaCardCerrada
               key={c.id}
               campana={c}
-              participacionEstado="completada"
-              gondoleroNivel={gondoleroNivel}
               misDistriIds={misDistriIds}
             />
           ))}
         </Seccion>
       )}
 
-      {/* Estado vacío de disponibles cuando solo hay activas */}
-      {disponibles.length === 0 && completadas.length === 0 && activas.length > 0 && (
+      {/* Estado vacío de disponibles cuando solo hay en curso */}
+      {disponibles.length === 0 && cerradas.length === 0 && enCurso.length > 0 && (
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <div className="text-4xl mb-3">🎉</div>
           <p className="text-sm font-semibold text-gray-700">
@@ -439,6 +489,7 @@ export function CampanasSections({
           </p>
         </div>
       )}
+
     </div>
   )
 }

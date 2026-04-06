@@ -4,8 +4,17 @@ import { LayoutGrid } from 'lucide-react'
 import type { TipoCampana } from '@/types'
 import { CampanasSections, type CampanaCardData } from './campanas-sections'
 
-// CampanaRow: alias del tipo exportado desde campanas-sections
 type CampanaRow = CampanaCardData
+
+const CAMPANA_SELECT = `
+  id, nombre, tipo, marca_id, distri_id, financiada_por, via_ejecucion, estado,
+  puntos_por_foto, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
+  tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
+  max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
+  marca:marcas ( razon_social ),
+  distri:distribuidoras ( razon_social ),
+  bloques_foto ( id )
+`
 
 export default async function CampanasPage() {
   const supabase = await createClient()
@@ -13,7 +22,6 @@ export default async function CampanasPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  // Zonas declaradas por el gondolero
   const { data: gondoleroZonas } = await supabase
     .from('gondolero_zonas')
     .select('zona_id')
@@ -22,8 +30,7 @@ export default async function CampanasPage() {
   const zonaIds = (gondoleroZonas ?? []).map((gz: { zona_id: string }) => gz.zona_id)
   const tieneZonas = zonaIds.length > 0
 
-  // Participaciones + perfil + mis distribuidoras vinculadas (en paralelo)
-  const [participacionesRes, profileRes, misDistrisRes] = await Promise.all([
+  const [participacionesRes, profileRes, misDistrisRes, misionesRes] = await Promise.all([
     supabase
       .from('participaciones')
       .select('campana_id, estado, comercios_completados')
@@ -39,6 +46,10 @@ export default async function CampanasPage() {
       .select('distri_id')
       .eq('gondolero_id', user.id)
       .eq('estado', 'aprobada'),
+    supabase
+      .from('misiones')
+      .select('campana_id')
+      .eq('gondolero_id', user.id),
   ])
 
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
@@ -53,7 +64,15 @@ export default async function CampanasPage() {
   const gondoleroNivel = (profileRes.data as { nivel: string } | null)?.nivel ?? 'casual'
   const misDistriIds = (misDistrisRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
 
-  // Relaciones marca-distri activas (para filtrar campañas de marca)
+  // Misiones: qué campañas tiene el gondolero y cuántas misiones por campaña
+  const misionCampanaIds = new Set<string>()
+  const misionesCountMap = new Map<string, number>()
+  for (const m of (misionesRes.data ?? []) as { campana_id: string }[]) {
+    misionCampanaIds.add(m.campana_id)
+    misionesCountMap.set(m.campana_id, (misionesCountMap.get(m.campana_id) ?? 0) + 1)
+  }
+
+  // Relaciones marca-distri activas
   let relacionesMarcaDistri: { marca_id: string; distri_id: string }[] = []
   if (misDistriIds.length > 0) {
     const { data: relRes } = await supabase
@@ -64,38 +83,27 @@ export default async function CampanasPage() {
     relacionesMarcaDistri = (relRes ?? []) as { marca_id: string; distri_id: string }[]
   }
 
-  // Función de acceso — decide si el gondolero puede ver esta campaña
   function tieneAcceso(c: CampanaRow): boolean {
     const fp = c.financiada_por
     if (!fp || fp === 'gondolapp') return true
-    // Campañas de marca ejecutadas vía GondolApp → visibles para todos los gondoleros
-    if (c.via_ejecucion === 'gondolapp') return true
+    if ((c as unknown as { via_ejecucion: string | null }).via_ejecucion === 'gondolapp') return true
     if (fp === 'distri') return !!c.distri_id && misDistriIds.includes(c.distri_id)
     if (fp === 'marca') {
       if (!c.marca_id) return true
-      // Si la campaña tiene distri_id → el gondolero debe estar vinculado a ESA distri específica
       if (c.distri_id) return misDistriIds.includes(c.distri_id)
-      // Si no tiene distri_id → cualquier distri del gondolero vinculada a esa marca
       return relacionesMarcaDistri.some(r => r.marca_id === c.marca_id)
     }
     return false
   }
 
+  // ── Query de campañas activas (con filtro de zona) ────────────────────────────
   let query = supabase
     .from('campanas')
-    .select(`
-      id, nombre, tipo, marca_id, distri_id, financiada_por, via_ejecucion,
-      puntos_por_foto, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
-      tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
-      max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
-      marca:marcas ( razon_social ),
-      distri:distribuidoras ( razon_social ),
-      bloques_foto ( id )
-    `)
+    .select(CAMPANA_SELECT)
     .eq('estado', 'activa')
     .order('created_at', { ascending: false })
 
-  let lista: CampanaRow[] = []
+  let listaActivas: CampanaRow[] = []
 
   if (tieneZonas) {
     const { data: campanaZonas } = await supabase
@@ -104,7 +112,6 @@ export default async function CampanasPage() {
       .in('zona_id', zonaIds)
 
     const campanaIdsConZona = (campanaZonas ?? []).map((cz: { campana_id: string }) => cz.campana_id)
-
     const { data: campanas, error } = await query
     if (error) console.error('Error fetching campanas:', error.message)
 
@@ -114,7 +121,7 @@ export default async function CampanasPage() {
       .select('campana_id')
     const campanasConAlgunaZona = new Set((todasCampanaZonas ?? []).map((cz: { campana_id: string }) => cz.campana_id))
 
-    lista = todas.filter(c =>
+    listaActivas = todas.filter(c =>
       (c as unknown as { es_abierta: boolean }).es_abierta ||
       campanaIdsConZona.includes(c.id) ||
       !campanasConAlgunaZona.has(c.id)
@@ -122,28 +129,65 @@ export default async function CampanasPage() {
   } else {
     const { data: campanas, error } = await query
     if (error) console.error('Error fetching campanas:', error.message)
-    lista = (campanas as CampanaRow[] | null) ?? []
+    listaActivas = (campanas as CampanaRow[] | null) ?? []
   }
 
-  // Campañas en las que ya participa el gondolero (activas / completadas)
-  // → se muestran siempre, independientemente del acceso actual
-  const yaSuyas = new Set([...participacionMap.keys()])
+  // ── Sección 1: En curso ───────────────────────────────────────────────────────
+  // Activas con al menos una misión O participación activa, ordenadas por fecha_fin ASC
+  const enCurso = listaActivas
+    .filter(c => misionCampanaIds.has(c.id) || participacionMap.get(c.id) === 'activa')
+    .sort((a, b) => {
+      if (!a.fecha_fin && !b.fecha_fin) return 0
+      if (!a.fecha_fin) return 1
+      if (!b.fecha_fin) return -1
+      return new Date(a.fecha_fin).getTime() - new Date(b.fecha_fin).getTime()
+    })
 
-  const activas     = lista.filter(c => participacionMap.get(c.id) === 'activa')
-  const completadas = lista.filter(c => participacionMap.get(c.id) === 'completada')
-  // Disponibles: sin participación activa/completada Y con acceso según financiada_por
-  const disponibles = lista.filter(c => {
-    const estado = participacionMap.get(c.id)
-    if (estado && estado !== 'abandonada') return false
-    return tieneAcceso(c)
-  })
+  const enCursoIds = new Set(enCurso.map(c => c.id))
 
-  // Records planos para el cliente (Map no es serializable)
-  const participacionRecord = Object.fromEntries(participacionMap.entries()) as Record<string, 'activa' | 'completada' | 'abandonada'>
-  const comerciosCompletadosRecord = Object.fromEntries(comerciosCompletadosMap.entries()) as Record<string, number>
+  // ── Sección 2: Disponibles ────────────────────────────────────────────────────
+  // Activas donde el gondolero no participó todavía y tiene acceso (ya en created_at DESC)
+  const disponibles = listaActivas.filter(c => !enCursoIds.has(c.id) && tieneAcceso(c))
 
-  // Cuenta solo campañas accesibles para el header
-  const totalAccesibles = activas.length + completadas.length + disponibles.length
+  // ── Sección 3: Cerradas ───────────────────────────────────────────────────────
+  // Campañas cerradas/suspendidas donde el gondolero tiene misiones
+  const activaIds = new Set(listaActivas.map(c => c.id))
+  const cerradasPotenciales = [...misionCampanaIds].filter(id => !activaIds.has(id))
+
+  let cerradas: CampanaRow[] = []
+  if (cerradasPotenciales.length > 0) {
+    const { data: cerradasData } = await supabase
+      .from('campanas')
+      .select(CAMPANA_SELECT)
+      .in('estado', ['cerrada', 'suspendida'])
+      .in('id', cerradasPotenciales)
+      .order('fecha_fin', { ascending: false })
+    cerradas = (cerradasData as CampanaRow[] | null) ?? []
+  }
+
+  // Para cards "En curso": participacionEstado efectivo (usar 'activa' si solo tienen misiones)
+  const effectiveParticipacionRecord: Record<string, 'activa' | 'completada' | 'abandonada'> = {}
+  for (const [id, estado] of participacionMap.entries()) {
+    effectiveParticipacionRecord[id] = estado
+  }
+  for (const c of enCurso) {
+    if (!effectiveParticipacionRecord[c.id] || effectiveParticipacionRecord[c.id] === 'abandonada') {
+      if (misionCampanaIds.has(c.id)) {
+        effectiveParticipacionRecord[c.id] = 'activa'
+      }
+    }
+  }
+
+  // comerciosCompletados: usar el mayor entre participaciones y misiones
+  const comerciosCompletadosRecord: Record<string, number> = {}
+  for (const [id, count] of comerciosCompletadosMap.entries()) {
+    comerciosCompletadosRecord[id] = count
+  }
+  for (const [id, count] of misionesCountMap.entries()) {
+    comerciosCompletadosRecord[id] = Math.max(comerciosCompletadosRecord[id] ?? 0, count)
+  }
+
+  const totalActivas = enCurso.length + disponibles.length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -153,9 +197,9 @@ export default async function CampanasPage() {
           <LayoutGrid size={20} className="text-gondo-verde-400" />
           <h1 className="text-lg font-bold text-gray-900">Campañas</h1>
         </div>
-        {totalAccesibles > 0 && (
+        {totalActivas > 0 && (
           <p className="text-sm text-gray-400 mt-0.5">
-            {totalAccesibles} {totalAccesibles === 1 ? 'campaña activa' : 'campañas activas'}
+            {totalActivas} {totalActivas === 1 ? 'campaña activa' : 'campañas activas'}
           </p>
         )}
       </div>
@@ -173,12 +217,12 @@ export default async function CampanasPage() {
 
       <div className="px-4 py-4">
         <CampanasSections
-          activas={activas}
-          completadas={completadas}
+          enCurso={enCurso}
           disponibles={disponibles}
+          cerradas={cerradas}
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}
-          participacionRecord={participacionRecord}
+          participacionRecord={effectiveParticipacionRecord}
           comerciosCompletadosRecord={comerciosCompletadosRecord}
         />
       </div>

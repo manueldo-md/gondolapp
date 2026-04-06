@@ -94,7 +94,7 @@ export default async function CampanaDetallePage({
   const { data: campanaData } = await supabase
     .from('campanas')
     .select(`
-      id, nombre, tipo, financiada_por, distri_id, marca_id,
+      id, nombre, tipo, financiada_por, distri_id, marca_id, estado,
       puntos_por_foto, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
       objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
@@ -102,10 +102,11 @@ export default async function CampanaDetallePage({
       bloques_foto ( id, orden, instruccion, tipo_contenido )
     `)
     .eq('id', params.id)
-    .eq('estado', 'activa')
     .single()
 
   if (!campanaData) notFound()
+
+  const campanaActiva = (campanaData as unknown as { estado: string }).estado === 'activa'
 
   const [{ data: participacionData }, { data: profileData }, { data: misDistrisData }, { data: misionesData }] = await Promise.all([
     supabase
@@ -227,8 +228,16 @@ export default async function CampanaDetallePage({
 
       <div className="px-4 py-4 space-y-4">
 
+        {/* ── Campaña cerrada ── */}
+        {!campanaActiva && (
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center gap-2">
+            <XCircle size={18} className="text-rose-500 shrink-0" />
+            <p className="text-sm font-semibold text-rose-700">Esta campaña ya está cerrada</p>
+          </div>
+        )}
+
         {/* ── Ya participando ── */}
-        {yaUnido && (
+        {yaUnido && campanaActiva && (
           <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-2">
             <CheckCircle2 size={18} className="text-green-600 shrink-0" />
             <p className="text-sm font-semibold text-green-800">Ya estás participando en esta campaña</p>
@@ -319,8 +328,8 @@ export default async function CampanaDetallePage({
               </div>
             </div>
 
-            {/* Botón Nueva misión o límite alcanzado */}
-            {!alcanzeLimite && !cupoLleno ? (
+            {/* Botón Nueva misión o límite alcanzado (solo si campaña activa) */}
+            {campanaActiva && (!alcanzeLimite && !cupoLleno ? (
               <Link
                 href={`/gondolero/captura?campana=${c.id}`}
                 className="flex items-center justify-center gap-2 w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-sm text-base hover:bg-gondo-verde-600 transition-colors"
@@ -339,7 +348,7 @@ export default async function CampanaDetallePage({
                     : `Completaste el máximo de ${c.max_comercios_por_gondolero} comercios para esta campaña.`}
                 </p>
               </div>
-            )}
+            ))}
 
             {/* Lista de misiones */}
             {misiones.length > 0 && (
@@ -464,8 +473,8 @@ export default async function CampanaDetallePage({
 
       </div>
 
-      {/* CTA fijo al fondo — solo para usuarios no unidos */}
-      {!yaUnido && (
+      {/* CTA fijo al fondo — solo para usuarios no unidos en campañas activas */}
+      {!yaUnido && campanaActiva && (
         <div className="fixed bottom-16 left-0 right-0 px-4 pb-2 bg-gradient-to-t from-gray-50 via-gray-50 pt-4">
           <UnirseButton
             campanaId={c.id}
