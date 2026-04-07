@@ -1652,7 +1652,6 @@ function CapturaContent() {
                 if (lastFoto) {
                   setFotoBlob(lastFoto.blob)
                   setFotoPreview(lastFoto.previewUrl)
-                  setDeclaracion(lastFoto.declaracion)
                   setPrecio(lastFoto.precio)
                   setRespuestas(lastFoto.respuestas)
                   setBlurScore(lastFoto.blurScore)
