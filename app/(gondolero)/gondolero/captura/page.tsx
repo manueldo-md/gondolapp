@@ -932,7 +932,13 @@ function CapturaContent() {
       setPuntosGanados(result.puntos)
       setPaso('exito')
     } catch (err) {
-      setErrorGlobal(err instanceof Error ? err.message : 'Error al enviar la misión.')
+      const msg = err instanceof Error ? err.message : String(err)
+      // Si el mensaje parece JSON de infraestructura (Vercel/Next.js), mostrar mensaje amigable
+      const esJsonInfra = msg.startsWith('{') || msg.startsWith('[')
+      setErrorGlobal(esJsonInfra
+        ? 'Error al enviar la misión. Revisá tu conexión e intentá de nuevo.'
+        : (msg || 'Error al enviar la misión.'))
+      console.error('[handleEnviarMision] error:', msg)
     } finally {
       setEnviando(false)
     }

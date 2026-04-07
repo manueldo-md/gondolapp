@@ -3,6 +3,13 @@ const nextConfig = {
   // PWA — para que funcione offline en celulares de gondoleros
   // En V2 agregar next-pwa aquí
 
+  // Server Actions — aumentar el límite para uploads de fotos comprimidas
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '5mb',
+    },
+  },
+
   // Imágenes — permitir las de Supabase Storage
   images: {
     remotePatterns: [
