@@ -69,7 +69,6 @@ export function OfflineSyncBanner() {
             url,
             lat: item.lat,
             lng: item.lng,
-            declaracion: item.declaracion as 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia',
             precioConfirmado: item.precio,
             timestampDispositivo: item.timestamp,
             deviceId: item.deviceId,
