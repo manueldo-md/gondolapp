@@ -987,7 +987,7 @@ function CapturaContent() {
           fachadaStoragePath: fachadaPath,
           fachadaUrl:         fachadaUrl,
         })
-        if ('error' in result && result.error) { setCmErrorMsg(result.error); return }
+        if ('error' in result) { setCmErrorMsg(result.error); return }
         setComercio({
           id:       result.comercioId,
           nombre:   cmNombre.trim(),
