@@ -81,6 +81,8 @@ export default async function AdminTableroPage() {
     misiones8semRes,
     erroresPendRes,
     campanasPendAprobRes,
+    marcasListRes,
+    marcaDistriRelRes,
   ] = await Promise.all([
     // Totales globales
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('tipo_actor', 'gondolero'),
@@ -88,8 +90,8 @@ export default async function AdminTableroPage() {
     admin.from('marcas').select('*', { count: 'exact', head: true }).eq('validada', true),
     admin.from('comercios').select('*', { count: 'exact', head: true }).eq('validado', true),
     // Este mes
-    admin.from('misiones').select('id, gondolero_id, estado, created_at').gte('created_at', mesInicio.toISOString()),
-    admin.from('fotos').select('id, gondolero_id, estado').gte('created_at', mesInicio.toISOString()),
+    admin.from('misiones').select('id, gondolero_id, campana_id, estado, created_at').gte('created_at', mesInicio.toISOString()),
+    admin.from('fotos').select('id, gondolero_id, campana_id, estado').gte('created_at', mesInicio.toISOString()),
     admin.from('movimientos_puntos').select('monto').eq('tipo', 'credito').gte('created_at', mesInicio.toISOString()),
     admin.from('movimientos_puntos').select('monto').eq('tipo', 'debito').gte('created_at', mesInicio.toISOString()),
     // Gondoleros + distribuidoras (para rankings)
@@ -112,8 +114,8 @@ export default async function AdminTableroPage() {
       .eq('validado', false)
       .order('created_at', { ascending: false })
       .limit(5),
-    // Campañas todas (para breakdown por estado)
-    admin.from('campanas').select('id, nombre, estado'),
+    // Campañas todas (para breakdown por estado + top marcas)
+    admin.from('campanas').select('id, nombre, estado, marca_id'),
     // Gondoleros nuevos esta semana / anterior
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('tipo_actor', 'gondolero').gte('created_at', hace7d.toISOString()),
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('tipo_actor', 'gondolero').gte('created_at', hace14d.toISOString()).lt('created_at', hace7d.toISOString()),
@@ -131,6 +133,11 @@ export default async function AdminTableroPage() {
       .select('id, nombre, created_at')
       .eq('estado', 'pendiente_aprobacion')
       .order('created_at', { ascending: false }),
+    // Top marcas: lista de marcas
+    admin.from('marcas').select('id, razon_social'),
+    // Relaciones marca-distri activas (para contar distribuidoras por marca)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any).from('marca_distri_relaciones').select('marca_id, distri_id').eq('estado', 'activa'),
   ])
 
   // ── Datos procesados ──────────────────────────────────────────────────────
@@ -166,6 +173,10 @@ export default async function AdminTableroPage() {
   const erroresPend        = (erroresPendRes.data         ?? []) as any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const campanasPendAprob  = (campanasPendAprobRes.data   ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const marcasList         = (marcasListRes.data          ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const marcaDistriRel     = (marcaDistriRelRes.data      ?? []) as any[]
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
 
@@ -233,6 +244,54 @@ export default async function AdminTableroPage() {
       fotos:             fotasByDistri.get(dId) ?? 0,
     }))
     .sort((a, b) => b.misiones - a.misiones)
+    .slice(0, 5)
+
+  // ── Top marcas ─────────────────────────────────────────────────────────────
+
+  // campana_id → marca_id
+  const campanaToMarca = new Map<string, string>(
+    campanasAll.filter((c: { marca_id: string | null }) => c.marca_id).map((c: { id: string; marca_id: string }) => [c.id, c.marca_id])
+  )
+  // marca_id → { misiones, fotos, campanasActivasCount }
+  const misionByMarca = new Map<string, number>()
+  const fotasByMarca  = new Map<string, number>()
+
+  for (const m of misionesEsteMes) {
+    if (m.estado !== 'aprobada' || !m.campana_id) continue
+    const mId = campanaToMarca.get(m.campana_id)
+    if (mId) misionByMarca.set(mId, (misionByMarca.get(mId) ?? 0) + 1)
+  }
+  for (const f of fotosEsteMes) {
+    if (!f.campana_id) continue
+    const mId = campanaToMarca.get(f.campana_id)
+    if (mId) fotasByMarca.set(mId, (fotasByMarca.get(mId) ?? 0) + 1)
+  }
+
+  // Campañas activas por marca
+  const campanasActivasByMarca = new Map<string, number>()
+  for (const c of campanasAll) {
+    if (c.estado === 'activa' && c.marca_id) {
+      campanasActivasByMarca.set(c.marca_id, (campanasActivasByMarca.get(c.marca_id) ?? 0) + 1)
+    }
+  }
+
+  // Distribuidoras vinculadas activas por marca
+  const distrisActivasByMarca = new Map<string, number>()
+  for (const r of marcaDistriRel) {
+    if (r.marca_id) distrisActivasByMarca.set(r.marca_id, (distrisActivasByMarca.get(r.marca_id) ?? 0) + 1)
+  }
+
+  const topMarcas = marcasList
+    .map((m: { id: string; razon_social: string }) => ({
+      id:              m.id,
+      nombre:          m.razon_social ?? 'Sin nombre',
+      campanasActivas: campanasActivasByMarca.get(m.id) ?? 0,
+      misiones:        misionByMarca.get(m.id) ?? 0,
+      fotos:           fotasByMarca.get(m.id) ?? 0,
+      distrisActivas:  distrisActivasByMarca.get(m.id) ?? 0,
+    }))
+    .filter((m: { misiones: number; campanasActivas: number }) => m.misiones > 0 || m.campanasActivas > 0)
+    .sort((a: { misiones: number }, b: { misiones: number }) => b.misiones - a.misiones)
     .slice(0, 5)
 
   // Gondolero stats
@@ -602,6 +661,61 @@ export default async function AdminTableroPage() {
                       </td>
                       <td className="px-3 py-3 text-center">
                         <span className="text-sm text-gray-500">{d.fotos}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* ── BLOQUE — Top marcas ───────────────────────────────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <SeccionHeader titulo="Top marcas" sub="por actividad este mes" inline />
+            <Link href="/admin/marcas" className="text-xs text-gondo-amber-400 hover:underline flex items-center gap-0.5">
+              Ver todas <ChevronRight size={11} />
+            </Link>
+          </div>
+          {topMarcas.length === 0 ? (
+            <Vacio texto="Sin actividad de marcas este mes" />
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">Marca</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Camp.</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Misiones</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Fotos</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500">Distris</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {(topMarcas as { id: string; nombre: string; campanasActivas: number; misiones: number; fotos: number; distrisActivas: number }[]).map((m, i) => (
+                    <tr key={m.id} className="hover:bg-gray-50/50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
+                          <p className="text-sm font-medium text-gray-800 truncate max-w-[120px]">{m.nombre}</p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`text-sm font-bold ${m.campanasActivas > 0 ? 'text-indigo-500' : 'text-gray-300'}`}>
+                          {m.campanasActivas}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="text-sm font-bold text-gray-700">{m.misiones}</span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="text-sm text-gray-500">{m.fotos}</span>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`text-sm ${m.distrisActivas > 0 ? 'text-gondo-amber-400 font-semibold' : 'text-gray-300'}`}>
+                          {m.distrisActivas}
+                        </span>
                       </td>
                     </tr>
                   ))}
