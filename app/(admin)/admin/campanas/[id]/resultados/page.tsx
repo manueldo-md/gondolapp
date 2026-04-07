@@ -6,7 +6,7 @@ import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import {
   calcularPorcentaje, diasRestantes, formatearFechaHora,
 } from '@/lib/utils'
-import type { DeclaracionFoto, EstadoFoto } from '@/types'
+import type { EstadoFoto } from '@/types'
 import { CampanaPageNav } from '@/components/campanas/campana-page-nav'
 import { FotoAccionesAdmin } from '../../../fotos/foto-acciones'
 import { TabFilter } from '../tab-filter'
@@ -19,12 +19,6 @@ function adminClient() {
   )
 }
 
-const DECL_LABEL: Record<DeclaracionFoto, string> = {
-  producto_presente: 'Presente', producto_no_encontrado: 'No encontrado', solo_competencia: 'Solo competencia',
-}
-const DECL_COLOR: Record<DeclaracionFoto, string> = {
-  producto_presente: 'bg-green-100 text-green-700', producto_no_encontrado: 'bg-red-100 text-red-700', solo_competencia: 'bg-amber-100 text-amber-700',
-}
 const ESTADO_COLOR: Record<EstadoFoto, string> = {
   pendiente: 'bg-gray-100 text-gray-600', aprobada: 'bg-green-100 text-green-700', rechazada: 'bg-red-100 text-red-700', en_revision: 'bg-blue-100 text-blue-700',
 }
@@ -51,18 +45,20 @@ export default async function AdminCampanaResultadosPage({
 
   const tab = searchParams.tab ?? ''
 
+  const showGondolero = true
+
   let fotosQuery = admin
     .from('fotos')
-    .select('id, url, storage_path, declaracion, estado, precio_detectado, created_at, gondolero:profiles(nombre,alias), comercio:comercios(nombre,direccion)')
+    .select('id, url, storage_path, estado, precio_detectado, created_at, gondolero:profiles(nombre,alias), comercio:comercios(nombre,direccion)')
     .eq('campana_id', params.id)
     .order('created_at', { ascending: false })
     .limit(200)
   if (tab) fotosQuery = (fotosQuery as any).eq('estado', tab)
 
-  const [fotosData, fotosCuenta, fotosDecl, partData, bloquesData] = await Promise.all([
+  const [fotosData, fotosCuenta, precioData, partData, bloquesData] = await Promise.all([
     fotosQuery,
     admin.from('fotos').select('id, estado').eq('campana_id', params.id),
-    admin.from('fotos').select('declaracion, precio_detectado, precio_confirmado').eq('campana_id', params.id).eq('estado', 'aprobada'),
+    admin.from('fotos').select('precio_detectado, precio_confirmado, created_at, gondolero:profiles(alias), comercio:comercios(nombre, direccion)').eq('campana_id', params.id).eq('estado', 'aprobada'),
     admin.from('participaciones').select('gondolero_id', { count: 'exact', head: true }).eq('campana_id', params.id),
     (admin as any).from('bloques_foto').select('id, orden, instruccion, bloque_campos(id, tipo, pregunta, opciones, orden)').eq('campana_id', params.id).order('orden'),
   ])
@@ -85,7 +81,7 @@ export default async function AdminCampanaResultadosPage({
   // ── Respuestas del formulario ──
   const allFotoIds = ((fotosCuenta.data ?? []) as any[]).map((f: any) => f.id as string)
   const respuestasData = allFotoIds.length > 0
-    ? await (admin as any).from('foto_respuestas').select('foto_id, campo_id, valor').in('foto_id', allFotoIds).limit(20000)
+    ? await (admin as any).from('foto_respuestas').select('foto_id, campo_id, valor, foto:fotos(created_at, gondolero:profiles(alias), comercio:comercios(nombre, direccion))').in('foto_id', allFotoIds).limit(20000)
     : { data: [] }
 
   // Mapa campo_id → metadata
@@ -151,6 +147,24 @@ export default async function AdminCampanaResultadosPage({
   }
   campoStats.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
 
+  // ── Per-campo detail rows ──
+  interface RespuestaRow { valor: unknown; alias: string | null; comercioNombre: string | null; comercioDireccion: string | null; createdAt: string }
+  const campoDetallesMap = new Map<string, RespuestaRow[]>()
+  for (const r of allRespuestas) {
+    if (!camposMap.has(r.campo_id)) continue
+    const fotoData = r.foto as any
+    const alias = Array.isArray(fotoData?.gondolero) ? fotoData.gondolero[0]?.alias ?? null : fotoData?.gondolero?.alias ?? null
+    const cnom = Array.isArray(fotoData?.comercio) ? fotoData.comercio[0]?.nombre ?? null : fotoData?.comercio?.nombre ?? null
+    const cdir = Array.isArray(fotoData?.comercio) ? fotoData.comercio[0]?.direccion ?? null : fotoData?.comercio?.direccion ?? null
+    const row: RespuestaRow = { valor: r.valor, alias, comercioNombre: cnom, comercioDireccion: cdir, createdAt: fotoData?.created_at ?? '' }
+    if (!campoDetallesMap.has(r.campo_id)) campoDetallesMap.set(r.campo_id, [])
+    campoDetallesMap.get(r.campo_id)!.push(row)
+  }
+  for (const [campoId, rows] of campoDetallesMap) {
+    rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    campoDetallesMap.set(campoId, rows)
+  }
+
   function fmtValor(valor: unknown, tipo: string): string {
     if (valor === null || valor === undefined) return '—'
     if (tipo === 'binaria') return (valor === true || valor === 'true' || valor === 'Sí') ? 'Sí' : 'No'
@@ -158,14 +172,23 @@ export default async function AdminCampanaResultadosPage({
     return String(valor)
   }
 
-  const declData = (fotosDecl.data ?? []) as any[]
-  const declCounts: Record<string, number> = {}
   const preciosArr: number[] = []
-  for (const f of declData) {
-    declCounts[f.declaracion] = (declCounts[f.declaracion] ?? 0) + 1
+  for (const f of (precioData.data ?? []) as any[]) {
     const p = f.precio_confirmado ?? f.precio_detectado
     if (p != null && p > 0) preciosArr.push(p)
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const precioRows = (precioData.data ?? []).reduce((acc: { alias: string|null; comercioNombre: string|null; comercioDireccion: string|null; precio: number; createdAt: string }[], f: any) => {
+    const p = f.precio_confirmado ?? f.precio_detectado
+    if (p != null && p > 0) {
+      const alias = Array.isArray(f.gondolero) ? f.gondolero[0]?.alias ?? null : f.gondolero?.alias ?? null
+      const cnom = Array.isArray(f.comercio) ? f.comercio[0]?.nombre ?? null : f.comercio?.nombre ?? null
+      const cdir = Array.isArray(f.comercio) ? f.comercio[0]?.direccion ?? null : f.comercio?.direccion ?? null
+      acc.push({ alias, comercioNombre: cnom, comercioDireccion: cdir, precio: p, createdAt: f.created_at ?? '' })
+    }
+    return acc
+  }, []).sort((a: any, b: any) => b.createdAt.localeCompare(a.createdAt))
 
   const c = campana as any
   const progreso = calcularPorcentaje(c.comercios_relevados, c.objetivo_comercios ?? 0)
@@ -173,17 +196,10 @@ export default async function AdminCampanaResultadosPage({
   const totalFotos = Object.values(counts).reduce((a,b) => a+b, 0)
   const fotosAprobadas = counts['aprobada'] ?? 0
   const gondoleroCount = partData.count ?? 0
-  const totalDeclFotos = Object.values(declCounts).reduce((a,b) => a+b, 0)
 
   const precioMin = preciosArr.length ? Math.min(...preciosArr) : null
   const precioMax = preciosArr.length ? Math.max(...preciosArr) : null
   const precioAvg = preciosArr.length ? Math.round(preciosArr.reduce((a,b) => a+b,0) / preciosArr.length) : null
-
-  const DECLS: { key: string; label: string; color: string }[] = [
-    { key: 'producto_presente',      label: 'Presente',         color: 'bg-green-400' },
-    { key: 'producto_no_encontrado', label: 'No encontrado',    color: 'bg-red-400' },
-    { key: 'solo_competencia',       label: 'Solo competencia', color: 'bg-amber-400' },
-  ]
 
   return (
     <div>
@@ -221,30 +237,6 @@ export default async function AdminCampanaResultadosPage({
             <div className="h-full bg-[#1D9E75] rounded-full transition-all" style={{ width: `${progreso}%` }} />
           </div>
           <p className="text-xs text-gray-400 text-right">{c.comercios_relevados}/{c.objetivo_comercios} comercios ({progreso}%)</p>
-        </div>
-      )}
-
-      {/* Declaraciones */}
-      {totalDeclFotos > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">Resultados de presencia</h3>
-          <div className="space-y-3">
-            {DECLS.map(d => {
-              const n = declCounts[d.key] ?? 0
-              const pct = totalDeclFotos > 0 ? Math.round((n / totalDeclFotos) * 100) : 0
-              return (
-                <div key={d.key}>
-                  <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>{d.label}</span>
-                    <span className="font-semibold">{n} ({pct}%)</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full ${d.color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         </div>
       )}
 
@@ -297,6 +289,37 @@ export default async function AdminCampanaResultadosPage({
                     ))}
                   </ul>
                 )}
+                {(() => {
+                  const detalles = campoDetallesMap.get(stat.id) ?? []
+                  if (detalles.length === 0) return null
+                  return (
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Detalle de respuestas</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b border-gray-100">
+                              {showGondolero && <th className="text-left py-1.5 pr-3 text-gray-400 font-medium">Gondolero</th>}
+                              <th className="text-left py-1.5 pr-3 text-gray-400 font-medium">Comercio</th>
+                              <th className="text-left py-1.5 pr-3 text-gray-400 font-medium">Respuesta</th>
+                              <th className="text-left py-1.5 text-gray-400 font-medium">Fecha</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detalles.map((row, ri) => (
+                              <tr key={ri} className="border-b border-gray-50">
+                                {showGondolero && <td className="py-1.5 pr-3 text-gray-700 font-medium">{row.alias ?? '—'}</td>}
+                                <td className="py-1.5 pr-3 text-gray-600">{row.comercioNombre ?? row.comercioDireccion ?? '—'}</td>
+                                <td className="py-1.5 pr-3 text-gray-700 font-medium">{fmtValor(row.valor, stat.tipo)}</td>
+                                <td className="py-1.5 text-gray-400">{row.createdAt ? new Date(row.createdAt).toLocaleDateString('es-AR') : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             ))}
           </div>
@@ -322,6 +345,33 @@ export default async function AdminCampanaResultadosPage({
             </div>
           </div>
           <p className="text-xs text-gray-400 text-center mt-2">Basado en {preciosArr.length} fotos con precio</p>
+          {precioRows.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Precios relevados</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      {showGondolero && <th className="text-left py-1.5 pr-3 text-gray-400 font-medium">Gondolero</th>}
+                      <th className="text-left py-1.5 pr-3 text-gray-400 font-medium">Comercio</th>
+                      <th className="text-left py-1.5 pr-3 text-gray-400 font-medium">Precio</th>
+                      <th className="text-left py-1.5 text-gray-400 font-medium">Fecha</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {precioRows.map((row: any, ri: number) => (
+                      <tr key={ri} className="border-b border-gray-50">
+                        {showGondolero && <td className="py-1.5 pr-3 text-gray-700 font-medium">{row.alias ?? '—'}</td>}
+                        <td className="py-1.5 pr-3 text-gray-600">{row.comercioNombre ?? row.comercioDireccion ?? '—'}</td>
+                        <td className="py-1.5 pr-3 text-gray-700 font-bold">${row.precio}</td>
+                        <td className="py-1.5 text-gray-400">{row.createdAt ? new Date(row.createdAt).toLocaleDateString('es-AR') : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -381,14 +431,9 @@ export default async function AdminCampanaResultadosPage({
                     {f.comercio?.direccion && <p className="text-xs text-gray-400 truncate">{f.comercio.direccion}</p>}
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <User size={13} className="text-gray-400 shrink-0" />
-                    <span className="text-xs text-gray-600 truncate">{f.gondolero?.alias ?? f.gondolero?.nombre ?? 'Gondolero'}</span>
-                  </div>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ml-2 ${DECL_COLOR[f.declaracion as DeclaracionFoto]}`}>
-                    {DECL_LABEL[f.declaracion as DeclaracionFoto]}
-                  </span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <User size={13} className="text-gray-400 shrink-0" />
+                  <span className="text-xs text-gray-600 truncate">{f.gondolero?.alias ?? f.gondolero?.nombre ?? 'Gondolero'}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
                   {f.precio_detectado != null ? <span className="font-medium text-gray-600">${f.precio_detectado}</span> : <span />}

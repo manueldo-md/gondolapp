@@ -7,6 +7,15 @@ import type { DraftData } from '@/app/(marca)/marca/campanas/[id]/detalle/draft-
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
+interface CampoExistente {
+  id: string
+  tipo: string
+  pregunta: string
+  opciones: string[] | null
+  obligatorio: boolean
+  orden: number
+}
+
 interface ZonaNueva {
   id: string
   nombre: string
@@ -39,7 +48,7 @@ interface Props {
   draftBloquesGuardados: any[] | null
   zonasActuales: string[]
   zonasDisponibles: { id: string; nombre: string }[]
-  bloquesActuales: { id: string; instruccion: string; tipo_contenido: string }[]
+  bloquesActuales: { id: string; instruccion: string; tipo_contenido: string; campos?: CampoExistente[] }[]
   accentColor: 'indigo' | 'amber'
   guardarBorradorFn: (campanaId: string, data: DraftData) => Promise<void>
   republicarFn: (campanaId: string) => Promise<{ error?: string }>
@@ -323,6 +332,17 @@ export function CampanaDraftEditor({
                 <div className="min-w-0">
                   <p className="text-sm text-gray-900">{b.instruccion}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{TIPO_CONTENIDO_LABEL[b.tipo_contenido] ?? b.tipo_contenido}</p>
+                  {b.campos && b.campos.length > 0 && (
+                    <div className="mt-1.5 space-y-0.5 pl-2 border-l border-gray-100">
+                      {[...b.campos].sort((a, x) => (a.orden ?? 0) - (x.orden ?? 0)).map(campo => (
+                        <p key={campo.id} className="text-xs text-gray-400">
+                          {campo.pregunta}
+                          <span className="ml-1 text-gray-300 text-[10px]">({campo.tipo})</span>
+                          {campo.obligatorio && <span className="ml-1 text-red-300 text-[10px]">*</span>}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

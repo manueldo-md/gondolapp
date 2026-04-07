@@ -49,7 +49,7 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
       puntos_por_foto, instruccion, distri_id, marca_id, created_at, updated_at,
       tiene_draft, draft_descripcion, draft_bounty, draft_zonas, draft_bloques,
       marca:marcas ( razon_social ),
-      bloques_foto ( id, orden, instruccion, tipo_contenido ),
+      bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
       campana_zonas ( zona_id, zonas ( id, nombre ) )
     `)
     .eq('id', params.id)
@@ -188,7 +188,7 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
         draftBloquesGuardados={c.draft_bloques ?? null}
         zonasActuales={zonasActuales}
         zonasDisponibles={zonasDisponibles}
-        bloquesActuales={bloques.map((b: any) => ({ id: b.id, instruccion: b.instruccion, tipo_contenido: b.tipo_contenido }))}
+        bloquesActuales={bloques.map((b: any) => ({ id: b.id, instruccion: b.instruccion, tipo_contenido: b.tipo_contenido, campos: ((b.bloque_campos ?? []) as any[]).sort((a: any, x: any) => (a.orden ?? 0) - (x.orden ?? 0)) }))}
         accentColor="amber"
         guardarBorradorFn={guardarBorradorDistri}
         republicarFn={republicarCampanaDistri}
