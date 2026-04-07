@@ -11,6 +11,8 @@ interface FotoLightboxProps {
   containerClassName?: string
   /** Overlay content rendered on top of the thumbnail (badges, etc.) */
   children?: React.ReactNode
+  /** Additional content shown below the image in the lightbox modal (e.g. form responses) */
+  modalFooter?: React.ReactNode
 }
 
 export function FotoLightbox({
@@ -18,6 +20,7 @@ export function FotoLightbox({
   alt,
   containerClassName = 'relative w-full h-52 shrink-0',
   children,
+  modalFooter,
 }: FotoLightboxProps) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
@@ -81,8 +84,13 @@ export function FotoLightbox({
             <img
               src={src!}
               alt={alt}
-              className="w-full h-auto max-h-[90vh] object-contain rounded-lg"
+              className={`w-full h-auto object-contain rounded-lg ${modalFooter ? 'max-h-[70vh]' : 'max-h-[90vh]'}`}
             />
+            {modalFooter && (
+              <div className="mt-3 bg-black/40 backdrop-blur-sm rounded-xl p-4 text-white">
+                {modalFooter}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -22,7 +22,6 @@ export interface RegistrarFotoParams {
   url: string
   lat: number
   lng: number
-  declaracion: 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
   precioConfirmado: number | null
   timestampDispositivo: string
   deviceId: string
@@ -68,7 +67,6 @@ export async function registrarFoto(params: RegistrarFotoParams) {
       lng:                   params.lng,
       timestamp_dispositivo: params.timestampDispositivo,
       device_id:             params.deviceId,
-      declaracion:           params.declaracion,
       precio_confirmado:     params.precioConfirmado,
       blur_score:            params.blurScore ?? null,
       estado:                'pendiente',
@@ -146,7 +144,6 @@ export interface FotoMisionInput {
   bloqueId: string
   storagePath: string
   url: string
-  declaracion: 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia'
   precioConfirmado: number | null
   timestampDispositivo: string
   blurScore: number | null
@@ -253,7 +250,6 @@ export async function registrarMision(params: RegistrarMisionParams) {
         lng:                   params.lng,
         timestamp_dispositivo: foto.timestampDispositivo,
         device_id:             params.deviceId,
-        declaracion:           foto.declaracion,
         precio_confirmado:     foto.precioConfirmado,
         blur_score:            foto.blurScore ?? null,
         estado:                'pendiente',

@@ -65,11 +65,13 @@ export default async function DistriCampanaResultadosPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (tab) fotosQuery = (fotosQuery as any).eq('estado', tab)
 
-  const [fotosData, fotosCuenta, fotosDecl, partData] = await Promise.all([
+  const [fotosData, fotosCuenta, fotosDecl, partData, bloquesData] = await Promise.all([
     fotosQuery,
-    admin.from('fotos').select('estado').eq('campana_id', params.id),
+    admin.from('fotos').select('id, estado').eq('campana_id', params.id),
     admin.from('fotos').select('declaracion, precio_detectado, precio_confirmado').eq('campana_id', params.id).eq('estado', 'aprobada'),
     admin.from('participaciones').select('gondolero_id', { count: 'exact', head: true }).eq('campana_id', params.id),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any).from('bloques_foto').select('id, orden, instruccion, bloque_campos(id, tipo, pregunta, opciones, orden)').eq('campana_id', params.id).order('orden'),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,6 +90,69 @@ export default async function DistriCampanaResultadosPage({
   const counts = ((fotosCuenta.data ?? []) as any[]).reduce((acc: Record<string,number>, f: any) => {
     acc[f.estado] = (acc[f.estado] ?? 0) + 1; return acc
   }, {} as Record<string,number>)
+
+  // ── Respuestas del formulario ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allFotoIds = ((fotosCuenta.data ?? []) as any[]).map((f: any) => f.id as string)
+  const respuestasData = allFotoIds.length > 0
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? await (admin as any).from('foto_respuestas').select('foto_id, campo_id, valor').in('foto_id', allFotoIds).limit(20000)
+    : { data: [] }
+
+  const camposMap = new Map<string, { id: string; tipo: string; pregunta: string; opciones: string[] | null; orden: number }>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const bloque of ((bloquesData.data ?? []) as any[])) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const campo of (bloque.bloque_campos ?? [])) camposMap.set(campo.id, campo)
+  }
+
+  const fotoRespuestasMap = new Map<string, { campo_id: string; valor: unknown }[]>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allRespuestas = ((respuestasData.data ?? []) as any[])
+  for (const r of allRespuestas) {
+    if (!fotoRespuestasMap.has(r.foto_id)) fotoRespuestasMap.set(r.foto_id, [])
+    fotoRespuestasMap.get(r.foto_id)!.push({ campo_id: r.campo_id, valor: r.valor })
+  }
+
+  const campoValoresMap = new Map<string, unknown[]>()
+  for (const r of allRespuestas) {
+    if (!camposMap.has(r.campo_id)) continue
+    if (!campoValoresMap.has(r.campo_id)) campoValoresMap.set(r.campo_id, [])
+    campoValoresMap.get(r.campo_id)!.push(r.valor)
+  }
+
+  interface CampoStats { id: string; tipo: string; pregunta: string; opciones: string[] | null; orden: number; total: number; siCount?: number; noCount?: number; opcionCounts?: Record<string, number>; numAvg?: number; numMin?: number; numMax?: number; textUltimas?: string[] }
+  const campoStats: CampoStats[] = []
+  for (const [campoId, valores] of campoValoresMap) {
+    const campo = camposMap.get(campoId)!
+    const stat: CampoStats = { ...campo, total: valores.length }
+    if (campo.tipo === 'binaria') {
+      let si = 0, no = 0
+      for (const v of valores) { (v === true || v === 'true' || v === 'Sí') ? si++ : no++ }
+      stat.siCount = si; stat.noCount = no
+    } else if (campo.tipo === 'seleccion_unica') {
+      const cnts: Record<string, number> = {}
+      for (const v of valores) { const s = String(v); cnts[s] = (cnts[s] ?? 0) + 1 }
+      stat.opcionCounts = cnts
+    } else if (campo.tipo === 'seleccion_multiple') {
+      const cnts: Record<string, number> = {}
+      for (const v of valores) { const arr = Array.isArray(v) ? v : []; for (const item of arr) { const s = String(item); cnts[s] = (cnts[s] ?? 0) + 1 } }
+      stat.opcionCounts = cnts
+    } else if (campo.tipo === 'numero') {
+      const nums = valores.map(v => Number(v)).filter(n => !isNaN(n))
+      if (nums.length > 0) { stat.numAvg = Math.round(nums.reduce((a, b) => a + b, 0) / nums.length * 10) / 10; stat.numMin = Math.min(...nums); stat.numMax = Math.max(...nums) }
+    } else if (campo.tipo === 'texto') {
+      stat.textUltimas = valores.slice(-10).map(v => String(v)).filter(s => s.trim())
+    }
+    campoStats.push(stat)
+  }
+  campoStats.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+  function fmtValor(valor: unknown, tipo: string): string {
+    if (valor === null || valor === undefined) return '—'
+    if (tipo === 'binaria') return (valor === true || valor === 'true' || valor === 'Sí') ? 'Sí' : 'No'
+    if (tipo === 'seleccion_multiple' && Array.isArray(valor)) return valor.join(', ')
+    return String(valor)
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const declData = (fotosDecl.data ?? []) as any[]
@@ -181,6 +246,47 @@ export default async function DistriCampanaResultadosPage({
         </div>
       )}
 
+      {/* Respuestas del formulario */}
+      {campoStats.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">Respuestas del formulario</h3>
+          <div className="space-y-6">
+            {campoStats.map(stat => (
+              <div key={stat.id}>
+                <p className="text-sm font-medium text-gray-800 mb-1">{stat.pregunta}</p>
+                <p className="text-xs text-gray-400 mb-2">{stat.total} respuesta{stat.total !== 1 ? 's' : ''}</p>
+                {stat.tipo === 'binaria' && (
+                  <div className="space-y-2">
+                    {[{ label: 'Sí', n: stat.siCount ?? 0, color: 'bg-green-400' }, { label: 'No', n: stat.noCount ?? 0, color: 'bg-red-400' }].map(opt => {
+                      const pct = stat.total > 0 ? Math.round((opt.n / stat.total) * 100) : 0
+                      return (<div key={opt.label}><div className="flex justify-between text-xs text-gray-600 mb-1"><span>{opt.label}</span><span className="font-semibold">{opt.n} ({pct}%)</span></div><div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full ${opt.color} rounded-full`} style={{ width: `${pct}%` }} /></div></div>)
+                    })}
+                  </div>
+                )}
+                {(stat.tipo === 'seleccion_unica' || stat.tipo === 'seleccion_multiple') && stat.opcionCounts && (
+                  <div className="space-y-2">
+                    {Object.entries(stat.opcionCounts).sort((a, b) => b[1] - a[1]).map(([op, n]) => {
+                      const pct = stat.total > 0 ? Math.round((n / stat.total) * 100) : 0
+                      return (<div key={op}><div className="flex justify-between text-xs text-gray-600 mb-1"><span>{op}</span><span className="font-semibold">{n} ({pct}%)</span></div><div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-blue-400 rounded-full" style={{ width: `${pct}%` }} /></div></div>)
+                    })}
+                  </div>
+                )}
+                {stat.tipo === 'numero' && stat.numAvg !== undefined && (
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-green-50 rounded-xl p-2"><p className="text-base font-bold text-green-700">{stat.numMin}</p><p className="text-xs text-gray-400">Mínimo</p></div>
+                    <div className="bg-blue-50 rounded-xl p-2"><p className="text-base font-bold text-blue-700">{stat.numAvg}</p><p className="text-xs text-gray-400">Promedio</p></div>
+                    <div className="bg-red-50 rounded-xl p-2"><p className="text-base font-bold text-red-700">{stat.numMax}</p><p className="text-xs text-gray-400">Máximo</p></div>
+                  </div>
+                )}
+                {stat.tipo === 'texto' && stat.textUltimas && stat.textUltimas.length > 0 && (
+                  <ul className="space-y-1">{stat.textUltimas.map((t, i) => (<li key={i} className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2">&ldquo;{t}&rdquo;</li>))}</ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Precios (solo si tipo=precio) */}
       {c.tipo === 'precio' && precioMin !== null && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
@@ -227,6 +333,25 @@ export default async function DistriCampanaResultadosPage({
                 src={f.signedUrl}
                 alt={`Foto de ${f.comercio?.nombre ?? 'comercio'}`}
                 containerClassName="relative w-full h-52 shrink-0"
+                modalFooter={
+                  fotoRespuestasMap.has(f.id) && camposMap.size > 0
+                    ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-white/80 uppercase tracking-wide mb-2">Respuestas del formulario</p>
+                        {fotoRespuestasMap.get(f.id)!.map(r => {
+                          const campo = camposMap.get(r.campo_id)
+                          if (!campo) return null
+                          return (
+                            <div key={r.campo_id} className="flex justify-between gap-2">
+                              <span className="text-xs text-white/70 shrink-0">{campo.pregunta}</span>
+                              <span className="text-xs font-medium text-white text-right">{fmtValor(r.valor, campo.tipo)}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                    : undefined
+                }
               >
                 <span className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_COLOR[f.estado as EstadoFoto]}`}>
                   {ESTADO_LABEL[f.estado as EstadoFoto]}

@@ -194,6 +194,59 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
   }
 }
 
+// Registra un comercio nuevo en el contexto de una captura regular (no campaña COMERCIOS).
+// No requiere participación activa en la campaña, no crea foto de fachada en el contexto de la campaña.
+export async function crearComercioParaCaptura(params: {
+  nombre: string
+  tipo: string
+  direccion: string | null
+  lat: number
+  lng: number
+  fachadaStoragePath?: string | null
+  fachadaUrl?: string | null
+}): Promise<{ comercioId: string } | { error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  // Obtener zona_id (primera disponible)
+  const { data: zona } = await admin.from('zonas').select('id').limit(1).maybeSingle()
+  const zonaId: string | null = zona?.id ?? null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const insertData: Record<string, unknown> = {
+    nombre:         params.nombre,
+    tipo:           params.tipo,
+    direccion:      params.direccion,
+    lat:            params.lat,
+    lng:            params.lng,
+    zona_id:        zonaId,
+    registrado_por: user.id,
+    validado:       false,
+    estado:         'pendiente_validacion',
+  }
+  if (params.fachadaUrl) insertData.foto_fachada_url = params.fachadaUrl
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: comercio, error } = await (admin as any)
+    .from('comercios')
+    .insert(insertData)
+    .select('id')
+    .single() as { data: { id: string } | null; error: { message: string } | null }
+
+  if (error || !comercio) {
+    return { error: 'No se pudo guardar el comercio: ' + (error?.message ?? 'error desconocido') }
+  }
+
+  return { comercioId: comercio.id }
+}
+
 // Sube una foto de fachada al bucket 'fotos-gondola' bajo la ruta fachadas/{campanaId}/{timestamp}.jpg
 export async function subirFotoFachada(formData: FormData): Promise<{ url: string; path: string }> {
   const supabase = await createClient()
