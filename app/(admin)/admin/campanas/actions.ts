@@ -129,3 +129,27 @@ export async function rechazarCampanaPendiente(campanaId: string, motivo?: strin
 
   revalidatePath('/admin/campanas')
 }
+
+export async function pedirCambiosCampanaPendiente(campanaId: string, motivo?: string) {
+  const admin = await getAdmin()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campana } = await (admin as any)
+    .from('campanas')
+    .select('nombre, marca_id')
+    .eq('id', campanaId)
+    .single()
+
+  await admin.from('campanas').update({ estado: 'pendiente_cambios', motivo_rechazo: motivo ?? null }).eq('id', campanaId)
+
+  if (campana?.marca_id) {
+    await crearNotificacionMarca(campana.marca_id, {
+      tipo:        'cambios_solicitados',
+      titulo:      'Se solicitaron cambios en tu campaña',
+      mensaje:     motivo ? `"${campana.nombre}": ${motivo}` : `"${campana.nombre}" requiere modificaciones antes de ser aprobada.`,
+      campanaId:   campanaId,
+      linkDestino: `/marca/campanas/${campanaId}/detalle`,
+    })
+  }
+
+  revalidatePath('/admin/campanas')
+}

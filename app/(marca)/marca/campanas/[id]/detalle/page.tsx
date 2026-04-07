@@ -14,6 +14,7 @@ import {
   republicarCampanaMarca,
   descartarCambiosMarca,
 } from './draft-actions'
+import { ReenviarBtn } from './reenviar-btn'
 
 function adminClient() {
   return createSupabaseClient(
@@ -176,6 +177,23 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
             <div>
               <h4 className="font-semibold text-red-800 mb-1">Campaña rechazada</h4>
               <p className="text-sm text-red-700">{c.motivo_rechazo}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cambios solicitados */}
+      {c.estado === 'pendiente_cambios' && (
+        <div className="bg-orange-50 rounded-xl border border-orange-200 p-5 mb-5">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={18} className="text-orange-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-orange-800 mb-1">Se solicitaron cambios</h4>
+              {c.motivo_rechazo && (
+                <p className="text-sm text-orange-700 mb-3">{c.motivo_rechazo}</p>
+              )}
+              <p className="text-xs text-orange-600 mb-3">Realizá los ajustes necesarios y luego reenvía la campaña para revisión.</p>
+              <ReenviarBtn campanaId={params.id} />
             </div>
           </div>
         </div>

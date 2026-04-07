@@ -3,6 +3,7 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import type { CampoBloque } from '@/components/shared/campos-bloque-builder'
+import { crearNotificacionAdmin } from '@/lib/notificaciones'
 
 function admin() {
   return createAdminClient(
@@ -101,6 +102,35 @@ export async function republicarCampanaMarca(campanaId: string): Promise<{ error
       }
     }
   }
+
+  revalidatePath(`/marca/campanas/${campanaId}/detalle`)
+  return {}
+}
+
+export async function reenviarParaRevision(campanaId: string): Promise<{ error?: string }> {
+  const { data: c } = await admin()
+    .from('campanas')
+    .select('nombre, estado')
+    .eq('id', campanaId)
+    .single()
+
+  if (!c) return { error: 'Campaña no encontrada' }
+  if (c.estado !== 'pendiente_cambios' && c.estado !== 'borrador') {
+    return { error: 'La campaña no puede ser reenviada en su estado actual' }
+  }
+
+  await admin()
+    .from('campanas')
+    .update({ estado: 'pendiente_aprobacion', motivo_rechazo: null })
+    .eq('id', campanaId)
+
+  crearNotificacionAdmin({
+    tipo:        'admin_campana_pendiente',
+    titulo:      'Campaña reenviada para revisión',
+    mensaje:     `"${c.nombre}" fue corregida y está pendiente de aprobación.`,
+    campanaId:   campanaId,
+    linkDestino: `/admin/campanas`,
+  }).catch(() => { /* no bloquear el flujo */ })
 
   revalidatePath(`/marca/campanas/${campanaId}/detalle`)
   return {}

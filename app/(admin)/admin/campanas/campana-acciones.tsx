@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
-import { pausarCampana, cerrarCampana, activarCampana, aprobarCampanaPendiente, rechazarCampanaPendiente } from './actions'
+import { pausarCampana, cerrarCampana, activarCampana, aprobarCampanaPendiente, rechazarCampanaPendiente, pedirCambiosCampanaPendiente } from './actions'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
 
 export function CampanaAccionesAdmin({
@@ -14,6 +14,7 @@ export function CampanaAccionesAdmin({
 }) {
   const [isPending, startTransition] = useTransition()
   const [rechazando, setRechazando] = useState(false)
+  const [pidiendo, setPidiendo] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [confirmCierre, setConfirmCierre] = useState(false)
 
@@ -21,6 +22,14 @@ export function CampanaAccionesAdmin({
     startTransition(async () => {
       await rechazarCampanaPendiente(campanaId, motivo.trim() || undefined)
       setRechazando(false)
+      setMotivo('')
+    })
+  }
+
+  function handlePedirCambios() {
+    startTransition(async () => {
+      await pedirCambiosCampanaPendiente(campanaId, motivo.trim() || undefined)
+      setPidiendo(false)
       setMotivo('')
     })
   }
@@ -62,6 +71,36 @@ export function CampanaAccionesAdmin({
     )
   }
 
+  if (pidiendo) {
+    return (
+      <div className="space-y-1.5 min-w-[220px]">
+        <textarea
+          value={motivo}
+          onChange={e => setMotivo(e.target.value)}
+          placeholder="Qué debe modificar la marca..."
+          rows={2}
+          className="w-full px-2 py-1.5 text-xs border border-orange-200 rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-orange-400 bg-white"
+        />
+        <div className="flex gap-1.5">
+          <button
+            disabled={isPending}
+            onClick={handlePedirCambios}
+            className="px-2.5 py-1 bg-orange-500 text-white text-xs font-semibold rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+          >
+            {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Pedir cambios'}
+          </button>
+          <button
+            disabled={isPending}
+            onClick={() => { setPidiendo(false); setMotivo('') }}
+            className="px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="flex gap-1.5 flex-wrap">
@@ -73,6 +112,13 @@ export function CampanaAccionesAdmin({
               className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
             >
               {isPending ? <Loader2 size={11} className="animate-spin" /> : 'Aprobar'}
+            </button>
+            <button
+              disabled={isPending}
+              onClick={() => setPidiendo(true)}
+              className="px-2.5 py-1 bg-orange-50 text-orange-700 text-xs font-semibold rounded-lg hover:bg-orange-100 transition-colors disabled:opacity-50"
+            >
+              Pedir cambios
             </button>
             <button
               disabled={isPending}

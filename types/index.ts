@@ -23,6 +23,7 @@ export type EstadoCampana =
   | 'pausada'
   | 'cerrada'
   | 'cancelada'
+  | 'pendiente_cambios'
 
 export type EstadoFoto =
   | 'pendiente'

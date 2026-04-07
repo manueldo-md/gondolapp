@@ -178,6 +178,7 @@ export function labelEstadoCampana(estado: EstadoCampana): string {
     pausada: 'Pausada',
     cerrada: 'Cerrada',
     cancelada: 'Cancelada',
+    pendiente_cambios: 'Cambios solicitados',
   }
   return labels[estado]
 }
@@ -221,6 +222,7 @@ export function colorEstadoCampana(estado: EstadoCampana): string {
     pausada: 'bg-amber-100 text-amber-800 border-amber-200',
     cerrada: 'bg-gray-100 text-gray-600 border-gray-200',
     cancelada: 'bg-red-100 text-red-800 border-red-200',
+    pendiente_cambios: 'bg-orange-100 text-orange-800 border-orange-200',
   }
   return colores[estado]
 }

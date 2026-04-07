@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
-import { aprobarCampana, rechazarCampana } from './actions'
+import { CheckCircle2, XCircle, MessageSquare, Loader2 } from 'lucide-react'
+import { aprobarCampana, rechazarCampana, pedirCambiosCampana } from './actions'
 
 export function AprobacionBtns({ campanaId }: { campanaId: string }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [rechazando, setRechazando] = useState(false)
+  const [pidiendo, setPidiendo] = useState(false)
   const [motivo, setMotivo] = useState('')
 
   function handleAprobar() {
@@ -25,6 +26,21 @@ export function AprobacionBtns({ campanaId }: { campanaId: string }) {
       if (result?.error) setError(result.error)
       else setRechazando(false)
     })
+  }
+
+  function handleConfirmarCambios() {
+    setError(null)
+    startTransition(async () => {
+      const result = await pedirCambiosCampana(campanaId, motivo.trim() || undefined)
+      if (result?.error) setError(result.error)
+      else setPidiendo(false)
+    })
+  }
+
+  function cancelar() {
+    setRechazando(false)
+    setPidiendo(false)
+    setMotivo('')
   }
 
   return (
@@ -51,17 +67,36 @@ export function AprobacionBtns({ campanaId }: { campanaId: string }) {
               {pending ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
               Confirmar rechazo
             </button>
+            <button disabled={pending} onClick={cancelar} className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : pidiendo ? (
+        <div className="space-y-2">
+          <textarea
+            value={motivo}
+            onChange={e => setMotivo(e.target.value)}
+            placeholder="Qué debe modificar la marca..."
+            rows={2}
+            className="w-full px-2.5 py-2 text-xs border border-orange-200 rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400 bg-white"
+          />
+          <div className="flex gap-2">
             <button
               disabled={pending}
-              onClick={() => { setRechazando(false); setMotivo('') }}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
+              onClick={handleConfirmarCambios}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white text-xs font-semibold rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
             >
+              {pending ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
+              Pedir cambios
+            </button>
+            <button disabled={pending} onClick={cancelar} className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors">
               Cancelar
             </button>
           </div>
         </div>
       ) : (
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             disabled={pending}
             onClick={handleAprobar}
@@ -69,6 +104,14 @@ export function AprobacionBtns({ campanaId }: { campanaId: string }) {
           >
             {pending ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={13} />}
             Aprobar campaña
+          </button>
+          <button
+            disabled={pending}
+            onClick={() => setPidiendo(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-orange-200 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-50 transition-colors disabled:opacity-50"
+          >
+            <MessageSquare size={13} />
+            Pedir cambios
           </button>
           <button
             disabled={pending}
