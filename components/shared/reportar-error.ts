@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { crearNotificacionAdmin } from '@/lib/notificaciones'
 
 export async function reportarError(params: {
   url: string
@@ -34,6 +35,14 @@ export async function reportarError(params: {
       error_tecnico: params.errorTecnico ?? null,
       contexto:      params.contexto ?? null,
     })
+
+    // Notificar al admin (no bloqueante)
+    crearNotificacionAdmin({
+      tipo:        'admin_error_reportado',
+      titulo:      'Error reportado por usuario',
+      mensaje:     `${profile?.tipo_actor ?? 'Usuario'}: ${params.descripcion.slice(0, 100)}`,
+      linkDestino: '/admin/errores',
+    }).catch(() => { /* no bloquear el flujo */ })
 
     return { ok: true }
   } catch {

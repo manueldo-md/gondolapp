@@ -5,6 +5,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import type { TipoComercio } from '@/types'
+import { crearNotificacionAdmin } from '@/lib/notificaciones'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reverse geocoding: resuelve la localidad de la DB a partir de coordenadas GPS
@@ -162,6 +163,14 @@ export async function crearComercio(formData: FormData) {
       // No bloquear el flujo si la foto falla
     }
   }
+
+  // Notificar al admin que hay un nuevo comercio pendiente de validación (no bloqueante)
+  crearNotificacionAdmin({
+    tipo:        'admin_comercio_pendiente',
+    titulo:      'Nuevo comercio pendiente de validación',
+    mensaje:     `"${nombre}" registrado por un gondolero. Tipo: ${tipo}.`,
+    linkDestino: '/admin/comercios',
+  }).catch(() => { /* no bloquear el flujo */ })
 
   // Redirigir de vuelta a captura con el nuevo comercio pre-seleccionado
   const params = new URLSearchParams()
