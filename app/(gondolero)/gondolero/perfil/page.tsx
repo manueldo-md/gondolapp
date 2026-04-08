@@ -95,15 +95,21 @@ export default async function PerfilPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: repoSols } = await (admin as any)
         .from('fixer_repo_solicitudes')
-        .select('id, repositora_id, repositora:repositoras!repositora_id(razon_social)')
+        .select('id, repositora_id')
         .eq('fixer_id', user.id)
         .eq('estado', 'pendiente')
         .order('created_at', { ascending: false })
-      for (const s of repoSols ?? []) {
-        const rn = Array.isArray(s.repositora)
-          ? (s.repositora as { razon_social: string }[])[0]?.razon_social
-          : (s.repositora as { razon_social: string } | null)?.razon_social
-        repoInvitacionesPendientes.push({ id: s.id, repo_id: s.repositora_id, repo_nombre: rn ?? 'Repositora' })
+      if (repoSols && repoSols.length > 0) {
+        const repoIds = repoSols.map((s: { repositora_id: string }) => s.repositora_id)
+        const { data: reposData } = await (admin as any)
+          .from('repositoras')
+          .select('id, razon_social')
+          .in('id', repoIds)
+        const repoMap: Record<string, string> = {}
+        for (const r of reposData ?? []) repoMap[r.id] = r.razon_social
+        for (const s of repoSols) {
+          repoInvitacionesPendientes.push({ id: s.id, repo_id: s.repositora_id, repo_nombre: repoMap[s.repositora_id] ?? 'Repositora' })
+        }
       }
     } catch { /* ignore */ }
 

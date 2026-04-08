@@ -51,15 +51,24 @@ export async function vincularPorCodigo(
 
   const admin = adminClient()
 
-  // Buscar gondolero o fixer por código
-  const { data: gondolero } = await admin
+  // Buscar el perfil por código — primero sin filtro de tipo para dar mensajes útiles
+  const { data: perfil } = await admin
     .from('profiles')
     .select('id, alias, nombre, nivel, tipo_actor')
     .eq('codigo_gondolero', codigoGondolero.toUpperCase())
-    .in('tipo_actor', ['gondolero', 'fixer'])
     .maybeSingle()
 
-  if (!gondolero) return { error: 'Código no encontrado. Verificá que sea correcto.' }
+  if (!perfil) return { error: 'Código no encontrado. Verificá que sea correcto.' }
+
+  if (perfil.tipo_actor === 'fixer') {
+    return { error: 'Este código pertenece a un Fixer. Para vincularlo andá a la sección Fixers de tu panel.' }
+  }
+
+  if (perfil.tipo_actor !== 'gondolero') {
+    return { error: 'Código no encontrado. Verificá que sea correcto.' }
+  }
+
+  const gondolero = perfil
 
   // Verificar si ya existe una solicitud aprobada para este par gondolero+distri
   const { data: solicitudExistente } = await admin
@@ -70,8 +79,7 @@ export async function vincularPorCodigo(
     .maybeSingle()
 
   if (solicitudExistente?.estado === 'aprobada') {
-    const label = gondolero.tipo_actor === 'fixer' ? 'fixer' : 'gondolero'
-    return { error: `Este ${label} ya está vinculado a tu distribuidora.` }
+    return { error: 'Este gondolero ya está vinculado a tu distribuidora.' }
   }
 
   // Si hay solicitud rechazada, terminada o pendiente → se permite reenviar (upsert)

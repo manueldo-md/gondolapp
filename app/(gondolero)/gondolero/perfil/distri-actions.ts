@@ -120,6 +120,7 @@ export async function aceptarVinculacionRepo(
   await admin.from('profiles').update({ repositora_id: repoId }).eq('id', fixerId)
 
   revalidatePath('/gondolero/perfil')
+  revalidatePath('/repositora/fixers')
   return {}
 }
 

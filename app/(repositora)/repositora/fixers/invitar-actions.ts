@@ -51,14 +51,23 @@ export async function buscarFixerPorCodigo(
 
   const admin = adminClient()
 
-  const { data: fixer } = await admin
+  const { data: perfil } = await admin
     .from('profiles')
-    .select('id, alias, nombre')
+    .select('id, alias, nombre, tipo_actor')
     .eq('codigo_gondolero', codigo.toUpperCase())
-    .eq('tipo_actor', 'fixer')
     .maybeSingle()
 
-  if (!fixer) return { error: 'Código no encontrado. Verificá que sea correcto.' }
+  if (!perfil) return { error: 'Código no encontrado. Verificá que sea correcto.' }
+
+  if (perfil.tipo_actor === 'gondolero') {
+    return { error: 'Este código pertenece a un Gondolero. Los fixers tienen códigos propios.' }
+  }
+
+  if (perfil.tipo_actor !== 'fixer') {
+    return { error: 'Código no encontrado. Verificá que sea correcto.' }
+  }
+
+  const fixer = perfil
 
   // Verificar si ya existe vínculo aprobado
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
