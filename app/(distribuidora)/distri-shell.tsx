@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Images, Users, Store, Megaphone, LogOut, UserCog, LayoutDashboard, Bell, Tag } from 'lucide-react'
+import { Images, Users, Store, Megaphone, LogOut, UserCog, LayoutDashboard, Bell, Tag, Wrench } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { NotifBell } from '@/components/notificaciones/notif-bell'
 
@@ -11,6 +11,7 @@ const NAV = [
   { href: '/distribuidora/gondolas',        label: 'Gondolas',             icon: Images          },
   { href: '/distribuidora/campanas',        label: 'Campanas',             icon: Megaphone       },
   { href: '/distribuidora/gondoleros',      label: 'Gondoleros',           icon: Users           },
+  { href: '/distribuidora/fixers',          label: 'Fixers',               icon: Wrench          },
   { href: '/distribuidora/comercios',       label: 'Comercios',            icon: Store           },
   { href: '/distribuidora/comercios/pendientes', label: 'Comercios pendientes', icon: Store      },
   { href: '/distribuidora/alertas',         label: 'Alertas',              icon: Bell            },
@@ -28,6 +29,7 @@ export function DistriShell({
   campanasPendientes = 0,
   comerciosPendientes = 0,
   unreadNotifs = 0,
+  fixersSolicitudesPendientes = 0,
 }: {
   children: React.ReactNode
   empresa: string
@@ -37,6 +39,7 @@ export function DistriShell({
   campanasPendientes?: number
   comerciosPendientes?: number
   unreadNotifs?: number
+  fixersSolicitudesPendientes?: number
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -77,6 +80,7 @@ export function DistriShell({
             const activo = pathname.startsWith(href)
             const esAlertas = href === '/distribuidora/alertas'
             const esGondoleros = href === '/distribuidora/gondoleros'
+            const esFixers = href === '/distribuidora/fixers'
             const esCampanas = href === '/distribuidora/campanas'
             const esComerciosPendientes = href === '/distribuidora/comercios/pendientes'
             return (
@@ -99,6 +103,13 @@ export function DistriShell({
                     activo ? 'bg-gondo-amber-400/20 text-gondo-amber-400' : 'bg-amber-100 text-amber-700'
                   }`}>
                     {solicitudesPendientes}
+                  </span>
+                )}
+                {esFixers && fixersSolicitudesPendientes > 0 && (
+                  <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                    activo ? 'bg-gondo-amber-400/20 text-gondo-amber-400' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {fixersSolicitudesPendientes}
                   </span>
                 )}
                 {esCampanas && campanasPendientes > 0 && (

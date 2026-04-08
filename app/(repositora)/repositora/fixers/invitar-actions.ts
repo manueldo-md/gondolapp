@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { randomUUID } from 'crypto'
 
 function adminClient() {
   return createAdminClient(
@@ -11,6 +12,33 @@ function adminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+}
+
+export async function generarLinkInvitacionFixer(
+  repoId: string,
+  repoNombre: string
+): Promise<{ link?: string; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+  const token = randomUUID().replace(/-/g, '').substring(0, 24)
+  const expiraAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (admin as any).from('fixer_invitacion_tokens').insert({
+    token,
+    tipo: 'repositora',
+    actor_id: repoId,
+    expira_at: expiraAt,
+  })
+
+  if (error) return { error: 'No se pudo generar el link. Intentá de nuevo.' }
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp-delta.vercel.app'
+  const link = `${baseUrl}/fixer-vinculacion?token=${token}`
+  return { link }
 }
 
 export async function buscarFixerPorCodigo(
@@ -124,6 +152,56 @@ export async function rechazarSolicitudFixer(
     .eq('id', solicitudId)
 
   if (error) return { error: error.message }
+
+  revalidatePath('/repositora/fixers')
+  return {}
+}
+
+export async function desvincularFixer(
+  fixerId: string,
+  repoId: string,
+  repoNombre: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+  const now = new Date().toISOString()
+
+  const [solRes, profileRes] = await Promise.all([
+    // Marcar solicitud como terminada
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
+      .from('fixer_repo_solicitudes')
+      .update({ estado: 'terminada', updated_at: now })
+      .eq('fixer_id', fixerId)
+      .eq('repositora_id', repoId)
+      .eq('estado', 'aprobada'),
+
+    // Limpiar repositora_id del profile si apunta a esta repositora
+    admin
+      .from('profiles')
+      .update({ repositora_id: null })
+      .eq('id', fixerId)
+      .eq('repositora_id', repoId),
+  ])
+
+  if (solRes.error) return { error: 'No se pudo desvincular: ' + solRes.error.message }
+  if (profileRes.error) return { error: 'No se pudo actualizar el perfil: ' + profileRes.error.message }
+
+  // Notificación al fixer
+  try {
+    await admin.from('notificaciones').insert({
+      gondolero_id: fixerId,
+      actor_id:     fixerId,
+      actor_tipo:   'fixer',
+      tipo:         'desvinculacion_repositora',
+      titulo:       'Fuiste desvinculado',
+      mensaje:      `Tu relación con ${repoNombre} fue terminada.`,
+      leida:        false,
+    })
+  } catch { /* ignorar si la notificación falla */ }
 
   revalidatePath('/repositora/fixers')
   return {}
