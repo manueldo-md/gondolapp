@@ -28,6 +28,18 @@ interface DistriFixerInvitacion {
   distri_nombre: string
 }
 
+interface RepoActiva {
+  solicitudId: string
+  repo_id: string
+  repo_nombre: string
+}
+
+interface DistriFixerActiva {
+  solicitudId: string
+  distri_id: string
+  distri_nombre: string
+}
+
 interface DistriSectionProps {
   distrisActivas: DistriActiva[]
   solicitudPendiente: { distri_id: string; distri_nombre: string } | null
@@ -35,9 +47,12 @@ interface DistriSectionProps {
   gondoleroId: string
   repoInvitacionesPendientes?: RepoInvitacion[]
   distriFixerInvitacionesPendientes?: DistriFixerInvitacion[]
+  reposActivas?: RepoActiva[]
+  distriFixerActivas?: DistriFixerActiva[]
+  esFixer?: boolean
 }
 
-export function DistriSection({ distrisActivas: initialDistrisActivas, solicitudPendiente, invitacionesPendientes: initialInvitaciones, gondoleroId, repoInvitacionesPendientes: initialRepoInvitaciones = [], distriFixerInvitacionesPendientes: initialDistriFixerInvitaciones = [] }: DistriSectionProps) {
+export function DistriSection({ distrisActivas: initialDistrisActivas, solicitudPendiente, invitacionesPendientes: initialInvitaciones, gondoleroId, repoInvitacionesPendientes: initialRepoInvitaciones = [], distriFixerInvitacionesPendientes: initialDistriFixerInvitaciones = [], reposActivas: initialReposActivas = [], distriFixerActivas: initialDistriFixerActivas = [], esFixer = false }: DistriSectionProps) {
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [confirmDesvincular, setConfirmDesvincular] = useState<string | null>(null) // distri_id confirmando
@@ -46,6 +61,8 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
   const [procesandoId, setProcesandoId] = useState<string | null>(null)
   const [repoInvitaciones, setRepoInvitaciones] = useState<RepoInvitacion[]>(initialRepoInvitaciones)
   const [distriFixerInvitaciones, setDistriFixerInvitaciones] = useState<DistriFixerInvitacion[]>(initialDistriFixerInvitaciones)
+  const [reposActivas, setReposActivas] = useState<RepoActiva[]>(initialReposActivas)
+  const [distriFixerActivas, setDistriFixerActivas] = useState<DistriFixerActiva[]>(initialDistriFixerActivas)
 
   const showFeedback = (ok: boolean, msg: string) => {
     setFeedback({ ok, msg })
@@ -105,6 +122,7 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
         showFeedback(false, res.error)
       } else {
         setRepoInvitaciones(prev => prev.filter(i => i.id !== inv.id))
+        setReposActivas(prev => [...prev, { solicitudId: inv.id, repo_id: inv.repo_id, repo_nombre: inv.repo_nombre }])
         showFeedback(true, `¡Vinculado a ${inv.repo_nombre}!`)
       }
     })
@@ -133,6 +151,7 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
         showFeedback(false, res.error)
       } else {
         setDistriFixerInvitaciones(prev => prev.filter(i => i.id !== inv.id))
+        setDistriFixerActivas(prev => [...prev, { solicitudId: inv.id, distri_id: inv.distri_id, distri_nombre: inv.distri_nombre }])
         showFeedback(true, `¡Vinculado a ${inv.distri_nombre}!`)
       }
     })
@@ -245,9 +264,9 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
         </div>
       )}
 
-      {/* ── Distribuidoras activas ── */}
-      {distrisActivas.length > 0 ? (
-        <div className="space-y-3">
+      {/* ── Distribuidoras activas (gondoleros) ── */}
+      {distrisActivas.length > 0 && (
+        <div className="space-y-3 mb-3">
           {distrisActivas.map(distri => (
             <div key={distri.distri_id} className="space-y-2">
               <div className="flex items-center justify-between">
@@ -259,7 +278,6 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
                   Vinculado ✓
                 </span>
               </div>
-
               {confirmDesvincular !== distri.distri_id ? (
                 <button
                   onClick={() => setConfirmDesvincular(distri.distri_id)}
@@ -274,18 +292,12 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
                     ¿Confirmás que querés desvincularte de {distri.distri_nombre}?
                   </p>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => setConfirmDesvincular(null)}
-                      disabled={procesandoId === distri.distri_id}
-                      className="flex-1 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
+                    <button onClick={() => setConfirmDesvincular(null)} disabled={procesandoId === distri.distri_id}
+                      className="flex-1 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                       Cancelar
                     </button>
-                    <button
-                      onClick={() => handleDesvincular(distri)}
-                      disabled={procesandoId === distri.distri_id}
-                      className="flex-1 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-1"
-                    >
+                    <button onClick={() => handleDesvincular(distri)} disabled={procesandoId === distri.distri_id}
+                      className="flex-1 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-1">
                       {procesandoId === distri.distri_id ? <Loader2 size={12} className="animate-spin" /> : 'Desvincularme'}
                     </button>
                   </div>
@@ -294,8 +306,50 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
             </div>
           ))}
         </div>
-      ) : (
-        /* ── Sin distri ── */
+      )}
+
+      {/* ── Repositoras activas (fixers) ── */}
+      {reposActivas.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {reposActivas.map(repo => (
+            <div key={repo.solicitudId} className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={15} className="text-blue-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{repo.repo_nombre}</p>
+                  <p className="text-[11px] text-gray-400">Repositora</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                Vinculado ✓
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Distribuidoras activas (fixers) ── */}
+      {distriFixerActivas.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {distriFixerActivas.map(distri => (
+            <div key={distri.solicitudId} className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={15} className="text-amber-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{distri.distri_nombre}</p>
+                  <p className="text-[11px] text-gray-400">Distribuidora</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">
+                Vinculado ✓
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Estado vacío ── */}
+      {distrisActivas.length === 0 && reposActivas.length === 0 && distriFixerActivas.length === 0 && (
         <div className="space-y-3">
           {solicitudPendiente ? (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
@@ -304,11 +358,16 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
                 Esperando que <span className="font-medium">{solicitudPendiente.distri_nombre}</span> apruebe tu solicitud.
               </p>
             </div>
-          ) : invitaciones.length === 0 ? (
+          ) : invitaciones.length === 0 && repoInvitaciones.length === 0 && distriFixerInvitaciones.length === 0 ? (
             <div className="space-y-2">
-              <p className="text-sm text-gray-400">Sin distribuidora vinculada</p>
+              <p className="text-sm text-gray-400">
+                {esFixer ? 'Sin repositora ni distribuidora vinculada' : 'Sin distribuidora vinculada'}
+              </p>
               <p className="text-xs text-gray-400">
-                Pedile a tu distribuidora que te invite por link o que ingrese tu código personal para vincularte.
+                {esFixer
+                  ? 'Pedile a tu repositora o distribuidora que te invite por link o que ingrese tu código personal.'
+                  : 'Pedile a tu distribuidora que te invite por link o que ingrese tu código personal para vincularte.'
+                }
               </p>
             </div>
           ) : null}

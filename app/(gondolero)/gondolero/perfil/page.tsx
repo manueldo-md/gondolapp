@@ -87,45 +87,65 @@ export default async function PerfilPage() {
     // Tabla puede no existir aún en la DB — ignorar
   }
 
-  // Invitaciones de repositoras y distribuidoras a fixers
+  // Vinculaciones y invitaciones de repositoras y distribuidoras para fixers
   let repoInvitacionesPendientes: { id: string; repo_id: string; repo_nombre: string }[] = []
+  let reposActivas: { solicitudId: string; repo_id: string; repo_nombre: string }[] = []
   let distriFixerInvitacionesPendientes: { id: string; distri_id: string; distri_nombre: string }[] = []
+  let distriFixerActivas: { solicitudId: string; distri_id: string; distri_nombre: string }[] = []
   if (profile?.tipo_actor === 'fixer') {
+    // fixer_repo_solicitudes: aprobadas + pendientes
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: repoSols } = await (admin as any)
         .from('fixer_repo_solicitudes')
-        .select('id, repositora_id')
+        .select('id, repositora_id, estado')
         .eq('fixer_id', user.id)
-        .eq('estado', 'pendiente')
+        .in('estado', ['aprobada', 'pendiente'])
         .order('created_at', { ascending: false })
       if (repoSols && repoSols.length > 0) {
-        const repoIds = repoSols.map((s: { repositora_id: string }) => s.repositora_id)
+        const repoIds = (repoSols as { repositora_id: string }[]).map(s => s.repositora_id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: reposData } = await (admin as any)
           .from('repositoras')
           .select('id, razon_social')
           .in('id', repoIds)
         const repoMap: Record<string, string> = {}
         for (const r of reposData ?? []) repoMap[r.id] = r.razon_social
-        for (const s of repoSols) {
-          repoInvitacionesPendientes.push({ id: s.id, repo_id: s.repositora_id, repo_nombre: repoMap[s.repositora_id] ?? 'Repositora' })
+        for (const s of repoSols as { id: string; repositora_id: string; estado: string }[]) {
+          const nombre = repoMap[s.repositora_id] ?? 'Repositora'
+          if (s.estado === 'aprobada') {
+            reposActivas.push({ solicitudId: s.id, repo_id: s.repositora_id, repo_nombre: nombre })
+          } else {
+            repoInvitacionesPendientes.push({ id: s.id, repo_id: s.repositora_id, repo_nombre: nombre })
+          }
         }
       }
     } catch { /* ignore */ }
 
+    // fixer_distri_solicitudes: aprobadas + pendientes (iniciado por distri)
     try {
       const { data: distriSols } = await admin
         .from('fixer_distri_solicitudes')
-        .select('id, distri_id, distri:distribuidoras!distri_id(razon_social)')
+        .select('id, distri_id, estado, iniciado_por')
         .eq('fixer_id', user.id)
-        .eq('estado', 'pendiente')
-        .eq('iniciado_por', 'distri')
+        .in('estado', ['aprobada', 'pendiente'])
         .order('created_at', { ascending: false })
-      for (const s of distriSols ?? []) {
-        const dn = Array.isArray(s.distri)
-          ? (s.distri as { razon_social: string }[])[0]?.razon_social
-          : (s.distri as { razon_social: string } | null)?.razon_social
-        distriFixerInvitacionesPendientes.push({ id: s.id, distri_id: s.distri_id, distri_nombre: dn ?? 'Distribuidora' })
+      if (distriSols && distriSols.length > 0) {
+        const distriIds = (distriSols as { distri_id: string }[]).map(s => s.distri_id)
+        const { data: distrisData } = await admin
+          .from('distribuidoras')
+          .select('id, razon_social')
+          .in('id', distriIds)
+        const distriMap: Record<string, string> = {}
+        for (const d of distrisData ?? []) distriMap[d.id] = d.razon_social
+        for (const s of distriSols as { id: string; distri_id: string; estado: string; iniciado_por: string | null }[]) {
+          const nombre = distriMap[s.distri_id] ?? 'Distribuidora'
+          if (s.estado === 'aprobada') {
+            distriFixerActivas.push({ solicitudId: s.id, distri_id: s.distri_id, distri_nombre: nombre })
+          } else if (s.iniciado_por === 'distri') {
+            distriFixerInvitacionesPendientes.push({ id: s.id, distri_id: s.distri_id, distri_nombre: nombre })
+          }
+        }
       }
     } catch { /* ignore */ }
   }
@@ -202,8 +222,10 @@ export default async function PerfilPage() {
           badge={(() => {
             const totalPending = invitacionesPendientes.length + repoInvitacionesPendientes.length + distriFixerInvitacionesPendientes.length
             if (totalPending > 0) return totalPending
-            if (distrisActivas.length > 1) return distrisActivas.length
-            return null
+            const totalActive = profile?.tipo_actor === 'fixer'
+              ? reposActivas.length + distriFixerActivas.length
+              : distrisActivas.length
+            return totalActive > 1 ? totalActive : null
           })()}
           badgeColor={(invitacionesPendientes.length + repoInvitacionesPendientes.length + distriFixerInvitacionesPendientes.length) > 0 ? 'red' : 'verde'}
           defaultOpen={false}
@@ -216,6 +238,9 @@ export default async function PerfilPage() {
             gondoleroId={user.id}
             repoInvitacionesPendientes={repoInvitacionesPendientes}
             distriFixerInvitacionesPendientes={distriFixerInvitacionesPendientes}
+            reposActivas={reposActivas}
+            distriFixerActivas={distriFixerActivas}
+            esFixer={profile?.tipo_actor === 'fixer'}
           />
         </ColapsableSection>
 
