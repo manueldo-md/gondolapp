@@ -7,6 +7,12 @@ import { revalidatePath } from 'next/cache'
 import type { TipoActor } from '@/types'
 import { generarAlias } from '@/lib/aliases'
 
+function generarCodigo(nombre: string, prefix4: string = 'FIXR'): string {
+  const prefix = nombre.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase() || prefix4
+  const suffix = Math.floor(Math.random() * 9999).toString().padStart(4, '0')
+  return `${prefix}-${suffix}`
+}
+
 async function getAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -126,11 +132,11 @@ export async function editarPerfilAdmin(
 export async function asignarAliasExistentes(): Promise<{ asignados: number; error?: string }> {
   const admin = await getAdmin()
 
-  // Obtener todos los gondoleros sin alias
+  // Obtener todos los gondoleros y fixers sin alias
   const { data: gondoleros, error } = await admin
     .from('profiles')
     .select('id')
-    .eq('tipo_actor', 'gondolero')
+    .in('tipo_actor', ['gondolero', 'fixer'])
     .is('alias', null)
 
   if (error) return { asignados: 0, error: error.message }
@@ -234,11 +240,11 @@ export async function crearUsuario(payload: {
     repositora_id: repositoraId,
   }
 
-  // Generar código personal para gondoleros
-  if (payload.tipo_actor === 'gondolero') {
-    const prefix = payload.nombre.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase() || 'GOND'
-    const suffix = Math.floor(Math.random() * 9999).toString().padStart(4, '0')
-    profileUpdate.codigo_gondolero = `${prefix}-${suffix}`
+  // Generar alias + código personal para gondoleros y fixers
+  if (payload.tipo_actor === 'gondolero' || payload.tipo_actor === 'fixer') {
+    const defaultPrefix = payload.tipo_actor === 'fixer' ? 'FIXR' : 'GOND'
+    profileUpdate.codigo_gondolero = generarCodigo(payload.nombre, defaultPrefix)
+    profileUpdate.alias = await generarAlias(admin)
   }
 
   await admin.from('profiles').update(profileUpdate).eq('id', authData.user.id)
