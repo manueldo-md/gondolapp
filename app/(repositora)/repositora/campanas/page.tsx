@@ -53,16 +53,43 @@ export default async function RepoCampanasPage() {
     .single()
 
   if (!perfil?.repositora_id) redirect('/repositora/dashboard')
+  const repoId: string = perfil.repositora_id
 
-  // Campañas con actor_campana = 'fixer' o sin campo (financiadas por gondolapp)
-  const { data: campanas } = await admin
-    .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, financiada_por, instruccion, created_at')
-    .eq('actor_campana', 'fixer')
-    .in('estado', ['activa', 'pausada'])
-    .order('created_at', { ascending: false })
+  // Obtener distribuidoras vinculadas a esta repositora a través de sus fixers
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: fixersData } = await (admin as any)
+    .from('fixer_repo_solicitudes')
+    .select('fixer_id')
+    .eq('repositora_id', repoId)
+    .eq('estado', 'aprobada')
 
-  const lista = (campanas ?? []) as CampanaRow[]
+  const fixerIds = (fixersData ?? []).map((f: { fixer_id: string }) => f.fixer_id)
+
+  let distrisRelacionadas: string[] = []
+  if (fixerIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: distrisData } = await (admin as any)
+      .from('fixer_distri_solicitudes')
+      .select('distri_id')
+      .in('fixer_id', fixerIds)
+      .eq('estado', 'aprobada')
+    distrisRelacionadas = [...new Set(((distrisData ?? []) as { distri_id: string }[]).map(d => d.distri_id))]
+  }
+
+  // Campañas para fixers: solo de distribuidoras relacionadas, o financiadas por gondolapp
+  let campanas: CampanaRow[] = []
+  if (distrisRelacionadas.length > 0) {
+    const { data } = await admin
+      .from('campanas')
+      .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, financiada_por, instruccion, created_at')
+      .eq('actor_campana', 'fixer')
+      .in('estado', ['activa', 'pausada'])
+      .in('distri_id', distrisRelacionadas)
+      .order('created_at', { ascending: false })
+    campanas = (data ?? []) as CampanaRow[]
+  }
+
+  const lista = campanas
 
   return (
     <div className="space-y-6">

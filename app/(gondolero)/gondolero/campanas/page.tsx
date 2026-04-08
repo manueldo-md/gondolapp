@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { LayoutGrid } from 'lucide-react'
 import type { TipoCampana } from '@/types'
@@ -31,7 +32,13 @@ export default async function CampanasPage() {
   const localidadIds = (gondoleroLocalidadesRes.data ?? []).map((gl: { localidad_id: number }) => gl.localidad_id)
   const tieneZonas = zonaIds.length > 0 || localidadIds.length > 0
 
-  const [participacionesRes, profileRes, misDistrisRes, misionesRes] = await Promise.all([
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misionesRes] = await Promise.all([
     supabase
       .from('participaciones')
       .select('campana_id, estado, comercios_completados')
@@ -46,6 +53,12 @@ export default async function CampanasPage() {
       .from('gondolero_distri_solicitudes')
       .select('distri_id')
       .eq('gondolero_id', user.id)
+      .eq('estado', 'aprobada'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
+      .from('fixer_distri_solicitudes')
+      .select('distri_id')
+      .eq('fixer_id', user.id)
       .eq('estado', 'aprobada'),
     supabase
       .from('misiones')
@@ -64,7 +77,10 @@ export default async function CampanasPage() {
 
   const gondoleroNivel = (profileRes.data as { nivel: string; tipo_actor: string } | null)?.nivel ?? 'casual'
   const gondoleroTipoActor = (profileRes.data as { nivel: string; tipo_actor: string } | null)?.tipo_actor ?? 'gondolero'
-  const misDistriIds = (misDistrisRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
+  const esFixer = gondoleroTipoActor === 'fixer'
+  const misDistriIds = esFixer
+    ? (misDistrisFixerRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
+    : (misDistrisGondoleroRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
 
   // Misiones: qué campañas tiene el gondolero y cuántas misiones por campaña
   const misionCampanaIds = new Set<string>()
@@ -100,7 +116,6 @@ export default async function CampanasPage() {
 
   // ── Query de campañas activas (con filtro de zona) ────────────────────────────
   // Filtrar por actor_campana según tipo_actor del usuario
-  const esFixer = gondoleroTipoActor === 'fixer'
   let query = supabase
     .from('campanas')
     .select(CAMPANA_SELECT)
