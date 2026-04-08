@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Loader2, CheckCircle2 } from 'lucide-react'
-import { desvincularseDeDistri, aceptarVinculacionDistri, rechazarVinculacionDistri } from './distri-actions'
+import { desvincularseDeDistri, aceptarVinculacionDistri, rechazarVinculacionDistri, aceptarVinculacionRepo, rechazarVinculacionRepo, aceptarVinculacionDistri_Fixer, rechazarVinculacionDistri_Fixer } from './distri-actions'
 
 interface DistriActiva {
   solicitudId: string
@@ -16,20 +16,36 @@ interface Invitacion {
   distri_nombre: string
 }
 
+interface RepoInvitacion {
+  id: string
+  repo_id: string
+  repo_nombre: string
+}
+
+interface DistriFixerInvitacion {
+  id: string
+  distri_id: string
+  distri_nombre: string
+}
+
 interface DistriSectionProps {
   distrisActivas: DistriActiva[]
   solicitudPendiente: { distri_id: string; distri_nombre: string } | null
   invitacionesPendientes: Invitacion[]
   gondoleroId: string
+  repoInvitacionesPendientes?: RepoInvitacion[]
+  distriFixerInvitacionesPendientes?: DistriFixerInvitacion[]
 }
 
-export function DistriSection({ distrisActivas: initialDistrisActivas, solicitudPendiente, invitacionesPendientes: initialInvitaciones, gondoleroId }: DistriSectionProps) {
+export function DistriSection({ distrisActivas: initialDistrisActivas, solicitudPendiente, invitacionesPendientes: initialInvitaciones, gondoleroId, repoInvitacionesPendientes: initialRepoInvitaciones = [], distriFixerInvitacionesPendientes: initialDistriFixerInvitaciones = [] }: DistriSectionProps) {
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [confirmDesvincular, setConfirmDesvincular] = useState<string | null>(null) // distri_id confirmando
   const [distrisActivas, setDistrisActivas] = useState<DistriActiva[]>(initialDistrisActivas)
   const [invitaciones, setInvitaciones] = useState<Invitacion[]>(initialInvitaciones)
   const [procesandoId, setProcesandoId] = useState<string | null>(null)
+  const [repoInvitaciones, setRepoInvitaciones] = useState<RepoInvitacion[]>(initialRepoInvitaciones)
+  const [distriFixerInvitaciones, setDistriFixerInvitaciones] = useState<DistriFixerInvitacion[]>(initialDistriFixerInvitaciones)
 
   const showFeedback = (ok: boolean, msg: string) => {
     setFeedback({ ok, msg })
@@ -80,6 +96,62 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
     })
   }
 
+  const handleAceptarRepo = (inv: RepoInvitacion) => {
+    setProcesandoId(inv.id)
+    startTransition(async () => {
+      const res = await aceptarVinculacionRepo(inv.id, gondoleroId, inv.repo_id)
+      setProcesandoId(null)
+      if (res.error) {
+        showFeedback(false, res.error)
+      } else {
+        setRepoInvitaciones(prev => prev.filter(i => i.id !== inv.id))
+        showFeedback(true, `¡Vinculado a ${inv.repo_nombre}!`)
+      }
+    })
+  }
+
+  const handleRechazarRepo = (inv: RepoInvitacion) => {
+    setProcesandoId(inv.id)
+    startTransition(async () => {
+      const res = await rechazarVinculacionRepo(inv.id)
+      setProcesandoId(null)
+      if (res.error) {
+        showFeedback(false, res.error)
+      } else {
+        setRepoInvitaciones(prev => prev.filter(i => i.id !== inv.id))
+        showFeedback(true, `Invitación de ${inv.repo_nombre} rechazada`)
+      }
+    })
+  }
+
+  const handleAceptarDistriF = (inv: DistriFixerInvitacion) => {
+    setProcesandoId(inv.id)
+    startTransition(async () => {
+      const res = await aceptarVinculacionDistri_Fixer(inv.id, gondoleroId, inv.distri_id)
+      setProcesandoId(null)
+      if (res.error) {
+        showFeedback(false, res.error)
+      } else {
+        setDistriFixerInvitaciones(prev => prev.filter(i => i.id !== inv.id))
+        showFeedback(true, `¡Vinculado a ${inv.distri_nombre}!`)
+      }
+    })
+  }
+
+  const handleRechazarDistriF = (inv: DistriFixerInvitacion) => {
+    setProcesandoId(inv.id)
+    startTransition(async () => {
+      const res = await rechazarVinculacionDistri_Fixer(inv.id)
+      setProcesandoId(null)
+      if (res.error) {
+        showFeedback(false, res.error)
+      } else {
+        setDistriFixerInvitaciones(prev => prev.filter(i => i.id !== inv.id))
+        showFeedback(true, `Invitación de ${inv.distri_nombre} rechazada`)
+      }
+    })
+  }
+
   return (
     <div>
 
@@ -102,6 +174,66 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
                 </button>
                 <button
                   onClick={() => handleAceptar(inv)}
+                  disabled={procesandoId === inv.id || isPending}
+                  className="flex-1 py-1.5 text-xs font-semibold bg-gondo-verde-400 text-white rounded-lg hover:bg-gondo-verde-600 transition-colors flex items-center justify-center gap-1"
+                >
+                  {procesandoId === inv.id ? <Loader2 size={12} className="animate-spin" /> : '✓ Aceptar'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Invitaciones de repositoras ── */}
+      {repoInvitaciones.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {repoInvitaciones.map(inv => (
+            <div key={inv.id} className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+              <p className="text-xs font-semibold text-blue-800 mb-1">📦 Invitación de {inv.repo_nombre}</p>
+              <p className="text-xs text-blue-700 mb-3">
+                La repositora {inv.repo_nombre} quiere que te unas a su equipo.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleRechazarRepo(inv)}
+                  disabled={procesandoId === inv.id || isPending}
+                  className="flex-1 py-1.5 text-xs font-medium border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+                >
+                  {procesandoId === inv.id ? <Loader2 size={12} className="animate-spin mx-auto" /> : 'Rechazar'}
+                </button>
+                <button
+                  onClick={() => handleAceptarRepo(inv)}
+                  disabled={procesandoId === inv.id || isPending}
+                  className="flex-1 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+                >
+                  {procesandoId === inv.id ? <Loader2 size={12} className="animate-spin" /> : '✓ Aceptar'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Invitaciones de distribuidoras (fixer) ── */}
+      {distriFixerInvitaciones.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {distriFixerInvitaciones.map(inv => (
+            <div key={inv.id} className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <p className="text-xs font-semibold text-amber-800 mb-1">🚛 Invitación de {inv.distri_nombre}</p>
+              <p className="text-xs text-amber-700 mb-3">
+                La distribuidora {inv.distri_nombre} quiere que te unas a su equipo.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleRechazarDistriF(inv)}
+                  disabled={procesandoId === inv.id || isPending}
+                  className="flex-1 py-1.5 text-xs font-medium border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors"
+                >
+                  {procesandoId === inv.id ? <Loader2 size={12} className="animate-spin mx-auto" /> : 'Rechazar'}
+                </button>
+                <button
+                  onClick={() => handleAceptarDistriF(inv)}
                   disabled={procesandoId === inv.id || isPending}
                   className="flex-1 py-1.5 text-xs font-semibold bg-gondo-verde-400 text-white rounded-lg hover:bg-gondo-verde-600 transition-colors flex items-center justify-center gap-1"
                 >

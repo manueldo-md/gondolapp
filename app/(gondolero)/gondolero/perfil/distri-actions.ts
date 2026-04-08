@@ -98,6 +98,96 @@ export async function rechazarVinculacionDistri(
   return {}
 }
 
+export async function aceptarVinculacionRepo(
+  solicitudId: string,
+  fixerId: string,
+  repoId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (admin as any)
+    .from('fixer_repo_solicitudes')
+    .update({ estado: 'aprobada', updated_at: new Date().toISOString() })
+    .eq('id', solicitudId)
+
+  if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
+
+  await admin.from('profiles').update({ repositora_id: repoId }).eq('id', fixerId)
+
+  revalidatePath('/gondolero/perfil')
+  return {}
+}
+
+export async function rechazarVinculacionRepo(
+  solicitudId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (admin as any)
+    .from('fixer_repo_solicitudes')
+    .update({ estado: 'rechazada', updated_at: new Date().toISOString() })
+    .eq('id', solicitudId)
+
+  revalidatePath('/gondolero/perfil')
+  return {}
+}
+
+export async function aceptarVinculacionDistri_Fixer(
+  solicitudId: string,
+  fixerId: string,
+  distriId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+
+  const { error } = await admin
+    .from('fixer_distri_solicitudes')
+    .update({ estado: 'aprobada', updated_at: new Date().toISOString() })
+    .eq('id', solicitudId)
+
+  if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
+
+  // Actualizar distri_id en profile si no tiene ninguna aún
+  const { data: profile } = await admin.from('profiles').select('distri_id').eq('id', fixerId).single()
+  if (!profile?.distri_id) {
+    await admin.from('profiles').update({ distri_id: distriId }).eq('id', fixerId)
+  }
+
+  revalidatePath('/gondolero/perfil')
+  return {}
+}
+
+export async function rechazarVinculacionDistri_Fixer(
+  solicitudId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = adminClient()
+
+  await admin
+    .from('fixer_distri_solicitudes')
+    .update({ estado: 'rechazada', updated_at: new Date().toISOString() })
+    .eq('id', solicitudId)
+
+  revalidatePath('/gondolero/perfil')
+  return {}
+}
+
 export async function desvincularseDeDistri(distriId: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

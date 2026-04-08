@@ -87,6 +87,43 @@ export default async function PerfilPage() {
     // Tabla puede no existir aún en la DB — ignorar
   }
 
+  // Invitaciones de repositoras y distribuidoras a fixers
+  let repoInvitacionesPendientes: { id: string; repo_id: string; repo_nombre: string }[] = []
+  let distriFixerInvitacionesPendientes: { id: string; distri_id: string; distri_nombre: string }[] = []
+  if (profile?.tipo_actor === 'fixer') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: repoSols } = await (admin as any)
+        .from('fixer_repo_solicitudes')
+        .select('id, repositora_id, repositora:repositoras!repositora_id(razon_social)')
+        .eq('fixer_id', user.id)
+        .eq('estado', 'pendiente')
+        .order('created_at', { ascending: false })
+      for (const s of repoSols ?? []) {
+        const rn = Array.isArray(s.repositora)
+          ? (s.repositora as { razon_social: string }[])[0]?.razon_social
+          : (s.repositora as { razon_social: string } | null)?.razon_social
+        repoInvitacionesPendientes.push({ id: s.id, repo_id: s.repositora_id, repo_nombre: rn ?? 'Repositora' })
+      }
+    } catch { /* ignore */ }
+
+    try {
+      const { data: distriSols } = await admin
+        .from('fixer_distri_solicitudes')
+        .select('id, distri_id, distri:distribuidoras!distri_id(razon_social)')
+        .eq('fixer_id', user.id)
+        .eq('estado', 'pendiente')
+        .eq('iniciado_por', 'distri')
+        .order('created_at', { ascending: false })
+      for (const s of distriSols ?? []) {
+        const dn = Array.isArray(s.distri)
+          ? (s.distri as { razon_social: string }[])[0]?.razon_social
+          : (s.distri as { razon_social: string } | null)?.razon_social
+        distriFixerInvitacionesPendientes.push({ id: s.id, distri_id: s.distri_id, distri_nombre: dn ?? 'Distribuidora' })
+      }
+    } catch { /* ignore */ }
+  }
+
   // Nombre de la distri principal (profiles.distri_id) para el header
   let distriPrincipalNombre: string | null = null
   if (profile?.distri_id) {
@@ -156,14 +193,13 @@ export default async function PerfilPage() {
               ? 'Mi organización'
               : distrisActivas.length > 1 ? 'Mis distribuidoras' : 'Mi distribuidora'
           }
-          badge={
-            invitacionesPendientes.length > 0
-              ? invitacionesPendientes.length
-              : distrisActivas.length > 0
-                ? distrisActivas.length > 1 ? distrisActivas.length : null
-                : null
-          }
-          badgeColor={invitacionesPendientes.length > 0 ? 'red' : 'verde'}
+          badge={(() => {
+            const totalPending = invitacionesPendientes.length + repoInvitacionesPendientes.length + distriFixerInvitacionesPendientes.length
+            if (totalPending > 0) return totalPending
+            if (distrisActivas.length > 1) return distrisActivas.length
+            return null
+          })()}
+          badgeColor={(invitacionesPendientes.length + repoInvitacionesPendientes.length + distriFixerInvitacionesPendientes.length) > 0 ? 'red' : 'verde'}
           defaultOpen={false}
         >
           <CodigoGondolero codigo={profile?.codigo_gondolero ?? null} />
@@ -172,6 +208,8 @@ export default async function PerfilPage() {
             solicitudPendiente={solicitudPendiente}
             invitacionesPendientes={invitacionesPendientes}
             gondoleroId={user.id}
+            repoInvitacionesPendientes={repoInvitacionesPendientes}
+            distriFixerInvitacionesPendientes={distriFixerInvitacionesPendientes}
           />
         </ColapsableSection>
 
