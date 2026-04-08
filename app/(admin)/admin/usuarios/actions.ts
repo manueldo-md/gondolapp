@@ -171,12 +171,14 @@ export async function crearUsuario(payload: {
   tipo_actor: TipoActor
   distri_id?: string | null
   marca_id?: string | null
+  repositora_id?: string | null
 }): Promise<{ error?: string }> {
   const admin = await getAdmin()
 
   // Si es marca o distribuidora nueva (sin id vinculado), crear el registro primero
-  let distriId = payload.distri_id || null
-  let marcaId  = payload.marca_id  || null
+  let distriId    = payload.distri_id    || null
+  let marcaId     = payload.marca_id     || null
+  let repositoraId = payload.repositora_id || null
 
   if (payload.tipo_actor === 'distribuidora' && !distriId) {
     const { data: nuevaDistri, error: distriError } = await admin
@@ -198,6 +200,16 @@ export async function crearUsuario(payload: {
     marcaId = nuevaMarca.id
   }
 
+  if (payload.tipo_actor === 'repositora' && !repositoraId) {
+    const { data: nuevaRepo, error: repoError } = await admin
+      .from('repositoras')
+      .insert({ razon_social: payload.nombre, validada: false })
+      .select('id')
+      .single()
+    if (repoError) return { error: 'No se pudo crear la repositora: ' + repoError.message }
+    repositoraId = nuevaRepo.id
+  }
+
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email: payload.email,
     password: payload.password,
@@ -207,6 +219,7 @@ export async function crearUsuario(payload: {
       nombre: payload.nombre,
       distri_id: distriId,
       marca_id: marcaId,
+      repositora_id: repositoraId,
     },
   })
 
@@ -218,6 +231,7 @@ export async function crearUsuario(payload: {
     nombre: payload.nombre,
     distri_id: distriId,
     marca_id: marcaId,
+    repositora_id: repositoraId,
   }
 
   // Generar código personal para gondoleros
@@ -232,5 +246,6 @@ export async function crearUsuario(payload: {
   revalidatePath('/admin/usuarios')
   revalidatePath('/admin/marcas')
   revalidatePath('/admin/distribuidoras')
+  revalidatePath('/admin/repositoras')
   return {}
 }

@@ -52,10 +52,11 @@ export default async function UsuariosPage({
 
   const { data: profiles } = await query
 
-  // Distribuidoras y marcas para los modales
-  const [{ data: distribuidoras }, { data: marcas }] = await Promise.all([
+  // Distribuidoras, marcas y repositoras para los modales
+  const [{ data: distribuidoras }, { data: marcas }, { data: repositoras }] = await Promise.all([
     admin.from('distribuidoras').select('id, razon_social').order('razon_social'),
     admin.from('marcas').select('id, razon_social').order('razon_social'),
+    admin.from('repositoras').select('id, razon_social').order('razon_social'),
   ])
 
   // Emails y estado de ban desde auth
@@ -102,9 +103,10 @@ export default async function UsuariosPage({
         <div className="flex items-center gap-2">
           <AsignarAliasBtn />
           <NuevoUsuarioModal
-          distribuidoras={(distribuidoras ?? []) as { id: string; razon_social: string }[]}
-          marcas={(marcas ?? []) as { id: string; razon_social: string }[]}
-        />
+            distribuidoras={(distribuidoras ?? []) as { id: string; razon_social: string }[]}
+            marcas={(marcas ?? []) as { id: string; razon_social: string }[]}
+            repositoras={(repositoras ?? []) as { id: string; razon_social: string }[]}
+          />
         </div>
       </div>
 

@@ -1,5 +1,6 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { CheckCircle2, AlertCircle, Coins } from 'lucide-react'
+import Link from 'next/link'
 import { tiempoRelativo } from '@/lib/utils'
 import { ValidarDistriBtn } from './validar-btn'
 import { NuevaDistriModal } from './nueva-distri-modal'
@@ -62,7 +63,7 @@ export default async function DistribuidorasAdminPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Distribuidora', 'CUIT', 'Estado', 'Tokens', 'Gondoleros', 'Campañas activas', 'Registro', 'Acción'].map(h => (
+                {['Distribuidora', 'CUIT', 'Estado', 'Tokens', 'Gondoleros', 'Camp. activas', 'Registro', 'Acción'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>
@@ -74,7 +75,9 @@ export default async function DistribuidorasAdminPage() {
               {(distris as any[]).map(d => (
                 <tr key={d.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3.5">
-                    <p className="font-medium text-gray-900">{d.razon_social}</p>
+                    <Link href={`/admin/distribuidoras/${d.id}`} className="font-medium text-gray-900 hover:text-amber-600 hover:underline">
+                      {d.razon_social}
+                    </Link>
                   </td>
                   <td className="px-4 py-3.5 text-xs text-gray-500 font-mono">
                     {d.cuit ?? '—'}
@@ -110,7 +113,15 @@ export default async function DistribuidorasAdminPage() {
                     {tiempoRelativo(d.created_at)}
                   </td>
                   <td className="px-4 py-3.5">
-                    {!d.validada && <ValidarDistriBtn distriId={d.id} />}
+                    <div className="flex items-center gap-2">
+                      {!d.validada && <ValidarDistriBtn distriId={d.id} />}
+                      <Link
+                        href={`/admin/distribuidoras/${d.id}`}
+                        className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Ver
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

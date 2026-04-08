@@ -2,14 +2,15 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react'
 import { crearRepositora } from './actions'
 
 export default function NuevaRepositoraPage() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [form, setForm] = useState({ razon_social: '', cuit: '' })
+  const [mostrarPass, setMostrarPass] = useState(false)
+  const [form, setForm] = useState({ razon_social: '', cuit: '', email: '', password: '' })
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }))
@@ -19,6 +20,10 @@ export default function NuevaRepositoraPage() {
     setErrorMsg(null)
     if (form.razon_social.trim().length < 2) {
       setErrorMsg('La razón social debe tener al menos 2 caracteres.')
+      return
+    }
+    if (form.email && !form.password) {
+      setErrorMsg('Si ingresás un email, también debés ingresar una contraseña.')
       return
     }
     const fd = new FormData()
@@ -73,6 +78,52 @@ export default function NuevaRepositoraPage() {
             placeholder="20-12345678-9"
             className={inputClass}
           />
+        </div>
+
+        <hr className="border-gray-100" />
+
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Usuario administrador de la repositora <span className="text-gray-400 font-normal normal-case">(opcional)</span>
+          </p>
+          <p className="text-xs text-gray-400 mb-4">
+            Si completás email y contraseña, se crea automáticamente un usuario con acceso al panel de repositora.
+          </p>
+
+          <div className="space-y-3.5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={set('email')}
+                placeholder="admin@repositora.com"
+                className={inputClass}
+                autoComplete="off"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Contraseña</label>
+              <div className="relative">
+                <input
+                  type={mostrarPass ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={set('password')}
+                  placeholder="Mínimo 6 caracteres"
+                  className={`${inputClass} pr-10`}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {mostrarPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {errorMsg && (

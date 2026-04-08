@@ -5,19 +5,23 @@ import { X, Loader2, Eye, EyeOff, UserPlus } from 'lucide-react'
 import { crearUsuario } from './actions'
 import type { TipoActor } from '@/types'
 
-const TIPOS: Array<{ value: Exclude<TipoActor, 'fixer'>; label: string }> = [
+const TIPOS: Array<{ value: TipoActor; label: string }> = [
   { value: 'gondolero',    label: 'Gondolero' },
+  { value: 'fixer',        label: 'Fixer' },
   { value: 'distribuidora',label: 'Distribuidora' },
   { value: 'marca',        label: 'Marca' },
+  { value: 'repositora',   label: 'Repositora' },
   { value: 'admin',        label: 'Admin' },
 ]
 
 export function NuevoUsuarioModal({
   distribuidoras,
   marcas,
+  repositoras,
 }: {
   distribuidoras: { id: string; razon_social: string }[]
   marcas: { id: string; razon_social: string }[]
+  repositoras: { id: string; razon_social: string }[]
 }) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -28,9 +32,10 @@ export function NuevoUsuarioModal({
     email: '',
     password: '',
     nombre: '',
-    tipo_actor: 'gondolero' as Exclude<TipoActor, 'fixer'>,
+    tipo_actor: 'gondolero' as TipoActor,
     distri_id: '',
     marca_id: '',
+    repositora_id: '',
   })
 
   const set = (k: keyof typeof form, v: string) =>
@@ -54,18 +59,21 @@ export function NuevoUsuarioModal({
         tipo_actor: form.tipo_actor,
         distri_id: form.distri_id || null,
         marca_id: form.marca_id || null,
+        repositora_id: form.repositora_id || null,
       })
       if (result.error) {
         setError(result.error)
         return
       }
       setOpen(false)
-      setForm({ email: '', password: '', nombre: '', tipo_actor: 'gondolero', distri_id: '', marca_id: '' })
+      setForm({ email: '', password: '', nombre: '', tipo_actor: 'gondolero', distri_id: '', marca_id: '', repositora_id: '' })
     })
   }
 
-  const mostrarDistri = form.tipo_actor === 'gondolero' || form.tipo_actor === 'distribuidora'
-  const mostrarMarca  = form.tipo_actor === 'marca'
+  const mostrarDistri    = form.tipo_actor === 'gondolero' || form.tipo_actor === 'distribuidora'
+  const mostrarMarca     = form.tipo_actor === 'marca'
+  const mostrarRepo      = form.tipo_actor === 'fixer' || form.tipo_actor === 'repositora'
+  const mostrarDistriFixer = form.tipo_actor === 'fixer'
 
   return (
     <>
@@ -83,7 +91,7 @@ export function NuevoUsuarioModal({
           onClick={() => !isPending && setOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl"
+            className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-5">
@@ -103,7 +111,7 @@ export function NuevoUsuarioModal({
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
                   Tipo de actor
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {TIPOS.map(t => (
                     <button
                       key={t.value}
@@ -174,7 +182,7 @@ export function NuevoUsuarioModal({
                 </div>
               </div>
 
-              {/* Distribuidora */}
+              {/* Distribuidora (gondolero / distribuidora) */}
               {mostrarDistri && distribuidoras.length > 0 && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
@@ -188,6 +196,44 @@ export function NuevoUsuarioModal({
                     <option value="">Sin distribuidora</option>
                     {distribuidoras.map(d => (
                       <option key={d.id} value={d.id}>{d.razon_social}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Distribuidora (fixer puede estar vinculado a una distri también) */}
+              {mostrarDistriFixer && distribuidoras.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                    Distribuidora <span className="text-gray-400 font-normal normal-case">(opcional)</span>
+                  </label>
+                  <select
+                    value={form.distri_id}
+                    onChange={e => set('distri_id', e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E1B4B]"
+                  >
+                    <option value="">Sin distribuidora</option>
+                    {distribuidoras.map(d => (
+                      <option key={d.id} value={d.id}>{d.razon_social}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Repositora (fixer / repositora) */}
+              {mostrarRepo && repositoras.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                    Repositora <span className="text-gray-400 font-normal normal-case">(opcional)</span>
+                  </label>
+                  <select
+                    value={form.repositora_id}
+                    onChange={e => set('repositora_id', e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1E1B4B]"
+                  >
+                    <option value="">Sin repositora</option>
+                    {repositoras.map(r => (
+                      <option key={r.id} value={r.id}>{r.razon_social}</option>
                     ))}
                   </select>
                 </div>
