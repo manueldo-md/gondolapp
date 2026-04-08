@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
-import { Users, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { Users, CheckCircle2 } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
+import { InvitarFixerPanel } from './invitar-panel'
 
 function adminClient() {
   return createAdminClient(
@@ -46,6 +47,14 @@ export default async function FixersPage() {
   const repoId: string = perfil?.repositora_id ?? ''
   if (!repoId) redirect('/repositora/dashboard')
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: repoData } = await (admin as any)
+    .from('repositoras')
+    .select('razon_social')
+    .eq('id', repoId)
+    .single()
+  const repoNombre: string = repoData?.razon_social ?? 'Mi repositora'
+
   const [fixersRes, solicitudesRes] = await Promise.all([
     admin
       .from('profiles')
@@ -77,40 +86,12 @@ export default async function FixersPage() {
         </div>
       </div>
 
-      {/* Solicitudes pendientes */}
-      {solicitudes.length > 0 && (
-        <div className="bg-blue-50 rounded-xl border border-blue-200 p-5">
-          <h2 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
-            <Clock size={15} className="text-blue-600" />
-            Solicitudes de vinculación pendientes
-          </h2>
-          <div className="space-y-3">
-            {solicitudes.map(s => (
-              <div key={s.id} className="bg-white rounded-lg border border-blue-100 px-4 py-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {s.fixer?.alias ?? s.fixer?.nombre ?? 'Fixer sin nombre'}
-                  </p>
-                  {s.fixer?.celular && (
-                    <p className="text-xs text-gray-500">{s.fixer.celular}</p>
-                  )}
-                  <p className="text-xs text-gray-400">{tiempoRelativo(s.created_at)}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors">
-                    <CheckCircle2 size={13} />
-                    Aprobar
-                  </button>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 border border-red-200 text-xs font-semibold rounded-lg hover:bg-red-50 transition-colors">
-                    <XCircle size={13} />
-                    Rechazar
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Panel de invitación + solicitudes pendientes (interactivo) */}
+      <InvitarFixerPanel
+        repoId={repoId}
+        repoNombre={repoNombre}
+        solicitudesIniciales={solicitudes}
+      />
 
       {/* Lista de fixers */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -123,7 +104,7 @@ export default async function FixersPage() {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Users size={40} className="text-gray-200 mb-3" />
             <p className="font-semibold text-gray-700">Sin fixers vinculados</p>
-            <p className="text-sm text-gray-400 mt-1">Los fixers que se unan a tu repositora aparecerán acá.</p>
+            <p className="text-sm text-gray-400 mt-1">Usá el código del fixer para invitarlo.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -167,19 +148,6 @@ export default async function FixersPage() {
             </table>
           </div>
         )}
-      </div>
-
-      {/* Sección de invitación */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 className="text-sm font-semibold text-gray-900 mb-2">Invitar fixers</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          Compartí el ID de tu repositora para que los fixers puedan solicitar vinculación.
-        </p>
-        <div className="flex items-center gap-3">
-          <code className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 font-mono truncate">
-            {repoId}
-          </code>
-        </div>
       </div>
     </div>
   )

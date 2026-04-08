@@ -44,19 +44,19 @@ export async function vincularPorCodigo(
   codigoGondolero: string,
   distriId: string,
   distriNombre: string
-): Promise<{ gondolero?: { id: string; alias: string | null; nombre: string | null; nivel: string }; error?: string; vinculado?: boolean }> {
+): Promise<{ gondolero?: { id: string; alias: string | null; nombre: string | null; nivel: string; tipo_actor: string }; error?: string; vinculado?: boolean }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
   const admin = adminClient()
 
-  // Buscar gondolero por código
+  // Buscar gondolero o fixer por código
   const { data: gondolero } = await admin
     .from('profiles')
-    .select('id, alias, nombre, nivel')
+    .select('id, alias, nombre, nivel, tipo_actor')
     .eq('codigo_gondolero', codigoGondolero.toUpperCase())
-    .eq('tipo_actor', 'gondolero')
+    .in('tipo_actor', ['gondolero', 'fixer'])
     .maybeSingle()
 
   if (!gondolero) return { error: 'Código no encontrado. Verificá que sea correcto.' }
@@ -70,11 +70,12 @@ export async function vincularPorCodigo(
     .maybeSingle()
 
   if (solicitudExistente?.estado === 'aprobada') {
-    return { error: 'Este gondolero ya está vinculado a tu distribuidora.' }
+    const label = gondolero.tipo_actor === 'fixer' ? 'fixer' : 'gondolero'
+    return { error: `Este ${label} ya está vinculado a tu distribuidora.` }
   }
 
   // Si hay solicitud rechazada, terminada o pendiente → se permite reenviar (upsert)
-  return { gondolero: { id: gondolero.id, alias: gondolero.alias, nombre: gondolero.nombre, nivel: gondolero.nivel } }
+  return { gondolero: { id: gondolero.id, alias: gondolero.alias, nombre: gondolero.nombre, nivel: gondolero.nivel, tipo_actor: gondolero.tipo_actor } }
 }
 
 export async function confirmarVinculacionPorCodigo(

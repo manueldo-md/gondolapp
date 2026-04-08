@@ -22,7 +22,7 @@ export function InvitarPanel({
   // Código de gondolero
   const [codigo, setCodigo] = useState('')
   const [gondoleroEncontrado, setGondoleroEncontrado] = useState<{
-    id: string; alias: string | null; nombre: string | null; nivel: string
+    id: string; alias: string | null; nombre: string | null; nivel: string; tipo_actor: string
   } | null>(null)
   const [codigoError, setCodigoError] = useState<string | null>(null)
   const [isPendingBuscar, startBuscar] = useTransition()
@@ -134,14 +134,14 @@ export function InvitarPanel({
         )}
       </div>
 
-      {/* ── Código de gondolero ── */}
+      {/* ── Código de gondolero o fixer ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <div className="flex items-center gap-2 mb-3">
           <Hash size={16} className="text-gondo-amber-400" />
-          <h3 className="text-sm font-semibold text-gray-700">Vincular por código de gondolero</h3>
+          <h3 className="text-sm font-semibold text-gray-700">Vincular por código</h3>
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          El gondolero te comparte su código personal (ej: NARU-7823). Ingresalo para vincularlo.
+          El gondolero o fixer te comparte su código personal (ej: NARU-7823). Ingresalo para vincularlo.
         </p>
 
         {vinculadoOk && (
@@ -187,8 +187,11 @@ export function InvitarPanel({
                 <p className="font-semibold text-gray-900 text-sm">
                   {gondoleroEncontrado.alias ?? gondoleroEncontrado.nombre ?? 'Gondolero'}
                 </p>
-                <p className="text-xs text-gray-400">
-                  Nivel {NIVEL_LABEL[gondoleroEncontrado.nivel] ?? gondoleroEncontrado.nivel}
+                <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                  {gondoleroEncontrado.tipo_actor === 'fixer'
+                    ? <span className="text-blue-600 font-semibold">Fixer</span>
+                    : <>Nivel {NIVEL_LABEL[gondoleroEncontrado.nivel] ?? gondoleroEncontrado.nivel}</>
+                  }
                 </p>
               </div>
             </div>

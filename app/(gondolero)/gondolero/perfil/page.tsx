@@ -40,7 +40,7 @@ export default async function PerfilPage() {
 
   const [profileRes, gondoleroLocalidadesRes, fotosEsteMesRes, config] = await Promise.all([
     admin.from('profiles')
-      .select('nombre, alias, nivel, distri_id, celular, codigo_gondolero')
+      .select('nombre, alias, nivel, distri_id, celular, codigo_gondolero, tipo_actor')
       .eq('id', user.id).single(),
     admin.from('gondolero_localidades').select('localidad_id').eq('gondolero_id', user.id),
     admin.from('fotos')
@@ -148,10 +148,14 @@ export default async function PerfilPage() {
           <LocalidadesSelector localidadesActuales={localidadesActuales} />
         </ColapsableSection>
 
-        {/* ── Mi distribuidora — colapsable, cerrada por defecto ── */}
+        {/* ── Mi distribuidora / organización — colapsable, cerrada por defecto ── */}
         {/* Incluye código personal siempre (aunque sea null) */}
         <ColapsableSection
-          title={distrisActivas.length > 1 ? 'Mis distribuidoras' : 'Mi distribuidora'}
+          title={
+            profile?.tipo_actor === 'fixer'
+              ? 'Mi organización'
+              : distrisActivas.length > 1 ? 'Mis distribuidoras' : 'Mi distribuidora'
+          }
           badge={
             invitacionesPendientes.length > 0
               ? invitacionesPendientes.length
