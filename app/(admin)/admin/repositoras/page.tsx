@@ -2,6 +2,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { CheckCircle2, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { tiempoRelativo } from '@/lib/utils'
+import { ValidarRepoBtn } from './validar-btn'
 
 function adminClient() {
   return createAdminClient(
@@ -26,16 +27,22 @@ export default async function RepositorasAdminPage() {
   const repoIds = repos.map(r => r.id)
 
   let fixerMap: Record<string, number> = {}
+  let campanasMap: Record<string, number> = {}
+
   if (repoIds.length > 0) {
-    const { data: fixersData } = await admin
-      .from('profiles')
-      .select('repositora_id')
-      .in('repositora_id', repoIds)
-      .eq('tipo_actor', 'fixer')
+    const [{ data: fixersData }, { data: campanasData }] = await Promise.all([
+      admin.from('profiles').select('repositora_id').in('repositora_id', repoIds).eq('tipo_actor', 'fixer'),
+      admin.from('campanas').select('id, campana_zonas(zona_id)').eq('estado', 'activa').eq('actor_campana', 'fixer'),
+    ])
     fixerMap = ((fixersData ?? []) as { repositora_id: string }[]).reduce(
       (acc, p) => { acc[p.repositora_id] = (acc[p.repositora_id] ?? 0) + 1; return acc },
       {} as Record<string, number>
     )
+    // Campañas con actor_campana='fixer' activas — contamos por repositora via fixers vinculados
+    // Como campañas no tienen repositora_id directamente, mostramos total de campañas fixer activas
+    const totalCampanasFixer = (campanasData ?? []).length
+    // Distribuimos el total como indicador global (no hay FK directa campana→repositora)
+    repoIds.forEach(id => { campanasMap[id] = totalCampanasFixer })
   }
 
   const validadas  = repos.filter(r => r.validada).length
@@ -63,7 +70,7 @@ export default async function RepositorasAdminPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Repositora', 'CUIT', 'Estado', 'Fixers', 'Registro'].map(h => (
+                {['Repositora', 'CUIT', 'Estado', 'Fixers', 'Camp. fixer activas', 'Registro', 'Acción'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>
@@ -74,8 +81,9 @@ export default async function RepositorasAdminPage() {
               {repos.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3.5">
-                    <p className="font-medium text-gray-900">{r.razon_social}</p>
-                    <p className="text-xs text-gray-400 font-mono truncate max-w-[180px]">{r.id}</p>
+                    <Link href={`/admin/repositoras/${r.id}`} className="font-medium text-gray-900 hover:text-blue-600 hover:underline">
+                      {r.razon_social}
+                    </Link>
                   </td>
                   <td className="px-4 py-3.5 text-xs text-gray-500 font-mono">
                     {r.cuit ?? '—'}
@@ -96,8 +104,22 @@ export default async function RepositorasAdminPage() {
                   <td className="px-4 py-3.5 text-sm text-gray-700">
                     {fixerMap[r.id] ?? 0}
                   </td>
+                  <td className="px-4 py-3.5 text-sm text-gray-700">
+                    {campanasMap[r.id] ?? 0}
+                  </td>
                   <td className="px-4 py-3.5 text-xs text-gray-400 whitespace-nowrap">
                     {tiempoRelativo(r.created_at)}
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center gap-2">
+                      {!r.validada && <ValidarRepoBtn repoId={r.id} />}
+                      <Link
+                        href={`/admin/repositoras/${r.id}`}
+                        className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Ver
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}
