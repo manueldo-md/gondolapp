@@ -39,7 +39,7 @@ export default async function CampanasPage() {
       .in('estado', ['activa', 'completada', 'abandonada']),
     supabase
       .from('profiles')
-      .select('nivel')
+      .select('nivel, tipo_actor')
       .eq('id', user.id)
       .single(),
     supabase
@@ -62,7 +62,8 @@ export default async function CampanasPage() {
     }
   }
 
-  const gondoleroNivel = (profileRes.data as { nivel: string } | null)?.nivel ?? 'casual'
+  const gondoleroNivel = (profileRes.data as { nivel: string; tipo_actor: string } | null)?.nivel ?? 'casual'
+  const gondoleroTipoActor = (profileRes.data as { nivel: string; tipo_actor: string } | null)?.tipo_actor ?? 'gondolero'
   const misDistriIds = (misDistrisRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
 
   // Misiones: qué campañas tiene el gondolero y cuántas misiones por campaña
@@ -98,11 +99,19 @@ export default async function CampanasPage() {
   }
 
   // ── Query de campañas activas (con filtro de zona) ────────────────────────────
+  // Filtrar por actor_campana según tipo_actor del usuario
+  const esFixer = gondoleroTipoActor === 'fixer'
   let query = supabase
     .from('campanas')
     .select(CAMPANA_SELECT)
     .eq('estado', 'activa')
     .order('created_at', { ascending: false })
+
+  if (esFixer) {
+    query = query.eq('actor_campana', 'fixer')
+  } else {
+    query = query.or('actor_campana.eq.gondolero,actor_campana.is.null')
+  }
 
   let listaActivas: CampanaRow[] = []
 

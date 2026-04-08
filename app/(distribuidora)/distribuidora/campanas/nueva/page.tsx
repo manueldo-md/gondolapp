@@ -27,6 +27,7 @@ export default function NuevaCampanaPage() {
     max_comercios_por_gondolero: '20',
     min_comercios_para_cobrar:   '3',
     nivel_minimo:                'casual',
+    actor_campana:               'gondolero',
   })
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -226,6 +227,31 @@ export default function NuevaCampanaPage() {
               <option value="activo">Activo (50+ fotos aprobadas)</option>
               <option value="pro">Pro (150+ fotos aprobadas)</option>
             </select>
+          </div>
+
+          {/* Actor de la campaña */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ¿Para quién es esta campaña?
+            </label>
+            <div className="flex gap-4">
+              {[
+                { value: 'gondolero', label: 'Gondoleros' },
+                { value: 'fixer', label: 'Fixers' },
+              ].map(opt => (
+                <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="actor_campana"
+                    value={opt.value}
+                    checked={form.actor_campana === opt.value}
+                    onChange={set('actor_campana')}
+                    className="accent-gondo-amber-400"
+                  />
+                  <span className="text-sm text-gray-700">{opt.label}</span>
+                </label>
+              ))}
+            </div>
           </div>
 
           {/* Zonas */}

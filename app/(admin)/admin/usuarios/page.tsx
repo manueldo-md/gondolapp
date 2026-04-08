@@ -19,6 +19,7 @@ const TIPO_COLOR: Record<TipoActor, string> = {
   distribuidora:'bg-gondo-amber-50 text-gondo-amber-400',
   marca:        'bg-gondo-indigo-50 text-gondo-indigo-600',
   admin:        'bg-red-50 text-red-600',
+  repositora:   'bg-blue-50 text-blue-700',
 }
 
 const NIVEL_COLOR: Record<string, string> = {

@@ -41,6 +41,7 @@ export async function crearCampanaInterna(formData: FormData) {
       financiada_por:              'distri',
       estado:                      'activa',
       tokens_creacion:             0,
+      actor_campana:               (formData.get('actor_campana') as string) || 'gondolero',
     })
     .select('id')
     .single()

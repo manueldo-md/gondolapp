@@ -21,6 +21,7 @@ const DESTINO_POR_ACTOR: Record<TipoActor, string> = {
   distribuidora: '/distribuidora/dashboard',
   marca:         '/marca/dashboard',
   admin:         '/admin/tablero',
+  repositora:    '/repositora/dashboard',
 }
 
 // Prefijos de ruta permitidos por tipo de actor
@@ -29,7 +30,8 @@ const RUTAS_PERMITIDAS: Record<TipoActor, string[]> = {
   fixer:         ['/gondolero'],
   distribuidora: ['/distribuidora'],
   marca:         ['/marca'],
-  admin:         ['/admin', '/gondolero', '/distribuidora', '/marca'], // admin ve todo
+  admin:         ['/admin', '/gondolero', '/distribuidora', '/marca', '/repositora'], // admin ve todo
+  repositora:    ['/repositora'],
 }
 
 export async function middleware(request: NextRequest) {

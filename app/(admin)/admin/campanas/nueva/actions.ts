@@ -50,6 +50,7 @@ export async function crearCampanaAdmin(formData: FormData) {
       financiada_por:              'gondolapp',
       estado:                      'activa',
       tokens_creacion:             0,
+      actor_campana:               (formData.get('actor_campana') as string) || 'gondolero',
     })
     .select('id')
     .single()

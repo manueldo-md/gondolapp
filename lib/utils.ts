@@ -144,6 +144,7 @@ export function labelTipoActor(tipo: TipoActor): string {
     distribuidora: 'Distribuidora',
     marca: 'Marca',
     admin: 'Administrador',
+    repositora: 'Repositora',
   }
   return labels[tipo]
 }

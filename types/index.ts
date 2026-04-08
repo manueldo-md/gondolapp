@@ -3,7 +3,7 @@
 // Umbral de nitidez para blur detection (varianza del Laplaciano)
 export const BLUR_THRESHOLD = 800
 
-export type TipoActor = 'gondolero' | 'fixer' | 'distribuidora' | 'marca' | 'admin'
+export type TipoActor = 'gondolero' | 'fixer' | 'distribuidora' | 'marca' | 'admin' | 'repositora'
 
 export type NivelGondolero = 'casual' | 'activo' | 'pro'
 
@@ -73,6 +73,7 @@ export interface Profile {
   puntos_totales_ganados: number
   distri_id: string | null
   marca_id: string | null
+  repositora_id?: string | null
   monotributo_verificado: boolean
   fotos_aprobadas: number
   tasa_aprobacion: number
@@ -86,6 +87,14 @@ export interface Distribuidora {
   razon_social: string
   cuit: string | null
   tokens_disponibles: number
+  validada: boolean
+  created_at: string
+}
+
+export interface Repositora {
+  id: string
+  razon_social: string
+  cuit: string | null
   validada: boolean
   created_at: string
 }
@@ -145,6 +154,7 @@ export interface Campana {
   fondo_resguardo_tokens: number
   comercios_relevados: number
   fotos_recibidas: number
+  actor_campana?: 'gondolero' | 'fixer'
   created_at: string
 }
 

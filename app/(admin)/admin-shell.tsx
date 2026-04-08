@@ -35,6 +35,8 @@ function buildNavSections(erroresNuevos: number, campanasPendientes: number): Na
       items: [
         { href: '/admin/usuarios',       label: 'Usuarios',       icon: Users },
         { href: '/admin/distribuidoras', label: 'Distribuidoras', icon: Truck },
+        { href: '/admin/repositoras',    label: 'Repositoras',    icon: Truck },
+        { href: '/admin/fixers',         label: 'Fixers',         icon: Users },
         { href: '/admin/marcas',         label: 'Marcas',         icon: Tag },
         { href: '/admin/relaciones',     label: 'Relaciones',     icon: Handshake },
       ],

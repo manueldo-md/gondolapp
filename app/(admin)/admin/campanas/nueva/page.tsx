@@ -18,6 +18,7 @@ interface Step1 {
   tipo_contenido: TipoContenidoBloque
   puntos_por_foto: string
   solicitar_precio: boolean
+  actor_campana: 'gondolero' | 'fixer'
 }
 
 interface Step2 {
@@ -64,6 +65,7 @@ export default function NuevaCampanaAdminPage() {
     tipo_contenido:     'propios',
     puntos_por_foto:    '5',
     solicitar_precio:   false,
+    actor_campana:      'gondolero' as 'gondolero' | 'fixer',
   })
 
   const [s2, setS2] = useState<Step2>({
@@ -80,9 +82,10 @@ export default function NuevaCampanaAdminPage() {
     setErrorMsg(null)
     const fd = new FormData()
     Object.entries(s1).forEach(([k, v]) => {
-      if (k !== 'solicitar_precio') fd.set(k, v as string)
+      if (k !== 'solicitar_precio' && k !== 'actor_campana') fd.set(k, v as string)
     })
     fd.set('solicitar_precio', s1.solicitar_precio ? 'true' : 'false')
+    fd.set('actor_campana', s1.actor_campana)
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
     grupos.flatMap(g => g.localidadIds).forEach(id => fd.append('localidad_ids', String(id)))
     fd.set('campos_json', JSON.stringify(campos))
@@ -265,6 +268,31 @@ export default function NuevaCampanaAdminPage() {
                   className={`w-28 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none transition ${ring}`}
                 />
                 <span className="text-sm text-gray-500">puntos por foto aprobada</span>
+              </div>
+            </div>
+
+            {/* Actor de la campaña */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                ¿Para quién es esta campaña?
+              </label>
+              <div className="flex gap-4">
+                {[
+                  { value: 'gondolero' as const, label: 'Gondoleros' },
+                  { value: 'fixer' as const, label: 'Fixers' },
+                ].map(opt => (
+                  <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="actor_campana"
+                      value={opt.value}
+                      checked={s1.actor_campana === opt.value}
+                      onChange={() => setS1(p => ({ ...p, actor_campana: opt.value }))}
+                      className="accent-[#1E1B4B]"
+                    />
+                    <span className="text-sm text-gray-700">{opt.label}</span>
+                  </label>
+                ))}
               </div>
             </div>
           </>

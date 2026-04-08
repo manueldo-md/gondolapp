@@ -15,7 +15,7 @@ import { generarAlias } from '@/lib/aliases'
 type Fase = 'bienvenida' | 'login' | 'registro' | 'zonas'
 
 const OPCIONES_TIPO: Array<{
-  tipo: Exclude<TipoActor, 'admin'>
+  tipo: Exclude<TipoActor, 'admin' | 'repositora'>
   label: string
   descripcion: string
   emoji: string
