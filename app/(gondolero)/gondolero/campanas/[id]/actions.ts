@@ -19,9 +19,10 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
   )
 
   // Verificar campaña activa y validar restricciones
-  const { data: campana } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campana } = await (admin as any)
     .from('campanas')
-    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados, nivel_minimo, financiada_por, distri_id, marca_id')
+    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados, nivel_minimo, financiada_por, distri_id, marca_id, actor_campana')
     .eq('id', campanaId)
     .eq('estado', 'activa')
     .single() as {
@@ -34,52 +35,81 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
         financiada_por: string
         distri_id: string | null
         marca_id: string | null
+        actor_campana: string | null
       } | null
     }
 
   if (!campana) return { error: 'La campaña no está disponible.' }
 
-  // ── Validar acceso según financiador ────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: perfilUsuario } = await (admin as any)
+    .from('profiles')
+    .select('tipo_actor')
+    .eq('id', user.id)
+    .single() as { data: { tipo_actor: string } | null }
+
+  const esFixer = perfilUsuario?.tipo_actor === 'fixer'
+
+  // ── Validar que el tipo de actor coincide con la campaña ─────────────────────
+  if (campana.actor_campana === 'fixer' && !esFixer) {
+    return { error: 'Esta campaña es exclusiva para fixers.' }
+  }
+  if (campana.actor_campana === 'gondolero' && esFixer) {
+    return { error: 'Esta campaña es exclusiva para gondoleros.' }
+  }
+
+  // ── Validar acceso según financiador ─────────────────────────────────────────
+  // Usa la tabla de vinculación correcta según tipo_actor
+  const tablaVinculacion = esFixer ? 'fixer_distri_solicitudes' : 'gondolero_distri_solicitudes'
+  const columnaId = esFixer ? 'fixer_id' : 'gondolero_id'
+
   if (campana.financiada_por === 'distri' && campana.distri_id) {
-    const { data: vinculacion } = await admin
-      .from('gondolero_distri_solicitudes')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: vinculacion } = await (admin as any)
+      .from(tablaVinculacion)
       .select('id')
-      .eq('gondolero_id', user.id)
+      .eq(columnaId, user.id)
       .eq('distri_id', campana.distri_id)
       .eq('estado', 'aprobada')
       .maybeSingle()
 
     if (!vinculacion) {
-      return { error: 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.' }
+      return { error: esFixer
+        ? 'Esta campaña es exclusiva para fixers vinculados a esa distribuidora.'
+        : 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.' }
     }
   }
 
   if (campana.financiada_por === 'marca') {
     if (campana.distri_id) {
-      // Campaña ejecutada por una distri específica → el gondolero debe estar vinculado a ESA distri
-      const { data: vinculacion } = await admin
-        .from('gondolero_distri_solicitudes')
+      // Campaña ejecutada por una distri específica → el participante debe estar vinculado a ESA distri
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: vinculacion } = await (admin as any)
+        .from(tablaVinculacion)
         .select('id')
-        .eq('gondolero_id', user.id)
+        .eq(columnaId, user.id)
         .eq('distri_id', campana.distri_id)
         .eq('estado', 'aprobada')
         .maybeSingle()
 
       if (!vinculacion) {
-        return { error: 'Esta campaña es exclusiva para gondoleros de la distribuidora que la ejecuta.' }
+        return { error: esFixer
+          ? 'Esta campaña es exclusiva para fixers de la distribuidora que la ejecuta.'
+          : 'Esta campaña es exclusiva para gondoleros de la distribuidora que la ejecuta.' }
       }
     } else if (campana.marca_id) {
-      // Campaña de marca sin distri específica → cualquier distri del gondolero vinculada a esa marca
-      const { data: misDistrisRows } = await admin
-        .from('gondolero_distri_solicitudes')
+      // Campaña de marca sin distri específica → cualquier distri vinculada a esa marca
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: misDistrisRows } = await (admin as any)
+        .from(tablaVinculacion)
         .select('distri_id')
-        .eq('gondolero_id', user.id)
+        .eq(columnaId, user.id)
         .eq('estado', 'aprobada')
 
-      const misDistriIds = (misDistrisRows ?? []).map(d => (d as { distri_id: string }).distri_id)
+      const misDistriIds = ((misDistrisRows ?? []) as { distri_id: string }[]).map(d => d.distri_id)
 
       if (misDistriIds.length === 0) {
-        return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
+        return { error: 'Esta campaña es exclusiva para participantes de distribuidoras vinculadas a esta marca.' }
       }
 
       const { data: relacion } = await admin
@@ -91,7 +121,7 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
         .limit(1)
 
       if (!relacion?.length) {
-        return { error: 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.' }
+        return { error: 'Esta campaña es exclusiva para participantes de distribuidoras vinculadas a esta marca.' }
       }
     }
   }

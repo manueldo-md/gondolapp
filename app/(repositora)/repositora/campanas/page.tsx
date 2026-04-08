@@ -55,37 +55,63 @@ export default async function RepoCampanasPage() {
   if (!perfil?.repositora_id) redirect('/repositora/dashboard')
   const repoId: string = perfil.repositora_id
 
-  // Obtener distribuidoras vinculadas a esta repositora a través de sus fixers
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: fixersData } = await (admin as any)
-    .from('fixer_repo_solicitudes')
-    .select('fixer_id')
-    .eq('repositora_id', repoId)
-    .eq('estado', 'aprobada')
-
-  const fixerIds = (fixersData ?? []).map((f: { fixer_id: string }) => f.fixer_id)
-
-  let distrisRelacionadas: string[] = []
-  if (fixerIds.length > 0) {
+  // Obtener relaciones explícitas de esta repositora
+  const [distrisRes, marcasRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: distrisData } = await (admin as any)
-      .from('fixer_distri_solicitudes')
+    (admin as any)
+      .from('distri_repo_relaciones')
       .select('distri_id')
-      .in('fixer_id', fixerIds)
-      .eq('estado', 'aprobada')
-    distrisRelacionadas = [...new Set(((distrisData ?? []) as { distri_id: string }[]).map(d => d.distri_id))]
-  }
+      .eq('repositora_id', repoId)
+      .eq('estado', 'activa'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
+      .from('marca_repo_relaciones')
+      .select('marca_id')
+      .eq('repositora_id', repoId)
+      .eq('estado', 'activa'),
+  ])
 
-  // Campañas para fixers: solo de distribuidoras relacionadas, o financiadas por gondolapp
+  const distrisRelacionadas = ((distrisRes.data ?? []) as { distri_id: string }[]).map(d => d.distri_id)
+  const marcasRelacionadas  = ((marcasRes.data ?? []) as { marca_id: string }[]).map(m => m.marca_id)
+
+  // Sin relaciones → sin campañas
+  const sinRelaciones = distrisRelacionadas.length === 0 && marcasRelacionadas.length === 0
   let campanas: CampanaRow[] = []
-  if (distrisRelacionadas.length > 0) {
-    const { data } = await admin
+
+  if (!sinRelaciones) {
+    // Campañas para fixers de distribuidoras directamente relacionadas
+    const orConditions: string[] = []
+    if (distrisRelacionadas.length > 0) {
+      // Se filtrará en memoria tras la query usando distrisRelacionadas
+    }
+    if (marcasRelacionadas.length > 0) {
+      // Se filtrará en memoria tras la query usando marcasRelacionadas
+    }
+
+    // Query base: campañas de fixer activas o pausadas
+    let query = admin
       .from('campanas')
-      .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, financiada_por, instruccion, created_at')
+      .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, financiada_por, instruccion, created_at, distri_id, marca_id')
       .eq('actor_campana', 'fixer')
       .in('estado', ['activa', 'pausada'])
-      .in('distri_id', distrisRelacionadas)
       .order('created_at', { ascending: false })
+
+    // Filtrar por distris Y marcas relacionadas usando OR
+    if (distrisRelacionadas.length > 0 && marcasRelacionadas.length > 0) {
+      query = query.or(
+        `distri_id.in.(${distrisRelacionadas.join(',')}),marca_id.in.(${marcasRelacionadas.join(',')}),financiada_por.eq.gondolapp`
+      )
+    } else if (distrisRelacionadas.length > 0) {
+      query = query.or(
+        `distri_id.in.(${distrisRelacionadas.join(',')}),financiada_por.eq.gondolapp`
+      )
+    } else {
+      query = query.or(
+        `marca_id.in.(${marcasRelacionadas.join(',')}),financiada_por.eq.gondolapp`
+      )
+    }
+
+    const { data } = await query
     campanas = (data ?? []) as CampanaRow[]
   }
 
@@ -106,7 +132,11 @@ export default async function RepoCampanasPage() {
         <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-2xl border border-gray-100">
           <Megaphone size={40} className="text-gray-200 mb-4" />
           <p className="font-semibold text-gray-700">Sin campañas activas para fixers</p>
-          <p className="text-sm text-gray-400 mt-1">Las campañas de tipo fixer aparecerán acá cuando estén activas.</p>
+          <p className="text-sm text-gray-400 mt-1">
+            {sinRelaciones
+              ? 'Tu repositora aún no tiene distribuidoras o marcas vinculadas.'
+              : 'Las campañas de tipo fixer aparecerán acá cuando estén activas.'}
+          </p>
         </div>
       ) : (
         <div className="space-y-4">

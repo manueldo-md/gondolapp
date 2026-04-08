@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Star, Clock, Camera, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
@@ -92,10 +93,16 @@ export default async function CampanaDetallePage({
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
+  const admin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
   const { data: campanaData } = await supabase
     .from('campanas')
     .select(`
-      id, nombre, tipo, financiada_por, distri_id, marca_id, estado,
+      id, nombre, tipo, financiada_por, distri_id, marca_id, estado, actor_campana,
       puntos_por_foto, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
       objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
@@ -109,7 +116,7 @@ export default async function CampanaDetallePage({
 
   const campanaActiva = (campanaData as unknown as { estado: string }).estado === 'activa'
 
-  const [{ data: participacionData }, { data: profileData }, { data: misDistrisData }, { data: misionesData }] = await Promise.all([
+  const [{ data: participacionData }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misionesData }] = await Promise.all([
     supabase
       .from('participaciones')
       .select('id, estado')
@@ -120,13 +127,20 @@ export default async function CampanaDetallePage({
       .maybeSingle(),
     supabase
       .from('profiles')
-      .select('nivel')
+      .select('nivel, tipo_actor')
       .eq('id', user.id)
       .single(),
-    supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
       .from('gondolero_distri_solicitudes')
       .select('distri_id')
       .eq('gondolero_id', user.id)
+      .eq('estado', 'aprobada'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
+      .from('fixer_distri_solicitudes')
+      .select('distri_id')
+      .eq('fixer_id', user.id)
       .eq('estado', 'aprobada'),
     supabase
       .from('misiones')
@@ -138,8 +152,13 @@ export default async function CampanaDetallePage({
 
   const c = campanaData as unknown as CampanaDetalle
   const participacion = participacionData as { id: string; estado: string } | null
-  const gondoleroNivel = (profileData as { nivel: string } | null)?.nivel ?? 'casual'
-  const misDistriIds = (misDistrisData ?? []).map((d: { distri_id: string }) => d.distri_id)
+  const profileRow = profileData as { nivel: string; tipo_actor: string } | null
+  const gondoleroNivel = profileRow?.nivel ?? 'casual'
+  const esFixer = profileRow?.tipo_actor === 'fixer'
+  const actorCampana = (campanaData as unknown as { actor_campana: string | null }).actor_campana
+  const misDistriIds = esFixer
+    ? ((misDistrisFixerData ?? []) as { distri_id: string }[]).map(d => d.distri_id)
+    : ((misDistrisGondoleroData ?? []) as { distri_id: string }[]).map(d => d.distri_id)
   const misiones = (misionesData as MisionRow[] | null) ?? []
 
   const yaUnido        = participacion?.estado === 'activa' || misiones.length > 0
@@ -155,17 +174,26 @@ export default async function CampanaDetallePage({
   const esMiDistri = !!c.distri_id && misDistriIds.includes(c.distri_id)
   const esGondolApp = c.financiada_por === 'gondolapp' || (!c.distri_id && !c.marca_id)
 
-  // ── Control de acceso según financiador ───────────────────────────────────────
+  // ── Control de acceso según actor y financiador ───────────────────────────────
   let sinAcceso = false
   let motivoSinAcceso: string | undefined
 
-  if (c.financiada_por === 'distri' && c.distri_id && !misDistriIds.includes(c.distri_id)) {
+  // Verificar que el tipo de actor coincide con el tipo de campaña
+  if (actorCampana === 'fixer' && !esFixer) {
     sinAcceso = true
-    motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.'
+    motivoSinAcceso = 'Esta campaña es exclusiva para fixers.'
+  } else if (actorCampana === 'gondolero' && esFixer) {
+    sinAcceso = true
+    motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros.'
+  } else if (c.financiada_por === 'distri' && c.distri_id && !misDistriIds.includes(c.distri_id)) {
+    sinAcceso = true
+    motivoSinAcceso = esFixer
+      ? 'Esta campaña es exclusiva para fixers vinculados a esa distribuidora.'
+      : 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.'
   } else if (c.financiada_por === 'marca' && c.marca_id) {
     if (misDistriIds.length === 0) {
       sinAcceso = true
-      motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros de distribuidoras vinculadas a esta marca.'
+      motivoSinAcceso = 'Esta campaña es exclusiva para participantes de distribuidoras vinculadas a esta marca.'
     }
   }
 
