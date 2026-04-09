@@ -1090,23 +1090,37 @@ function CapturaContent() {
     return (
       <div className="relative">
         {/* Instrucción del campo sobre la cámara */}
-        {campoCamara?.pregunta && (
-          <div className="fixed top-0 left-0 right-0 z-50 bg-black/70 px-4 py-3 text-center">
-            <p className="text-white text-sm font-medium">{campoCamara.pregunta}</p>
-          </div>
-        )}
+        <div className="fixed top-0 left-0 right-0 z-50 bg-black/70 px-4 py-3 text-center">
+          <p className="text-white text-sm font-medium">
+            {campoCamara?.pregunta || 'Tomá la foto adicional'}
+          </p>
+        </div>
         <PasoCamara
           onCaptura={(blob) => {
             const file = blob instanceof File
               ? blob
               : new File([blob], 'campo-foto.jpg', { type: 'image/jpeg' })
-            setRespuestas(r => ({ ...r, [campoFotoActualId]: file }))
-            setCampoFotoActualId(null)
-            setPaso('formulario')
+            // Guardar foto de este campo
+            const nuevasRespuestas = { ...respuestas, [campoFotoActualId]: file }
+            setRespuestas(nuevasRespuestas)
+            // Buscar siguiente campo tipo='foto' aún no capturado
+            const siguienteFoto = bloqueParaCamara?.campos.find(
+              c => c.tipo === 'foto' && !(nuevasRespuestas[c.id] instanceof File)
+            ) ?? null
+            if (siguienteFoto) {
+              // Encadenar al siguiente campo foto (sin cambiar de paso)
+              setCampoFotoActualId(siguienteFoto.id)
+            } else {
+              // No hay más fotos de campo — avanzar al formulario o confirmacion
+              setCampoFotoActualId(null)
+              const camposNonFoto = bloqueParaCamara?.campos.filter(c => c.tipo !== 'foto') ?? []
+              setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
+            }
           }}
           onVolver={() => {
+            // Volver a la cámara principal del bloque
             setCampoFotoActualId(null)
-            setPaso('formulario')
+            setPaso('camara')
           }}
         />
       </div>
@@ -1132,7 +1146,18 @@ function CapturaContent() {
             console.log('Mostrando advertencia de blur')
             setPaso('blur-advertencia')
           } else {
-            setPaso((bloqueActual?.campos?.length ?? 0) > 0 ? 'formulario' : 'confirmacion')
+            // Avanzar al primer campo tipo='foto' pendiente (paso de cámara adicional),
+            // luego al formulario para campos no-foto, o directamente a confirmacion
+            const primerFotoPendiente = bloqueActual?.campos.find(
+              c => c.tipo === 'foto' && !(respuestas[c.id] instanceof File)
+            ) ?? null
+            if (primerFotoPendiente) {
+              setCampoFotoActualId(primerFotoPendiente.id)
+              setPaso('formulario-camara')
+            } else {
+              const camposNonFoto = bloqueActual?.campos.filter(c => c.tipo !== 'foto') ?? []
+              setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
+            }
           }
         }}
         onVolver={() => setPaso('gps')}
@@ -1665,7 +1690,16 @@ function CapturaContent() {
             <button
               onClick={() => {
                 const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
-                setPaso((bloqueActual?.campos?.length ?? 0) > 0 ? 'formulario' : 'confirmacion')
+                const primerFotoPendiente = bloqueActual?.campos.find(
+                  c => c.tipo === 'foto' && !(respuestas[c.id] instanceof File)
+                ) ?? null
+                if (primerFotoPendiente) {
+                  setCampoFotoActualId(primerFotoPendiente.id)
+                  setPaso('formulario-camara')
+                } else {
+                  const camposNonFoto = bloqueActual?.campos.filter(c => c.tipo !== 'foto') ?? []
+                  setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
+                }
               }}
               className="w-full py-3.5 border border-amber-300 text-amber-700 font-semibold rounded-xl min-h-touch"
             >
@@ -1680,7 +1714,8 @@ function CapturaContent() {
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
   const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
-  const tieneCampos = (bloqueActual?.campos?.length ?? 0) > 0
+  // tieneCampos: solo cuenta campos no-foto para el progreso/back-nav del formulario
+  const tieneCampos = (bloqueActual?.campos?.filter(c => c.tipo !== 'foto').length ?? 0) > 0
   const esCampanaComercio = campana?.tipo === 'comercios'
   const totalBloques = campana?.bloques?.length ?? 1
   const PASOS_LABEL = esCampanaComercio
@@ -1724,7 +1759,7 @@ function CapturaContent() {
                   camara:                'gps',
                   'blur-advertencia':    'camara',
                   formulario:            'camara',
-                  'formulario-camara':   'formulario',
+                  'formulario-camara':   'camara',
                   confirmacion:          tieneCampos ? 'formulario' : 'camara',
                   'mision-resumen':      'confirmacion',
                   exito:                 'mision-resumen',
@@ -1954,11 +1989,17 @@ function CapturaContent() {
         )}
 
         {/* ── PASO FORMULARIO ── */}
-        {paso === 'formulario' && campana && bloqueActual && bloqueActual.campos.length > 0 && (
+        {paso === 'formulario' && campana && bloqueActual && bloqueActual.campos.filter(c => c.tipo !== 'foto').length > 0 && (
           <div className="space-y-5">
-            <p className="text-sm font-semibold text-gray-700">
-              Preguntas adicionales ({bloqueActual.campos.filter(c => c.obligatorio).length} obligatoria{bloqueActual.campos.filter(c => c.obligatorio).length !== 1 ? 's' : ''})
-            </p>
+            {(() => {
+              const camposNonFoto = bloqueActual.campos.filter(c => c.tipo !== 'foto')
+              const oblig = camposNonFoto.filter(c => c.obligatorio).length
+              return (
+                <p className="text-sm font-semibold text-gray-700">
+                  Preguntas adicionales ({oblig} obligatoria{oblig !== 1 ? 's' : ''})
+                </p>
+              )
+            })()}
 
             {/* Precio — si el bloque lo requiere */}
             {bloqueActual.solicitarPrecio && (
@@ -1980,7 +2021,7 @@ function CapturaContent() {
               </div>
             )}
 
-            {bloqueActual.campos.map(campo => {
+            {bloqueActual.campos.filter(c => c.tipo !== 'foto').map(campo => {
               const val = respuestas[campo.id]
               return (
                 <div key={campo.id} className="space-y-2">
@@ -2120,10 +2161,10 @@ function CapturaContent() {
             })}
 
             {(() => {
-              const camposObligatorios = bloqueActual.campos.filter(c => c.obligatorio)
-              const todosCompletos = camposObligatorios.every(c => {
+              // Solo validar campos no-foto: los campos tipo='foto' se capturan en pasos previos
+              const camposObligatoriosNonFoto = bloqueActual.campos.filter(c => c.obligatorio && c.tipo !== 'foto')
+              const todosCompletos = camposObligatoriosNonFoto.every(c => {
                 const v = respuestas[c.id]
-                if (c.tipo === 'foto') return v instanceof File
                 if (v === undefined || v === null || v === '') return false
                 if (Array.isArray(v) && v.length === 0) return false
                 return true
