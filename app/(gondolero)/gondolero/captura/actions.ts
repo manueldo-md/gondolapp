@@ -273,14 +273,9 @@ export async function registrarMision(params: RegistrarMisionParams) {
     }
   }
 
-  // 3. Acreditar puntos por la misión completa (una sola vez)
-  await db.from('movimientos_puntos').insert({
-    gondolero_id: user.id,
-    tipo:         'credito',
-    monto:        params.puntosTotal,
-    concepto:     `Misión completada (${params.fotos.length} foto${params.fotos.length !== 1 ? 's' : ''})`,
-    campana_id:   params.campanaId,
-  })
+  // 3. NO acreditar puntos aquí — bounty_estado='retenido' hasta aprobación.
+  // Los puntos se acreditan en actualizarEstadoMision cuando todas las fotos
+  // están aprobadas Y el gondolero alcanzó el mínimo de misiones para cobrar.
 
   // 4. Notificar a la distribuidora del gondolero y a la marca de la campaña (no bloquea el flujo)
   try {
