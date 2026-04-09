@@ -80,20 +80,23 @@ export async function crearCampanaAdmin(formData: FormData) {
         tipo: string; pregunta: string; opciones: string[]
         obligatorio: boolean; orden: number
       }[]
-      const camposValidos = campos.filter(c => c.pregunta.trim())
+      // Para campos tipo 'foto', la pregunta es opcional (es la instrucción de la foto).
+      // Para el resto, sí se requiere pregunta no vacía.
+      const camposValidos = campos.filter(c => c.tipo === 'foto' || c.pregunta.trim())
       if (camposValidos.length > 0) {
-        await admin.from('bloque_campos').insert(
+        const { error: errCampos } = await admin.from('bloque_campos').insert(
           camposValidos.map(c => ({
             bloque_id:   bloque.id,
             tipo:        c.tipo,
-            pregunta:    c.pregunta.trim(),
+            pregunta:    c.pregunta.trim() || (c.tipo === 'foto' ? 'Fotografiá el producto' : ''),
             opciones:    c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
             obligatorio: c.obligatorio,
             orden:       c.orden,
           }))
         )
+        if (errCampos) console.error('[crearCampanaAdmin] Error insertando bloque_campos:', errCampos.message)
       }
-    } catch { /* campos_json inválido — ignorar */ }
+    } catch (e) { console.error('[crearCampanaAdmin] Error parseando campos_json:', e) }
   }
 
   // Guardar zonas de la campaña (nuevo sistema de localidades)
