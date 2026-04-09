@@ -183,7 +183,7 @@ export default async function CampanasPage() {
   // REGLA: participacion_estado='activa' AND campana.estado='activa'
   // listaActivas ya filtra por campana.estado='activa'
   const misCampanas = listaActivas
-    .filter(c => participacionMap.get(c.id) === 'activa')
+    .filter(c => participacionMap.has(c.id) || misionCampanaIds.has(c.id))
     .sort((a, b) => {
       if (!a.fecha_fin && !b.fecha_fin) return 0
       if (!a.fecha_fin) return 1
@@ -196,12 +196,10 @@ export default async function CampanasPage() {
   // ── Sección 2: Disponibles ────────────────────────────────────────────────────
   // REGLA: campana.estado='activa' AND sin participación del gondolero
   // completada → ocultar (cupo completado); abandonada → puede volver → disponible
-  const disponibles = listaActivas.filter(c => {
-    const estado = participacionMap.get(c.id)
-    return !misCampanasIds.has(c.id)        // no está en en_curso
-      && estado !== 'completada'            // no completó su cupo
-      && tieneAcceso(c)                     // cumple requisitos de zona y nivel
-  })
+  const disponibles = listaActivas.filter(c =>
+    !misCampanasIds.has(c.id)   // no tiene participación ni misiones
+    && tieneAcceso(c)           // cumple requisitos de zona y nivel
+  )
   console.log('[campanas-lista] disponibles después de filtro:', disponibles.length, '— IDs debug en disponibles:', IDS_DEBUG.filter(id => disponibles.some(c => c.id === id)))
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
