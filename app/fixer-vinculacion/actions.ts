@@ -25,24 +25,41 @@ export async function aceptarInvitacionFixer(
   await (admin as any).from('fixer_invitacion_tokens').update({ usado: true }).eq('id', tokenId)
 
   if (actorTipo === 'distri') {
-    // Crear solicitud en fixer_distri_solicitudes con estado 'pendiente' (el distri la aprueba)
+    // Link generado por la distri = aprobación implícita → estado 'aprobada' directo
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: distriData, error: distriError } = await (admin as any)
       .from('fixer_distri_solicitudes')
       .upsert(
-        { fixer_id: fixerId, distri_id: actorId, estado: 'pendiente', iniciado_por: 'fixer', updated_at: new Date().toISOString() },
+        { fixer_id: fixerId, distri_id: actorId, estado: 'aprobada', iniciado_por: 'distri', updated_at: new Date().toISOString() },
         { onConflict: 'fixer_id,distri_id' }
       )
       .select()
     console.log('[fixer-invite] distri insert result:', { data: distriData, error: distriError })
     if (distriError) return { error: 'No se pudo registrar la solicitud: ' + distriError.message }
+
+    // Actualizar distri_id en el profile del fixer si no tiene ninguno aún
+    const { data: profileCheck } = await admin
+      .from('profiles')
+      .select('distri_id')
+      .eq('id', fixerId)
+      .single()
+    if (!profileCheck?.distri_id) {
+      const { error: profileError } = await admin
+        .from('profiles')
+        .update({ distri_id: actorId })
+        .eq('id', fixerId)
+      console.log('[fixer-invite] distri profile update:', profileError ?? 'ok')
+      if (profileError) return { error: 'Solicitud registrada pero no se pudo vincular el perfil.' }
+    }
+
+    revalidatePath('/distribuidora/fixers')
   } else {
-    // repositora — crear solicitud en fixer_repo_solicitudes
+    // Link generado por la repositora = aprobación implícita → estado 'aprobada' directo
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: repoData, error: repoError } = await (admin as any)
       .from('fixer_repo_solicitudes')
       .upsert(
-        { fixer_id: fixerId, repositora_id: actorId, estado: 'pendiente', updated_at: new Date().toISOString() },
+        { fixer_id: fixerId, repositora_id: actorId, estado: 'aprobada', updated_at: new Date().toISOString() },
         { onConflict: 'fixer_id,repositora_id' }
       )
       .select()
