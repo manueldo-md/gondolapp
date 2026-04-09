@@ -61,15 +61,15 @@ export async function republicarCampanaMarca(campanaId: string): Promise<{ error
 
   await admin().from('campanas').update(updates).eq('id', campanaId)
 
-  // Insert new zones into campana_localidades (nuevo sistema geográfico)
+  // Insert new zones (avoid duplicates)
   if (Array.isArray(c.draft_zonas) && c.draft_zonas.length > 0) {
-    const { data: existing } = await admin().from('campana_localidades').select('localidad_id').eq('campana_id', campanaId)
-    const existingIds = new Set((existing ?? []).map((z: { localidad_id: number }) => String(z.localidad_id)))
+    const { data: existing } = await admin().from('campana_zonas').select('zona_id').eq('campana_id', campanaId)
+    const existingIds = new Set((existing ?? []).map((z: { zona_id: string }) => z.zona_id))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const toInsert = (c.draft_zonas as any[]).filter((z: any) => !existingIds.has(String(z.id)))
+    const toInsert = (c.draft_zonas as any[]).filter((z: any) => !existingIds.has(z.id))
     if (toInsert.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await admin().from('campana_localidades').insert(toInsert.map((z: any) => ({ campana_id: campanaId, localidad_id: Number(z.id) })))
+      await admin().from('campana_zonas').insert(toInsert.map((z: any) => ({ campana_id: campanaId, zona_id: z.id })))
     }
   }
 

@@ -50,7 +50,7 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
       tiene_draft, draft_descripcion, draft_bounty, draft_zonas, draft_bloques,
       marca:marcas ( razon_social ),
       bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
-      campana_localidades ( localidad_id, localidades ( id, nombre ) )
+      campana_zonas ( zona_id, zonas ( id, nombre ) )
     `)
     .eq('id', params.id)
     .single()
@@ -71,20 +71,13 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
     gondolero: Array.isArray(p.gondolero) ? (p.gondolero[0] ?? null) : p.gondolero,
   }))
 
-  // Zonas (nuevo sistema: campana_localidades → localidades)
+  const { data: todasZonas } = await admin.from('zonas').select('id, nombre').order('nombre')
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c = campana as any
-  const localidadesActuales = (c.campana_localidades ?? []) as any[]
-  const localidadIdsActuales = new Set(
-    localidadesActuales.map((cz: any) => String(Array.isArray(cz.localidades) ? cz.localidades[0]?.id : cz.localidades?.id)).filter(Boolean)
-  )
-  const zonasActuales: string[] = localidadesActuales
-    .map((cz: any) => Array.isArray(cz.localidades) ? cz.localidades[0]?.nombre : cz.localidades?.nombre)
-    .filter(Boolean)
-  const { data: todasLocalidades } = await admin.from('localidades').select('id, nombre').order('nombre')
-  const zonasDisponibles = (todasLocalidades ?? [])
-    .filter((l: any) => !localidadIdsActuales.has(String(l.id)))
-    .map((l: any) => ({ id: String(l.id), nombre: l.nombre }))
+  const zonaIds = new Set((c.campana_zonas ?? []).map((cz: any) => Array.isArray(cz.zonas) ? cz.zonas[0]?.id : cz.zonas?.id).filter(Boolean))
+  const zonasActuales: string[] = (c.campana_zonas ?? []).map((cz: any) => Array.isArray(cz.zonas) ? cz.zonas[0]?.nombre : cz.zonas?.nombre).filter(Boolean)
+  const zonasDisponibles = (todasZonas ?? []).filter((z: any) => !zonaIds.has(z.id)) as { id: string; nombre: string }[]
 
   const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
   const bloques = ((c.bloques_foto ?? []) as any[]).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))

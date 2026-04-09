@@ -67,7 +67,7 @@ export default async function AdminCampanaDetallePage({
       bloques_foto ( id, orden, instruccion, tipo_contenido,
         bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio )
       ),
-      campana_localidades ( localidad_id, localidades ( nombre ) )
+      campana_zonas ( zona_id, zonas ( nombre ) )
     `).eq('id', params.id).single(),
 
     admin.from('participaciones')
@@ -90,8 +90,8 @@ export default async function AdminCampanaDetallePage({
     : campana.distri?.razon_social
 
   const bloques = (campana.bloques_foto ?? []).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
-  const zonas = (campana.campana_localidades ?? [])
-    .map((cz: any) => Array.isArray(cz.localidades) ? cz.localidades[0]?.nombre : cz.localidades?.nombre)
+  const zonas = (campana.campana_zonas ?? [])
+    .map((cz: any) => Array.isArray(cz.zonas) ? cz.zonas[0]?.nombre : cz.zonas?.nombre)
     .filter(Boolean)
 
   const fp = (campana.financiada_por ?? 'gondolapp') as FinanciadaPor
