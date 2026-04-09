@@ -77,7 +77,7 @@ export default async function FixerVinculacionPage({
   }
 
   if (!user) {
-    redirect(`/auth?redirect=/fixer-vinculacion?token=${token}`)
+    redirect(`/auth?redirect=${encodeURIComponent(`/fixer-vinculacion?token=${token}`)}`)
   }
 
   // Verificar que el usuario es fixer
