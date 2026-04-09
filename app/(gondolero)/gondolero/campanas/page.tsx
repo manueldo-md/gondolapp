@@ -175,8 +175,8 @@ export default async function CampanasPage() {
   }
 
   // ── Sección 1: En curso ──────────────────────────────────────────────────────
-  // Participación activa en campaña activa, ordenadas por fecha_fin ASC
-  // listaActivas ya filtra por estado='activa', así que solo chequeamos participación
+  // REGLA: participacion_estado='activa' AND campana.estado='activa'
+  // listaActivas ya filtra por campana.estado='activa'
   const misCampanas = listaActivas
     .filter(c => participacionMap.get(c.id) === 'activa')
     .sort((a, b) => {
@@ -189,21 +189,20 @@ export default async function CampanasPage() {
   const misCampanasIds = new Set(misCampanas.map(c => c.id))
 
   // ── Sección 2: Disponibles ────────────────────────────────────────────────────
-  // Activas sin participación activa ni misiones, con acceso
-  const disponibles = listaActivas.filter(c =>
-    !misCampanasIds.has(c.id) &&
-    !misionCampanaIds.has(c.id) &&
-    participacionMap.get(c.id) !== 'completada' &&
-    tieneAcceso(c)
-  )
+  // REGLA: campana.estado='activa' AND sin participación del gondolero
+  // completada → ocultar (cupo completado); abandonada → puede volver → disponible
+  const disponibles = listaActivas.filter(c => {
+    const estado = participacionMap.get(c.id)
+    return !misCampanasIds.has(c.id)        // no está en en_curso
+      && estado !== 'completada'            // no completó su cupo
+      && tieneAcceso(c)                     // cumple requisitos de zona y nivel
+  })
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
-  // Cerradas/suspendidas donde el gondolero tiene participación o misiones
+  // REGLA: campana.estado IN ('cerrada','suspendida') AND (tiene participación OR misiones)
   const activaIds = new Set(listaActivas.map(c => c.id))
-  const finalizadasPotenciales = [
-    ...[...misionCampanaIds].filter(id => !activaIds.has(id)),
-    ...[...participacionMap.keys()].filter(id => !activaIds.has(id) && !misionCampanaIds.has(id)),
-  ]
+  const todasMisIds = new Set([...misionCampanaIds, ...participacionMap.keys()])
+  const finalizadasPotenciales = [...todasMisIds].filter(id => !activaIds.has(id))
 
   let finalizadas: CampanaRow[] = []
   if (finalizadasPotenciales.length > 0) {
