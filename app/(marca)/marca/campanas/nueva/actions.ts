@@ -119,9 +119,10 @@ export async function crearCampana(formData: FormData) {
   // Guardar zonas de la campaña (nuevo sistema de localidades)
   const localidadIds = formData.getAll('localidad_ids').map(Number).filter(Boolean)
   if (localidadIds.length > 0) {
-    await admin.from('campana_localidades').insert(
+    const { error: errZonas } = await admin.from('campana_localidades').insert(
       localidadIds.map(localidad_id => ({ campana_id: campanaId, localidad_id }))
     )
+    if (errZonas) console.error('[crearCampana] Error insertando campana_localidades:', errZonas.message)
   }
 
   // Registrar movimiento

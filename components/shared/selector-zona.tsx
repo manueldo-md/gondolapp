@@ -102,7 +102,11 @@ export function SelectorZona({
     })
   }
 
-  const canAgregar = !!departamentoId && (todasSel || selLocal.size > 0)
+  // Si "todas" está seleccionado, solo habilitar cuando las localidades ya cargaron (> 0)
+  // para evitar agregar un grupo vacío si el usuario hace click antes de que cargue el listado
+  const canAgregar = !!departamentoId && (
+    (todasSel && localidades.length > 0) || (!todasSel && selLocal.size > 0)
+  )
 
   // Evitar agregar el mismo departamento dos veces
   const deptYaAgregado = grupos.some(g => g.departamentoId === departamentoId)
