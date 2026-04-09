@@ -117,7 +117,8 @@ export default async function CampanaDetallePage({
   const campanaActiva = (campanaData as unknown as { estado: string }).estado === 'activa'
 
   const [{ data: participacionData }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misionesData }] = await Promise.all([
-    supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
       .from('participaciones')
       .select('id, estado')
       .eq('campana_id', params.id)
