@@ -39,7 +39,8 @@ export default async function CampanasPage() {
   )
 
   const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misionesRes] = await Promise.all([
-    supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
       .from('participaciones')
       .select('campana_id, estado, comercios_completados')
       .eq('gondolero_id', user.id)
