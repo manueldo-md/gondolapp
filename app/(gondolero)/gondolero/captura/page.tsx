@@ -93,7 +93,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
 
 interface ComercioRow {
@@ -564,6 +564,8 @@ function CapturaContent() {
   const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
   const [bloqueActualIdx, setBloqueActualIdx] = useState(0)
   const [fotosCapturadas, setFotosCapturadas] = useState<FotoCapturadaLocal[]>([])
+  // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
+  const [campoFotoActualId, setCampoFotoActualId] = useState<string | null>(null)
 
   // ── Estado extra para flujo COMERCIOS ─────────────────────────────────────
   const [cmNombre,    setCmNombre]    = useState('')
@@ -1077,6 +1079,36 @@ function CapturaContent() {
           Volver
         </button>
         <BotonReportarError errorTecnico={errorGlobal} />
+      </div>
+    )
+  }
+
+  // ── PASO CÁMARA DE CAMPO FOTO — abre PasoCamara para capturar un campo tipo='foto' ──
+  if (paso === 'formulario-camara' && campoFotoActualId) {
+    const bloqueParaCamara = campana?.bloques[bloqueActualIdx] ?? null
+    const campoCamara = bloqueParaCamara?.campos.find(c => c.id === campoFotoActualId) ?? null
+    return (
+      <div className="relative">
+        {/* Instrucción del campo sobre la cámara */}
+        {campoCamara?.pregunta && (
+          <div className="fixed top-0 left-0 right-0 z-50 bg-black/70 px-4 py-3 text-center">
+            <p className="text-white text-sm font-medium">{campoCamara.pregunta}</p>
+          </div>
+        )}
+        <PasoCamara
+          onCaptura={(blob) => {
+            const file = blob instanceof File
+              ? blob
+              : new File([blob], 'campo-foto.jpg', { type: 'image/jpeg' })
+            setRespuestas(r => ({ ...r, [campoFotoActualId]: file }))
+            setCampoFotoActualId(null)
+            setPaso('formulario')
+          }}
+          onVolver={() => {
+            setCampoFotoActualId(null)
+            setPaso('formulario')
+          }}
+        />
       </div>
     )
   }
@@ -1692,6 +1724,7 @@ function CapturaContent() {
                   camara:                'gps',
                   'blur-advertencia':    'camara',
                   formulario:            'camara',
+                  'formulario-camara':   'formulario',
                   confirmacion:          tieneCampos ? 'formulario' : 'camara',
                   'mision-resumen':      'confirmacion',
                   exito:                 'mision-resumen',
@@ -2054,7 +2087,7 @@ function CapturaContent() {
                     />
                   )}
 
-                  {/* Foto */}
+                  {/* Foto — abre PasoCamara para capturar foto del campo */}
                   {campo.tipo === 'foto' && (() => {
                     const archivo = val instanceof File ? val : null
                     const previewUrl = archivo ? URL.createObjectURL(archivo) : null
@@ -2068,25 +2101,17 @@ function CapturaContent() {
                             className="w-full h-36 object-cover rounded-xl border border-gray-200"
                           />
                         )}
-                        <label
-                          htmlFor={`campo-foto-${campo.id}`}
-                          className="flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-gondo-verde-400 rounded-xl text-gondo-verde-400 font-semibold text-sm cursor-pointer hover:bg-gondo-verde-50 transition-colors"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCampoFotoActualId(campo.id)
+                            setPaso('formulario-camara')
+                          }}
+                          className="flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-gondo-verde-400 rounded-xl text-gondo-verde-400 font-semibold text-sm hover:bg-gondo-verde-50 transition-colors"
                         >
                           <Camera size={16} />
                           {archivo ? 'Cambiar foto' : 'Tomar foto'}
-                        </label>
-                        <input
-                          type="file"
-                          id={`campo-foto-${campo.id}`}
-                          accept="image/*"
-                          capture="environment"
-                          className="hidden"
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            setRespuestas(r => ({ ...r, [campo.id]: file }))
-                          }}
-                        />
+                        </button>
                       </div>
                     )
                   })()}
