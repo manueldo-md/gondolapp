@@ -167,7 +167,7 @@ export default async function CampanaDetallePage({
     : ((misDistrisGondoleroData ?? []) as { distri_id: string }[]).map(d => d.distri_id)
   const misiones = (misionesData as MisionRow[] | null) ?? []
 
-  const yaUnido        = participacion?.estado === 'activa' || misiones.length > 0
+  const yaUnido        = participacion?.estado === 'activa' || participacion?.estado === 'completada'
   console.log('[campana-detalle] yaUnido:', yaUnido, 'misiones count:', misiones.length, 'participacion estado:', participacion?.estado)
   const participacionAnteriorEstado = (
     participacion?.estado === 'completada' || participacion?.estado === 'abandonada'

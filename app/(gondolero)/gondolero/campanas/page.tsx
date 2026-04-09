@@ -177,7 +177,12 @@ export default async function CampanasPage() {
   // ── Sección 1: En curso ──────────────────────────────────────────────────────
   // REGLA: campana.estado='activa' AND (tiene participación OR tiene misiones)
   const misCampanas = listaActivas
-    .filter(c => participacionMap.has(c.id) || misionCampanaIds.has(c.id))
+    .filter(c => {
+      const estado = participacionMap.get(c.id)
+      // abandonada → puede volver a unirse → va a disponibles, no a en_curso
+      if (estado === 'abandonada') return false
+      return participacionMap.has(c.id) || misionCampanaIds.has(c.id)
+    })
     .sort((a, b) => {
       if (!a.fecha_fin && !b.fecha_fin) return 0
       if (!a.fecha_fin) return 1
@@ -197,7 +202,14 @@ export default async function CampanasPage() {
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
   // REGLA: campana.estado IN ('cerrada','suspendida','pausada') AND (tiene participación OR misiones)
   const activaIds = new Set(listaActivas.map(c => c.id))
-  const todasMisIds = new Set([...misionCampanaIds, ...participacionMap.keys()])
+  // abandonada sin misiones → no mostrar en finalizadas
+  const idsParaFinalizadas = new Set([
+    ...misionCampanaIds,
+    ...[...participacionMap.keys()].filter(id =>
+      participacionMap.get(id) !== 'abandonada' || misionCampanaIds.has(id)
+    ),
+  ])
+  const todasMisIds = idsParaFinalizadas
   const finalizadasPotenciales = [...todasMisIds].filter(id => !activaIds.has(id))
 
   let finalizadas: CampanaRow[] = []
