@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Images, Users, Store, Megaphone, LogOut, UserCog, LayoutDashboard, Bell, Tag, Wrench } from 'lucide-react'
+import { Images, Users, Store, Megaphone, LogOut, UserCog, LayoutDashboard, Bell, Tag, Wrench, Package } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { NotifBell } from '@/components/notificaciones/notif-bell'
 
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/distribuidora/comercios/pendientes', label: 'Comercios pendientes', icon: Store      },
   { href: '/distribuidora/alertas',         label: 'Alertas',              icon: Bell            },
   { href: '/distribuidora/marcas',          label: 'Marcas',               icon: Tag             },
+  { href: '/distribuidora/repositoras',     label: 'Repositoras',          icon: Package         },
   { href: '/distribuidora/notificaciones',  label: 'Notificaciones',       icon: Bell            },
   { href: '/distribuidora/cuenta',          label: 'Mi cuenta',            icon: UserCog         },
 ]

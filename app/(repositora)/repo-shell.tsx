@@ -2,17 +2,19 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Images, Users, Megaphone, LogOut, UserCog, LayoutDashboard, Bell } from 'lucide-react'
+import { Images, Users, Megaphone, LogOut, UserCog, LayoutDashboard, Bell, Tag, Building2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { NotifBell } from '@/components/notificaciones/notif-bell'
 
 const NAV = [
-  { href: '/repositora/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
-  { href: '/repositora/gondolas',       label: 'Gondolas',       icon: Images          },
-  { href: '/repositora/campanas',       label: 'Campañas',       icon: Megaphone       },
-  { href: '/repositora/fixers',         label: 'Fixers',         icon: Users           },
-  { href: '/repositora/notificaciones', label: 'Notificaciones', icon: Bell            },
-  { href: '/repositora/cuenta',         label: 'Mi cuenta',      icon: UserCog         },
+  { href: '/repositora/dashboard',       label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/repositora/gondolas',        label: 'Gondolas',        icon: Images          },
+  { href: '/repositora/campanas',        label: 'Campañas',        icon: Megaphone       },
+  { href: '/repositora/fixers',          label: 'Fixers',          icon: Users           },
+  { href: '/repositora/marcas',          label: 'Marcas',          icon: Tag             },
+  { href: '/repositora/distribuidoras',  label: 'Distribuidoras',  icon: Building2       },
+  { href: '/repositora/notificaciones',  label: 'Notificaciones',  icon: Bell            },
+  { href: '/repositora/cuenta',          label: 'Mi cuenta',       icon: UserCog         },
 ]
 
 export function RepoShell({

@@ -13,7 +13,8 @@ const RUTAS_PUBLICAS = [
   '/vinculacion',         // Gondolero acepta invitación de distribuidora
   '/vinculacion-marca',   // Marca/distri aceptan invitación mutua
   '/fixer-vinculacion',   // Fixer acepta invitación de distribuidora o repositora
-  '/vinculacion-repo',    // Repositora acepta invitación de marca
+  '/vinculacion-repo',         // Repositora acepta invitación de marca
+  '/vinculacion-distri-repo',  // Repositora acepta invitación de distribuidora
 ]
 
 // Destino por tipo de actor después del login
