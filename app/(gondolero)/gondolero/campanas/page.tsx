@@ -70,7 +70,6 @@ export default async function CampanasPage() {
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
   const comerciosCompletadosMap = new Map<string, number>()
   const participacionesRaw = (participacionesRes.data ?? []) as { campana_id: string; estado: string; comercios_completados: number }[]
-  console.log('[campanas-lista] participaciones del usuario:', participacionesRaw.length, participacionesRaw.map(p => p.campana_id))
   for (const p of participacionesRaw) {
     if (!participacionMap.has(p.campana_id) || p.estado === 'activa') {
       participacionMap.set(p.campana_id, p.estado as 'activa' | 'completada' | 'abandonada')
@@ -175,10 +174,11 @@ export default async function CampanasPage() {
     listaActivas = (campanas as CampanaRow[] | null) ?? []
   }
 
-  // ── Sección 1: Mis campañas ──────────────────────────────────────────────────
-  // Activas donde el gondolero tiene AL MENOS UNA MISIÓN, ordenadas por fecha_fin ASC
+  // ── Sección 1: En curso ──────────────────────────────────────────────────────
+  // Participación activa en campaña activa, ordenadas por fecha_fin ASC
+  // listaActivas ya filtra por estado='activa', así que solo chequeamos participación
   const misCampanas = listaActivas
-    .filter(c => participacionMap.get(c.id) === 'activa' || misionCampanaIds.has(c.id))
+    .filter(c => participacionMap.get(c.id) === 'activa')
     .sort((a, b) => {
       if (!a.fecha_fin && !b.fecha_fin) return 0
       if (!a.fecha_fin) return 1
@@ -189,26 +189,21 @@ export default async function CampanasPage() {
   const misCampanasIds = new Set(misCampanas.map(c => c.id))
 
   // ── Sección 2: Disponibles ────────────────────────────────────────────────────
-  // Activas sin misiones del gondolero y con acceso, ya en created_at DESC
-  const disponibles = listaActivas.filter(c => !misCampanasIds.has(c.id) && tieneAcceso(c))
-  console.log('[campanas-lista] en_curso:', misCampanas.length, 'disponibles:', disponibles.length)
-
-  const DEBUG_ID = 'c4f845f6-3c21-45fb-8c37-7932e5fe5499'
-  const campanaDebug = listaActivas.find(c => c.id === DEBUG_ID)
-  console.log('[debug] campaña Alta de comercios:', {
-    encontrada: !!campanaDebug,
-    estaEnParticipaciones: participacionMap.has(DEBUG_ID),
-    estadoParticipacion: participacionMap.get(DEBUG_ID),
-    tieneEnMisionCampanaIds: misionCampanaIds.has(DEBUG_ID),
-    clasificadaEn: misCampanas.find(c => c.id === DEBUG_ID) ? 'en_curso'
-      : disponibles.find(c => c.id === DEBUG_ID) ? 'disponibles'
-      : 'no encontrada',
-  })
+  // Activas sin participación activa ni misiones, con acceso
+  const disponibles = listaActivas.filter(c =>
+    !misCampanasIds.has(c.id) &&
+    !misionCampanaIds.has(c.id) &&
+    participacionMap.get(c.id) !== 'completada' &&
+    tieneAcceso(c)
+  )
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
-  // Cerradas/suspendidas donde el gondolero tiene misiones
+  // Cerradas/suspendidas donde el gondolero tiene participación o misiones
   const activaIds = new Set(listaActivas.map(c => c.id))
-  const finalizadasPotenciales = [...misionCampanaIds].filter(id => !activaIds.has(id))
+  const finalizadasPotenciales = [
+    ...[...misionCampanaIds].filter(id => !activaIds.has(id)),
+    ...[...participacionMap.keys()].filter(id => !activaIds.has(id) && !misionCampanaIds.has(id)),
+  ]
 
   let finalizadas: CampanaRow[] = []
   if (finalizadasPotenciales.length > 0) {
