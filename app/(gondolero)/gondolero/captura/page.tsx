@@ -108,7 +108,7 @@ interface ComercioRow {
 
 interface CampoBloque {
   id: string
-  tipo: 'seleccion_multiple' | 'seleccion_unica' | 'binaria' | 'numero' | 'texto'
+  tipo: 'seleccion_multiple' | 'seleccion_unica' | 'binaria' | 'numero' | 'texto' | 'foto'
   pregunta: string
   opciones: string[] | null
   obligatorio: boolean
@@ -907,22 +907,42 @@ function CapturaContent() {
         : null
 
       // 3. Registrar la misión completa en DB
+      // Preparar respuestas: subir blobs de campos tipo 'foto' y reemplazar con URLs
+      const fotosConRespuestas = await Promise.all(
+        uploadResults.map(async r => {
+          const respuestasProcesadas: { campo_id: string; valor: unknown }[] = []
+          for (const [campo_id, valor] of Object.entries(r.respuestas)) {
+            if (valor === undefined || valor === null || valor === '') continue
+            if (valor instanceof File || valor instanceof Blob) {
+              // Subir foto de campo adicional
+              const campoPath = generarPathFoto(campana.id, deviceId)
+              const fd = new FormData()
+              fd.append('foto', valor instanceof File ? valor : new File([valor], 'foto-campo.jpg', { type: 'image/jpeg' }))
+              fd.append('storagePath', campoPath)
+              const { url: campoUrl } = await subirFoto(fd)
+              respuestasProcesadas.push({ campo_id, valor: campoUrl })
+            } else {
+              respuestasProcesadas.push({ campo_id, valor })
+            }
+          }
+          return { ...r, respuestasProcesadas }
+        })
+      )
+
       const result = await registrarMision({
         campanaId: campana.id,
         comercioId: comercio.id,
         deviceId,
         lat, lng,
-        puntosTotal: campana.puntos_por_foto * uploadResults.length,
-        fotos: uploadResults.map(r => ({
+        puntosTotal: campana.puntos_por_foto * fotosConRespuestas.length,
+        fotos: fotosConRespuestas.map(r => ({
           bloqueId:             r.bloqueId ?? bloqueGenericoId ?? '',
           storagePath:          r.storagePath,
           url:                  r.url,
           precioConfirmado:     r.precio ? parseFloat(r.precio) : null,
           timestampDispositivo: r.timestampDispositivo,
           blurScore:            r.blurScore,
-          respuestas:           Object.entries(r.respuestas)
-            .filter(([, v]) => v !== undefined && v !== null && v !== '')
-            .map(([campo_id, valor]) => ({ campo_id, valor })),
+          respuestas:           r.respuestasProcesadas,
         })),
       })
 
@@ -2033,6 +2053,43 @@ function CapturaContent() {
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-sm"
                     />
                   )}
+
+                  {/* Foto */}
+                  {campo.tipo === 'foto' && (() => {
+                    const archivo = val instanceof File ? val : null
+                    const previewUrl = archivo ? URL.createObjectURL(archivo) : null
+                    return (
+                      <div className="space-y-2">
+                        {previewUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={previewUrl}
+                            alt="Foto capturada"
+                            className="w-full h-36 object-cover rounded-xl border border-gray-200"
+                          />
+                        )}
+                        <label
+                          htmlFor={`campo-foto-${campo.id}`}
+                          className="flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-gondo-verde-400 rounded-xl text-gondo-verde-400 font-semibold text-sm cursor-pointer hover:bg-gondo-verde-50 transition-colors"
+                        >
+                          <Camera size={16} />
+                          {archivo ? 'Cambiar foto' : 'Tomar foto'}
+                        </label>
+                        <input
+                          type="file"
+                          id={`campo-foto-${campo.id}`}
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            setRespuestas(r => ({ ...r, [campo.id]: file }))
+                          }}
+                        />
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
@@ -2041,6 +2098,7 @@ function CapturaContent() {
               const camposObligatorios = bloqueActual.campos.filter(c => c.obligatorio)
               const todosCompletos = camposObligatorios.every(c => {
                 const v = respuestas[c.id]
+                if (c.tipo === 'foto') return v instanceof File
                 if (v === undefined || v === null || v === '') return false
                 if (Array.isArray(v) && v.length === 0) return false
                 return true

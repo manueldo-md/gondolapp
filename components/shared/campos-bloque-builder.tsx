@@ -5,7 +5,7 @@ import { Plus, Trash2, ChevronDown, ChevronUp, GripVertical } from 'lucide-react
 
 export interface CampoBloque {
   tempId: string
-  tipo: 'seleccion_multiple' | 'seleccion_unica' | 'binaria' | 'numero' | 'texto'
+  tipo: 'seleccion_multiple' | 'seleccion_unica' | 'binaria' | 'numero' | 'texto' | 'foto'
   pregunta: string
   opciones: string[]
   obligatorio: boolean
@@ -18,6 +18,7 @@ const TIPO_LABEL: Record<CampoBloque['tipo'], string> = {
   binaria:            'Sí / No',
   numero:             'Número',
   texto:              'Texto libre',
+  foto:               'Foto',
 }
 
 function nuevoCampo(orden: number): CampoBloque {
@@ -157,16 +158,16 @@ export function CamposBloqueBuilder({
             {estaExpandido && (
               <div className="p-4 space-y-4 bg-gray-50 border-t border-gray-200">
 
-                {/* Campo: Pregunta */}
+                {/* Campo: Pregunta / Instrucción */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                    Texto de la pregunta
+                    {campo.tipo === 'foto' ? 'Instrucción de la foto' : 'Texto de la pregunta'}
                   </label>
                   <input
                     type="text"
                     value={campo.pregunta}
                     onChange={e => actualizar(campo.tempId, { pregunta: e.target.value })}
-                    placeholder="Ej: ¿El producto tiene precio visible?"
+                    placeholder={campo.tipo === 'foto' ? 'Ej: Fotografiá el precio del producto' : 'Ej: ¿El producto tiene precio visible?'}
                     className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 ${accentClass} transition`}
                   />
                 </div>
@@ -189,6 +190,14 @@ export function CamposBloqueBuilder({
                     ))}
                   </select>
                 </div>
+
+                {/* Foto: aviso informativo */}
+                {campo.tipo === 'foto' && (
+                  <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 text-xs text-blue-700">
+                    <span>📷</span>
+                    <span>El gondolero verá un botón para tomar una foto adicional en este campo.</span>
+                  </div>
+                )}
 
                 {/* Campo: Opciones (solo para selección) */}
                 {tieneOpciones(campo.tipo) && (

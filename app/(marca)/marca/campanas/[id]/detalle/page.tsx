@@ -134,12 +134,32 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
             <Target size={14} className="text-gray-400 mt-0.5 shrink-0" />
             <div><p className="text-xs text-gray-400">Mín. para cobrar</p><p className="font-medium text-gray-900">{c.min_comercios_para_cobrar} fotos</p></div>
           </div>
+          {c.max_comercios_por_gondolero && (
+            <div className="flex items-start gap-2">
+              <Target size={14} className="text-gray-400 mt-0.5 shrink-0" />
+              <div><p className="text-xs text-gray-400">Máx. por gondolero</p><p className="font-medium text-gray-900">{c.max_comercios_por_gondolero} comercios</p></div>
+            </div>
+          )}
           <div className="flex items-start gap-2">
             <Coins size={14} className="text-gray-400 mt-0.5 shrink-0" />
             <div><p className="text-xs text-gray-400">Puntos por foto</p><p className="font-bold text-gondo-indigo-600">{c.puntos_por_foto}</p></div>
           </div>
         </div>
       </div>
+
+      {/* Zonas */}
+      {zonasActuales.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Zonas</h3>
+          <div className="flex flex-wrap gap-2">
+            {zonasActuales.map((zona, i) => (
+              <span key={i} className="text-xs px-2.5 py-1 bg-gondo-indigo-50 text-gondo-indigo-600 rounded-full font-medium border border-gondo-indigo-100">
+                {zona}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* MEJORA 2 — Bloque de creación */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
