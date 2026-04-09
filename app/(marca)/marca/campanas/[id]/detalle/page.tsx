@@ -260,6 +260,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
         zonasActuales={zonasActuales}
         zonasDisponibles={zonasDisponibles}
         bloquesActuales={bloques.map((b: any) => ({ id: b.id, instruccion: b.instruccion, tipo_contenido: b.tipo_contenido, campos: ((b.bloque_campos ?? []) as any[]).sort((a: any, x: any) => (a.orden ?? 0) - (x.orden ?? 0)) }))}
+        localidadesIds={[...localidadIdsActuales]}
         accentColor="indigo"
         guardarBorradorFn={guardarBorradorMarca}
         republicarFn={republicarCampanaMarca}

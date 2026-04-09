@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { AlertTriangle, Loader2, MapPin, Camera, Plus, Trash2, CheckCircle2 } from 'lucide-react'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
+import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 import type { DraftData } from '@/app/(marca)/marca/campanas/[id]/detalle/draft-actions'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -48,6 +49,8 @@ interface Props {
   draftBloquesGuardados: any[] | null
   zonasActuales: string[]
   zonasDisponibles: { id: string; nombre: string }[]
+  /** IDs (string de integer) de las localidades ya configuradas en la campaña */
+  localidadesIds?: string[]
   bloquesActuales: { id: string; instruccion: string; tipo_contenido: string; campos?: CampoExistente[] }[]
   accentColor: 'indigo' | 'amber'
   guardarBorradorFn: (campanaId: string, data: DraftData) => Promise<void>
@@ -68,6 +71,7 @@ export function CampanaDraftEditor({
   draftBloquesGuardados,
   zonasActuales,
   zonasDisponibles,
+  localidadesIds,
   bloquesActuales,
   accentColor,
   guardarBorradorFn,
@@ -84,6 +88,14 @@ export function CampanaDraftEditor({
   const [nuevasZonas, setNuevasZonas] = useState<ZonaNueva[]>(
     tienesDraft ? ((draftZonasGuardadas as ZonaNueva[] | null) ?? []) : []
   )
+  // ── SelectorZona state ──────────────────────────────────────────────────────
+  const [grupos, setGrupos] = useState<GrupoZona[]>([])
+  const prevGrupoIdsRef = useRef<Set<string>>(new Set())
+  // Lookup: localidad_id (string) → nombre (from zonasDisponibles)
+  const localidadNombreMap = Object.fromEntries(zonasDisponibles.map(z => [z.id, z.nombre]))
+  // Set of IDs already configured on the campaign (to avoid duplicates)
+  const lIdsConfigurados = new Set(localidadesIds ?? [])
+
   const [nuevosBloques, setNuevosBloques] = useState<BloqueNuevo[]>(
     tienesDraft
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -96,7 +108,6 @@ export function CampanaDraftEditor({
   )
 
   // ── UI state ──────────────────────────────────────────────────────────────────
-  const [zonaSelect, setZonaSelect] = useState('')
   const [agregandoBloque, setAgregandoBloque] = useState(false)
   const [bloqueTemp, setBloqueTemp] = useState<Omit<BloqueNuevo, 'tempId'>>({
     instruccion: '', tipo_contenido: 'propios', campos: [],
@@ -117,9 +128,6 @@ export function CampanaDraftEditor({
   const accentBuilderClass = accentColor === 'amber'
     ? 'focus:ring-gondo-amber-400/30 focus:border-gondo-amber-400'
     : 'focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600'
-
-  // ── Derived ───────────────────────────────────────────────────────────────────
-  const zonasParaAgregar = zonasDisponibles.filter(z => !nuevasZonas.find(nz => nz.id === z.id))
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -170,15 +178,26 @@ export function CampanaDraftEditor({
       setPuntos(puntosActual)
       setNuevasZonas([])
       setNuevosBloques([])
+      setGrupos([])
+      prevGrupoIdsRef.current = new Set()
     })
   }
 
-  function agregarZona() {
-    if (!zonaSelect) return
-    const zona = zonasDisponibles.find(z => z.id === zonaSelect)
-    if (!zona || nuevasZonas.find(nz => nz.id === zona.id)) return
-    setNuevasZonas(prev => [...prev, { id: zona.id, nombre: zona.nombre }])
-    setZonaSelect('')
+  function handleGrupos(newGrupos: GrupoZona[]) {
+    const newIds = new Set(newGrupos.flatMap(g => g.localidadIds.map(String)))
+    const prevIds = prevGrupoIdsRef.current
+    const addedIds   = [...newIds].filter(id => !prevIds.has(id))
+    const removedIds = [...prevIds].filter(id => !newIds.has(id))
+    prevGrupoIdsRef.current = newIds
+    setGrupos(newGrupos)
+    setNuevasZonas(prev => [
+      // Quitar las localidades que el usuario eliminó del SelectorZona
+      ...prev.filter(z => !removedIds.includes(z.id)),
+      // Agregar las nuevas, evitando duplicados y las ya configuradas en la campaña
+      ...addedIds
+        .filter(id => !prev.find(z => z.id === id) && !lIdsConfigurados.has(id))
+        .map(id => ({ id, nombre: localidadNombreMap[id] ?? `Localidad ${id}` })),
+    ])
   }
 
   function confirmarBloque() {
@@ -295,25 +314,15 @@ export function CampanaDraftEditor({
           <p className="text-xs text-gray-400 mb-3">Sin zonas (visible para todos los gondoleros)</p>
         )}
 
-        {zonasParaAgregar.length > 0 && (
-          <div className="flex items-center gap-2">
-            <select
-              value={zonaSelect}
-              onChange={e => setZonaSelect(e.target.value)}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm flex-1"
-            >
-              <option value="">Seleccionar zona…</option>
-              {zonasParaAgregar.map(z => <option key={z.id} value={z.id}>{z.nombre}</option>)}
-            </select>
-            <button
-              type="button"
-              onClick={agregarZona}
-              className={`px-4 py-2 ${A.btn} text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap`}
-            >
-              + Agregar
-            </button>
-          </div>
-        )}
+        <SelectorZona
+          grupos={grupos}
+          onGrupos={handleGrupos}
+          accentClass={accentColor === 'amber'
+            ? 'focus:ring-gondo-amber-400/30 focus:border-gondo-amber-400'
+            : 'focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600'}
+          addBtnClass={A.btn}
+          showLabel={false}
+        />
       </div>
 
       {/* Bloques de foto */}
