@@ -174,14 +174,8 @@ export default async function CampanasPage() {
     listaActivas = (campanas as CampanaRow[] | null) ?? []
   }
 
-  const IDS_DEBUG = ['4ee88708-3c21-45fb-8c37-7932e5fe5499', '694fa4f9-3c21-45fb-8c37-7932e5fe5499']
-  console.log('[campanas-lista] tieneZonas:', tieneZonas, 'zonaIds:', zonaIds, 'localidadIds:', localidadIds)
-  console.log('[campanas-lista] listaActivas total:', listaActivas.length)
-  console.log('[campanas-lista] candidatas disponibles (antes tieneAcceso):', listaActivas.length, '— IDs debug en listaActivas:', IDS_DEBUG.filter(id => listaActivas.some(c => c.id === id)))
-
   // ── Sección 1: En curso ──────────────────────────────────────────────────────
-  // REGLA: participacion_estado='activa' AND campana.estado='activa'
-  // listaActivas ya filtra por campana.estado='activa'
+  // REGLA: campana.estado='activa' AND (tiene participación OR tiene misiones)
   const misCampanas = listaActivas
     .filter(c => participacionMap.has(c.id) || misionCampanaIds.has(c.id))
     .sort((a, b) => {
@@ -194,16 +188,14 @@ export default async function CampanasPage() {
   const misCampanasIds = new Set(misCampanas.map(c => c.id))
 
   // ── Sección 2: Disponibles ────────────────────────────────────────────────────
-  // REGLA: campana.estado='activa' AND sin participación del gondolero
-  // completada → ocultar (cupo completado); abandonada → puede volver → disponible
+  // REGLA: campana.estado='activa' AND sin participación ni misiones AND cumple zona/nivel
   const disponibles = listaActivas.filter(c =>
-    !misCampanasIds.has(c.id)   // no tiene participación ni misiones
-    && tieneAcceso(c)           // cumple requisitos de zona y nivel
+    !misCampanasIds.has(c.id)
+    && tieneAcceso(c)
   )
-  console.log('[campanas-lista] disponibles después de filtro:', disponibles.length, '— IDs debug en disponibles:', IDS_DEBUG.filter(id => disponibles.some(c => c.id === id)))
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
-  // REGLA: campana.estado IN ('cerrada','suspendida') AND (tiene participación OR misiones)
+  // REGLA: campana.estado IN ('cerrada','suspendida','pausada') AND (tiene participación OR misiones)
   const activaIds = new Set(listaActivas.map(c => c.id))
   const todasMisIds = new Set([...misionCampanaIds, ...participacionMap.keys()])
   const finalizadasPotenciales = [...todasMisIds].filter(id => !activaIds.has(id))
@@ -213,7 +205,7 @@ export default async function CampanasPage() {
     const { data: finalizadasData } = await supabase
       .from('campanas')
       .select(CAMPANA_SELECT)
-      .in('estado', ['cerrada', 'suspendida'])
+      .in('estado', ['cerrada', 'suspendida', 'pausada'])
       .in('id', finalizadasPotenciales)
       .order('fecha_fin', { ascending: false })
     finalizadas = (finalizadasData as CampanaRow[] | null) ?? []
