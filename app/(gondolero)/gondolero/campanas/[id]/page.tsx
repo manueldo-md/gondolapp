@@ -125,7 +125,7 @@ export default async function CampanaDetallePage({
       .select('id, estado')
       .eq('campana_id', params.id)
       .eq('gondolero_id', user.id)
-      .order('created_at', { ascending: false })
+      .order('joined_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
