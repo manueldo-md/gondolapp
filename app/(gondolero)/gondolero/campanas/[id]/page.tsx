@@ -114,9 +114,11 @@ export default async function CampanaDetallePage({
 
   if (!campanaData) notFound()
 
+  console.log('[campana-detalle] userId:', user.id, 'campanaId:', params.id)
+
   const campanaActiva = (campanaData as unknown as { estado: string }).estado === 'activa'
 
-  const [{ data: participacionData }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misionesData }] = await Promise.all([
+  const [{ data: participacionData, error: participacionError }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misionesData }] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('participaciones')
@@ -151,6 +153,8 @@ export default async function CampanaDetallePage({
       .order('created_at', { ascending: false }),
   ])
 
+  console.log('[campana-detalle] participacion result:', participacionData, 'error:', participacionError)
+
   const c = campanaData as unknown as CampanaDetalle
   const participacion = participacionData as { id: string; estado: string } | null
   const profileRow = profileData as { nivel: string; tipo_actor: string } | null
@@ -163,6 +167,7 @@ export default async function CampanaDetallePage({
   const misiones = (misionesData as MisionRow[] | null) ?? []
 
   const yaUnido        = participacion?.estado === 'activa' || misiones.length > 0
+  console.log('[campana-detalle] yaUnido:', yaUnido, 'misiones count:', misiones.length, 'participacion estado:', participacion?.estado)
   const participacionAnteriorEstado = (
     participacion?.estado === 'completada' || participacion?.estado === 'abandonada'
   ) ? participacion.estado as 'completada' | 'abandonada' : null
