@@ -174,6 +174,11 @@ export default async function CampanasPage() {
     listaActivas = (campanas as CampanaRow[] | null) ?? []
   }
 
+  const IDS_DEBUG = ['4ee88708-3c21-45fb-8c37-7932e5fe5499', '694fa4f9-3c21-45fb-8c37-7932e5fe5499']
+  console.log('[campanas-lista] tieneZonas:', tieneZonas, 'zonaIds:', zonaIds, 'localidadIds:', localidadIds)
+  console.log('[campanas-lista] listaActivas total:', listaActivas.length)
+  console.log('[campanas-lista] candidatas disponibles (antes tieneAcceso):', listaActivas.length, '— IDs debug en listaActivas:', IDS_DEBUG.filter(id => listaActivas.some(c => c.id === id)))
+
   // ── Sección 1: En curso ──────────────────────────────────────────────────────
   // REGLA: participacion_estado='activa' AND campana.estado='activa'
   // listaActivas ya filtra por campana.estado='activa'
@@ -197,6 +202,7 @@ export default async function CampanasPage() {
       && estado !== 'completada'            // no completó su cupo
       && tieneAcceso(c)                     // cumple requisitos de zona y nivel
   })
+  console.log('[campanas-lista] disponibles después de filtro:', disponibles.length, '— IDs debug en disponibles:', IDS_DEBUG.filter(id => disponibles.some(c => c.id === id)))
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
   // REGLA: campana.estado IN ('cerrada','suspendida') AND (tiene participación OR misiones)
