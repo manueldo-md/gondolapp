@@ -203,3 +203,45 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
   revalidatePath('/gondolero/campanas')
   redirect(`/gondolero/captura?campana=${campanaId}`)
 }
+
+// Acción temporal para probar unión sin redirect
+export async function soloUnirse(campanaId: string): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Sesión expirada.' }
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  const { data: existente } = await admin
+    .from('participaciones')
+    .select('id, estado')
+    .eq('campana_id', campanaId)
+    .eq('gondolero_id', user.id)
+    .maybeSingle()
+
+  console.log('[soloUnirse] existente:', existente)
+
+  if (existente?.estado === 'activa') return { ok: true }
+
+  if (existente) {
+    const { error } = await admin
+      .from('participaciones')
+      .update({ estado: 'activa', comercios_completados: 0, puntos_acumulados: 0, joined_at: new Date().toISOString() })
+      .eq('id', existente.id)
+    console.log('[soloUnirse] UPDATE error:', error)
+    if (error) return { error: error.message }
+  } else {
+    const { error } = await admin
+      .from('participaciones')
+      .insert({ campana_id: campanaId, gondolero_id: user.id, estado: 'activa', comercios_completados: 0, puntos_acumulados: 0 })
+    console.log('[soloUnirse] INSERT error:', error)
+    if (error) return { error: error.message }
+  }
+
+  revalidatePath(`/gondolero/campanas/${campanaId}`)
+  return { ok: true }
+}
