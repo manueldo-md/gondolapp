@@ -69,7 +69,9 @@ export default async function CampanasPage() {
 
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
   const comerciosCompletadosMap = new Map<string, number>()
-  for (const p of (participacionesRes.data ?? []) as { campana_id: string; estado: string; comercios_completados: number }[]) {
+  const participacionesRaw = (participacionesRes.data ?? []) as { campana_id: string; estado: string; comercios_completados: number }[]
+  console.log('[campanas-lista] participaciones del usuario:', participacionesRaw.length, participacionesRaw.map(p => p.campana_id))
+  for (const p of participacionesRaw) {
     if (!participacionMap.has(p.campana_id) || p.estado === 'activa') {
       participacionMap.set(p.campana_id, p.estado as 'activa' | 'completada' | 'abandonada')
       comerciosCompletadosMap.set(p.campana_id, p.comercios_completados ?? 0)
@@ -189,6 +191,7 @@ export default async function CampanasPage() {
   // ── Sección 2: Disponibles ────────────────────────────────────────────────────
   // Activas sin misiones del gondolero y con acceso, ya en created_at DESC
   const disponibles = listaActivas.filter(c => !misCampanasIds.has(c.id) && tieneAcceso(c))
+  console.log('[campanas-lista] en_curso:', misCampanas.length, 'disponibles:', disponibles.length)
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
   // Cerradas/suspendidas donde el gondolero tiene misiones
