@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Star, Clock, Camera, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
 import { UnirseButton } from './unirse-button'
+import { AbandonarBtn } from '../../misiones/abandonar-btn'
 import {
   labelTipoCampana,
   diasRestantes,
@@ -388,6 +389,9 @@ export default async function CampanaDetallePage({
                 </p>
               </div>
             ))}
+
+            {/* Botón abandonar campaña */}
+            {campanaActiva && <AbandonarBtn campanaId={c.id} />}
 
             {/* Lista de misiones */}
             {misiones.length > 0 && (

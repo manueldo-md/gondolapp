@@ -39,6 +39,8 @@ export function UnirseButton({
   const [soloUnidoOk, setSoloUnidoOk] = useState(false)
   const router = useRouter()
 
+  console.log('[UnirseButton] yaUnido:', yaUnido, 'sinAcceso:', sinAcceso)
+
   function handleUnirse() {
     setError(null)
     startTransition(async () => {
