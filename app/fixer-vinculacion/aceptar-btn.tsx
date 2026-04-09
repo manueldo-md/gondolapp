@@ -22,13 +22,17 @@ export function AceptarInvitacionFixerBtn({
   const [isPendingRechazar, startRechazar] = useTransition()
   const [acepto, setAcepto] = useState(false)
   const [confirmRechazar, setConfirmRechazar] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const router = useRouter()
 
   const handleAceptar = () => {
     if (!acepto) return
+    setErrorMsg(null)
     startAceptar(async () => {
       const res = await aceptarInvitacionFixer(tokenId, fixerId, actorId, actorNombre, actorTipo)
-      if (!res.error) {
+      if (res.error) {
+        setErrorMsg(res.error)
+      } else {
         router.push('/gondolero/perfil?vinculado=1')
       }
     })
@@ -70,6 +74,13 @@ export function AceptarInvitacionFixerBtn({
 
   return (
     <div className="space-y-4">
+      {/* Error */}
+      {errorMsg && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+          {errorMsg}
+        </div>
+      )}
+
       {/* TyC checkbox */}
       <label className="flex items-start gap-3 cursor-pointer select-none">
         <div className="relative mt-0.5 shrink-0">
