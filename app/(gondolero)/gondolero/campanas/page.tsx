@@ -193,6 +193,18 @@ export default async function CampanasPage() {
   const disponibles = listaActivas.filter(c => !misCampanasIds.has(c.id) && tieneAcceso(c))
   console.log('[campanas-lista] en_curso:', misCampanas.length, 'disponibles:', disponibles.length)
 
+  const DEBUG_ID = 'c4f845f6-3c21-45fb-8c37-7932e5fe5499'
+  const campanaDebug = listaActivas.find(c => c.id === DEBUG_ID)
+  console.log('[debug] campaña Alta de comercios:', {
+    encontrada: !!campanaDebug,
+    estaEnParticipaciones: participacionMap.has(DEBUG_ID),
+    estadoParticipacion: participacionMap.get(DEBUG_ID),
+    tieneEnMisionCampanaIds: misionCampanaIds.has(DEBUG_ID),
+    clasificadaEn: misCampanas.find(c => c.id === DEBUG_ID) ? 'en_curso'
+      : disponibles.find(c => c.id === DEBUG_ID) ? 'disponibles'
+      : 'no encontrada',
+  })
+
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
   // Cerradas/suspendidas donde el gondolero tiene misiones
   const activaIds = new Set(listaActivas.map(c => c.id))
