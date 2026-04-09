@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { XCircle, Loader2, CheckCircle2 } from 'lucide-react'
-import { unirseACampana, soloUnirse } from './actions'
+import { XCircle, Loader2 } from 'lucide-react'
+import { soloUnirse } from './actions'
 import { AbandonarBtn } from '../../misiones/abandonar-btn'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 
@@ -33,37 +33,26 @@ export function UnirseButton({
   sinAcceso?: boolean
   motivoSinAcceso?: string
 }) {
-  const [pending, startTransition] = useTransition()
+  const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [soloUnidoPending, setSoloUnidoPending] = useState(false)
-  const [soloUnidoOk, setSoloUnidoOk] = useState(false)
   const router = useRouter()
 
   console.log('[UnirseButton] yaUnido:', yaUnido, 'sinAcceso:', sinAcceso)
 
-  function handleUnirse() {
+  async function handleUnirse() {
     setError(null)
-    startTransition(async () => {
-      const result = await unirseACampana(campanaId)
-      if (result?.error) setError(result.error)
-    })
-  }
-
-  async function handleSoloUnirse() {
-    setError(null)
-    setSoloUnidoPending(true)
+    setPending(true)
     try {
       const result = await soloUnirse(campanaId)
       if ('error' in result) {
         setError(result.error)
       } else {
-        setSoloUnidoOk(true)
         router.refresh()
       }
     } catch {
       setError('Error de conexión. Intentá de nuevo.')
     } finally {
-      setSoloUnidoPending(false)
+      setPending(false)
     }
   }
 
@@ -144,6 +133,7 @@ export function UnirseButton({
         </div>
       )}
       <button
+        type="button"
         disabled={pending}
         onClick={handleUnirse}
         className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-lg text-base transition-all duration-100 hover:bg-gondo-verde-600 active:scale-[0.98] disabled:opacity-60 min-h-touch"
@@ -159,28 +149,6 @@ export function UnirseButton({
               : 'Volver a unirme'
             : 'Unirme a esta campaña'}
       </button>
-
-      {/* Botón temporal de prueba */}
-      {soloUnidoOk ? (
-        <div className="flex items-center justify-center gap-2 py-2 text-sm text-green-700 font-medium">
-          <CheckCircle2 size={16} className="text-green-600" />
-          Te uniste a la campaña
-        </div>
-      ) : (
-        <button
-          type="button"
-          disabled={soloUnidoPending}
-          onClick={handleSoloUnirse}
-          className="w-full py-3 border border-gray-300 text-gray-600 font-medium rounded-2xl text-sm hover:bg-gray-50 active:scale-[0.98] disabled:opacity-60"
-        >
-          {soloUnidoPending ? (
-            <span className="flex items-center justify-center gap-2">
-              <Loader2 size={14} className="animate-spin" />
-              Procesando...
-            </span>
-          ) : 'Solo unirme'}
-        </button>
-      )}
     </div>
   )
 }
