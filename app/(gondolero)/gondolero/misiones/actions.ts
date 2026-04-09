@@ -5,7 +5,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
-export async function abandonarCampana(campanaId: string) {
+export async function abandonarCampana(campanaId: string): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -26,9 +26,13 @@ export async function abandonarCampana(campanaId: string) {
 
   console.log('[abandonar] resultado:', { data, error })
 
+  if (error) return { success: false, error: error.message }
+
   revalidatePath('/gondolero/misiones')
   revalidatePath(`/gondolero/misiones/${campanaId}`)
   revalidatePath('/gondolero/campanas')
+  revalidatePath(`/gondolero/campanas/${campanaId}`)
+  return { success: true }
 }
 
 export async function retirarFoto(fotoId: string): Promise<{ error?: string }> {
