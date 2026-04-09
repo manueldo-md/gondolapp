@@ -9,6 +9,7 @@ export function AbandonarBtn({ campanaId }: { campanaId: string }) {
   const [isPending, startTransition] = useTransition()
 
   const handleConfirmar = () => {
+    console.log('[abandonar] confirmar click, campanaId:', campanaId)
     startTransition(async () => {
       await abandonarCampana(campanaId)
       setOpen(false)
@@ -19,7 +20,11 @@ export function AbandonarBtn({ campanaId }: { campanaId: string }) {
     <>
       {/* Trigger — discreto, pequeño */}
       <button
-        onClick={() => setOpen(true)}
+        type="button"
+        onClick={() => {
+          console.log('[abandonar] click detectado, campanaId:', campanaId)
+          setOpen(true)
+        }}
         className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 transition-colors"
       >
         Abandonar campaña
@@ -43,6 +48,7 @@ export function AbandonarBtn({ campanaId }: { campanaId: string }) {
             </p>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => setOpen(false)}
                 disabled={isPending}
                 className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 disabled:opacity-50"
@@ -50,6 +56,7 @@ export function AbandonarBtn({ campanaId }: { campanaId: string }) {
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={handleConfirmar}
                 disabled={isPending}
                 className="flex-1 py-3 bg-gray-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
