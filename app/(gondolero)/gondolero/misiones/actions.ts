@@ -16,12 +16,15 @@ export async function abandonarCampana(campanaId: string) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  await admin
+  const { data, error } = await admin
     .from('participaciones')
     .update({ estado: 'abandonada' })
     .eq('campana_id', campanaId)
     .eq('gondolero_id', user.id)
     .eq('estado', 'activa')
+    .select()
+
+  console.log('[abandonar] resultado:', { data, error })
 
   revalidatePath('/gondolero/misiones')
   revalidatePath(`/gondolero/misiones/${campanaId}`)
