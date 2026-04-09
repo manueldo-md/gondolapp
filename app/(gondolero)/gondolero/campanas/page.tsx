@@ -178,7 +178,7 @@ export default async function CampanasPage() {
   // ── Sección 1: Mis campañas ──────────────────────────────────────────────────
   // Activas donde el gondolero tiene AL MENOS UNA MISIÓN, ordenadas por fecha_fin ASC
   const misCampanas = listaActivas
-    .filter(c => misionCampanaIds.has(c.id))
+    .filter(c => participacionMap.has(c.id) || misionCampanaIds.has(c.id))
     .sort((a, b) => {
       if (!a.fecha_fin && !b.fecha_fin) return 0
       if (!a.fecha_fin) return 1
