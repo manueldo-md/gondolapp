@@ -217,7 +217,7 @@ export default async function CampanasPage() {
 
   let finalizadas: CampanaRow[] = []
   if (finalizadasPotenciales.length > 0) {
-    const { data: finalizadasData, error: finalizadasError } = await supabase
+    const { data: finalizadasData, error: finalizadasError } = await (admin as any)
       .from('campanas')
       .select(CAMPANA_SELECT)
       .in('estado', ['cerrada', 'suspendida', 'pausada'])
