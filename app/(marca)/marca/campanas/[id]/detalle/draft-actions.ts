@@ -43,6 +43,10 @@ export async function republicarCampanaMarca(campanaId: string): Promise<{ error
   // Validate: bounty can only increase
   // Usar puntos_por_mision si existe, fallback a puntos_por_foto para campañas legacy
   const puntosActuales = c.puntos_por_mision > 0 ? c.puntos_por_mision : c.puntos_por_foto
+  console.log('[draft] puntosActuales:', puntosActuales,
+    'draft_bounty:', c.draft_bounty,
+    'puntos_por_mision:', c.puntos_por_mision,
+    'puntos_por_foto:', c.puntos_por_foto)
   if (c.draft_bounty !== null && c.draft_bounty < puntosActuales) {
     return { error: 'No podés reducir el bounty por misión' }
   }
