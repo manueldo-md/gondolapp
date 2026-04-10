@@ -21,6 +21,7 @@ export type TipoNotificacion =
   | 'comercio_pendiente_validacion' | 'marca_solicitud_reinicio_relacion' | 'campana_por_vencer_distri'
   // Admin
   | 'admin_campana_pendiente' | 'admin_comercio_pendiente' | 'admin_error_reportado'
+  | 'campana_cerrada_por_tope'
   // Cambios solicitados
   | 'cambios_solicitados'
 
