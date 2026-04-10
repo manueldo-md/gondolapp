@@ -46,7 +46,7 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
     .select(`
       id, nombre, tipo, estado, financiada_por, fecha_inicio, fecha_fin,
       objetivo_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
-      puntos_por_foto, instruccion, distri_id, marca_id, created_at, updated_at,
+      puntos_por_foto, puntos_por_mision, instruccion, distri_id, marca_id, created_at, updated_at,
       tiene_draft, draft_descripcion, draft_bounty, draft_zonas, draft_bloques,
       marca:marcas ( razon_social ),
       bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
@@ -207,7 +207,7 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
       <CampanaDraftEditor
         campanaId={params.id}
         instruccionActual={c.instruccion ?? null}
-        puntosActual={c.puntos_por_foto ?? 0}
+        puntosActual={(c.puntos_por_mision ?? 0) > 0 ? (c.puntos_por_mision ?? 0) : (c.puntos_por_foto ?? 0)}
         tienesDraft={c.tiene_draft ?? false}
         draftDescripcion={c.draft_descripcion ?? null}
         draftBounty={c.draft_bounty ?? null}

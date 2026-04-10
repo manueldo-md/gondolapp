@@ -265,7 +265,7 @@ export function CampanaDraftEditor({
 
       {/* Puntos por foto */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">Puntos por foto</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-1">Puntos por misión</h3>
         <p className="text-xs text-gray-400 mb-3">Solo podés aumentar el bounty, no reducirlo.</p>
         <input
           type="number"
