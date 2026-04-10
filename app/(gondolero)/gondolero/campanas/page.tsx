@@ -212,16 +212,22 @@ export default async function CampanasPage() {
   const todasMisIds = idsParaFinalizadas
   const finalizadasPotenciales = [...todasMisIds].filter(id => !activaIds.has(id))
 
+  console.log('[finalizadas] todasMisIds:', [...todasMisIds])
+  console.log('[finalizadas] finalizadasPotenciales:', finalizadasPotenciales)
+
   let finalizadas: CampanaRow[] = []
   if (finalizadasPotenciales.length > 0) {
-    const { data: finalizadasData } = await supabase
+    const { data: finalizadasData, error: finalizadasError } = await supabase
       .from('campanas')
       .select(CAMPANA_SELECT)
       .in('estado', ['cerrada', 'suspendida', 'pausada'])
       .in('id', finalizadasPotenciales)
       .order('fecha_fin', { ascending: false })
+    if (finalizadasError) console.error('[finalizadas] error query:', finalizadasError.message)
     finalizadas = (finalizadasData as CampanaRow[] | null) ?? []
   }
+
+  console.log('[finalizadas] finalizadas count:', finalizadas.length)
 
   // Progreso por campaña: contar misiones directamente
   const comerciosCompletadosRecord: Record<string, number> = Object.fromEntries(misionesCountMap.entries())
