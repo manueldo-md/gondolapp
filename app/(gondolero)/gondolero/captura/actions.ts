@@ -158,6 +158,8 @@ export interface RegistrarMisionParams {
   lng: number
   puntosTotal: number
   fotos: FotoMisionInput[]
+  /** Respuestas de campos no-foto (para misiones GPS-only o bloques sin foto) */
+  respuestasDirectas?: { campo_id: string; valor: unknown }[]
 }
 
 export async function registrarMision(params: RegistrarMisionParams) {
@@ -273,7 +275,19 @@ export async function registrarMision(params: RegistrarMisionParams) {
     }
   }
 
-  // 3. NO acreditar puntos aquí — bounty_estado='retenido' hasta aprobación.
+  // 3. Guardar respuestas directas (campos no-foto) en mision_respuestas
+  if (params.respuestasDirectas && params.respuestasDirectas.length > 0) {
+    const { error: errResp } = await db.from('mision_respuestas').insert(
+      params.respuestasDirectas.map(r => ({
+        mision_id: mision.id,
+        campo_id:  r.campo_id,
+        valor:     r.valor,
+      }))
+    )
+    if (errResp) console.error('[registrarMision] Error insertando mision_respuestas:', errResp.message)
+  }
+
+  // 4. NO acreditar puntos aquí — bounty_estado='retenido' hasta aprobación.
   // Los puntos se acreditan en actualizarEstadoMision cuando todas las fotos
   // están aprobadas Y el gondolero alcanzó el mínimo de misiones para cobrar.
 
