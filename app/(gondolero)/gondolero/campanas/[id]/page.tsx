@@ -396,7 +396,7 @@ export default async function CampanaDetallePage({
             ) : (
               <div className="bg-gray-50 rounded-2xl border border-gray-200 p-4 text-center">
                 <p className="text-sm font-semibold text-gray-600">
-                  {cupoLleno ? 'Campaña sin cupos disponibles' : 'Alcanzaste el límite de misiones'}
+                  {cupoLleno ? 'Campaña sin cupos disponibles' : 'Alcanzaste tu máximo de participaciones en esta campaña'}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
                   {cupoLleno

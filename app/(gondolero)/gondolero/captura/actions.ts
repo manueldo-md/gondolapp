@@ -7,6 +7,7 @@ import { getConfigCompresion, type ConfigCompresion } from '@/lib/config'
 import {
   crearNotificacionDistri,
   crearNotificacionMarca,
+  crearNotificacionAdmin,
   existeNotifReciente,
 } from '@/lib/notificaciones'
 
@@ -176,7 +177,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // Verificar que la campaña existe y está activa
   const { data: campana, error: campanaErr } = await db0
     .from('campanas')
-    .select('id, estado, max_comercios_por_gondolero')
+    .select('id, estado, nombre, max_comercios_por_gondolero, tope_total_comercios, comercios_relevados, distri_id, marca_id')
     .eq('id', params.campanaId)
     .single()
 
@@ -285,7 +286,63 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // Los puntos se acreditan en actualizarEstadoMision cuando todas las fotos
   // están aprobadas Y el gondolero alcanzó el mínimo de misiones para cobrar.
 
-  // 4. Notificar a la distribuidora del gondolero y a la marca de la campaña (no bloquea el flujo)
+  // 5. Incrementar comercios_relevados y verificar tope global (no bloquea el flujo)
+  try {
+    const nuevoRelevados = (campana.comercios_relevados ?? 0) + 1
+    const { error: updErr } = await db
+      .from('campanas')
+      .update({ comercios_relevados: nuevoRelevados })
+      .eq('id', params.campanaId)
+    if (updErr) {
+      console.error('[registrarMision] Error incrementando comercios_relevados:', updErr.message)
+    } else if (
+      campana.tope_total_comercios != null &&
+      nuevoRelevados >= campana.tope_total_comercios
+    ) {
+      // Cerrar la campaña automáticamente
+      const { error: closeErr } = await db
+        .from('campanas')
+        .update({ estado: 'cerrada' })
+        .eq('id', params.campanaId)
+      if (closeErr) {
+        console.error('[registrarMision] Error cerrando campaña por tope:', closeErr.message)
+      } else {
+        console.log('[registrarMision] Campaña cerrada por tope global:', params.campanaId)
+        // Notificar al admin
+        await crearNotificacionAdmin({
+          tipo:        'campana_cerrada_por_tope',
+          titulo:      'Campaña cerrada automáticamente',
+          mensaje:     `La campaña "${campana.nombre ?? params.campanaId}" alcanzó el tope de ${campana.tope_total_comercios} comercios y fue cerrada.`,
+          campanaId:   params.campanaId,
+          linkDestino: `/admin/campanas/${params.campanaId}`,
+        })
+        // Notificar a la marca (si aplica)
+        if (campana.marca_id) {
+          await crearNotificacionMarca(campana.marca_id, {
+            tipo:        'campana_cerrada_por_tope',
+            titulo:      'Campaña completada',
+            mensaje:     `La campaña "${campana.nombre ?? params.campanaId}" alcanzó su cupo máximo de ${campana.tope_total_comercios} comercios y fue cerrada automáticamente.`,
+            campanaId:   params.campanaId,
+            linkDestino: `/marca/campanas/${params.campanaId}/detalle`,
+          })
+        }
+        // Notificar a la distri (si aplica)
+        if (campana.distri_id) {
+          await crearNotificacionDistri(campana.distri_id, {
+            tipo:        'campana_cerrada_por_tope',
+            titulo:      'Campaña completada',
+            mensaje:     `La campaña "${campana.nombre ?? params.campanaId}" alcanzó su cupo máximo de ${campana.tope_total_comercios} comercios y fue cerrada automáticamente.`,
+            campanaId:   params.campanaId,
+            linkDestino: `/distribuidora/campanas/${params.campanaId}/detalle`,
+          })
+        }
+      }
+    }
+  } catch (topeError) {
+    console.error('[registrarMision] Error en lógica de tope global:', topeError)
+  }
+
+  // 6. Notificar a la distribuidora del gondolero y a la marca de la campaña (no bloquea el flujo)
   try {
     // Obtener en paralelo: perfil completo del gondolero + datos de la campaña
     const [
