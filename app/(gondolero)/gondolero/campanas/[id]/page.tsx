@@ -102,7 +102,9 @@ export default async function CampanaDetallePage({
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const { data: campanaData } = await supabase
+  // Usar admin client para permitir lectura de campañas cerradas/suspendidas
+  // (RLS del usuario solo permite leer campañas activas)
+  const { data: campanaData } = await (admin as any)
     .from('campanas')
     .select(`
       id, nombre, tipo, financiada_por, distri_id, marca_id, estado, actor_campana,
