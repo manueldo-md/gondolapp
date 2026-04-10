@@ -30,6 +30,7 @@ type CampanaDetalle = {
   distri_id: string | null
   marca_id: string | null
   puntos_por_foto: number
+  puntos_por_mision: number
   fecha_inicio: string | null
   fecha_fin: string | null
   fecha_limite_inscripcion: string | null
@@ -105,7 +106,7 @@ export default async function CampanaDetallePage({
     .from('campanas')
     .select(`
       id, nombre, tipo, financiada_por, distri_id, marca_id, estado, actor_campana,
-      puntos_por_foto, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
+      puntos_por_foto, puntos_por_mision, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
       objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
       marca:marcas ( razon_social ),
@@ -309,8 +310,8 @@ export default async function CampanaDetallePage({
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
             <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 mx-auto mb-1" />
-            <p className="text-base font-bold text-gondo-verde-400">{formatearPuntos(c.puntos_por_foto)}</p>
-            <p className="text-[11px] text-gray-400">pts/foto</p>
+            <p className="text-base font-bold text-gondo-verde-400">{formatearPuntos(c.puntos_por_mision > 0 ? c.puntos_por_mision : c.puntos_por_foto)}</p>
+            <p className="text-[11px] text-gray-400">pts/misión</p>
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
             <Clock size={18} className="text-gray-400 mx-auto mb-1" />

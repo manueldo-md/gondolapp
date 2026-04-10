@@ -20,7 +20,7 @@ export default function NuevaCampanaPage() {
     nombre:                      '',
     instruccion:                 '',
     tipo_contenido:              'propios',
-    puntos_por_foto:             '5',
+    puntos_por_mision:           '50',
     fecha_inicio:                '',
     fecha_fin:                   '',
     objetivo_comercios:          '',
@@ -138,18 +138,18 @@ export default function NuevaCampanaPage() {
           {/* Puntos */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Puntos por foto aprobada
+              Puntos por misión completada
             </label>
             <div className="flex items-center gap-3">
               <input
                 type="number"
                 min={0}
-                max={500}
-                value={form.puntos_por_foto}
-                onChange={set('puntos_por_foto')}
+                max={100000}
+                value={form.puntos_por_mision}
+                onChange={set('puntos_por_mision')}
                 className="w-28 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
               />
-              <span className="text-sm text-gray-500">puntos por foto</span>
+              <span className="text-sm text-gray-500">puntos por misión aprobada</span>
             </div>
           </div>
 

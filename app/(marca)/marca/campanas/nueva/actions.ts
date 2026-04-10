@@ -53,7 +53,7 @@ export async function crearCampana(formData: FormData) {
       nombre:                    formData.get('nombre') as string,
       tipo:                      formData.get('tipo') as TipoCampana,
       instruccion:               formData.get('instruccion') as string || null,
-      puntos_por_foto:           parseInt(formData.get('puntos_por_foto') as string) || 0,
+      puntos_por_mision:         parseInt(formData.get('puntos_por_mision') as string) || 0,
       fecha_inicio:              formData.get('fecha_inicio') as string || null,
       fecha_fin:                 formData.get('fecha_fin') as string || null,
       objetivo_comercios:        parseInt(formData.get('objetivo_comercios') as string) || null,

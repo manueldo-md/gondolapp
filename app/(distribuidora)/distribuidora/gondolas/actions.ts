@@ -28,7 +28,7 @@ export async function aprobarFoto(fotoId: string) {
   // 1. Obtener la foto con datos de la campaña
   const { data: foto, error: fotoError } = await adminClient
     .from('fotos')
-    .select('*, campanas(puntos_por_foto, nombre, comercios_relevados, min_comercios_para_cobrar), comercios(nombre)')
+    .select('*, campanas(puntos_por_foto, puntos_por_mision, nombre, comercios_relevados, min_comercios_para_cobrar), comercios(nombre)')
     .eq('id', fotoId)
     .single()
 
@@ -43,13 +43,17 @@ export async function aprobarFoto(fotoId: string) {
   const comercio = (foto as any).comercios
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const misionId: string | null = (foto as any).mision_id ?? null
+  // Puntos efectivos: puntos_por_mision si existe, fallback a puntos_por_foto (campañas legacy)
+  const puntosEfectivos: number = (campana.puntos_por_mision ?? 0) > 0
+    ? campana.puntos_por_mision
+    : campana.puntos_por_foto
 
   // 2. Aprobar la foto y marcar puntos_otorgados
   await adminClient
     .from('fotos')
     .update({
       estado:           'aprobada',
-      puntos_otorgados: campana.puntos_por_foto,
+      puntos_otorgados: puntosEfectivos,
     })
     .eq('id', fotoId)
 
@@ -57,11 +61,11 @@ export async function aprobarFoto(fotoId: string) {
   //    Fotos con misión: actualizarEstadoMision acredita cuando se alcanza
   //    el mínimo de misiones para cobrar.
   //    El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles automáticamente.
-  if (!misionId && campana.puntos_por_foto > 0) {
+  if (!misionId && puntosEfectivos > 0) {
     await adminClient.from('movimientos_puntos').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'credito',
-      monto:        campana.puntos_por_foto,
+      monto:        puntosEfectivos,
       concepto:     `Foto aprobada · ${campana.nombre}`,
       campana_id:   foto.campana_id,
       foto_id:      fotoId,
@@ -80,7 +84,7 @@ export async function aprobarFoto(fotoId: string) {
   // 5. Notificación: foto aprobada
   const mensajeNotif = misionId
     ? `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. Los puntos se acreditan al completar el mínimo de misiones.`
-    : `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. +${campana.puntos_por_foto} puntos`
+    : `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. +${puntosEfectivos} puntos`
 
   await adminClient.from('notificaciones').insert({
     gondolero_id: foto.gondolero_id,
@@ -231,7 +235,7 @@ export async function accionMasivaDistri(
   // Solo fotos pendientes pueden procesarse en masa
   const { data: fotosRaw } = await adminClient
     .from('fotos')
-    .select('id, gondolero_id, campana_id, comercios(nombre), campanas(puntos_por_foto, nombre, comercios_relevados, min_comercios_para_cobrar)')
+    .select('id, gondolero_id, campana_id, mision_id, comercios(nombre), campanas(puntos_por_foto, puntos_por_mision, nombre, comercios_relevados, min_comercios_para_cobrar)')
     .in('id', fotoIds)
     .eq('estado', 'pendiente')
 
@@ -262,8 +266,11 @@ export async function accionMasivaDistri(
   // accion === 'aprobada': procesar una por una
   for (const foto of fotos) {
     const campana = foto.campanas
-    const puntos: number = campana?.puntos_por_foto ?? 0
     const misionIdFoto: string | null = foto.mision_id ?? null
+    // Puntos efectivos: puntos_por_mision si existe, fallback a puntos_por_foto (campañas legacy)
+    const puntos: number = (campana?.puntos_por_mision ?? 0) > 0
+      ? campana?.puntos_por_mision ?? 0
+      : campana?.puntos_por_foto ?? 0
 
     await adminClient.from('fotos').update({ estado: 'aprobada', puntos_otorgados: puntos }).eq('id', foto.id)
     if (!foto.gondolero_id) continue

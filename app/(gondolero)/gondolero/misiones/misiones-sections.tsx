@@ -27,6 +27,7 @@ export interface ParticipacionCardData {
     nombre: string
     tipo: TipoCampana
     puntos_por_foto: number
+    puntos_por_mision: number
     fecha_fin: string | null
     objetivo_comercios: number | null
   }

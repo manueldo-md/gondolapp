@@ -23,6 +23,7 @@ interface CampanaRow {
   objetivo_comercios: number | null
   comercios_relevados: number
   puntos_por_foto: number
+  puntos_por_mision: number
   financiada_por: string
   instruccion: string | null
   created_at: string
@@ -91,7 +92,7 @@ export default async function RepoCampanasPage() {
     // Query base: campañas de fixer activas o pausadas
     let query = admin
       .from('campanas')
-      .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, financiada_por, instruccion, created_at, distri_id, marca_id')
+      .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, puntos_por_mision, financiada_por, instruccion, created_at, distri_id, marca_id')
       .eq('actor_campana', 'fixer')
       .in('estado', ['activa', 'pausada'])
       .order('created_at', { ascending: false })
@@ -167,8 +168,8 @@ export default async function RepoCampanasPage() {
                     )}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-xl font-bold text-blue-600">{c.puntos_por_foto}</p>
-                    <p className="text-xs text-gray-400">pts/foto</p>
+                    <p className="text-xl font-bold text-blue-600">{c.puntos_por_mision > 0 ? c.puntos_por_mision : c.puntos_por_foto}</p>
+                    <p className="text-xs text-gray-400">pts/misión</p>
                   </div>
                 </div>
 

@@ -9,7 +9,7 @@ type CampanaRow = CampanaCardData
 
 const CAMPANA_SELECT = `
   id, nombre, tipo, marca_id, distri_id, financiada_por, via_ejecucion, estado,
-  puntos_por_foto, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
+  puntos_por_foto, puntos_por_mision, fecha_fin, fecha_limite_inscripcion, objetivo_comercios,
   tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
   max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
   marca:marcas ( razon_social ),

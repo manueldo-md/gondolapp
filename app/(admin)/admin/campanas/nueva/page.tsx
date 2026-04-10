@@ -16,7 +16,7 @@ interface Step1 {
   instruccion: string
   instruccion_bloque: string
   tipo_contenido: TipoContenidoBloque
-  puntos_por_foto: string
+  puntos_por_mision: string
   solicitar_precio: boolean
   actor_campana: 'gondolero' | 'fixer'
 }
@@ -63,7 +63,7 @@ export default function NuevaCampanaAdminPage() {
     instruccion:        '',
     instruccion_bloque: '',
     tipo_contenido:     'propios',
-    puntos_por_foto:    '5',
+    puntos_por_mision:  '50',
     solicitar_precio:   false,
     actor_campana:      'gondolero' as 'gondolero' | 'fixer',
   })
@@ -256,18 +256,18 @@ export default function NuevaCampanaAdminPage() {
             {/* Puntos por foto */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Puntos por foto
+                Puntos por misión completada
               </label>
               <div className="flex items-center gap-3">
                 <input
                   type="number"
                   min={0}
-                  max={500}
-                  value={s1.puntos_por_foto}
-                  onChange={e => setS1(p => ({ ...p, puntos_por_foto: e.target.value }))}
+                  max={100000}
+                  value={s1.puntos_por_mision}
+                  onChange={e => setS1(p => ({ ...p, puntos_por_mision: e.target.value }))}
                   className={`w-28 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none transition ${ring}`}
                 />
-                <span className="text-sm text-gray-500">puntos por foto aprobada</span>
+                <span className="text-sm text-gray-500">puntos por misión aprobada</span>
               </div>
             </div>
 

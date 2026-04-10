@@ -148,6 +148,7 @@ export interface Campana {
   tope_total_comercios: number | null
   es_abierta: boolean
   puntos_por_foto: number
+  puntos_por_mision: number
   instruccion: string | null
   tokens_creacion: number
   presupuesto_tokens: number

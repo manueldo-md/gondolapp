@@ -128,6 +128,7 @@ interface CampanaData {
   nombre: string
   tipo: string
   puntos_por_foto: number
+  puntos_por_mision: number
   bloques: BloqueData[]
   primerBloqueId: string | null  // Usado como fallback para asegurarBloqueGenerico
 }
@@ -608,7 +609,7 @@ function CapturaContent() {
 
       supabase
         .from('campanas')
-        .select('id, nombre, tipo, puntos_por_foto, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden ) )')
+        .select('id, nombre, tipo, puntos_por_foto, puntos_por_mision, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden ) )')
         .eq('id', campanaId)
         .eq('estado', 'activa')
         .single()
@@ -642,7 +643,8 @@ function CapturaContent() {
               id: d.id,
               nombre: d.nombre,
               tipo: d.tipo ?? 'relevamiento',
-              puntos_por_foto: d.puntos_por_foto,
+              puntos_por_foto:    d.puntos_por_foto,
+              puntos_por_mision:  d.puntos_por_mision ?? 0,
               bloques: bloquesData,
               primerBloqueId: bloquesData[0]?.id ?? null,
             }
@@ -936,7 +938,10 @@ function CapturaContent() {
         comercioId: comercio.id,
         deviceId,
         lat, lng,
-        puntosTotal: campana.puntos_por_foto * fotosConRespuestas.length,
+        // Usar puntos_por_mision si la campaña lo tiene, fallback a puntos_por_foto (legacy)
+        puntosTotal: campana.puntos_por_mision > 0
+          ? campana.puntos_por_mision
+          : campana.puntos_por_foto * fotosConRespuestas.length,
         fotos: fotosConRespuestas.map(r => ({
           bloqueId:             r.bloqueId ?? bloqueGenericoId ?? '',
           storagePath:          r.storagePath,
@@ -2241,7 +2246,11 @@ function CapturaContent() {
                 <div>
                   <p className="text-xs text-gray-400">Puntos a ganar</p>
                   <p className="text-sm font-bold text-gondo-verde-400">
-                    +{formatearPuntos(campana?.puntos_por_foto ?? 0)} pts
+                    +{formatearPuntos(
+                      (campana?.puntos_por_mision ?? 0) > 0
+                        ? (campana?.puntos_por_mision ?? 0)
+                        : (campana?.puntos_por_foto ?? 0)
+                    )} pts/misión
                   </p>
                 </div>
               </div>
@@ -2295,7 +2304,11 @@ function CapturaContent() {
               <div>
                 <p className="text-xs text-gray-500">Puntos por esta misión</p>
                 <p className="text-lg font-bold text-gondo-verde-400">
-                  +{formatearPuntos(campana.puntos_por_foto * fotosCapturadas.length)} pts
+                  +{formatearPuntos(
+                    campana.puntos_por_mision > 0
+                      ? campana.puntos_por_mision
+                      : campana.puntos_por_foto * fotosCapturadas.length
+                  )} pts
                 </p>
               </div>
             </div>

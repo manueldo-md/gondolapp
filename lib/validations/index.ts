@@ -88,6 +88,11 @@ export const schemaCampanaPaso1 = z.object({
     .int('Debe ser un número entero')
     .min(0, 'Los puntos no pueden ser negativos')
     .max(10000, 'Máximo 10.000 puntos por foto'),
+  puntos_por_mision: z
+    .number()
+    .int('Debe ser un número entero')
+    .min(0, 'Los puntos no pueden ser negativos')
+    .max(100000, 'Máximo 100.000 puntos por misión'),
   zona_ids: z
     .array(z.string().uuid())
     .min(1, 'Seleccioná al menos una zona'),

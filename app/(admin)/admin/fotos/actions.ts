@@ -26,20 +26,23 @@ export async function aprobarFotoAdmin(fotoId: string) {
 
   const { data: fotoRaw } = await admin
     .from('fotos')
-    .select('gondolero_id, campana_id, mision_id, campana:campanas(puntos_por_foto, min_comercios_para_cobrar, comercios_relevados, nombre), comercio:comercios(nombre)')
+    .select('gondolero_id, campana_id, mision_id, campana:campanas(puntos_por_foto, puntos_por_mision, min_comercios_para_cobrar, comercios_relevados, nombre), comercio:comercios(nombre)')
     .eq('id', fotoId)
     .single()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const foto = fotoRaw as any
-  const puntosPorFoto: number = foto?.campana?.puntos_por_foto ?? 0
   const minParaCobrar: number = foto?.campana?.min_comercios_para_cobrar ?? 1
   const misionId: string | null = foto?.mision_id ?? null
+  // Puntos efectivos: puntos_por_mision si existe, fallback a puntos_por_foto (campañas legacy)
+  const puntosEfectivos: number = (foto?.campana?.puntos_por_mision ?? 0) > 0
+    ? foto?.campana?.puntos_por_mision ?? 0
+    : foto?.campana?.puntos_por_foto ?? 0
 
   // 1. Aprobar la foto
   await admin.from('fotos').update({
     estado:           'aprobada',
-    puntos_otorgados: puntosPorFoto,
+    puntos_otorgados: puntosEfectivos,
   }).eq('id', fotoId)
 
   if (foto?.gondolero_id) {
@@ -47,11 +50,11 @@ export async function aprobarFotoAdmin(fotoId: string) {
     //    Fotos con misión: actualizarEstadoMision acredita cuando se alcanza
     //    el mínimo de misiones para cobrar.
     //    El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles automáticamente.
-    if (!misionId && puntosPorFoto > 0) {
+    if (!misionId && puntosEfectivos > 0) {
       await admin.from('movimientos_puntos').insert({
         gondolero_id: foto.gondolero_id,
         tipo:         'credito',
-        monto:        puntosPorFoto,
+        monto:        puntosEfectivos,
         concepto:     `Foto aprobada · ${foto?.campana?.nombre ?? ''}`,
         campana_id:   foto.campana_id,
         foto_id:      fotoId,
@@ -61,7 +64,7 @@ export async function aprobarFotoAdmin(fotoId: string) {
     // 3. Notificación: foto aprobada
     const mensajeNotif = misionId
       ? `Tu foto en ${foto?.comercio?.nombre ?? 'el comercio'} fue aprobada. Los puntos se acreditan al completar el mínimo de misiones.`
-      : `Tu foto en ${foto?.comercio?.nombre ?? 'el comercio'} fue aprobada. +${puntosPorFoto} puntos`
+      : `Tu foto en ${foto?.comercio?.nombre ?? 'el comercio'} fue aprobada. +${puntosEfectivos} puntos`
 
     await admin.from('notificaciones').insert({
       gondolero_id: foto.gondolero_id,
@@ -164,7 +167,7 @@ export async function accionMasiva(
   // Reglas: no aprobar archivadas ni ya aprobadas, no archivar aprobadas
   let query = admin
     .from('fotos')
-    .select('id, estado, gondolero_id, campana_id, mision_id, comercio:comercios(nombre), campana:campanas(puntos_por_foto, nombre, min_comercios_para_cobrar)')
+    .select('id, estado, gondolero_id, campana_id, mision_id, comercio:comercios(nombre), campana:campanas(puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar)')
     .in('id', fotoIds)
 
   if (accion === 'aprobada') {
@@ -220,8 +223,11 @@ export async function accionMasiva(
   let procesadas = 0, errores = 0
   for (const foto of fotos) {
     try {
-      const puntos: number = foto.campana?.puntos_por_foto ?? 0
       const misionIdFoto: string | null = foto.mision_id ?? null
+      // Puntos efectivos: puntos_por_mision si existe, fallback a puntos_por_foto (campañas legacy)
+      const puntos: number = (foto.campana?.puntos_por_mision ?? 0) > 0
+        ? foto.campana?.puntos_por_mision ?? 0
+        : foto.campana?.puntos_por_foto ?? 0
       await admin.from('fotos').update({ estado: 'aprobada', puntos_otorgados: puntos }).eq('id', foto.id)
       if (foto.gondolero_id) {
         // Fotos sin misión (legacy): acreditar directamente.

@@ -43,11 +43,14 @@ async function liberarBounty(admin: ReturnType<typeof adminClient>, comercioId: 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: campana } = await (admin as any)
       .from('campanas')
-      .select('puntos_por_foto')
+      .select('puntos_por_foto, puntos_por_mision')
       .eq('id', foto.campana_id)
-      .maybeSingle() as { data: { puntos_por_foto: number } | null }
+      .maybeSingle() as { data: { puntos_por_foto: number; puntos_por_mision: number } | null }
 
-    const puntos = campana?.puntos_por_foto ?? 0
+    // Usar puntos_por_mision si la campaña lo tiene, fallback a puntos_por_foto (legacy)
+    const puntos = (campana?.puntos_por_mision ?? 0) > 0
+      ? (campana?.puntos_por_mision ?? 0)
+      : (campana?.puntos_por_foto ?? 0)
     if (puntos > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (admin as any).from('movimientos_puntos').insert({

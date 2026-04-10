@@ -23,6 +23,7 @@ export interface CampanaCardData {
   distri_id: string | null
   financiada_por: string
   puntos_por_foto: number
+  puntos_por_mision: number
   fecha_fin: string | null
   fecha_limite_inscripcion: string | null
   objetivo_comercios: number | null
@@ -172,7 +173,7 @@ function CampanaCard({
         <div className="flex items-center gap-1.5">
           <Star size={14} className="text-gondo-verde-400 fill-gondo-verde-400" />
           <span className="text-sm font-semibold text-gondo-verde-400">
-            {formatearPuntos(campana.puntos_por_foto)} pts/foto
+            {formatearPuntos(campana.puntos_por_mision > 0 ? campana.puntos_por_mision : campana.puntos_por_foto)} pts/misión
           </span>
         </div>
         {dias !== null && (
@@ -297,7 +298,7 @@ function CampanaCardCerrada({
         <div className="flex items-center gap-3 mt-1">
           <span className="flex items-center gap-1 text-xs text-gondo-verde-400 font-medium">
             <Star size={10} className="fill-gondo-verde-400" />
-            {formatearPuntos(campana.puntos_por_foto)} pts/foto
+            {formatearPuntos(campana.puntos_por_mision > 0 ? campana.puntos_por_mision : campana.puntos_por_foto)} pts/misión
           </span>
           {campana.fecha_fin && (
             <span className="text-xs text-gray-400">

@@ -33,14 +33,16 @@ export async function guardarBorradorDistri(campanaId: string, data: DraftData) 
 export async function republicarCampanaDistri(campanaId: string): Promise<{ error?: string }> {
   const { data: c } = await admin()
     .from('campanas')
-    .select('puntos_por_foto, draft_descripcion, draft_bounty, draft_zonas, draft_bloques')
+    .select('puntos_por_mision, puntos_por_foto, draft_descripcion, draft_bounty, draft_zonas, draft_bloques')
     .eq('id', campanaId)
     .single()
 
   if (!c) return { error: 'Campaña no encontrada' }
 
-  if (c.draft_bounty !== null && c.draft_bounty < c.puntos_por_foto) {
-    return { error: 'No podés reducir el bounty por foto' }
+  // Usar puntos_por_mision si existe, fallback a puntos_por_foto para campañas legacy
+  const puntosActuales = c.puntos_por_mision > 0 ? c.puntos_por_mision : c.puntos_por_foto
+  if (c.draft_bounty !== null && c.draft_bounty < puntosActuales) {
+    return { error: 'No podés reducir el bounty por misión' }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,8 +54,8 @@ export async function republicarCampanaDistri(campanaId: string): Promise<{ erro
     draft_bloques: null,
   }
   if (c.draft_descripcion !== null) updates.instruccion = c.draft_descripcion
-  if (c.draft_bounty !== null && c.draft_bounty !== c.puntos_por_foto) {
-    updates.puntos_por_foto = c.draft_bounty
+  if (c.draft_bounty !== null && c.draft_bounty !== puntosActuales) {
+    updates.puntos_por_mision = c.draft_bounty
   }
 
   await admin().from('campanas').update(updates).eq('id', campanaId)
