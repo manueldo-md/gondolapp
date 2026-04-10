@@ -79,15 +79,9 @@ export async function registrarFoto(params: RegistrarFotoParams) {
     throw new Error('No pudimos guardar la foto: ' + fotoError.message)
   }
 
-  // Acreditar puntos al gondolero
-  await db.from('movimientos_puntos').insert({
-    gondolero_id: user.id,
-    tipo:         'credito',
-    monto:        params.puntosAcreditar,
-    concepto:     'Foto de góndola',
-    campana_id:   params.campanaId,
-    foto_id:      foto.id,
-  })
+  // NO acreditar puntos aquí — los puntos se acreditan solo al aprobar
+  // la misión y cuando el gondolero alcanza el mínimo de misiones para cobrar
+  // (ver actualizarEstadoMision en lib/misiones.ts).
 
   // Incrementar comercios_completados en la participación
   await db

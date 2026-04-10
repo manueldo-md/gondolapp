@@ -75,16 +75,42 @@ export async function actualizarEstadoMision(params: {
     const countAprobadas = misionesAprobadas ?? 0
 
     if (countAprobadas >= minParaCobrar) {
-      // 5. Liberar todas las misiones retenidas (incluye la actual, que aún
-      //    tiene bounty_estado = 'retenido' desde registrarMision)
+      // 5a. Obtener puntos de las misiones retenidas antes de liberarlas
+      const { data: misionesRetenidas } = await admin
+        .from('misiones')
+        .select('id, puntos_total')
+        .eq('campana_id',   campanaId)
+        .eq('gondolero_id',  gondoleroId)
+        .eq('bounty_estado', 'retenido')
+
+      // 5b. Liberar todas las misiones retenidas (incluye la actual, que aún
+      //     tiene bounty_estado = 'retenido' desde registrarMision)
       await admin
         .from('misiones')
         .update({ bounty_estado: 'acreditado' })
         .eq('campana_id',   campanaId)
         .eq('gondolero_id',  gondoleroId)
         .eq('bounty_estado', 'retenido')
+
+      // 5c. Acreditar puntos: insertar un movimiento por el total liberado.
+      //     El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles
+      //     automáticamente — no hay que hacerlo manualmente.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const totalPuntos = (misionesRetenidas ?? []).reduce(
+        (sum, m) => sum + (((m as any).puntos_total as number) ?? 0), 0
+      )
+      if (totalPuntos > 0) {
+        await admin.from('movimientos_puntos').insert({
+          gondolero_id: gondoleroId,
+          tipo:         'credito',
+          monto:        Math.round(totalPuntos),
+          concepto:     `Puntos desbloqueados · ${countAprobadas} misiones aprobadas`,
+          campana_id:   campanaId,
+        })
+      }
     }
     // Si count < minParaCobrar → bounty_estado se queda en 'retenido'
+    //   y no se inserta ningún movimiento de puntos todavía.
 
   } catch (err) {
     console.error('[actualizarEstadoMision] Error (no-op):', err)

@@ -41,6 +41,8 @@ export async function aprobarFoto(fotoId: string) {
   const campana = (foto as any).campanas
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const comercio = (foto as any).comercios
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const misionId: string | null = (foto as any).mision_id ?? null
 
   // 2. Aprobar la foto y marcar puntos_otorgados
   await adminClient
@@ -51,10 +53,12 @@ export async function aprobarFoto(fotoId: string) {
     })
     .eq('id', fotoId)
 
-  // 3. Insertar movimiento de puntos
-  const { error: puntosError } = await adminClient
-    .from('movimientos_puntos')
-    .insert({
+  // 3. Fotos sin misión (flujo legacy): acreditar directamente sin retención.
+  //    Fotos con misión: actualizarEstadoMision acredita cuando se alcanza
+  //    el mínimo de misiones para cobrar.
+  //    El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles automáticamente.
+  if (!misionId && campana.puntos_por_foto > 0) {
+    await adminClient.from('movimientos_puntos').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'credito',
       monto:        campana.puntos_por_foto,
@@ -62,23 +66,9 @@ export async function aprobarFoto(fotoId: string) {
       campana_id:   foto.campana_id,
       foto_id:      fotoId,
     })
-
-  if (puntosError) {
-    console.error('Error insertando puntos:', puntosError)
   }
 
-  // 4. Incrementar puntos en profiles via RPC
-  // (actualiza puntos_disponibles Y puntos_totales_ganados atómicamente)
-  const { error: rpcError } = await adminClient.rpc('incrementar_puntos', {
-    p_gondolero_id: foto.gondolero_id,
-    p_monto:        campana.puntos_por_foto,
-  })
-
-  if (rpcError) {
-    console.error('Error RPC incrementar_puntos:', rpcError)
-  }
-
-  // 5. Incrementar fotos_aprobadas y recalcular tasa_aprobacion en profiles
+  // 4. Incrementar fotos_aprobadas y recalcular tasa_aprobacion en profiles
   const { error: rpcFotosError } = await adminClient.rpc('incrementar_fotos_aprobadas', {
     p_gondolero_id: foto.gondolero_id,
   })
@@ -87,12 +77,16 @@ export async function aprobarFoto(fotoId: string) {
     console.error('Error RPC incrementar_fotos_aprobadas:', rpcFotosError)
   }
 
-  // 5b. Notificación: foto aprobada
+  // 5. Notificación: foto aprobada
+  const mensajeNotif = misionId
+    ? `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. Los puntos se acreditan al completar el mínimo de misiones.`
+    : `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. +${campana.puntos_por_foto} puntos`
+
   await adminClient.from('notificaciones').insert({
     gondolero_id: foto.gondolero_id,
     tipo:         'foto_aprobada',
     titulo:       '¡Foto aprobada! ✅',
-    mensaje:      `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. +${campana.puntos_por_foto} puntos`,
+    mensaje:      mensajeNotif,
     campana_id:   foto.campana_id,
   })
 
@@ -269,11 +263,14 @@ export async function accionMasivaDistri(
   for (const foto of fotos) {
     const campana = foto.campanas
     const puntos: number = campana?.puntos_por_foto ?? 0
+    const misionIdFoto: string | null = foto.mision_id ?? null
 
     await adminClient.from('fotos').update({ estado: 'aprobada', puntos_otorgados: puntos }).eq('id', foto.id)
     if (!foto.gondolero_id) continue
 
-    if (puntos > 0) {
+    // Fotos sin misión (legacy): acreditar directamente.
+    // Fotos con misión: actualizarEstadoMision acredita al alcanzar el mínimo.
+    if (!misionIdFoto && puntos > 0) {
       await adminClient.from('movimientos_puntos').insert({
         gondolero_id: foto.gondolero_id,
         tipo:         'credito',
@@ -282,14 +279,15 @@ export async function accionMasivaDistri(
         campana_id:   foto.campana_id,
         foto_id:      foto.id,
       })
-      await adminClient.rpc('incrementar_puntos', { p_gondolero_id: foto.gondolero_id, p_monto: puntos })
     }
 
     await adminClient.from('notificaciones').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'foto_aprobada',
       titulo:       '¡Foto aprobada! ✅',
-      mensaje:      `Tu foto en ${foto.comercios?.nombre ?? 'el comercio'} fue aprobada. +${puntos} puntos`,
+      mensaje:      misionIdFoto
+        ? `Tu foto en ${foto.comercios?.nombre ?? 'el comercio'} fue aprobada. Los puntos se acreditan al completar el mínimo de misiones.`
+        : `Tu foto en ${foto.comercios?.nombre ?? 'el comercio'} fue aprobada. +${puntos} puntos`,
       campana_id:   foto.campana_id,
     })
 
@@ -344,6 +342,15 @@ export async function accionMasivaDistri(
       .from('campanas')
       .update({ comercios_relevados: (campana?.comercios_relevados || 0) + 1 })
       .eq('id', foto.campana_id)
+
+    // Actualizar estado de la misión y acreditar puntos si alcanzó el mínimo
+    await actualizarEstadoMision({
+      fotoId:        foto.id,
+      gondoleroId:   foto.gondolero_id,
+      campanaId:     foto.campana_id,
+      minParaCobrar: campana?.min_comercios_para_cobrar ?? 1,
+      admin:         adminClient,
+    })
   }
 
   revalidatePath('/distribuidora/gondolas')
