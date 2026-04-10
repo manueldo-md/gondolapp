@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
   ArrowLeft, MapPin, Camera, CheckCircle2, XCircle,
-  Navigation, Loader2, Star, AlertTriangle, WifiOff,
+  RefreshCw, Navigation, Loader2, Star, AlertTriangle, WifiOff,
 } from 'lucide-react'
 import { get, set } from 'idb-keyval'
 import { createClient } from '@/lib/supabase/client'
@@ -93,7 +93,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'confirmacion' | 'bloque-completado' | 'mision-resumen' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
 
 interface ComercioRow {
@@ -132,14 +132,14 @@ interface CampanaData {
   primerBloqueId: string | null  // Usado como fallback para asegurarBloqueGenerico
 }
 
-interface ResolucionBloque {
+interface FotoCapturadaLocal {
   bloqueIdx: number
-  bloqueId: string
-  /** campo_id → File para tipo='foto', valor para el resto */
-  respuestas: Record<string, unknown>
-  /** campo_id → previewUrl (solo para campos tipo='foto') */
-  fotoPreviews: Record<string, string>
+  bloqueId: string | null
+  blob: Blob
+  previewUrl: string
   precio: string
+  respuestas: Record<string, unknown>
+  blurScore: number | null
   timestampDispositivo: string
 }
 
@@ -554,19 +554,18 @@ function CapturaContent() {
   const [comercios, setComercios] = useState<ComercioRow[]>([])
   const [buscando, setBuscando] = useState(false)
   const [comercio, setComercio] = useState<ComercioRow | null>(null)
+  const [fotoBlob, setFotoBlob] = useState<Blob | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [precio, setPrecio] = useState('')
   const [respuestas, setRespuestas] = useState<Record<string, unknown>>({})
   const [enviando, setEnviando] = useState(false)
   const [puntosGanados, setPuntosGanados] = useState(0)
+  const [blurScore, setBlurScore] = useState<number | null>(null)
   const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
   const [bloqueActualIdx, setBloqueActualIdx] = useState(0)
-  const [resolucionesBloques, setResolucionesBloques] = useState<ResolucionBloque[]>([])
+  const [fotosCapturadas, setFotosCapturadas] = useState<FotoCapturadaLocal[]>([])
   // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
   const [campoFotoActualId, setCampoFotoActualId] = useState<string | null>(null)
-  // Previews de fotos de campos tipo='foto' del bloque actual (campo_id → previewUrl)
-  const [campoFotoPreviews, setCampoFotoPreviews] = useState<Record<string, string>>({})
-  // Campo foto pendiente de decisión por blur detection
-  const [campoFotoBlurPendiente, setCampoFotoBlurPendiente] = useState<{ campoId: string; blob: Blob; previewUrl: string } | null>(null)
 
   // ── Estado extra para flujo COMERCIOS ─────────────────────────────────────
   const [cmNombre,    setCmNombre]    = useState('')
@@ -842,41 +841,41 @@ function CapturaContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [paso])
 
-  // ── Guardar resolución del bloque actual en memoria (sin subir) ──────────────
+  // ── Guardar foto del bloque actual en memoria (sin subir) ────────────────────
 
-  const guardarBloqueLocal = () => {
+  const guardarFotoLocal = () => {
     const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
-    if (!campana) return
+    if (!fotoBlob || !fotoPreview || !campana) return
 
-    const nuevaResolucion: ResolucionBloque = {
-      bloqueIdx:            bloqueActualIdx,
-      bloqueId:             bloqueActual?.id ?? '',
-      respuestas:           { ...respuestas },
-      fotoPreviews:         { ...campoFotoPreviews },
+    const nuevaFoto: FotoCapturadaLocal = {
+      bloqueIdx:             bloqueActualIdx,
+      bloqueId:              bloqueActual?.id ?? null,
+      blob:                  fotoBlob,
+      previewUrl:            fotoPreview,
       precio,
-      timestampDispositivo: new Date().toISOString(),
+      respuestas,
+      blurScore,
+      timestampDispositivo:  new Date().toISOString(),
     }
-    setResolucionesBloques(prev => [
-      ...prev.filter(r => r.bloqueIdx !== bloqueActualIdx),
-      nuevaResolucion,
-    ])
+    setFotosCapturadas(prev => [...prev.filter(f => f.bloqueIdx !== bloqueActualIdx), nuevaFoto])
 
     // Limpiar estado del bloque actual
-    setPrecio(''); setRespuestas({}); setCampoFotoPreviews({})
+    setFotoBlob(null); setFotoPreview(null)
+    setPrecio(''); setRespuestas({}); setBlurScore(null)
 
     const isLast = bloqueActualIdx >= (campana.bloques.length || 1) - 1
     if (isLast) {
       setPaso('mision-resumen')
     } else {
-      // Mostrar pantalla intermedia de confirmación antes de pasar al siguiente bloque
-      setPaso('bloque-completado')
+      setBloqueActualIdx(prev => prev + 1)
+      setPaso('camara')
     }
   }
 
-  // ── Enviar misión completa ────────────────────────────────────────────────────
+  // ── Enviar misión completa (todas las fotos juntas) ───────────────────────────
 
   const handleEnviarMision = async () => {
-    if (!comercio || !campana) return
+    if (!comercio || !campana || fotosCapturadas.length === 0) return
     if (!navigator.onLine) {
       setErrorGlobal('Necesitás conexión a internet para enviar la misión.')
       return
@@ -889,93 +888,74 @@ function CapturaContent() {
     const deviceId = getDeviceId()
 
     try {
-      // 1. Recopilar todas las fotos de campos tipo='foto' de todas las resoluciones
-      const fotosParaSubir: {
-        bloqueId: string; campoId: string; blob: Blob
-        precio: string; timestampDispositivo: string
-      }[] = []
-      for (const resolucion of resolucionesBloques) {
-        const bloque = campana.bloques[resolucion.bloqueIdx]
-        if (!bloque) continue
-        for (const campo of bloque.campos) {
-          if (campo.tipo !== 'foto') continue
-          const val = resolucion.respuestas[campo.id]
-          if (val instanceof File || val instanceof Blob) {
-            fotosParaSubir.push({
-              bloqueId:             resolucion.bloqueId,
-              campoId:              campo.id,
-              blob:                 val,
-              precio:               resolucion.precio,
-              timestampDispositivo: resolucion.timestampDispositivo,
-            })
-          }
-        }
-      }
-
-      // 2. Comprimir y subir fotos en paralelo
+      // 1. Comprimir y subir todas las fotos en paralelo
       const uploadResults = await Promise.all(
-        fotosParaSubir.map(async (f) => {
+        fotosCapturadas.map(async (f) => {
           console.log('[compresión] Antes:', (f.blob.size / 1024).toFixed(1), 'KB')
           const compressed = await comprimirImagen(f.blob, comprConfig.maxSizeMB, comprConfig.maxWidth, comprConfig.calidad)
           console.log('[compresión] Después:', (compressed.size / 1024).toFixed(1), 'KB')
           const storagePath = generarPathFoto(campana.id, deviceId)
-          const fd = new FormData()
-          fd.append('foto', new File([compressed], 'foto.jpg', { type: 'image/jpeg' }))
-          fd.append('storagePath', storagePath)
-          const { url } = await subirFoto(fd)
+          const formData = new FormData()
+          formData.append('foto', new File([compressed], 'foto.jpg', { type: 'image/jpeg' }))
+          formData.append('storagePath', storagePath)
+          const { url } = await subirFoto(formData)
           return { ...f, storagePath, url }
         })
       )
 
-      // 3. Resolver bloque genérico si la campaña no tiene bloques configurados
+      // 2. Resolver bloque genérico si la campaña no tiene bloques configurados
       const bloqueGenericoId = campana.bloques.length === 0
         ? await asegurarBloqueGenerico(campana.id)
         : null
 
-      // 4. Recopilar respuestas de campos no-foto para mision_respuestas
-      const respuestasDirectas: { campo_id: string; valor: unknown }[] = []
-      for (const resolucion of resolucionesBloques) {
-        const bloque = campana.bloques[resolucion.bloqueIdx]
-        if (!bloque) continue
-        for (const campo of bloque.campos) {
-          if (campo.tipo === 'foto') continue
-          const val = resolucion.respuestas[campo.id]
-          if (val === undefined || val === null || val === '') continue
-          respuestasDirectas.push({ campo_id: campo.id, valor: val })
-        }
-      }
+      // 3. Registrar la misión completa en DB
+      // Preparar respuestas: subir blobs de campos tipo 'foto' y reemplazar con URLs
+      const fotosConRespuestas = await Promise.all(
+        uploadResults.map(async r => {
+          const respuestasProcesadas: { campo_id: string; valor: unknown }[] = []
+          for (const [campo_id, valor] of Object.entries(r.respuestas)) {
+            if (valor === undefined || valor === null || valor === '') continue
+            if (valor instanceof File || valor instanceof Blob) {
+              // Subir foto de campo adicional
+              const campoPath = generarPathFoto(campana.id, deviceId)
+              const fd = new FormData()
+              fd.append('foto', valor instanceof File ? valor : new File([valor], 'foto-campo.jpg', { type: 'image/jpeg' }))
+              fd.append('storagePath', campoPath)
+              const { url: campoUrl } = await subirFoto(fd)
+              respuestasProcesadas.push({ campo_id, valor: campoUrl })
+            } else {
+              respuestasProcesadas.push({ campo_id, valor })
+            }
+          }
+          return { ...r, respuestasProcesadas }
+        })
+      )
 
-      // 5. Registrar la misión completa en DB
-      const totalFotos = uploadResults.length
       const result = await registrarMision({
-        campanaId:  campana.id,
+        campanaId: campana.id,
         comercioId: comercio.id,
         deviceId,
         lat, lng,
-        puntosTotal: campana.puntos_por_foto * Math.max(totalFotos, 1),
-        fotos: uploadResults.map(r => ({
+        puntosTotal: campana.puntos_por_foto * fotosConRespuestas.length,
+        fotos: fotosConRespuestas.map(r => ({
           bloqueId:             r.bloqueId ?? bloqueGenericoId ?? '',
           storagePath:          r.storagePath,
           url:                  r.url,
           precioConfirmado:     r.precio ? parseFloat(r.precio) : null,
           timestampDispositivo: r.timestampDispositivo,
-          blurScore:            null,
-          respuestas:           [],
+          blurScore:            r.blurScore,
+          respuestas:           r.respuestasProcesadas,
         })),
-        respuestasDirectas: respuestasDirectas.length > 0 ? respuestasDirectas : undefined,
       })
 
       // Liberar object URLs
-      for (const res of resolucionesBloques) {
-        for (const previewUrl of Object.values(res.fotoPreviews)) {
-          URL.revokeObjectURL(previewUrl)
-        }
-      }
+      fotosCapturadas.forEach(f => URL.revokeObjectURL(f.previewUrl))
 
       setPuntosGanados(result.puntos)
       setPaso('exito')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      // Si el mensaje parece JSON de infraestructura (Vercel/Next.js), mostrar mensaje amigable
       const esJsonInfra = msg.startsWith('{') || msg.startsWith('[')
       setErrorGlobal(esJsonInfra
         ? 'Error al enviar la misión. Revisá tu conexión e intentá de nuevo.'
@@ -1057,7 +1037,15 @@ function CapturaContent() {
     }
   }
 
-  // (cleanup de fotoPreview eliminado — previews se liberan en handleEnviarMision)
+  // Limpiar preview URL al desmontar — solo si NO está guardada en fotosCapturadas
+  useEffect(() => {
+    return () => {
+      if (fotoPreview && !fotosCapturadas.some(f => f.previewUrl === fotoPreview)) {
+        URL.revokeObjectURL(fotoPreview)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fotoPreview])
 
   // ── Estados de carga / error globales ─────────────────────────────────────
 
@@ -1104,43 +1092,76 @@ function CapturaContent() {
         {/* Instrucción del campo sobre la cámara */}
         <div className="fixed top-0 left-0 right-0 z-50 bg-black/70 px-4 py-3 text-center">
           <p className="text-white text-sm font-medium">
-            {campoCamara?.pregunta || 'Tomá la foto'}
+            {campoCamara?.pregunta || 'Tomá la foto adicional'}
           </p>
         </div>
         <PasoCamara
-          onCaptura={async (blob, previewUrl) => {
-            // Blur detection
-            const score = await calcularBlur(blob)
-            if (score < BLUR_THRESHOLD) {
-              setCampoFotoBlurPendiente({ campoId: campoFotoActualId, blob, previewUrl })
-              setPaso('blur-advertencia')
-              return
-            }
+          onCaptura={(blob) => {
             const file = blob instanceof File
               ? blob
               : new File([blob], 'campo-foto.jpg', { type: 'image/jpeg' })
+            // Guardar foto de este campo
             const nuevasRespuestas = { ...respuestas, [campoFotoActualId]: file }
             setRespuestas(nuevasRespuestas)
-            setCampoFotoPreviews(prev => ({ ...prev, [campoFotoActualId]: previewUrl }))
             // Buscar siguiente campo tipo='foto' aún no capturado
             const siguienteFoto = bloqueParaCamara?.campos.find(
               c => c.tipo === 'foto' && !(nuevasRespuestas[c.id] instanceof File)
             ) ?? null
             if (siguienteFoto) {
+              // Encadenar al siguiente campo foto (sin cambiar de paso)
               setCampoFotoActualId(siguienteFoto.id)
             } else {
+              // No hay más fotos de campo — avanzar al formulario o confirmacion
               setCampoFotoActualId(null)
               const camposNonFoto = bloqueParaCamara?.campos.filter(c => c.tipo !== 'foto') ?? []
-              const hayFormulario = camposNonFoto.length > 0 || (bloqueParaCamara?.solicitarPrecio ?? false)
-              setPaso(hayFormulario ? 'formulario' : 'confirmacion')
+              setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
             }
           }}
           onVolver={() => {
+            // Volver a la cámara principal del bloque
             setCampoFotoActualId(null)
-            setPaso('gps')
+            setPaso('camara')
           }}
         />
       </div>
+    )
+  }
+
+  // ── PASO CÁMARA — full screen, sin header ─────────────────────────────────
+  if (paso === 'camara') {
+    return (
+      <PasoCamara
+        onCaptura={async (blob, previewUrl) => {
+          console.log('Foto capturada, iniciando blur detection...')
+          console.log('Blob size:', blob.size, 'type:', blob.type)
+          setFotoBlob(blob)
+          setFotoPreview(previewUrl)
+          const score = await calcularBlur(blob)
+          setBlurScore(score)
+          console.log('Device:', /Android|iPhone|iPad/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop')
+          console.log('Blur score:', score, '| Threshold:', BLUR_THRESHOLD)
+          console.log('¿Foto borrosa?', score < BLUR_THRESHOLD)
+          const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
+          if (score < BLUR_THRESHOLD) {
+            console.log('Mostrando advertencia de blur')
+            setPaso('blur-advertencia')
+          } else {
+            // Avanzar al primer campo tipo='foto' pendiente (paso de cámara adicional),
+            // luego al formulario para campos no-foto, o directamente a confirmacion
+            const primerFotoPendiente = bloqueActual?.campos.find(
+              c => c.tipo === 'foto' && !(respuestas[c.id] instanceof File)
+            ) ?? null
+            if (primerFotoPendiente) {
+              setCampoFotoActualId(primerFotoPendiente.id)
+              setPaso('formulario-camara')
+            } else {
+              const camposNonFoto = bloqueActual?.campos.filter(c => c.tipo !== 'foto') ?? []
+              setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
+            }
+          }
+        }}
+        onVolver={() => setPaso('gps')}
+      />
     )
   }
 
@@ -1154,7 +1175,9 @@ function CapturaContent() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-1">¡Misión completada!</h1>
           <p className="text-gray-500 text-sm">
-            {puntosGanados > 0 ? 'Misión enviada a revisión' : 'Tu presencia fue registrada'}
+            {puntosGanados > 0
+              ? `${campana?.bloques?.length ?? 1} foto${(campana?.bloques?.length ?? 1) !== 1 ? 's' : ''} enviada${(campana?.bloques?.length ?? 1) !== 1 ? 's' : ''} a revisión`
+              : 'Las fotos están en revisión'}
           </p>
         </div>
         <div className="flex items-center gap-2 bg-gondo-verde-50 px-6 py-3 rounded-2xl">
@@ -1166,10 +1189,10 @@ function CapturaContent() {
         <div className="flex flex-col gap-3 w-full max-w-xs">
           <button
             onClick={() => {
+              setFotoBlob(null); setFotoPreview(null)
               setPrecio('')
               setRespuestas({}); setPuntosGanados(0)
-              setResolucionesBloques([]); setBloqueActualIdx(0)
-              setCampoFotoPreviews({}); setCampoFotoBlurPendiente(null)
+              setFotosCapturadas([]); setBloqueActualIdx(0)
               setComercio(null); setBusqueda('')
               setPaso('comercios-gps')
             }}
@@ -1204,10 +1227,10 @@ function CapturaContent() {
         <div className="flex flex-col gap-3 w-full max-w-xs">
           <button
             onClick={() => {
+              setFotoBlob(null); setFotoPreview(null)
               setPrecio('')
               setRespuestas({}); setPuntosGanados(0)
-              setResolucionesBloques([]); setBloqueActualIdx(0)
-              setCampoFotoPreviews({}); setCampoFotoBlurPendiente(null)
+              setFotosCapturadas([]); setBloqueActualIdx(0)
               setComercio(null); setBusqueda('')
               setPaso('comercios-gps')
             }}
@@ -1640,82 +1663,13 @@ function CapturaContent() {
     )
   }
 
-  // ── BLOQUE COMPLETADO — pantalla intermedia entre bloques ────────────────────
-  if (paso === 'bloque-completado' && campana) {
-    const bloqueCompletadoIdx = bloqueActualIdx
-    const nextIdx = bloqueCompletadoIdx + 1
-    const nextBloque = campana.bloques[nextIdx]
-
-    const iniciarSiguienteBloque = () => {
-      setBloqueActualIdx(nextIdx)
-      setCampoFotoPreviews({})
-      setRespuestas({})
-      const primerFoto = nextBloque?.campos.find(c => c.tipo === 'foto') ?? null
-      if (primerFoto) {
-        setCampoFotoActualId(primerFoto.id)
-        setPaso('formulario-camara')
-      } else {
-        setCampoFotoActualId(null)
-        const camposNonFoto = nextBloque?.campos.filter(c => c.tipo !== 'foto') ?? []
-        const hayFormulario = camposNonFoto.length > 0 || (nextBloque?.solicitarPrecio ?? false)
-        setPaso(hayFormulario ? 'formulario' : 'confirmacion')
-      }
-    }
-
-    return (
-      <div className="min-h-screen bg-white flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 flex items-center gap-3">
-          <div>
-            <p className="text-xs text-gray-400 leading-none">{campana.nombre}</p>
-            <p className="text-sm font-semibold text-gray-900">
-              Bloque {bloqueCompletadoIdx + 1}/{campana.bloques.length}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 text-center">
-          {/* Ícono de éxito */}
-          <div className="w-20 h-20 bg-gondo-verde-50 rounded-full flex items-center justify-center">
-            <CheckCircle2 size={40} className="text-gondo-verde-400" />
-          </div>
-
-          {/* Título */}
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 mb-1">
-              ¡Bloque {bloqueCompletadoIdx + 1} completado!
-            </h1>
-            <p className="text-sm text-gray-500">
-              Siguiente: bloque {nextIdx + 1} de {campana.bloques.length}
-            </p>
-          </div>
-
-          {/* Info del próximo bloque */}
-          {nextBloque?.instruccion && (
-            <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 w-full max-w-sm text-left">
-              <p className="text-xs text-gray-400 mb-1 font-medium">Próximo bloque</p>
-              <p className="text-sm text-gray-700">{nextBloque.instruccion}</p>
-            </div>
-          )}
-
-          <button
-            onClick={iniciarSiguienteBloque}
-            className="w-full max-w-sm py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch text-base shadow-lg"
-          >
-            Continuar al bloque {nextIdx + 1}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   // ── BLUR ADVERTENCIA ─────────────────────────────────────────────────────────
   if (paso === 'blur-advertencia') {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col">
-        {campoFotoBlurPendiente?.previewUrl && (
+        {fotoPreview && (
           <div className="relative flex-1">
-            <Image src={campoFotoBlurPendiente.previewUrl} alt="Preview" fill className="object-contain" />
+            <Image src={fotoPreview} alt="Preview" fill className="object-contain" />
           </div>
         )}
         <div className="bg-amber-50 border-t border-amber-200 px-5 py-5 shrink-0">
@@ -1728,41 +1682,23 @@ function CapturaContent() {
           </div>
           <div className="flex flex-col gap-2.5">
             <button
-              onClick={() => {
-                if (campoFotoBlurPendiente) {
-                  URL.revokeObjectURL(campoFotoBlurPendiente.previewUrl)
-                  setCampoFotoBlurPendiente(null)
-                }
-                // Restaurar el campo foto en el paso de cámara
-                setCampoFotoActualId(campoFotoBlurPendiente?.campoId ?? null)
-                setPaso('formulario-camara')
-              }}
+              onClick={() => { setFotoBlob(null); setFotoPreview(null); setBlurScore(null); setPaso('camara') }}
               className="w-full py-3.5 bg-amber-500 text-white font-semibold rounded-xl min-h-touch"
             >
               Repetir foto
             </button>
             <button
               onClick={() => {
-                if (!campoFotoBlurPendiente) return
-                const { campoId, blob, previewUrl } = campoFotoBlurPendiente
-                const file = blob instanceof File ? blob : new File([blob], 'campo-foto.jpg', { type: 'image/jpeg' })
-                const nuevasRespuestas = { ...respuestas, [campoId]: file }
-                setRespuestas(nuevasRespuestas)
-                setCampoFotoPreviews(prev => ({ ...prev, [campoId]: previewUrl }))
-                setCampoFotoBlurPendiente(null)
-                // Continuar al siguiente campo foto o al formulario/confirmacion
                 const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
-                const siguienteFoto = bloqueActual?.campos.find(
-                  c => c.tipo === 'foto' && !(nuevasRespuestas[c.id] instanceof File)
+                const primerFotoPendiente = bloqueActual?.campos.find(
+                  c => c.tipo === 'foto' && !(respuestas[c.id] instanceof File)
                 ) ?? null
-                if (siguienteFoto) {
-                  setCampoFotoActualId(siguienteFoto.id)
+                if (primerFotoPendiente) {
+                  setCampoFotoActualId(primerFotoPendiente.id)
                   setPaso('formulario-camara')
                 } else {
-                  setCampoFotoActualId(null)
                   const camposNonFoto = bloqueActual?.campos.filter(c => c.tipo !== 'foto') ?? []
-                  const hayFormulario = camposNonFoto.length > 0 || (bloqueActual?.solicitarPrecio ?? false)
-                  setPaso(hayFormulario ? 'formulario' : 'confirmacion')
+                  setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
                 }
               }}
               className="w-full py-3.5 border border-amber-300 text-amber-700 font-semibold rounded-xl min-h-touch"
@@ -1778,28 +1714,20 @@ function CapturaContent() {
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
   const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
-  const tieneFotos  = (bloqueActual?.campos?.some(c => c.tipo === 'foto')) ?? false
+  // tieneCampos: solo cuenta campos no-foto para el progreso/back-nav del formulario
   const tieneCampos = (bloqueActual?.campos?.filter(c => c.tipo !== 'foto').length ?? 0) > 0
   const esCampanaComercio = campana?.tipo === 'comercios'
   const totalBloques = campana?.bloques?.length ?? 1
   const PASOS_LABEL = esCampanaComercio
     ? ['Ubicación', 'Formulario', 'Fachada']
-    : (tieneFotos && tieneCampos)
+    : tieneCampos
       ? ['Comercio', 'Ubicación', 'Foto', 'Formulario', 'Confirmar', 'Enviar misión']
-      : tieneFotos
-        ? ['Comercio', 'Ubicación', 'Foto', 'Confirmar', 'Enviar misión']
-        : tieneCampos
-          ? ['Comercio', 'Ubicación', 'Formulario', 'Confirmar', 'Enviar misión']
-          : ['Comercio', 'Ubicación', 'Confirmar', 'Enviar misión']
+      : ['Comercio', 'Ubicación', 'Foto', 'Confirmar', 'Enviar misión']
   const PASOS_KEY: Paso[] = esCampanaComercio
     ? ['comercios-gps', 'comercios-formulario', 'comercios-fachada']
-    : (tieneFotos && tieneCampos)
-      ? ['comercios-gps', 'gps', 'formulario-camara', 'formulario', 'confirmacion', 'mision-resumen']
-      : tieneFotos
-        ? ['comercios-gps', 'gps', 'formulario-camara', 'confirmacion', 'mision-resumen']
-        : tieneCampos
-          ? ['comercios-gps', 'gps', 'formulario', 'confirmacion', 'mision-resumen']
-          : ['comercios-gps', 'gps', 'confirmacion', 'mision-resumen']
+    : tieneCampos
+      ? ['comercios-gps', 'gps', 'camara', 'formulario', 'confirmacion', 'mision-resumen']
+      : ['comercios-gps', 'gps', 'camara', 'confirmacion', 'mision-resumen']
   const pasoActualIdx = PASOS_KEY.indexOf(paso)
 
   return (
@@ -1813,24 +1741,26 @@ function CapturaContent() {
                 router.back()
               } else if (paso === 'mision-resumen') {
                 // Restaurar el último bloque para que el usuario pueda re-revisar
-                const lastResolucion = resolucionesBloques[resolucionesBloques.length - 1]
-                if (lastResolucion) {
-                  setRespuestas(lastResolucion.respuestas)
-                  setCampoFotoPreviews(lastResolucion.fotoPreviews)
-                  setPrecio(lastResolucion.precio)
-                  setBloqueActualIdx(lastResolucion.bloqueIdx)
-                  setResolucionesBloques(prev => prev.slice(0, -1))
+                const lastFoto = fotosCapturadas[fotosCapturadas.length - 1]
+                if (lastFoto) {
+                  setFotoBlob(lastFoto.blob)
+                  setFotoPreview(lastFoto.previewUrl)
+                  setPrecio(lastFoto.precio)
+                  setRespuestas(lastFoto.respuestas)
+                  setBlurScore(lastFoto.blurScore)
+                  setBloqueActualIdx(lastFoto.bloqueIdx)
+                  setFotosCapturadas(prev => prev.slice(0, -1))
                 }
                 setPaso('confirmacion')
               } else {
                 const prev: Record<Paso, Paso> = {
                   comercio:              'comercios-gps',
                   gps:                   'comercios-gps',
-                  'blur-advertencia':    'formulario-camara',
-                  formulario:            tieneFotos ? 'formulario-camara' : 'gps',
-                  'formulario-camara':   'gps',
-                  confirmacion:          tieneCampos ? 'formulario' : (tieneFotos ? 'formulario-camara' : 'gps'),
-                  'bloque-completado':   'confirmacion',
+                  camara:                'gps',
+                  'blur-advertencia':    'camara',
+                  formulario:            'camara',
+                  'formulario-camara':   'camara',
+                  confirmacion:          tieneCampos ? 'formulario' : 'camara',
                   'mision-resumen':      'confirmacion',
                   exito:                 'mision-resumen',
                   'exito-offline':       'mision-resumen',
@@ -1851,7 +1781,7 @@ function CapturaContent() {
             <p className="text-xs text-gray-400 leading-none">{campana?.nombre}</p>
             <p className="text-sm font-semibold text-gray-900">
               {totalBloques > 1 && (
-                <span className="text-gondo-verde-400 mr-1">Bloque {bloqueActualIdx + 1}/{totalBloques} —</span>
+                <span className="text-gondo-verde-400 mr-1">Foto {bloqueActualIdx + 1}/{totalBloques} —</span>
               )}
               {PASOS_LABEL[pasoActualIdx]}
             </p>
@@ -2035,53 +1965,26 @@ function CapturaContent() {
               })()}
             </div>
 
-            {gps.estado === 'activo' && campana && (() => {
-              const primerBloque = campana.bloques[bloqueActualIdx]
-              const primerCampoFoto = primerBloque?.campos.find(c => c.tipo === 'foto') ?? null
-              const hayFotosEnMision = campana.bloques.some(b => b.campos.some(c => c.tipo === 'foto'))
-
-              const iniciarFlujo = () => {
-                if (primerCampoFoto) {
-                  setCampoFotoActualId(primerCampoFoto.id)
-                  setPaso('formulario-camara')
-                } else {
-                  const camposNonFoto = primerBloque?.campos.filter(c => c.tipo !== 'foto') ?? []
-                  const hayFormulario = camposNonFoto.length > 0 || (primerBloque?.solicitarPrecio ?? false)
-                  setPaso(hayFormulario ? 'formulario' : 'confirmacion')
-                }
-              }
-
-              return (
-                <>
-                  {campana.bloques.length > 1 && hayFotosEnMision && (
-                    <div className="flex items-center gap-2.5 bg-gondo-verde-50 border border-gondo-verde-200 rounded-xl px-3.5 py-3">
-                      <span className="text-gondo-verde-400 text-lg shrink-0">📋</span>
-                      <p className="text-sm text-gondo-verde-700">
-                        Esta misión requiere <strong>{campana.bloques.length} bloques</strong> de captura en este comercio
-                      </p>
-                    </div>
-                  )}
-                  {!hayFotosEnMision && (
-                    <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-3">
-                      <span className="text-blue-400 text-lg shrink-0">📍</span>
-                      <p className="text-sm text-blue-700">
-                        Esta misión no requiere foto — tu presencia se valida por GPS
-                      </p>
-                    </div>
-                  )}
-                  <button
-                    onClick={iniciarFlujo}
-                    className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
-                  >
-                    {hayFotosEnMision
-                      ? campana.bloques.length > 1
-                        ? `Comenzar misión · ${campana.bloques.length} bloques`
-                        : 'Continuar — Abrir cámara'
-                      : 'Continuar — Confirmar presencia'}
-                  </button>
-                </>
-              )
-            })()}
+            {gps.estado === 'activo' && campana && (
+              <>
+                {campana.bloques.length > 1 && (
+                  <div className="flex items-center gap-2.5 bg-gondo-verde-50 border border-gondo-verde-200 rounded-xl px-3.5 py-3">
+                    <span className="text-gondo-verde-400 text-lg shrink-0">📋</span>
+                    <p className="text-sm text-gondo-verde-700">
+                      Esta misión requiere <strong>{campana.bloques.length} fotos</strong> en este comercio
+                    </p>
+                  </div>
+                )}
+                <button
+                  onClick={() => setPaso('camara')}
+                  className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
+                >
+                  {campana.bloques.length > 1
+                    ? `Comenzar misión · ${campana.bloques.length} fotos`
+                    : 'Continuar — Abrir cámara'}
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -2280,42 +2183,23 @@ function CapturaContent() {
         )}
 
         {/* ── PASO 5: CONFIRMACIÓN ── */}
-        {paso === 'confirmacion' && comercio && campana && (
+        {paso === 'confirmacion' && comercio && fotoPreview && (
           <div className="space-y-4">
             <p className="text-sm font-semibold text-gray-700">Resumen antes de enviar</p>
 
-            {/* Fotos del bloque actual (campos tipo='foto') */}
-            {Object.keys(campoFotoPreviews).length > 0 && (
-              <div className={`grid gap-2 ${Object.keys(campoFotoPreviews).length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                {Object.entries(campoFotoPreviews).map(([campoId, previewUrl]) => {
-                  const campo = bloqueActual?.campos.find(c => c.id === campoId)
-                  return (
-                    <div key={campoId} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
-                      <Image src={previewUrl} alt={campo?.pregunta ?? 'Foto'} fill className="object-cover" />
-                      {campo?.pregunta && (
-                        <div className="absolute bottom-1 left-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium truncate">
-                          {campo.pregunta}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+            {/* Foto */}
+            <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-gray-100">
+              <Image src={fotoPreview} alt="Foto capturada" fill className="object-cover" />
+              <button
+                onClick={() => { setFotoBlob(null); setFotoPreview(null); setPaso('camara') }}
+                className="absolute top-2 right-2 bg-black/50 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"
+              >
+                <RefreshCw size={12} /> Repetir
+              </button>
+            </div>
 
-            {/* Sin fotos: misión GPS-only */}
-            {Object.keys(campoFotoPreviews).length === 0 && (
-              <div className="flex items-center justify-center py-8 bg-blue-50 rounded-2xl border border-blue-100">
-                <div className="text-center">
-                  <span className="text-4xl block mb-2">📍</span>
-                  <p className="text-sm font-medium text-blue-700">Presencia validada por GPS</p>
-                  <p className="text-xs text-blue-500 mt-0.5">No se requiere foto en esta misión</p>
-                </div>
-              </div>
-            )}
-
-            {/* Precio — si el bloque lo requiere */}
-            {bloqueActual?.solicitarPrecio && (
+            {/* Precio — si el bloque lo requiere y no hay formulario (se pide aquí) */}
+            {bloqueActual?.solicitarPrecio && !tieneCampos && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   ¿A cuánto está {bloqueActual.instruccion}?
@@ -2344,13 +2228,13 @@ function CapturaContent() {
                 </div>
               </div>
               {bloqueActual?.solicitarPrecio && precio && (
-                <div className="flex items-center gap-3 p-3">
-                  <span className="text-lg shrink-0">💲</span>
-                  <div>
-                    <p className="text-xs text-gray-400">Precio relevado</p>
-                    <p className="text-sm font-medium text-gray-900">${precio}</p>
-                  </div>
+              <div className="flex items-center gap-3 p-3">
+                <span className="text-lg shrink-0">💲</span>
+                <div>
+                  <p className="text-xs text-gray-400">Precio relevado</p>
+                  <p className="text-sm font-medium text-gray-900">${precio}</p>
                 </div>
+              </div>
               )}
               <div className="flex items-center gap-3 p-3">
                 <Star size={16} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
@@ -2364,91 +2248,76 @@ function CapturaContent() {
             </div>
 
             <button
-              onClick={guardarBloqueLocal}
+              onClick={guardarFotoLocal}
               className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch text-base shadow-lg"
             >
               {bloqueActualIdx < totalBloques - 1
-                ? `Guardar · continuar con bloque ${bloqueActualIdx + 2}`
+                ? `Guardar foto · continuar con foto ${bloqueActualIdx + 2}`
                 : totalBloques > 1 ? 'Listo · ir al resumen de misión' : 'Confirmar y enviar'}
             </button>
           </div>
         )}
 
         {/* ── MISIÓN RESUMEN — envío final ── */}
-        {paso === 'mision-resumen' && comercio && campana && (() => {
-          const allPreviews: { previewUrl: string; label: string }[] = []
-          resolucionesBloques.forEach(r => {
-            const bloque = campana.bloques[r.bloqueIdx]
-            Object.entries(r.fotoPreviews).forEach(([campoId, previewUrl]) => {
-              const campo = bloque?.campos.find(c => c.id === campoId)
-              allPreviews.push({ previewUrl, label: campo?.pregunta ?? `Foto ${allPreviews.length + 1}` })
-            })
-          })
-          const totalFotos = allPreviews.length
-          return (
-            <div className="space-y-4">
+        {paso === 'mision-resumen' && comercio && campana && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-700">Revisá antes de enviar</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {fotosCapturadas.length} foto{fotosCapturadas.length !== 1 ? 's' : ''} listas para enviar
+              </p>
+            </div>
+
+            {/* Comercio */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
+              <MapPin size={16} className="text-gray-400 shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-gray-700">Revisá antes de enviar</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {totalFotos > 0
-                    ? `${totalFotos} foto${totalFotos !== 1 ? 's' : ''} lista${totalFotos !== 1 ? 's' : ''} para enviar`
-                    : 'Misión GPS lista para enviar'}
+                <p className="text-xs text-gray-400">Comercio</p>
+                <p className="font-semibold text-gray-900">{comercio.nombre}</p>
+              </div>
+            </div>
+
+            {/* Grid de fotos */}
+            <div className={`grid gap-2 ${fotosCapturadas.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {fotosCapturadas.map((f, i) => (
+                <div key={i} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
+                  <Image src={f.previewUrl} alt={`Foto ${i + 1}`} fill className="object-cover" />
+                  <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium">
+                    Foto {i + 1}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Puntos */}
+            <div className="bg-gondo-verde-50 rounded-2xl p-4 flex items-center gap-3">
+              <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
+              <div>
+                <p className="text-xs text-gray-500">Puntos por esta misión</p>
+                <p className="text-lg font-bold text-gondo-verde-400">
+                  +{formatearPuntos(campana.puntos_por_foto * fotosCapturadas.length)} pts
                 </p>
               </div>
-
-              {/* Comercio */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
-                <MapPin size={16} className="text-gray-400 shrink-0" />
-                <div>
-                  <p className="text-xs text-gray-400">Comercio</p>
-                  <p className="font-semibold text-gray-900">{comercio.nombre}</p>
-                </div>
-              </div>
-
-              {/* Grid de fotos de todos los bloques */}
-              {allPreviews.length > 0 && (
-                <div className={`grid gap-2 ${allPreviews.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  {allPreviews.map((p, i) => (
-                    <div key={i} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
-                      <Image src={p.previewUrl} alt={p.label} fill className="object-cover" />
-                      <div className="absolute bottom-1 left-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium truncate">
-                        {p.label}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Puntos */}
-              <div className="bg-gondo-verde-50 rounded-2xl p-4 flex items-center gap-3">
-                <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
-                <div>
-                  <p className="text-xs text-gray-500">Puntos por esta misión</p>
-                  <p className="text-lg font-bold text-gondo-verde-400">
-                    +{formatearPuntos(campana.puntos_por_foto * Math.max(totalFotos, 1))} pts
-                  </p>
-                </div>
-              </div>
-
-              {errorGlobal && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm space-y-1">
-                  <p>{errorGlobal}</p>
-                  <BotonReportarError errorTecnico={errorGlobal} />
-                </div>
-              )}
-
-              <button
-                onClick={handleEnviarMision}
-                disabled={enviando}
-                className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-60 min-h-touch text-base shadow-lg"
-              >
-                {enviando
-                  ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando misión...</span>
-                  : 'Enviar misión completa'}
-              </button>
             </div>
-          )
-        })()}
+
+            {errorGlobal && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm space-y-1">
+                <p>{errorGlobal}</p>
+                <BotonReportarError errorTecnico={errorGlobal} />
+              </div>
+            )}
+
+            <button
+              onClick={handleEnviarMision}
+              disabled={enviando}
+              className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-60 min-h-touch text-base shadow-lg"
+            >
+              {enviando
+                ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando misión...</span>
+                : `Enviar misión completa · ${fotosCapturadas.length} foto${fotosCapturadas.length !== 1 ? 's' : ''}`}
+            </button>
+          </div>
+        )}
 
       </div>
     </div>
