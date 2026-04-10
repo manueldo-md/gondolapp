@@ -24,21 +24,39 @@ export default async function NuevaCampanaPage() {
 
   // Distribuidoras vinculadas activas
   let distrisVinculadas: { id: string; razon_social: string }[] = []
-  if (marcaId) {
-    const { data: relaciones } = await admin
-      .from('marca_distri_relaciones')
-      .select('distri_id, distribuidoras(id, razon_social)')
-      .eq('marca_id', marcaId)
-      .eq('estado', 'activa')
+  // Repositoras vinculadas activas
+  let reposVinculadas: { id: string; razon_social: string }[] = []
 
-    if (relaciones) {
+  if (marcaId) {
+    const [distrisRes, reposRes] = await Promise.all([
+      admin
+        .from('marca_distri_relaciones')
+        .select('distri_id, distribuidoras(id, razon_social)')
+        .eq('marca_id', marcaId)
+        .eq('estado', 'activa'),
+      admin
+        .from('marca_repo_relaciones')
+        .select('repositora_id, repositoras(id, razon_social)')
+        .eq('marca_id', marcaId)
+        .eq('estado', 'activa'),
+    ])
+
+    if (distrisRes.data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      distrisVinculadas = relaciones.map((r: any) => {
+      distrisVinculadas = distrisRes.data.map((r: any) => {
         const d = Array.isArray(r.distribuidoras) ? r.distribuidoras[0] : r.distribuidoras
         return { id: d?.id ?? r.distri_id, razon_social: d?.razon_social ?? 'Distribuidora' }
       }).filter((d: { id: string; razon_social: string }) => d.id)
     }
+
+    if (reposRes.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      reposVinculadas = reposRes.data.map((r: any) => {
+        const rep = Array.isArray(r.repositoras) ? r.repositoras[0] : r.repositoras
+        return { id: rep?.id ?? r.repositora_id, razon_social: rep?.razon_social ?? 'Repositora' }
+      }).filter((d: { id: string; razon_social: string }) => d.id)
+    }
   }
 
-  return <NuevaCampanaForm distrisVinculadas={distrisVinculadas} />
+  return <NuevaCampanaForm distrisVinculadas={distrisVinculadas} reposVinculadas={reposVinculadas} />
 }

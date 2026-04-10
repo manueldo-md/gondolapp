@@ -30,8 +30,9 @@ interface Step2 {
 }
 
 interface Step3 {
-  via_ejecucion: 'distribuidora' | 'gondolapp'
+  via_ejecucion: 'distribuidora' | 'gondolapp' | 'repositora'
   distri_id: string
+  repositora_id: string
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -58,14 +59,17 @@ const STEP_LABELS = ['Detalles', 'Objetivos', 'Ejecución']
 
 export function NuevaCampanaForm({
   distrisVinculadas,
+  reposVinculadas,
 }: {
   distrisVinculadas: { id: string; razon_social: string }[]
+  reposVinculadas:   { id: string; razon_social: string }[]
 }) {
   const router = useRouter()
   const [paso, setPaso] = useState<1 | 2 | 3>(1)
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoZona[]>([])
+  const [actorCampana, setActorCampana] = useState<'gondolero' | 'fixer'>('gondolero')
 
   const [campos, setCampos] = useState<CampoBloque[]>([])
 
@@ -88,16 +92,23 @@ export function NuevaCampanaForm({
     nivel_minimo:               'casual',
   })
 
+  // Default inteligente: si no hay distris pero sí repos → default 'repositora'
+  const defaultVia = distrisVinculadas.length > 0 ? 'distribuidora'
+    : reposVinculadas.length > 0 ? 'repositora'
+    : 'gondolapp'
+
   const [s3, setS3] = useState<Step3>({
-    via_ejecucion: 'distribuidora',
+    via_ejecucion: defaultVia,
     distri_id:     distrisVinculadas[0]?.id ?? '',
+    repositora_id: reposVinculadas[0]?.id ?? '',
   })
 
   const paso1Valido = s1.nombre.trim().length >= 3 && s1.tipo
 
   const paso3Valido =
     s3.via_ejecucion === 'gondolapp' ||
-    (s3.via_ejecucion === 'distribuidora' && s3.distri_id.trim().length > 0)
+    (s3.via_ejecucion === 'distribuidora' && s3.distri_id.trim().length > 0) ||
+    (s3.via_ejecucion === 'repositora' && s3.repositora_id.trim().length > 0)
 
   const handleSubmit = () => {
     setErrorMsg(null)
@@ -109,9 +120,13 @@ export function NuevaCampanaForm({
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
     grupos.flatMap(g => g.localidadIds).forEach(id => fd.append('localidad_ids', String(id)))
     fd.set('campos_json', JSON.stringify(campos))
+    fd.set('actor_campana', actorCampana)
     fd.set('via_ejecucion', s3.via_ejecucion)
     if (s3.via_ejecucion === 'distribuidora' && s3.distri_id) {
       fd.set('distri_id', s3.distri_id)
+    }
+    if (s3.via_ejecucion === 'repositora' && s3.repositora_id) {
+      fd.set('repositora_id', s3.repositora_id)
     }
 
     startTransition(async () => {
@@ -375,6 +390,32 @@ export function NuevaCampanaForm({
               </select>
             </div>
 
+            {/* Actor de campaña */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                ¿Para quién es esta campaña?
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: 'gondolero', label: '🛒 Gondoleros' },
+                  { value: 'fixer',     label: '🔧 Fixers'     },
+                ] as const).map(op => (
+                  <button
+                    key={op.value}
+                    type="button"
+                    onClick={() => setActorCampana(op.value)}
+                    className={`px-3 py-2.5 rounded-lg text-sm font-semibold border transition-colors ${
+                      actorCampana === op.value
+                        ? 'bg-gondo-indigo-600 text-white border-gondo-indigo-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gondo-indigo-600 hover:text-gondo-indigo-600'
+                    }`}
+                  >
+                    {op.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Zonas */}
             <SelectorZona
               grupos={grupos}
@@ -389,7 +430,7 @@ export function NuevaCampanaForm({
             <div>
               <h3 className="text-base font-semibold text-gray-900 mb-1">¿Cómo ejecutar esta campaña?</h3>
               <p className="text-sm text-gray-500 mb-4">
-                Elegí si vas a trabajar con una distribuidora o si el equipo de GondolApp se encarga de todo.
+                Elegí si vas a trabajar con una distribuidora, con una repositora, o si el equipo de GondolApp se encarga de todo.
               </p>
             </div>
 
@@ -495,6 +536,68 @@ export function NuevaCampanaForm({
                 </div>
               </div>
             </button>
+
+            {/* Opción C: Con Repositora (solo si hay repos vinculadas) */}
+            {reposVinculadas.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setS3(p => ({ ...p, via_ejecucion: 'repositora' }))}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition-colors ${
+                    s3.via_ejecucion === 'repositora'
+                      ? 'border-gondo-indigo-600 bg-gondo-indigo-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                      s3.via_ejecucion === 'repositora'
+                        ? 'border-gondo-indigo-600 bg-gondo-indigo-600'
+                        : 'border-gray-300'
+                    }`}>
+                      {s3.via_ejecucion === 'repositora' && (
+                        <div className="w-2 h-2 rounded-full bg-white" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Building2 size={15} className={s3.via_ejecucion === 'repositora' ? 'text-gondo-indigo-600' : 'text-gray-400'} />
+                        <span className="text-sm font-semibold text-gray-900">Con una Repositora</span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        La repositora revisará y activará la campaña con sus fixers. Te generaremos un link único para invitarla.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Selector de repositora */}
+                {s3.via_ejecucion === 'repositora' && (
+                  <div className="ml-8 space-y-2">
+                    <label className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+                      Seleccionar repositora
+                    </label>
+                    {reposVinculadas.map(r => (
+                      <label key={r.id} className={`flex items-center gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${
+                        s3.repositora_id === r.id
+                          ? 'border-gondo-indigo-600 bg-gondo-indigo-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="repositora_id"
+                          value={r.id}
+                          checked={s3.repositora_id === r.id}
+                          onChange={() => setS3(p => ({ ...p, repositora_id: r.id }))}
+                          className="accent-gondo-indigo-600"
+                        />
+                        <span className="text-sm font-medium text-gray-900">{r.razon_social}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
 
             {/* Aviso de costo */}
             <div className="bg-gondo-indigo-50 rounded-lg p-3.5">
