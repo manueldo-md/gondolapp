@@ -56,7 +56,7 @@ export async function crearCampana(formData: FormData) {
       puntos_por_mision:         parseInt(formData.get('puntos_por_mision') as string) || 0,
       fecha_inicio:              formData.get('fecha_inicio') as string || null,
       fecha_fin:                 formData.get('fecha_fin') as string || null,
-      objetivo_comercios:        parseInt(formData.get('objetivo_comercios') as string) || null,
+      tope_total_comercios:      parseInt(formData.get('tope_total_comercios') as string) || null,
       max_comercios_por_gondolero: parseInt(formData.get('max_comercios_por_gondolero') as string) || 20,
       min_comercios_para_cobrar: parseInt(formData.get('min_comercios_para_cobrar') as string) || 3,
       marca_id:                  marcaId,

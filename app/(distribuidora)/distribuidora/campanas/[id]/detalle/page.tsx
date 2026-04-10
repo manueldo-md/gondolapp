@@ -45,7 +45,7 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
     .from('campanas')
     .select(`
       id, nombre, tipo, estado, financiada_por, fecha_inicio, fecha_fin,
-      objetivo_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
+      objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       puntos_por_foto, puntos_por_mision, instruccion, distri_id, marca_id, created_at, updated_at,
       tiene_draft, draft_descripcion, draft_bounty, draft_zonas, draft_bloques,
       marca:marcas ( razon_social ),
@@ -131,10 +131,10 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
               </div>
             </div>
           )}
-          {c.objetivo_comercios && (
+          {(c.tope_total_comercios ?? c.objetivo_comercios) && (
             <div className="flex items-start gap-2">
               <Target size={14} className="text-gray-400 mt-0.5 shrink-0" />
-              <div><p className="text-xs text-gray-400">Objetivo</p><p className="font-medium text-gray-900">{c.objetivo_comercios} comercios</p></div>
+              <div><p className="text-xs text-gray-400">Tope global</p><p className="font-medium text-gray-900">{c.tope_total_comercios ?? c.objetivo_comercios} comercios</p></div>
             </div>
           )}
           <div className="flex items-start gap-2">

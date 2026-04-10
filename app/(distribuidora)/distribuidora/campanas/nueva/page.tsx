@@ -23,7 +23,7 @@ export default function NuevaCampanaPage() {
     puntos_por_mision:           '50',
     fecha_inicio:                '',
     fecha_fin:                   '',
-    objetivo_comercios:          '',
+    tope_total_comercios:        '',
     max_comercios_por_gondolero: '20',
     min_comercios_para_cobrar:   '3',
     nivel_minimo:                'casual',
@@ -175,19 +175,20 @@ export default function NuevaCampanaPage() {
             </div>
           </div>
 
-          {/* Objetivo y límites */}
+          {/* Tope global de comercios */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Objetivo de comercios
+              Tope global de comercios <span className="text-gray-400 font-normal">(opcional)</span>
             </label>
             <input
               type="number"
               min={1}
-              value={form.objetivo_comercios}
-              onChange={set('objetivo_comercios')}
+              value={form.tope_total_comercios}
+              onChange={set('tope_total_comercios')}
               placeholder="Ej: 50"
               className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
             />
+            <p className="text-xs text-gray-400 mt-1">Al alcanzarlo, la campaña se cierra automáticamente. Dejá vacío para sin límite.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

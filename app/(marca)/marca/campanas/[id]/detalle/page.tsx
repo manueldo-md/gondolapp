@@ -39,7 +39,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
     .select(`
       id, nombre, tipo, estado, financiada_por, via_ejecucion, motivo_rechazo,
       fecha_inicio, fecha_fin, fecha_limite_inscripcion,
-      objetivo_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
+      objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       puntos_por_foto, puntos_por_mision, instruccion, es_abierta, marca_id, created_at, updated_at,
       tiene_draft, draft_descripcion, draft_bounty, draft_zonas, draft_bloques,
       bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
@@ -131,10 +131,10 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
               </div>
             </div>
           )}
-          {c.objetivo_comercios && (
+          {(c.tope_total_comercios ?? c.objetivo_comercios) && (
             <div className="flex items-start gap-2">
               <Target size={14} className="text-gray-400 mt-0.5 shrink-0" />
-              <div><p className="text-xs text-gray-400">Objetivo</p><p className="font-medium text-gray-900">{c.objetivo_comercios} comercios</p></div>
+              <div><p className="text-xs text-gray-400">Tope global</p><p className="font-medium text-gray-900">{c.tope_total_comercios ?? c.objetivo_comercios} comercios</p></div>
             </div>
           )}
           <div className="flex items-start gap-2">

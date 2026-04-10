@@ -97,8 +97,9 @@ export default async function AdminCampanaDetallePage({
   const fp = (campana.financiada_por ?? 'gondolapp') as FinanciadaPor
   const badge = FINANCIADO_BADGE[fp] ?? FINANCIADO_BADGE.gondolapp
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
-  const progreso = campana.objetivo_comercios
-    ? Math.round((campana.comercios_relevados / campana.objetivo_comercios) * 100)
+  const limiteComerciosAdmin = campana.tope_total_comercios ?? campana.objetivo_comercios
+  const progreso = limiteComerciosAdmin
+    ? Math.round((campana.comercios_relevados / limiteComerciosAdmin) * 100)
     : null
 
   const participaciones = ((partDataRes.data ?? []) as any[]).map((p: any) => ({
@@ -266,19 +267,13 @@ export default async function AdminCampanaDetallePage({
                 <dd className="font-medium text-gray-900">{campana.fecha_limite_inscripcion}</dd>
               </div>
             )}
-            {campana.objetivo_comercios && (
+            {limiteComerciosAdmin && (
               <div className="flex justify-between">
-                <dt className="text-gray-500 flex items-center gap-1"><Target size={13} /> Objetivo</dt>
+                <dt className="text-gray-500 flex items-center gap-1"><Target size={13} /> Tope global</dt>
                 <dd className="font-medium text-gray-900">
-                  {campana.comercios_relevados}/{campana.objetivo_comercios}
+                  {campana.comercios_relevados}/{limiteComerciosAdmin}
                   {progreso !== null ? ` (${progreso}%)` : ''}
                 </dd>
-              </div>
-            )}
-            {campana.tope_total_comercios && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500">Tope total</dt>
-                <dd className="font-medium text-gray-900">{campana.tope_total_comercios}</dd>
               </div>
             )}
           </dl>

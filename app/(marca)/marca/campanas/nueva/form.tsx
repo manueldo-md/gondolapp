@@ -23,7 +23,7 @@ interface Step1 {
 interface Step2 {
   fecha_inicio: string
   fecha_fin: string
-  objetivo_comercios: string
+  tope_total_comercios: string
   max_comercios_por_gondolero: string
   min_comercios_para_cobrar: string
   nivel_minimo: string
@@ -82,7 +82,7 @@ export function NuevaCampanaForm({
   const [s2, setS2] = useState<Step2>({
     fecha_inicio:               '',
     fecha_fin:                  '',
-    objetivo_comercios:         '',
+    tope_total_comercios:       '',
     max_comercios_por_gondolero: '20',
     min_comercios_para_cobrar:  '3',
     nivel_minimo:               'casual',
@@ -315,20 +315,20 @@ export function NuevaCampanaForm({
               </div>
             </div>
 
-            {/* Objetivo de comercios */}
+            {/* Tope global de comercios */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Objetivo de comercios
+                Tope global de comercios <span className="text-gray-400 font-normal">(opcional)</span>
               </label>
               <input
                 type="number"
                 min={1}
-                value={s2.objetivo_comercios}
-                onChange={e => setS2(p => ({ ...p, objetivo_comercios: e.target.value }))}
+                value={s2.tope_total_comercios}
+                onChange={e => setS2(p => ({ ...p, tope_total_comercios: e.target.value }))}
                 placeholder="Ej: 100"
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"
               />
-              <p className="text-xs text-gray-400 mt-1">Cantidad total de comercios que querés relevar</p>
+              <p className="text-xs text-gray-400 mt-1">Al alcanzarlo, la campaña se cierra automáticamente. Dejá vacío para sin límite.</p>
             </div>
 
             {/* Límites por gondolero */}
