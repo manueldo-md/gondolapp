@@ -93,7 +93,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'confirmacion' | 'bloque-completado' | 'mision-resumen' | 'exito' | 'exito-offline'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
 
 interface ComercioRow {
@@ -868,20 +868,8 @@ function CapturaContent() {
     if (isLast) {
       setPaso('mision-resumen')
     } else {
-      const nextIdx = bloqueActualIdx + 1
-      const nextBloque = campana.bloques[nextIdx]
-      setBloqueActualIdx(nextIdx)
-      // Empezar el flujo del próximo bloque
-      const primerFoto = nextBloque?.campos.find(c => c.tipo === 'foto') ?? null
-      if (primerFoto) {
-        setCampoFotoActualId(primerFoto.id)
-        setPaso('formulario-camara')
-      } else {
-        setCampoFotoActualId(null)
-        const camposNonFoto = nextBloque?.campos.filter(c => c.tipo !== 'foto') ?? []
-        const hayFormulario = camposNonFoto.length > 0 || (nextBloque?.solicitarPrecio ?? false)
-        setPaso(hayFormulario ? 'formulario' : 'confirmacion')
-      }
+      // Mostrar pantalla intermedia de confirmación antes de pasar al siguiente bloque
+      setPaso('bloque-completado')
     }
   }
 
@@ -1652,6 +1640,75 @@ function CapturaContent() {
     )
   }
 
+  // ── BLOQUE COMPLETADO — pantalla intermedia entre bloques ────────────────────
+  if (paso === 'bloque-completado' && campana) {
+    const bloqueCompletadoIdx = bloqueActualIdx
+    const nextIdx = bloqueCompletadoIdx + 1
+    const nextBloque = campana.bloques[nextIdx]
+
+    const iniciarSiguienteBloque = () => {
+      setBloqueActualIdx(nextIdx)
+      setCampoFotoPreviews({})
+      setRespuestas({})
+      const primerFoto = nextBloque?.campos.find(c => c.tipo === 'foto') ?? null
+      if (primerFoto) {
+        setCampoFotoActualId(primerFoto.id)
+        setPaso('formulario-camara')
+      } else {
+        setCampoFotoActualId(null)
+        const camposNonFoto = nextBloque?.campos.filter(c => c.tipo !== 'foto') ?? []
+        const hayFormulario = camposNonFoto.length > 0 || (nextBloque?.solicitarPrecio ?? false)
+        setPaso(hayFormulario ? 'formulario' : 'confirmacion')
+      }
+    }
+
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 flex items-center gap-3">
+          <div>
+            <p className="text-xs text-gray-400 leading-none">{campana.nombre}</p>
+            <p className="text-sm font-semibold text-gray-900">
+              Bloque {bloqueCompletadoIdx + 1}/{campana.bloques.length}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 text-center">
+          {/* Ícono de éxito */}
+          <div className="w-20 h-20 bg-gondo-verde-50 rounded-full flex items-center justify-center">
+            <CheckCircle2 size={40} className="text-gondo-verde-400" />
+          </div>
+
+          {/* Título */}
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 mb-1">
+              ¡Bloque {bloqueCompletadoIdx + 1} completado!
+            </h1>
+            <p className="text-sm text-gray-500">
+              Siguiente: bloque {nextIdx + 1} de {campana.bloques.length}
+            </p>
+          </div>
+
+          {/* Info del próximo bloque */}
+          {nextBloque?.instruccion && (
+            <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 w-full max-w-sm text-left">
+              <p className="text-xs text-gray-400 mb-1 font-medium">Próximo bloque</p>
+              <p className="text-sm text-gray-700">{nextBloque.instruccion}</p>
+            </div>
+          )}
+
+          <button
+            onClick={iniciarSiguienteBloque}
+            className="w-full max-w-sm py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch text-base shadow-lg"
+          >
+            Continuar al bloque {nextIdx + 1}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ── BLUR ADVERTENCIA ─────────────────────────────────────────────────────────
   if (paso === 'blur-advertencia') {
     return (
@@ -1773,6 +1830,7 @@ function CapturaContent() {
                   formulario:            tieneFotos ? 'formulario-camara' : 'gps',
                   'formulario-camara':   'gps',
                   confirmacion:          tieneCampos ? 'formulario' : (tieneFotos ? 'formulario-camara' : 'gps'),
+                  'bloque-completado':   'confirmacion',
                   'mision-resumen':      'confirmacion',
                   exito:                 'mision-resumen',
                   'exito-offline':       'mision-resumen',

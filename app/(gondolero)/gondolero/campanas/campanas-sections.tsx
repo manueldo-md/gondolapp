@@ -38,7 +38,7 @@ export interface CampanaCardData {
   created_at: string
   marca: { razon_social: string } | null
   distri: { razon_social: string } | null
-  bloques_foto: { id: string }[]
+  bloques_foto: { id: string; bloque_campos: { tipo: string }[] }[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -76,7 +76,10 @@ function CampanaCard({
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
   const progreso = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
-  const cantBloques = campana.bloques_foto.length
+  const cantFotos = campana.bloques_foto.reduce(
+    (acc, b) => acc + b.bloque_campos.filter(c => c.tipo === 'foto').length,
+    0
+  )
   const nueva = !participando && (Date.now() - new Date(campana.created_at).getTime() < SIETE_DIAS_MS)
   const nivelMinimo = campana.nivel_minimo ?? 'casual'
   const nivelOk = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
@@ -104,10 +107,12 @@ function CampanaCard({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[campana.tipo]}`}>
             {labelTipoCampana(campana.tipo)}
           </span>
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-            <Camera size={10} />
-            Foto
-          </span>
+          {cantFotos > 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+              <Camera size={10} />
+              Foto
+            </span>
+          )}
           {campana.tipo === 'precio' && (
             <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gondo-amber-50 text-gondo-amber-400">
               <DollarSign size={10} />
@@ -178,11 +183,11 @@ function CampanaCard({
             </span>
           </div>
         )}
-        {cantBloques > 0 && (
+        {cantFotos > 0 && (
           <div className="flex items-center gap-1.5">
             <Camera size={14} className="text-gray-400" />
             <span className="text-sm text-gray-500">
-              {cantBloques} {cantBloques === 1 ? 'foto' : 'fotos'}
+              {cantFotos} {cantFotos === 1 ? 'foto' : 'fotos'}
             </span>
           </div>
         )}

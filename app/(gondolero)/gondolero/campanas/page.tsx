@@ -14,7 +14,7 @@ const CAMPANA_SELECT = `
   max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
   marca:marcas ( razon_social ),
   distri:distribuidoras ( razon_social ),
-  bloques_foto ( id )
+  bloques_foto ( id, bloque_campos ( tipo ) )
 `
 
 export default async function CampanasPage() {

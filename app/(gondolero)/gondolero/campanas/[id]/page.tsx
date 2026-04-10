@@ -19,6 +19,7 @@ type BloqueFotoRow = {
   orden: number
   instruccion: string
   tipo_contenido: string
+  bloque_campos: { tipo: string }[] | null
 }
 
 type CampanaDetalle = {
@@ -108,7 +109,7 @@ export default async function CampanaDetallePage({
       objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
       marca:marcas ( razon_social ),
-      bloques_foto ( id, orden, instruccion, tipo_contenido )
+      bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( tipo ) )
     `)
     .eq('id', params.id)
     .single()
@@ -318,11 +319,25 @@ export default async function CampanaDetallePage({
             </p>
             <p className="text-[11px] text-gray-400">días</p>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
-            <Camera size={18} className="text-gray-400 mx-auto mb-1" />
-            <p className="text-base font-bold text-gray-700">{bloques.length}</p>
-            <p className="text-[11px] text-gray-400">{bloques.length === 1 ? 'foto' : 'fotos'}</p>
-          </div>
+          {(() => {
+            const cantFotos = bloques.reduce(
+              (acc, b) => acc + (b.bloque_campos ?? []).filter(c => c.tipo === 'foto').length,
+              0
+            )
+            return cantFotos > 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
+                <Camera size={18} className="text-gray-400 mx-auto mb-1" />
+                <p className="text-base font-bold text-gray-700">{cantFotos}</p>
+                <p className="text-[11px] text-gray-400">{cantFotos === 1 ? 'foto' : 'fotos'}</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
+                <span className="text-xl block mb-1">📍</span>
+                <p className="text-base font-bold text-gray-700">GPS</p>
+                <p className="text-[11px] text-gray-400">validación</p>
+              </div>
+            )
+          })()}
         </div>
 
         {/* Instrucción general */}
