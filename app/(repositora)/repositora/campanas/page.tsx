@@ -151,7 +151,7 @@ export default async function RepoCampanasPage() {
               : null
 
             return (
-              <Link key={c.id} href={`/repositora/campanas/${c.id}`} className="block bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-200 hover:shadow-sm transition-all">
+              <div key={c.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-200 transition-colors">
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -170,9 +170,13 @@ export default async function RepoCampanasPage() {
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">{c.instruccion}</p>
                     )}
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xl font-bold text-blue-600">{c.puntos_por_mision > 0 ? c.puntos_por_mision : c.puntos_por_foto}</p>
-                    <p className="text-xs text-gray-400">pts/misión</p>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <div className="text-right mb-1">
+                      <p className="text-xl font-bold text-blue-600">{c.puntos_por_mision > 0 ? c.puntos_por_mision : c.puntos_por_foto}</p>
+                      <p className="text-xs text-gray-400">pts/misión</p>
+                    </div>
+                    <Link href={`/repositora/campanas/${c.id}/detalle`} className="text-xs font-semibold text-gray-600 hover:underline px-2 py-1 bg-gray-50 rounded-lg border border-gray-200 text-center">Detalle</Link>
+                    <Link href={`/repositora/campanas/${c.id}/resultados`} className="text-xs font-semibold text-blue-600 hover:underline px-2 py-1 bg-blue-50 rounded-lg border border-blue-200 text-center">Resultados</Link>
                   </div>
                 </div>
 
@@ -205,7 +209,7 @@ export default async function RepoCampanasPage() {
                     </div>
                   </div>
                 )}
-              </Link>
+              </div>
             )
           })}
         </div>
