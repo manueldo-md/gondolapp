@@ -1,7 +1,7 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Clock, Target, Camera, Building2, AlertCircle, LogIn } from 'lucide-react'
+import { Clock, Target, Camera, Building2, AlertCircle, LogIn, CheckCircle2 } from 'lucide-react'
 import { InvitacionAccionesRepo } from './invitacion-acciones'
 import type { TipoCampana } from '@/types'
 import { labelTipoCampana } from '@/lib/utils'
@@ -44,7 +44,16 @@ export default async function InvitacionCampanaRepoPage({
   }
 
   if (tokenRow.usado) {
-    return <ErrorPage mensaje="Invitación ya procesada" detalle="Esta invitación ya fue aceptada o rechazada anteriormente." />
+    // Verificar si la campaña quedó activa (aceptada) o en borrador (rechazada)
+    const { data: campanaUsada } = await admin
+      .from('campanas')
+      .select('estado')
+      .eq('id', tokenRow.campana_id)
+      .maybeSingle()
+    if (campanaUsada?.estado === 'activa') {
+      return <AceptadaPage />
+    }
+    return <ErrorPage mensaje="Invitación ya procesada" detalle="Esta invitación ya fue procesada anteriormente. Si rechazaste la campaña, contactá a la marca para obtener una nueva invitación." />
   }
 
   if (tokenRow.expira_at < ahora) {
@@ -193,6 +202,33 @@ export default async function InvitacionCampanaRepoPage({
           <a href={appUrl} className="text-indigo-600 hover:underline">gondolapp.com</a>
         </p>
 
+      </main>
+    </div>
+  )
+}
+
+function AceptadaPage() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <header className="bg-white border-b border-gray-200">
+        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center">
+          <span className="font-bold text-gray-900 text-lg">GondolApp</span>
+        </div>
+      </header>
+      <main className="flex-1 flex items-center justify-center px-4">
+        <div className="text-center max-w-sm">
+          <div className="w-14 h-14 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 size={24} className="text-green-500" />
+          </div>
+          <h1 className="text-lg font-bold text-gray-900 mb-2">Campaña aceptada</h1>
+          <p className="text-sm text-gray-500 mb-6">Esta campaña ya fue aceptada y está activa. Podés verla en tu panel de repositora.</p>
+          <Link
+            href="/repositora/campanas"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors"
+          >
+            Ver mis campañas
+          </Link>
+        </div>
       </main>
     </div>
   )

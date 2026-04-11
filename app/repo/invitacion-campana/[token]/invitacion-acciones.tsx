@@ -10,6 +10,7 @@ export function InvitacionAccionesRepo({ token }: { token: string }) {
   const [rechazando, setRechazando] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [resultado, setResultado] = useState<'aceptada' | 'rechazada' | null>(null)
+  const [aceptaTyc, setAceptaTyc] = useState(false)
 
   if (resultado === 'aceptada') {
     return (
@@ -36,6 +37,10 @@ export function InvitacionAccionesRepo({ token }: { token: string }) {
   }
 
   function handleAceptar() {
+    if (!aceptaTyc) {
+      setError('Debés aceptar los términos y condiciones para continuar.')
+      return
+    }
     setError(null)
     startTransition(async () => {
       const res = await aceptarInvitacionCampana(token)
@@ -59,6 +64,20 @@ export function InvitacionAccionesRepo({ token }: { token: string }) {
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
           <p className="text-sm text-red-600">{error}</p>
         </div>
+      )}
+
+      {!rechazando && (
+        <label className="flex items-start gap-3 mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={aceptaTyc}
+            onChange={e => { setAceptaTyc(e.target.checked); setError(null) }}
+            className="mt-0.5 w-4 h-4 accent-indigo-600"
+          />
+          <span className="text-xs text-gray-600">
+            Acepto los <span className="text-indigo-600 underline">términos y condiciones</span> de uso de GondolApp y autorizo el intercambio de información comercial entre las partes.
+          </span>
+        </label>
       )}
 
       {rechazando ? (
@@ -96,7 +115,7 @@ export function InvitacionAccionesRepo({ token }: { token: string }) {
       ) : (
         <div className="flex gap-3 flex-wrap">
           <button
-            disabled={pending}
+            disabled={pending || !aceptaTyc}
             onClick={handleAceptar}
             className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
           >

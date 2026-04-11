@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { Megaphone, Clock, Target } from 'lucide-react'
 import { labelEstadoCampana, colorEstadoCampana, diasRestantes, calcularPorcentaje } from '@/lib/utils'
 import type { TipoCampana, EstadoCampana } from '@/types'
@@ -150,7 +151,7 @@ export default async function RepoCampanasPage() {
               : null
 
             return (
-              <div key={c.id} className="bg-white rounded-xl border border-gray-200 p-5">
+              <Link key={c.id} href={`/repositora/campanas/${c.id}`} className="block bg-white rounded-xl border border-gray-200 p-5 hover:border-blue-200 hover:shadow-sm transition-all">
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -204,7 +205,7 @@ export default async function RepoCampanasPage() {
                     </div>
                   </div>
                 )}
-              </div>
+              </Link>
             )
           })}
         </div>
