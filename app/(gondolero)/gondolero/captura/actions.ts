@@ -10,6 +10,7 @@ import {
   crearNotificacionAdmin,
   existeNotifReciente,
 } from '@/lib/notificaciones'
+import { registrarChecksGPSInterno } from './actions-checks'
 
 export async function obtenerConfigCompresion(): Promise<ConfigCompresion> {
   return getConfigCompresion()
@@ -343,6 +344,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
   }
 
   // 6. Notificar a la distribuidora del gondolero y a la marca de la campaña (no bloquea el flujo)
+  let gondoleroDistriId: string | null = null
   try {
     // Obtener en paralelo: perfil completo del gondolero + datos de la campaña
     const [
@@ -352,6 +354,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
       db.from('profiles').select('distri_id, tipo_actor, nombre').eq('id', user.id).single(),
       db.from('campanas').select('marca_id, distri_id, nombre, estado').eq('id', params.campanaId).single(),
     ])
+    gondoleroDistriId = gondoleroProfile?.distri_id ?? null
 
     if (profileError) console.error('[registrarMision] error al leer profile del gondolero:', profileError.message)
     if (campanaError) console.error('[registrarMision] error al leer campaña:', campanaError.message)
@@ -411,6 +414,39 @@ export async function registrarMision(params: RegistrarMisionParams) {
   } catch (notifError) {
     // Las notificaciones no deben romper el flujo principal
     console.error('[registrarMision] Error al enviar notificaciones:', notifError)
+  }
+
+  // 7. Registrar checks GPS silenciosos para validación de comercios pendientes.
+  // Se ejecuta con las coordenadas del comercio visitado (leídas de la DB),
+  // así los logs son visibles en Vercel en lugar de en el browser.
+  try {
+    const { data: comercioCoords } = await db
+      .from('comercios')
+      .select('lat, lng')
+      .eq('id', params.comercioId)
+      .maybeSingle() as { data: { lat: number; lng: number } | null }
+
+    const checkLat = comercioCoords?.lat ?? params.lat
+    const checkLng = comercioCoords?.lng ?? params.lng
+
+    console.log('[registrarMision] iniciando checks GPS', {
+      comercioId: params.comercioId,
+      lat: checkLat,
+      lng: checkLng,
+      gondoleroDistriId,
+    })
+
+    await registrarChecksGPSInterno({
+      lat:               checkLat,
+      lng:               checkLng,
+      userId:            user.id,
+      gondoleroDistriId: gondoleroDistriId,
+      admin:             db,
+    })
+
+    console.log('[registrarMision] checks GPS completados OK')
+  } catch (checksErr) {
+    console.error('[registrarMision] Error en checks GPS:', checksErr)
   }
 
   return { misionId: mision.id, puntos: params.puntosTotal }
