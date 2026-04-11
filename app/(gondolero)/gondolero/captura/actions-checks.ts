@@ -120,12 +120,11 @@ export async function registrarChecksGPSInterno({
     return
   }
 
-  // Filtrar los que están a ≤20m y que este gondolero NO creó
+  // Filtrar solo por distancia ≤20m (el creador también registra su check)
   const cercanos = pendientes.filter(c => {
     const dist = distanciaMetros(lat, lng, c.lat, c.lng)
-    const creadorOk = c.registrado_por !== userId
-    console.log('[registrarChecksGPS] evaluando comercio', c.id, '— dist:', Math.round(dist), 'm — creadorOk:', creadorOk)
-    return creadorOk && dist <= 20
+    console.log('[registrarChecksGPS] evaluando comercio', c.id, '— dist:', Math.round(dist), 'm — esCreador:', c.registrado_por === userId)
+    return dist <= 20
   })
 
   console.log('[registrarChecksGPS] comercios cercanos (≤20m):', cercanos.length)
@@ -133,8 +132,8 @@ export async function registrarChecksGPSInterno({
   if (!cercanos.length) return
 
   for (const comercio of cercanos) {
-    // Registrar check (upsert: un gondolero solo puede tener un check por comercio)
-    await admin
+    // 1. SIEMPRE registrar el check (upsert) — incluye al creador
+    const { error: upsertError } = await admin
       .from('comercios_checks')
       .upsert(
         {
@@ -147,37 +146,35 @@ export async function registrarChecksGPSInterno({
         { onConflict: 'comercio_id,gondolero_id' }
       )
 
-    // Si este gondolero no tiene distri, no puede contar como validación independiente
-    if (!gondoleroDistriId) continue
+    if (upsertError) {
+      console.error('[registrarChecksGPS] ERROR upsert check comercio', comercio.id, ':', upsertError.message)
+    } else {
+      console.log('[registrarChecksGPS] check registrado para comercio', comercio.id, '— distri_id:', gondoleroDistriId)
+    }
 
-    // Obtener distri del creador del comercio
-    const { data: creador } = await admin
-      .from('profiles')
-      .select('distri_id')
-      .eq('id', comercio.registrado_por)
-      .maybeSingle() as { data: { distri_id: string | null } | null }
-
-    const creadorDistriId = creador?.distri_id ?? null
-
-    // El gondolero actual es de la misma distri que el creador → no cuenta
-    if (gondoleroDistriId === creadorDistriId) continue
-
-    // Verificar si hay algún check previo de una distri distinta a la del creador Y distinta a la actual
-    const { data: checksExistentes } = await admin
+    // 2. Verificar si hay checks de 2+ distribuidoras distintas entre sí (activa la validación)
+    // Leer TODOS los checks del comercio (incluyendo el recién insertado)
+    const { data: todosLosChecks, error: checksError } = await admin
       .from('comercios_checks')
       .select('gondolero_id, distri_id')
-      .eq('comercio_id', comercio.id)
-      .neq('gondolero_id', userId) as { data: { gondolero_id: string; distri_id: string | null }[] | null }
+      .eq('comercio_id', comercio.id) as { data: { gondolero_id: string; distri_id: string | null }[] | null; error: { message: string } | null }
 
-    // Hay confirmación independiente si existe al menos un check de una distri diferente al creador
-    const hayConfirmacionIndependiente = checksExistentes?.some(
-      ch => ch.distri_id && ch.distri_id !== creadorDistriId
+    if (checksError) {
+      console.error('[registrarChecksGPS] ERROR leyendo checks de comercio', comercio.id, ':', checksError.message)
+      continue
+    }
+
+    // Contar distris únicas con valor no-nulo
+    const distrisUnicas = new Set(
+      (todosLosChecks ?? [])
+        .map(ch => ch.distri_id)
+        .filter((d): d is string => d !== null && d !== undefined)
     )
 
-    console.log('[registrarChecksGPS] comercio', comercio.id, '— hayConfirmacionIndependiente:', hayConfirmacionIndependiente)
+    console.log('[registrarChecksGPS] comercio', comercio.id, '— checks totales:', todosLosChecks?.length ?? 0, '— distris únicas:', distrisUnicas.size, '—', [...distrisUnicas])
 
-    if (hayConfirmacionIndependiente) {
-      // Auto-validar el comercio
+    if (distrisUnicas.size >= 2) {
+      // 3. Auto-validar el comercio
       await admin
         .from('comercios')
         .update({ estado: 'activo', validado: true })
@@ -188,7 +185,7 @@ export async function registrarChecksGPSInterno({
       revalidatePath('/admin/comercios/pendientes')
       revalidatePath('/admin/comercios')
 
-      console.log('[registrarChecksGPS] comercio auto-validado:', comercio.id)
+      console.log('[registrarChecksGPS] comercio auto-validado:', comercio.id, '— distris que confirmaron:', [...distrisUnicas])
     }
   }
 }
