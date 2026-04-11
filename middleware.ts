@@ -15,6 +15,7 @@ const RUTAS_PUBLICAS = [
   '/fixer-vinculacion',   // Fixer acepta invitación de distribuidora o repositora
   '/vinculacion-repo',         // Repositora acepta invitación de marca
   '/vinculacion-distri-repo',  // Repositora acepta invitación de distribuidora
+  '/repo/invitacion-campana',  // Repositora acepta/rechaza campaña de marca
 ]
 
 // Destino por tipo de actor después del login

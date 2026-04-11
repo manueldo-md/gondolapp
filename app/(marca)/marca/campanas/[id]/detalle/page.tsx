@@ -54,6 +54,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
 
   // Token de invitación
   let linkInvitacion: string | null = null
+  let linkInvitacionRepo: string | null = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c = campana as any
   if (c.estado === 'pendiente_aprobacion' && c.via_ejecucion === 'distribuidora') {
@@ -62,6 +63,14 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
       .eq('campana_id', params.id).eq('usado', false).gt('expira_at', new Date().toISOString()).maybeSingle()
     if (tokenRow?.token) {
       linkInvitacion = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp.com'}/distri/invitacion-campana/${tokenRow.token}`
+    }
+  }
+  if (c.estado === 'pendiente_aprobacion' && c.via_ejecucion === 'repositora') {
+    const { data: tokenRow } = await admin
+      .from('campana_tokens').select('token')
+      .eq('campana_id', params.id).eq('usado', false).gt('expira_at', new Date().toISOString()).maybeSingle()
+    if (tokenRow?.token) {
+      linkInvitacionRepo = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp.com'}/repo/invitacion-campana/${tokenRow.token}`
     }
   }
 
@@ -240,6 +249,27 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
                 <span className="text-xs text-gray-500 truncate flex-1 font-mono">{linkInvitacion}</span>
               </div>
               <CopiarLinkBtn link={linkInvitacion} />
+            </>
+          ) : (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">No hay link activo. Contactá a soporte.</p>
+          )}
+        </div>
+      )}
+
+      {/* Link de invitación repositora */}
+      {c.estado === 'pendiente_aprobacion' && c.via_ejecucion === 'repositora' && (
+        <div className="bg-white rounded-xl border border-gondo-indigo-100 p-5 mb-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Link2 size={15} className="text-gondo-indigo-600" />
+            <h4 className="font-semibold text-gray-900">Invitá a la repositora</h4>
+          </div>
+          {linkInvitacionRepo ? (
+            <>
+              <p className="text-sm text-gray-500 mb-3">Enviá este link a la repositora. Expira en 7 días.</p>
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 mb-3">
+                <span className="text-xs text-gray-500 truncate flex-1 font-mono">{linkInvitacionRepo}</span>
+              </div>
+              <CopiarLinkBtn link={linkInvitacionRepo} />
             </>
           ) : (
             <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">No hay link activo. Contactá a soporte.</p>
