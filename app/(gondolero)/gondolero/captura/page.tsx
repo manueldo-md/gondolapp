@@ -778,6 +778,7 @@ function CapturaContent() {
 
     gpsCheckHechoRef.current = true
     const { lat, lng } = gps.posicion
+    console.log('[checks-gps] paso:', paso, 'posicion:', gps.posicion)
     // Fire-and-forget: no interrumpe el flujo del gondolero
     registrarChecksGPS({ lat, lng }).catch(() => { /* silencioso */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -787,6 +788,7 @@ function CapturaContent() {
   //   selecciona un comercio ya existente (nunca pasan por paso='gps')
   useEffect(() => {
     if (paso !== 'comercios-existente') return
+    console.log('[checks-gps] paso:', paso, 'posicion:', gps.posicion)
     if (!gps.posicion) return
     const { lat, lng } = gps.posicion
     registrarChecksGPS({ lat, lng }).catch(() => { /* silencioso */ })

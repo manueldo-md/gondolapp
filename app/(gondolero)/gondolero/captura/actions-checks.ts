@@ -90,6 +90,8 @@ async function liberarBounty(admin: ReturnType<typeof adminClient>, comercioId: 
  * Se llama silenciosamente desde el flujo de captura normal, sin interrumpir al gondolero.
  */
 export async function registrarChecksGPS(params: { lat: number; lng: number }) {
+  console.log('[registrarChecksGPS] iniciando con', { lat: params.lat, lng: params.lng })
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -114,6 +116,8 @@ export async function registrarChecksGPS(params: { lat: number; lng: number }) {
     .eq('estado', 'pendiente_validacion')
     .not('lat', 'is', null)
     .not('lng', 'is', null) as { data: { id: string; lat: number; lng: number; registrado_por: string | null }[] | null }
+
+  console.log('[registrarChecksGPS] comercios pendientes encontrados:', pendientes?.length ?? 0)
 
   if (!pendientes?.length) return
 
