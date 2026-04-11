@@ -96,22 +96,37 @@ export async function registrarChecksGPSInterno({
   console.log('[registrarChecksGPS] iniciando con', { lat, lng, userId, gondoleroDistriId })
 
   // Obtener todos los comercios en pendiente_validacion con coordenadas
-  const { data: pendientes } = await admin
+  console.log('[registrarChecksGPS] antes de query comercios pendientes')
+  const { data: pendientes, error: pendientesError } = await admin
     .from('comercios')
-    .select('id, lat, lng, registrado_por')
+    .select('id, lat, lng, registrado_por, estado')
     .eq('estado', 'pendiente_validacion')
     .not('lat', 'is', null)
-    .not('lng', 'is', null) as { data: { id: string; lat: number; lng: number; registrado_por: string | null }[] | null }
+    .not('lng', 'is', null) as { data: { id: string; lat: number; lng: number; registrado_por: string | null; estado: string }[] | null; error: { message: string } | null }
 
-  console.log('[registrarChecksGPS] comercios pendientes encontrados:', pendientes?.length ?? 0)
+  console.log('[registrarChecksGPS] resultado query:', {
+    count: pendientes?.length ?? 0,
+    error: pendientesError?.message ?? null,
+    sample: pendientes?.slice(0, 3).map(c => ({ id: c.id, lat: c.lat, lng: c.lng, estado: c.estado, registrado_por: c.registrado_por })),
+  })
 
-  if (!pendientes?.length) return
+  if (pendientesError) {
+    console.error('[registrarChecksGPS] ERROR en query comercios:', pendientesError.message)
+    return
+  }
+
+  if (!pendientes?.length) {
+    console.log('[registrarChecksGPS] sin comercios pendiente_validacion — abortando')
+    return
+  }
 
   // Filtrar los que están a ≤20m y que este gondolero NO creó
-  const cercanos = pendientes.filter(c =>
-    c.registrado_por !== userId &&
-    distanciaMetros(lat, lng, c.lat, c.lng) <= 20
-  )
+  const cercanos = pendientes.filter(c => {
+    const dist = distanciaMetros(lat, lng, c.lat, c.lng)
+    const creadorOk = c.registrado_por !== userId
+    console.log('[registrarChecksGPS] evaluando comercio', c.id, '— dist:', Math.round(dist), 'm — creadorOk:', creadorOk)
+    return creadorOk && dist <= 20
+  })
 
   console.log('[registrarChecksGPS] comercios cercanos (≤20m):', cercanos.length)
 
