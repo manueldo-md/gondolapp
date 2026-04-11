@@ -770,6 +770,7 @@ function CapturaContent() {
   }, [paso])
 
   // Check GPS silencioso para validación automática de comercios pendientes cercanos
+  // — paso 'gps': cubre todas las campañas que no son tipo 'comercios' (seleccionan comercio existente → gps)
   useEffect(() => {
     if (paso !== 'gps') return
     if (gps.estado !== 'activo' || !gps.posicion) return
@@ -781,6 +782,16 @@ function CapturaContent() {
     registrarChecksGPS({ lat, lng }).catch(() => { /* silencioso */ })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso, gps.estado, gps.posicion?.lat, gps.posicion?.lng])
+
+  // — paso 'comercios-existente': cubre campañas tipo 'comercios' cuando el gondolero
+  //   selecciona un comercio ya existente (nunca pasan por paso='gps')
+  useEffect(() => {
+    if (paso !== 'comercios-existente') return
+    if (!gps.posicion) return
+    const { lat, lng } = gps.posicion
+    registrarChecksGPS({ lat, lng }).catch(() => { /* silencioso */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso])
 
   // Todas las campañas arrancan con GPS — el paso 'comercio' (texto) queda solo como fallback
   useEffect(() => {
