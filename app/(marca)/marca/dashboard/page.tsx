@@ -38,14 +38,14 @@ type FotoRow = {
 type ComercioRow = {
   id: string
   tipo: string | null
-  zona_id: string | null
-}
-
-type ZonaRow = {
-  id: string
-  nombre: string
+  localidad_id: number | null
   lat: number | null
   lng: number | null
+}
+
+type LocalidadRow = {
+  id: number
+  nombre: string
 }
 
 type CampanaRow = {
@@ -133,74 +133,84 @@ export default async function DashboardPage() {
   let comercios: ComercioRow[] = []
   if (comercioIds.length > 0) {
     const { data } = await admin
-      .from('comercios').select('id, tipo, zona_id').in('id', comercioIds)
+      .from('comercios').select('id, tipo, localidad_id, lat, lng').in('id', comercioIds)
     comercios = (data ?? []) as ComercioRow[]
   }
 
-  // ── 5. Zonas ─────────────────────────────────────────────────────────────────
-  const zonaIdsSet = new Set(comercios.map(c => c.zona_id).filter(Boolean) as string[])
-  const zonaIds    = [...zonaIdsSet]
+  // ── 5. Localidades ────────────────────────────────────────────────────────────
+  const localidadIdsSet = new Set(comercios.map(c => c.localidad_id).filter((v): v is number => v !== null))
+  const localidadIds    = [...localidadIdsSet]
 
-  let zonas: ZonaRow[] = []
-  if (zonaIds.length > 0) {
+  let localidades: LocalidadRow[] = []
+  if (localidadIds.length > 0) {
     const { data } = await admin
-      .from('zonas').select('id, nombre, lat, lng').in('id', zonaIds)
-    zonas = (data ?? []) as ZonaRow[]
+      .from('localidades').select('id, nombre').in('id', localidadIds)
+    localidades = (data ?? []) as LocalidadRow[]
+  }
+
+  // Centroide lat/lng por localidad (calculado desde coords de comercios)
+  const localidadCentroid = new Map<number, { lat: number; lng: number }>()
+  for (const c of comercios) {
+    if (!c.localidad_id || !c.lat || !c.lng) continue
+    const prev = localidadCentroid.get(c.localidad_id)
+    if (!prev) { localidadCentroid.set(c.localidad_id, { lat: c.lat, lng: c.lng }) }
+    else { prev.lat = (prev.lat + c.lat) / 2; prev.lng = (prev.lng + c.lng) / 2 }
   }
 
   // ── 6. Índices ───────────────────────────────────────────────────────────────
-  const comercioMap = new Map(comercios.map(c => [c.id, c]))
-  const zonaMap     = new Map(zonas.map(z => [z.id, z]))
+  const comercioMap    = new Map(comercios.map(c => [c.id, c]))
+  const localidadMap   = new Map(localidades.map(l => [l.id, l]))
 
   // ── 7. KPIs globales ──────────────────────────────────────────────────────────
   const totalFotos      = fotos.length
   const totalPdv        = comercioIds.length
-  const totalCiudades   = zonaIds.length
+  const totalCiudades   = localidadIds.length
   const campanasActivas = campanas.filter(c => c.estado === 'activa').length
 
   const conPresenciaGlobal = fotos.filter(f => f.declaracion === 'producto_presente').length
   const presenciaPctGlobal = totalFotos > 0
     ? Math.round((conPresenciaGlobal / totalFotos) * 100) : 0
 
-  // ── 8. Stats por zona ────────────────────────────────────────────────────────
-  type ZonaStat = {
+  // ── 8. Stats por localidad ────────────────────────────────────────────────────
+  type LocalidadStat = {
     pdvSet: Set<string>
     pdvConPresenciaSet: Set<string>
     fotosCount: number
     ultimaFecha: string | null
   }
-  const zonaStats = new Map<string, ZonaStat>()
+  const localidadStats = new Map<number, LocalidadStat>()
 
   for (const f of fotos) {
     if (!f.comercio_id) continue
     const comercio = comercioMap.get(f.comercio_id)
-    if (!comercio?.zona_id) continue
-    const zid = comercio.zona_id
-    if (!zonaStats.has(zid)) zonaStats.set(zid, { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null })
-    const stat = zonaStats.get(zid)!
+    if (!comercio?.localidad_id) continue
+    const lid = comercio.localidad_id
+    if (!localidadStats.has(lid)) localidadStats.set(lid, { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null })
+    const stat = localidadStats.get(lid)!
     stat.pdvSet.add(f.comercio_id)
     stat.fotosCount++
     if (f.declaracion === 'producto_presente') stat.pdvConPresenciaSet.add(f.comercio_id)
     if (!stat.ultimaFecha || f.created_at > stat.ultimaFecha) stat.ultimaFecha = f.created_at
   }
 
-  const mkZonaStat = (zid: string) => {
-    const zona = zonaMap.get(zid)!
-    const stat = zonaStats.get(zid) ?? { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null }
+  const mkLocalidadStat = (lid: number) => {
+    const localidad = localidadMap.get(lid)!
+    const stat = localidadStats.get(lid) ?? { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null }
     const pdvRelevados = stat.pdvSet.size
     const conPresencia = stat.pdvConPresenciaSet.size
     const pct = pdvRelevados > 0 ? Math.round((conPresencia / pdvRelevados) * 100) : 0
-    return { zona, stat, pdvRelevados, conPresencia, pct }
+    return { localidad, stat, pdvRelevados, conPresencia, pct }
   }
 
-  const zonaMapData: DashboardVisualizacionesProps['zonaMapData'] = zonaIds.map(zid => {
-    const { zona, stat, pdvRelevados, conPresencia, pct } = mkZonaStat(zid)
-    return { id: zid, nombre: zona.nombre, lat: zona.lat ?? 0, lng: zona.lng ?? 0, pdvRelevados, conPresencia, presenciaPct: pct, fotosRecibidas: stat.fotosCount }
+  const zonaMapData: DashboardVisualizacionesProps['zonaMapData'] = localidadIds.map(lid => {
+    const { localidad, stat, pdvRelevados, conPresencia, pct } = mkLocalidadStat(lid)
+    const centroid = localidadCentroid.get(lid)
+    return { id: String(lid), nombre: localidad.nombre, lat: centroid?.lat ?? 0, lng: centroid?.lng ?? 0, pdvRelevados, conPresencia, presenciaPct: pct, fotosRecibidas: stat.fotosCount }
   })
 
-  const ciudadRows: DashboardVisualizacionesProps['ciudadRows'] = zonaIds.map(zid => {
-    const { zona, stat, pdvRelevados, conPresencia, pct } = mkZonaStat(zid)
-    return { id: zid, nombre: zona.nombre, pdvRelevados, conPresencia, sinPresencia: pdvRelevados - conPresencia, fotosRecibidas: stat.fotosCount, ultimaVisita: stat.ultimaFecha, presenciaPct: pct }
+  const ciudadRows: DashboardVisualizacionesProps['ciudadRows'] = localidadIds.map(lid => {
+    const { localidad, stat, pdvRelevados, conPresencia, pct } = mkLocalidadStat(lid)
+    return { id: String(lid), nombre: localidad.nombre, pdvRelevados, conPresencia, sinPresencia: pdvRelevados - conPresencia, fotosRecibidas: stat.fotosCount, ultimaVisita: stat.ultimaFecha, presenciaPct: pct }
   })
 
   // ── 9. Penetración por campaña ────────────────────────────────────────────────
@@ -256,12 +266,12 @@ export default async function DashboardPage() {
   const alertas: Alerta[] = []
   const hace30 = new Date(ahora); hace30.setDate(hace30.getDate() - 30)
 
-  const ciudadesSinActividad = zonaIds.filter(zid => {
-    const stat = zonaStats.get(zid)
+  const ciudadesSinActividad = localidadIds.filter(lid => {
+    const stat = localidadStats.get(lid)
     return !stat?.ultimaFecha || new Date(stat.ultimaFecha) < hace30
   })
   if (ciudadesSinActividad.length > 0) {
-    const nombres = ciudadesSinActividad.map(zid => zonaMap.get(zid)?.nombre ?? 'Ciudad').slice(0, 3).join(', ')
+    const nombres = ciudadesSinActividad.map(lid => localidadMap.get(lid)?.nombre ?? 'Ciudad').slice(0, 3).join(', ')
     const extra   = ciudadesSinActividad.length > 3 ? ` y ${ciudadesSinActividad.length - 3} más` : ''
     alertas.push({ tipo: 'warning', mensaje: `Sin fotos en los últimos 30 días: ${nombres}${extra}.` })
   }
