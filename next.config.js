@@ -26,6 +26,13 @@ const nextConfig = {
         pathname: '/thumbnail',
       },
       {
+        // Drive redirige 302 a lh3.googleusercontent.com al servir la imagen
+        protocol: 'https',
+        hostname: '*.googleusercontent.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
         protocol: 'https',
         hostname: 'picsum.photos',
         port: '',
@@ -43,7 +50,8 @@ const nextConfig = {
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
       // wss://*.supabase.co requerido para WebSockets de Realtime
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
-      "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://picsum.photos",
+      // lh3.googleusercontent.com: destino real del redirect 302 de drive.google.com/thumbnail
+      "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://*.googleusercontent.com https://picsum.photos",
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",
       "media-src 'self' blob:",
