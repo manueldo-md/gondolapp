@@ -20,6 +20,7 @@ export async function validarMarca(marcaId: string) {
   const admin = await getAdmin()
   await admin.from('marcas').update({ validada: true }).eq('id', marcaId)
   revalidatePath('/admin/marcas')
+  revalidatePath('/admin/tablero')
 }
 
 export async function crearMarca(payload: {
