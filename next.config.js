@@ -10,7 +10,7 @@ const nextConfig = {
     },
   },
 
-  // Imágenes — permitir las de Supabase Storage
+  // Imágenes — permitir las de Supabase Storage y Google Drive
   images: {
     remotePatterns: [
       {
@@ -18,6 +18,18 @@ const nextConfig = {
         hostname: '*.supabase.co',
         port: '',
         pathname: '/storage/v1/object/public/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'drive.google.com',
+        port: '',
+        pathname: '/thumbnail',
+      },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+        port: '',
+        pathname: '/**',
       },
     ],
   },
@@ -31,7 +43,7 @@ const nextConfig = {
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
       // wss://*.supabase.co requerido para WebSockets de Realtime
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
-      "img-src 'self' blob: data: https://*.supabase.co",
+      "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://picsum.photos",
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",
       "media-src 'self' blob:",
