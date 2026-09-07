@@ -1,10 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
-import dotenv from 'dotenv'
-dotenv.config({ path: '.env.local' })
+import { resolverEntorno } from './lib/entorno.mjs'
+
+// Escribe datos: el proyecto se declara con --ref y se valida contra las
+// credenciales antes de tocar nada. Ver scripts/lib/entorno.mjs.
+const ENTORNO = resolverEntorno(process.argv)
 
 const db = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  ENTORNO.url,
+  ENTORNO.serviceKey,
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 

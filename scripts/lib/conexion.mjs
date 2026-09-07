@@ -16,6 +16,7 @@
 // =============================================================================
 
 import { readFileSync } from 'node:fs'
+import { credencialesDeRef } from './entorno.mjs'
 
 export function salirCon(mensaje) {
   console.error(`\n✗ ${mensaje}\n`)
@@ -116,16 +117,36 @@ export function resolverConexion(argv) {
     salirCon('Falta --ref <project-ref>. Es obligatorio: evita correr esto sobre el proyecto equivocado.')
   }
 
-  const pgurl = process.env.PGURL
+  // La connection string se busca, en orden:
+  //   1. PGURL del entorno (override para un one-off)
+  //   2. PGURL dentro del .env*.local que corresponde a ese --ref
+  //   3. variables discretas PGHOST/PGUSER/...
+  //
+  // El punto 2 es lo que hace que no haya que exportar PGURL a mano en cada
+  // shell: se resuelve por ref, igual que el resto de las credenciales.
+  let pgurl = process.env.PGURL
+  let origenPgurl = 'variable de entorno PGURL'
+  if (!pgurl) {
+    const cred = credencialesDeRef(refEsperado)
+    if (cred?.vars?.PGURL) {
+      pgurl = cred.vars.PGURL
+      origenPgurl = cred.archivo
+    }
+  }
   const usaDiscretas = !pgurl && process.env.PGHOST && process.env.PGUSER
 
   if (!pgurl && !usaDiscretas) {
+    const cred = credencialesDeRef(refEsperado)
     salirCon(
-      'Falta la conexión. Dos opciones:\n\n' +
-      "  1) export PGURL='postgresql://postgres.<ref>:<password>@<host>:5432/postgres'\n" +
-      '     (si la password tiene # / o ?, hay que percent-encodearlos)\n\n' +
-      '  2) export PGHOST=... PGPORT=5432 PGUSER=postgres.<ref> PGDATABASE=postgres PGPASSWORD=...\n' +
-      '     (sin encoding, la password va tal cual)\n\n' +
+      `Falta la connection string de Postgres para "${refEsperado}".\n\n` +
+      '  RECOMENDADO — agregar la línea PGURL al archivo de ese proyecto:\n' +
+      `    ${cred ? cred.archivo : '.env.<nombre>.local'}\n` +
+      "    PGURL=postgresql://postgres.<ref>:<password>@<host>:5432/postgres\n\n" +
+      '    Así se resuelve por --ref igual que el resto de las credenciales, sin\n' +
+      '    exportar nada a mano en cada shell. Los .env*.local están gitignoreados.\n\n' +
+      '  Alternativas para un one-off:\n' +
+      "    export PGURL='postgresql://...'   (si la password tiene # / o ?, encodearlos)\n" +
+      '    export PGHOST=... PGPORT=5432 PGUSER=postgres.<ref> PGDATABASE=postgres PGPASSWORD=...\n\n' +
       '  Usar el Session pooler o la conexión directa — NO el Transaction pooler de 6543.'
     )
   }
@@ -143,7 +164,7 @@ export function resolverConexion(argv) {
       )
     }
     config = { connectionString: urlValidada, ssl: configSsl() }
-    descripcion = enmascararUrl(urlValidada)
+    descripcion = `${enmascararUrl(urlValidada)}  [origen: ${origenPgurl}]`
   } else {
     const { PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE } = process.env
     if (!`${PGUSER}${PGHOST}`.includes(refEsperado)) {
@@ -165,6 +186,39 @@ export function resolverConexion(argv) {
   }
 
   return { config, refEsperado, descripcion, verificaSsl: Boolean(process.env.PGSSLROOTCERT) }
+}
+
+/**
+ * Conecta explicando el fallo en vez de tirar el stack crudo de pg-protocol.
+ * Compartido: todo script que abra una conexión debería usar esto.
+ */
+export async function conectar(client, refEsperado, descripcion) {
+  try {
+    await client.connect()
+  } catch (error) {
+    console.error(`\n✗ No se pudo conectar a "${refEsperado}".`)
+    console.error(`  ${error.code ?? 'sin código'}: ${error.message}`)
+    console.error(`  Conexión (enmascarada): ${descripcion}`)
+
+    if (error.code === '28P01') {
+      // El pooler de Supabase (Supavisor) usa postgres.<ref> solo para enrutar
+      // y después conecta upstream como `postgres`, así que el error habla de
+      // un usuario que vos no escribiste. No es que falte el sufijo: si el
+      // ruteo hubiera fallado, ni siquiera se llegaría a autenticar.
+      console.error('\n  El mensaje dice user "postgres" aunque tu PGURL diga postgres.<ref>:')
+      console.error('  el pooler enruta por el sufijo y después conecta upstream como postgres.')
+      console.error('  Que llegue a autenticar significa que el ruteo funcionó: lo que no coincide')
+      console.error('  es la password.\n')
+      console.error('  Revisá que sea la del proyecto correcto — es fácil pegar la de otro — o')
+      console.error('  generá una nueva en Settings → Database → Reset database password.')
+      console.error('  Resetearla NO afecta las API keys (anon / service_role), así que la app')
+      console.error('  sigue funcionando: solo cambia el acceso por protocolo Postgres.')
+    } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+      console.error('\n  No se resolvió el host. Revisá la región del pooler en la connection string.')
+    }
+    console.error('')
+    process.exit(1)
+  }
 }
 
 export async function cargarClient() {

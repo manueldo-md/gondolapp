@@ -9,34 +9,17 @@
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { resolverEntorno } from './lib/entorno.mjs'
 
-// ── Cargar .env.local si tsx --env-file no funciona ──────────────────────────
-function loadEnv() {
-  try {
-    const content = readFileSync(join(process.cwd(), '.env.local'), 'utf-8')
-    for (const line of content.split('\n')) {
-      const t = line.trim()
-      if (!t || t.startsWith('#')) continue
-      const eq = t.indexOf('=')
-      if (eq === -1) continue
-      const key = t.slice(0, eq).trim()
-      const val = t.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
-      if (!process.env[key]) process.env[key] = val
-    }
-  } catch { /* .env.local no encontrado — se asume que las vars ya están */ }
-}
-loadEnv()
+// ── Proyecto destino ─────────────────────────────────────────────────────────
+// Este script crea usuarios y escribe en 20 tablas, así que el proyecto se
+// declara en el comando con --ref y se valida contra las credenciales antes de
+// tocar nada. Ya no lee .env.local por su cuenta. Ver scripts/lib/entorno.mjs.
+const ENTORNO = resolverEntorno(process.argv)
 
-const SUPABASE_URL      = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SERVICE_ROLE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const PASSWORD          = 'Demo1234!'
+const PASSWORD = 'Demo1234!'
 
-if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error('❌ Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY')
-  process.exit(1)
-}
-
-const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+const db = createClient(ENTORNO.url, ENTORNO.serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 

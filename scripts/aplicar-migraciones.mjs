@@ -26,10 +26,50 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { salirCon, resolverConexion, cargarClient } from './lib/conexion.mjs'
+import { exigirConfirmacionProd, nombreDeRef } from './lib/entorno.mjs'
+
+// SQL de los GRANT que Supabase crea al provisionar el proyecto y que
+// DROP SCHEMA public se lleva puestos. No están en ninguna migración porque no
+// son parte del schema versionado. Sin ellos la app no lee NADA aunque los
+// datos estén: toda query devuelve "permission denied for schema public".
+// Es el fallo más desconcertante, porque desde el SQL Editor —que corre como
+// postgres— la base se ve perfecta.
+const SQL_GRANTS = `
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+
+GRANT ALL ON ALL TABLES    IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES  IN SCHEMA public TO anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES  TO anon, authenticated, service_role;
+`
 
 const DIR_MIGRACIONES = join(dirname(fileURLToPath(import.meta.url)), '..', 'supabase', 'migrations')
 
-// ── Conexión y guardas ───────────────────────────────────────────────────────
+// ── Guardas ──────────────────────────────────────────────────────────────────
+// --reset  : DROP SCHEMA public CASCADE + CREATE SCHEMA public
+// --grants : reponer los permisos de anon/authenticated/service_role
+// --solo-grants : hacer únicamente los GRANT y salir
+//
+// El --reset merece al menos la misma protección que un seed: exige --ref como
+// todo lo demás, y GONDOLAPP_PROD=1 si el ref resuelve a producción. La lista
+// de refs conocidos vive en entorno.mjs, para no tener dos criterios distintos
+// de qué es producción.
+const hacerReset = process.argv.includes('--reset')
+const hacerGrants = process.argv.includes('--grants') || process.argv.includes('--solo-grants')
+const soloGrants = process.argv.includes('--solo-grants')
+
+// La confirmación de producción va ANTES de resolver credenciales: si la
+// intención es peligrosa hay que frenar por eso, no por un detalle de conexión.
+if (hacerReset) {
+  const i = process.argv.indexOf('--ref')
+  const ref = i !== -1 ? process.argv[i + 1] : null
+  if (!ref) salirCon('Falta --ref <project-ref>. Es obligatorio, y más para --reset.')
+  exigirConfirmacionProd(ref, 'DROP SCHEMA public CASCADE borra TODO el esquema')
+}
+
 const { config, refEsperado, descripcion, verificaSsl } = resolverConexion(process.argv)
 const Client = await cargarClient()
 
@@ -78,10 +118,53 @@ function contextoDelError(sql, position) {
   return { nroLinea, columna, extracto: extracto.join('\n') }
 }
 
+// Verifica que los GRANT quedaron puestos, en vez de asumirlo. Solo consulta
+// roles que existan, así no rompe en una base que no sea de Supabase.
+async function mostrarGrants(client) {
+  const { rows } = await client.query(`
+    SELECT r.rolname,
+           has_schema_privilege(r.rolname, 'public', 'USAGE') AS usage_ok,
+           (SELECT count(*)::int FROM information_schema.role_table_grants g
+             WHERE g.grantee = r.rolname AND g.table_schema = 'public'
+               AND g.privilege_type = 'SELECT') AS tablas
+    FROM pg_roles r
+    WHERE r.rolname IN ('anon', 'authenticated', 'service_role')
+    ORDER BY r.rolname
+  `)
+  console.log('  Verificación de permisos:')
+  for (const r of rows) {
+    console.log(`    ${r.rolname.padEnd(15)} USAGE sobre public: ${r.usage_ok ? 'sí' : 'NO'}   tablas con SELECT: ${r.tablas}`)
+  }
+  console.log('')
+}
+
 // ── Corrida ──────────────────────────────────────────────────────────────────
 const client = new Client(config)
 
-await client.connect()
+try {
+  await client.connect()
+} catch (error) {
+  console.error(`\n✗ No se pudo conectar a "${refEsperado}".`)
+  console.error(`  ${error.code ?? 'sin código'}: ${error.message}`)
+  console.error(`  Conexión (enmascarada): ${descripcion}`)
+
+  if (error.code === '28P01') {
+    // El pooler de Supabase (Supavisor) usa postgres.<ref> solo para enrutar y
+    // después conecta upstream como `postgres`, así que el error habla de un
+    // usuario que vos no escribiste. No es que falte el sufijo: si el ruteo
+    // hubiera fallado, ni siquiera se llegaría a autenticar.
+    console.error('\n  El mensaje dice user "postgres" aunque tu PGURL diga postgres.<ref>:')
+    console.error('  el pooler enruta por el sufijo y después conecta upstream como postgres.')
+    console.error('  Que llegue a autenticar significa que el ruteo funcionó: lo que no coincide')
+    console.error('  es la password.\n')
+    console.error('  Revisá que sea la del proyecto correcto — es fácil pegar la de otro proyecto — o')
+    console.error('  generá una nueva en Settings → Database → Reset database password.')
+  } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+    console.error('\n  No se resolvió el host. Revisá la región del pooler en la connection string.')
+  }
+  console.error('')
+  process.exit(1)
+}
 
 const { rows: [info] } = await client.query('SELECT current_database() AS db, version() AS v')
 console.log(`\nConexión:  ${descripcion}`)
@@ -95,11 +178,36 @@ console.log(
     : `Archivos:  ${archivos.length}\n`
 )
 
+// ── --reset: vaciar el esquema ───────────────────────────────────────────────
+if (hacerReset) {
+  const { rows: [antes] } = await client.query(
+    "SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'"
+  )
+  console.log(`⚠️  RESET — el esquema public tiene ${antes.n} tablas y se van a borrar todas`)
+  const t0 = Date.now()
+  await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
+  console.log(`  ✓ esquema public vaciado y recreado (${Date.now() - t0}ms)\n`)
+}
+
+// ── --solo-grants: reponer permisos y salir ──────────────────────────────────
+if (soloGrants) {
+  await client.query(SQL_GRANTS)
+  console.log('✓ GRANT repuestos para anon, authenticated y service_role\n')
+  await mostrarGrants(client)
+  await client.end()
+  process.exit(0)
+}
+
 let aplicados = 0
 const arranque = Date.now()
 
 for (const archivo of archivos) {
-  const sql = readFileSync(join(DIR_MIGRACIONES, archivo), 'utf8')
+  // Normalizar los fines de línea. En Windows git checkoutea los .sql con CRLF
+  // y Postgres guarda esos retornos de carro dentro del cuerpo de las
+  // funciones. No cambia la semántica, pero hace que el mismo schema se vea
+  // distinto según el sistema operativo donde se aplicó, y ensucia todas las
+  // comparaciones posteriores.
+  const sql = readFileSync(join(DIR_MIGRACIONES, archivo), 'utf8').split('\r\n').join('\n')
   const t0 = Date.now()
   try {
     await client.query(sql)
@@ -128,6 +236,17 @@ for (const archivo of archivos) {
   }
 }
 
+console.log(`\n✓ ${aplicados}/${archivos.length} migraciones aplicadas en ${((Date.now() - arranque) / 1000).toFixed(1)}s`)
+
+if (hacerGrants) {
+  await client.query(SQL_GRANTS)
+  console.log('✓ GRANT repuestos para anon, authenticated y service_role\n')
+  await mostrarGrants(client)
+} else if (hacerReset) {
+  console.log('\n⚠️  Hiciste --reset sin --grants: los permisos de anon/authenticated/')
+  console.log('   service_role NO están repuestos y la app no va a leer nada.')
+  console.log(`   Corré: node scripts/aplicar-migraciones.mjs --ref ${refEsperado} --solo-grants\n`)
+}
+
 await client.end()
-console.log(`\n✓ ${aplicados}/${archivos.length} migraciones aplicadas en ${((Date.now() - arranque) / 1000).toFixed(1)}s\n`)
 console.log('Siguiente paso: node scripts/comparar-schema.mjs --ref ' + refEsperado + '\n')

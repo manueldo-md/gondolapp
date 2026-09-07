@@ -1,7 +1,7 @@
 # AUDITORÍA TÉCNICA — GondolApp — Septiembre 2026
 
 > Auditoría realizada el 7–8 de septiembre de 2026 después de 5 meses sin actividad.
-> Fuente de verdad de DB: `docs/schema-real-2026-09.md`.
+> Fuente de verdad de DB: `docs/schema-real-2026-09-pre-incidente.md`.
 > No se modificó ningún archivo durante la auditoría.
 
 ---
@@ -132,7 +132,7 @@ El admin hace `auth.admin.createUser()` → el trigger crea el profile con el ti
 
 ### 1.2 Tablas con `FOR ALL TO public USING (true)` — datos concretos expuestos
 
-Las 13 tablas con política permisiva (confirmado en `schema-real-2026-09.md` sección 3):
+Las 13 tablas con política permisiva (confirmado en `schema-real-2026-09-pre-incidente.md` sección 3):
 
 | Tabla | Datos expuestos | Actor que puede acceder |
 |-------|----------------|------------------------|
@@ -406,7 +406,7 @@ Sin embargo, el problema de desincronización sigue siendo real y significativo.
 
 ### 2.2 Objetos en la DB pero NO en ninguna migración
 
-Verificado comparando `docs/schema-real-2026-09.md` (sección 1: Tablas y columnas) con todos los `.sql` en `supabase/migrations/`.
+Verificado comparando `docs/schema-real-2026-09-pre-incidente.md` (sección 1: Tablas y columnas) con todos los `.sql` en `supabase/migrations/`.
 
 **Tablas completas sin migración:**
 
@@ -434,7 +434,7 @@ Verificado comparando `docs/schema-real-2026-09.md` (sección 1: Tablas y column
 
 ### 2.3 Cambios del 7/9/2026 sin migración
 
-Los tres cambios aplicados después del dump (documentados en el encabezado de `schema-real-2026-09.md`) tampoco tienen migración:
+Los tres cambios aplicados después del dump (documentados en el encabezado de `schema-real-2026-09-pre-incidente.md`) tampoco tienen migración:
 
 | Cambio | SQL aplicado | Migración existente |
 |--------|-------------|---------------------|
@@ -457,7 +457,7 @@ Los siguientes conflictos revelan que parte del schema fue construido en el SQL 
 **Tabla `campana_localidades` definida dos veces:**
 - `20260406151509_zonas_geograficas.sql`: crea `campana_localidades` con `PRIMARY KEY (campana_id, localidad_id)` — sin columna `id`.
 - `20260409185450_campana_localidades.sql`: también crea `campana_localidades` (IF NOT EXISTS) con `id uuid PRIMARY KEY` y UNIQUE(campana_id, localidad_id).
-- **DB real** (`schema-real-2026-09.md` líneas 98–101): tiene columna `id uuid gen_random_uuid()` → coincide con 041.
+- **DB real** (`schema-real-2026-09-pre-incidente.md` líneas 98–101): tiene columna `id uuid gen_random_uuid()` → coincide con 041.
 - **Conclusión**: la tabla fue creada manualmente con el schema de 041. Si se corriera sobre una DB limpia, 032 ganaría (se ejecuta primero) y la tabla quedaría con PK compuesto y sin la columna `id` — inconsistente con el código (que hace `select('id')` sobre esta tabla).
 
 **Numeración duplicada (021):**
@@ -467,7 +467,7 @@ Los siguientes conflictos revelan que parte del schema fue construido en el SQL 
 
 **Schema de `gondolero_localidades` diverge de migration 032:**
 - Migration 032 crea `gondolero_localidades` con columna `created_at timestamptz DEFAULT now()`.
-- **DB real** (`schema-real-2026-09.md` líneas 292–293): solo tiene `gondolero_id` y `localidad_id` — **sin `created_at`**.
+- **DB real** (`schema-real-2026-09-pre-incidente.md` líneas 292–293): solo tiene `gondolero_id` y `localidad_id` — **sin `created_at`**.
 - La tabla en producción fue creada con un DDL diferente al de la migración.
 
 **`distri_repo_tokens.distri_id` FK sin ON DELETE CASCADE:**

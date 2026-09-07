@@ -15,7 +15,7 @@
 --
 -- NOTA: esta divergencia NO figura en docs/AUDITORIA-2026-09.md sección 2.
 -- Se detectó comparando las tablas del dump contra los CREATE TABLE de las
--- migraciones. Referencia de forma: docs/schema-real-2026-09.md sección 1.
+-- migraciones. Referencia de forma: docs/schema-real-2026-09-pre-incidente.md sección 1.
 -- =============================================================================
 
 -- ── bloque_campos ────────────────────────────────────────────────────────────

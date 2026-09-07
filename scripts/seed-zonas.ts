@@ -16,35 +16,15 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { readFileSync } from 'fs'
-import { join } from 'path'
+import { resolverEntorno } from './lib/entorno.mjs'
 
-// ── Cargar .env.local si no hay env vars ya seteadas ─────────
-try {
-  const envPath = join(process.cwd(), '.env.local')
-  const content = readFileSync(envPath, 'utf-8')
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-    const eqIdx = trimmed.indexOf('=')
-    if (eqIdx === -1) continue
-    const key = trimmed.slice(0, eqIdx).trim()
-    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '')
-    if (key && !process.env[key]) process.env[key] = val
-  }
-} catch {
-  // No hay .env.local — se asume que las vars ya están en el entorno
-}
+// ── Proyecto destino ─────────────────────────────────────────
+// Este script BORRA cinco tablas antes de insertar, así que el proyecto se
+// declara en el comando con --ref y se valida contra las credenciales antes de
+// tocar nada. Ya no lee .env.local por su cuenta. Ver scripts/lib/entorno.mjs.
+const ENTORNO = resolverEntorno(process.argv)
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('❌  Falta NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY')
-  process.exit(1)
-}
-
-const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+const admin = createClient(ENTORNO.url, ENTORNO.serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 

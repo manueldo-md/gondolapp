@@ -992,7 +992,13 @@ Cerrado en esta sesión:
   (migración 20260907110057_fotos_campo_id.sql, ex 045).
 
 Documentos de referencia:
-- docs/schema-real-2026-09.md — fuente de verdad de la DB
+- docs/schema-real-2026-09.md — fuente de verdad de la DB. Regenerado desde
+  producción el 7/9/2026 después de la reconstrucción; ya no tiene divergencias
+  con las migraciones. Se verificó que dev, levantado por separado desde las
+  mismas 57 migraciones, produce ese documento byte a byte.
+- docs/schema-real-2026-09-pre-incidente.md — el dump anterior al DROP SCHEMA,
+  solo como registro histórico. Es el insumo del que salieron los grupos A, B y
+  C de la reconciliación de migraciones.
 - docs/AUDITORIA-2026-09.md — auditoría completa, con Top 10 de prioridades
 
 Próximos pasos, en orden:
@@ -1187,3 +1193,27 @@ puebla. Sin ellas el filtrado de campañas por zona queda inerte — los gondole
 ven todas las campañas en vez de las de su ciudad. No bloquea la operación
 (el filtro es fail-open y la UI avisa), pero la segmentación no funciona hasta
 que se repueblen las dos.
+
+### Nunca canalizar un comando destructivo o largo
+
+Aprendido el 7/9/2026 aplicando las migraciones a dev:
+
+```bash
+# MAL — head cierra el pipe y le manda SIGPIPE a node, que muere a mitad
+node scripts/aplicar-migraciones.mjs --ref <ref> --reset --grants | head -45
+
+# BIEN — redirigir a archivo y leerlo después
+node scripts/aplicar-migraciones.mjs --ref <ref> --reset --grants > /tmp/corrida.log 2>&1
+cat /tmp/corrida.log
+```
+
+Con el pipe, el `--reset` alcanzó a borrar el esquema y la corrida murió cerca
+del archivo 37 de 57. La base quedó a medias y sin GRANTs.
+
+Peor que el corte fue lo que vino después: **el log truncado no dice dónde se
+detuvo la ejecución, solo dónde se dejó de mostrar.** Reanudar con `--desde`
+tomando el último archivo visible del log falla con errores confusos —
+`policy ... already exists`— porque en realidad se habían aplicado unos cuantos
+más. Si una corrida se corta, el punto de reanudación se determina
+**consultando la base**, no leyendo el log. Y si la base es descartable, lo
+determinista es un `--reset` limpio y volver a empezar.
