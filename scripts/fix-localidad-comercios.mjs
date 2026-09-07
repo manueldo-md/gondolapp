@@ -3,7 +3,7 @@
  * Asigna localidad_id a los comercios que tienen localidad_id = null.
  *
  * Estrategia A — Comercios CSV (56 con dirección):
- *   CSV ciudad → localidad_id hardcodeado desde tabla localidades
+ *   CSV ciudad → se resuelve el localidad_id POR NOMBRE contra la tabla
  *
  * Estrategia B — Comercios ficticios (72 sin dirección, tienen lat/lng):
  *   Nominatim reverse geocoding → extraer localidad → buscar en localidades
@@ -26,19 +26,72 @@ const db = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// ── Mapa hardcodeado ciudad CSV → localidad_id (verificado contra tabla localidades) ──
-const CIUDAD_TO_LOC_ID = {
-  'colon':                    1,    // Colón, Entre Ríos (depto 1)
-  'colon ':                   1,
-  'cdelu':                    119,  // Concepción del Uruguay (depto 15)
-  'concordia':                13,
-  'gualeguaychu':             57,
-  'villaguay':                136,
-  'chajari':                  31,
-  'rosario del tala':         112,
-  'general campos':           109,
-  'villa dominguez':          944,
-  'san salvador':             108,
+// ── Ciudad del CSV → nombre real en la tabla localidades ─────────────────────
+// Antes esto mapeaba a localidad_id hardcodeados, y se rompió: los ids son
+// `serial`, o sea que dependen del orden de inserción del seed. Cuando se
+// repobló la geografía, 'villa dominguez' apuntaba al id 944 y la tabla pasó a
+// tener 942 filas → violación de foreign key. Peor todavía: un id que sigue
+// existiendo pero corrido apunta en silencio a otra ciudad.
+//
+// Ahora el mapa solo resuelve alias (abreviaturas y acentos); el id se busca
+// por nombre en tiempo de ejecución. Mismo criterio que resolverCampanaId()
+// para las campañas.
+//
+// Solo hacen falta entradas para los casos donde el CSV NO coincide con el
+// nombre de la tabla. Si coincide, no hace falta declararlo.
+const ALIAS_CIUDAD = {
+  'cdelu':            'Concepción del Uruguay',
+  'colon':            'Colón',
+  'gualeguaychu':     'Gualeguaychú',
+  'chajari':          'Chajarí',
+  // Villa Domínguez no está en el seed geográfico: es una de las localidades
+  // que se habían agregado a mano y que la reconstrucción del 7/9/2026 no
+  // reprodujo. Se aproxima a la cabecera de su departamento, a unos 25 km.
+  // Cuando se agregue al seed, borrar esta línea.
+  'villa dominguez':  'Villaguay',
+}
+
+// El piloto es en Entre Ríos: ante un nombre repetido entre provincias, es la
+// que corresponde. Cambiar esto si el piloto se muda.
+const PROVINCIA_PREFERIDA = 'Entre Ríos'
+
+// nombre normalizado → [{ id, provincia }]. Es una lista y no un solo id porque
+// hay 118 nombres repetidos entre provincias sobre 942 localidades: indexar por
+// nombre a secas hace que se pisen y que "San Martín" pueda resolver a Mendoza.
+const localidadesPorNombre = new Map()
+
+async function cargarLocalidades() {
+  const { data, error } = await db
+    .from('localidades')
+    .select('id, nombre, departamentos!inner(provincias!inner(nombre))')
+  if (error) { console.error('❌ No se pudieron leer las localidades:', error.message); process.exit(1) }
+
+  for (const l of data) {
+    const clave = normCiudad(l.nombre)
+    if (!localidadesPorNombre.has(clave)) localidadesPorNombre.set(clave, [])
+    localidadesPorNombre.get(clave).push({ id: l.id, provincia: l.departamentos.provincias.nombre })
+  }
+  const ambiguos = [...localidadesPorNombre.values()].filter(v => v.length > 1).length
+  console.log(`Localidades cargadas: ${data.length} (${localidadesPorNombre.size} nombres distintos, ${ambiguos} repetidos entre provincias)`)
+}
+
+/**
+ * Resuelve una ciudad del CSV a localidad_id, o null.
+ * Si el nombre existe en varias provincias, prefiere la del piloto; si aun así
+ * queda ambiguo, devuelve null en vez de elegir al azar.
+ */
+function resolverLocalidad(ciudad) {
+  const norm = normCiudad(ciudad)
+  const nombre = ALIAS_CIUDAD[norm] ?? ciudad
+  const candidatos = localidadesPorNombre.get(normCiudad(nombre))
+  if (!candidatos || candidatos.length === 0) return null
+  if (candidatos.length === 1) return candidatos[0].id
+
+  const enPreferida = candidatos.filter(c => c.provincia === PROVINCIA_PREFERIDA)
+  if (enPreferida.length === 1) return enPreferida[0].id
+
+  console.log(`  ⚠️  "${nombre}" existe en ${candidatos.map(c => c.provincia).join(', ')} — ambiguo, se omite`)
+  return null
 }
 
 function normCiudad(s) {
@@ -74,6 +127,8 @@ async function reverseGeocode(lat, lng) {
 }
 
 async function run() {
+  await cargarLocalidades()
+
   // ── 1. Cargar todos los comercios sin localidad_id ─────────────────────────
   const { data: comercios, error } = await db
     .from('comercios')
@@ -109,7 +164,7 @@ async function run() {
       continue
     }
 
-    const locId = CIUDAD_TO_LOC_ID[normCiudad(csvRow.ciudad)]
+    const locId = resolverLocalidad(csvRow.ciudad)
     if (!locId) {
       console.log(`  ⚠️  Ciudad sin mapeo: "${csvRow.ciudad}" — comercio: "${com.nombre}"`)
       noMatchA++
@@ -132,20 +187,24 @@ async function run() {
   // ── ESTRATEGIA B: Sin dirección → Nominatim por lat/lng ───────────────────
   console.log('\n── Estrategia B: Nominatim por lat/lng ──────────────────────────')
 
-  // Cargar todas las localidades de Entre Ríos para buscar matches
-  const { data: todasLocs } = await db.from('localidades').select('id, nombre, departamento_id')
-
-  // Departamentos de Entre Ríos: 1-18 (basado en los datos vistos)
-  const locsEntreRios = (todasLocs ?? []).filter(l => l.departamento_id >= 1 && l.departamento_id <= 18)
-  console.log(`  Localidades de Entre Ríos cargadas: ${locsEntreRios.length}`)
+  // Localidades de Entre Ríos, resueltas por NOMBRE de provincia.
+  // Antes se filtraba por `departamento_id >= 1 && <= 18`, "basado en los datos
+  // vistos" — otra suposición sobre ids seriales que se rompe con solo cambiar
+  // el orden del seed.
+  const { data: locsEntreRios } = await db
+    .from('localidades')
+    .select('id, nombre, departamentos!inner(provincias!inner(nombre))')
+    .eq('departamentos.provincias.nombre', 'Entre Ríos')
+  console.log(`  Localidades de Entre Ríos cargadas: ${locsEntreRios?.length ?? 0}`)
 
   function buscarLocalidad(nombreNominatim) {
     if (!nombreNominatim) return null
     const norm = normCiudad(nombreNominatim)
-    // Primero buscar en CIUDAD_TO_LOC_ID
-    if (CIUDAD_TO_LOC_ID[norm]) return CIUDAD_TO_LOC_ID[norm]
+    // Primero los alias conocidos del CSV
+    const porAlias = resolverLocalidad(nombreNominatim)
+    if (porAlias) return porAlias
     // Luego buscar en tabla
-    const match = locsEntreRios.find(l =>
+    const match = (locsEntreRios ?? []).find(l =>
       normCiudad(l.nombre) === norm ||
       normCiudad(l.nombre).includes(norm) ||
       norm.includes(normCiudad(l.nombre))
