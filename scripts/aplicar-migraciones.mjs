@@ -141,7 +141,30 @@ async function mostrarGrants(client) {
 // ── Corrida ──────────────────────────────────────────────────────────────────
 const client = new Client(config)
 
-await client.connect()
+try {
+  await client.connect()
+} catch (error) {
+  console.error(`\n✗ No se pudo conectar a "${refEsperado}".`)
+  console.error(`  ${error.code ?? 'sin código'}: ${error.message}`)
+  console.error(`  Conexión (enmascarada): ${descripcion}`)
+
+  if (error.code === '28P01') {
+    // El pooler de Supabase (Supavisor) usa postgres.<ref> solo para enrutar y
+    // después conecta upstream como `postgres`, así que el error habla de un
+    // usuario que vos no escribiste. No es que falte el sufijo: si el ruteo
+    // hubiera fallado, ni siquiera se llegaría a autenticar.
+    console.error('\n  El mensaje dice user "postgres" aunque tu PGURL diga postgres.<ref>:')
+    console.error('  el pooler enruta por el sufijo y después conecta upstream como postgres.')
+    console.error('  Que llegue a autenticar significa que el ruteo funcionó: lo que no coincide')
+    console.error('  es la password.\n')
+    console.error('  Revisá que sea la del proyecto correcto — es fácil pegar la de otro proyecto — o')
+    console.error('  generá una nueva en Settings → Database → Reset database password.')
+  } else if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+    console.error('\n  No se resolvió el host. Revisá la región del pooler en la connection string.')
+  }
+  console.error('')
+  process.exit(1)
+}
 
 const { rows: [info] } = await client.query('SELECT current_database() AS db, version() AS v')
 console.log(`\nConexión:  ${descripcion}`)
