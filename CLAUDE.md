@@ -970,5 +970,43 @@ Las marcas pueden crear campañas para incentivar a los comercios a participar a
 
 ---
 
-*Última actualización: Abril 2026*
-*Versión del documento: 1.2*
+*Última actualización: Septiembre 2026*
+*Versión del documento: 1.3*
+
+---
+
+## Estado al 7/9/2026 — retomando después de 5 meses
+
+Cerrado en esta sesión:
+- CHECK de 'terminada' en gondolero_distri_solicitudes y fixer_repo_solicitudes
+  (bug de desvinculación abierto desde abril)
+- search_path fijo en get_tipo_actor, get_distri_id, get_marca_id
+- Registro público cerrado en Supabase (Authentication → Sign In / Providers)
+- handle_new_user() con whitelist: solo acepta 'gondolero' desde metadata.
+  Cerraba una vulnerabilidad crítica: con la anon key cualquiera podía
+  registrarse como admin.
+- types/database.ts generado con tipos reales (3230 líneas)
+- Bug de campos tipo 'foto': la imagen se guardaba como URL de texto en
+  foto_respuestas en lugar de generar su propia fila en fotos.
+  Resuelto en 3 etapas + columna fotos.campo_id (migración 045).
+
+Documentos de referencia:
+- docs/schema-real-2026-09.md — fuente de verdad de la DB
+- docs/AUDITORIA-2026-09.md — auditoría completa, con Top 10 de prioridades
+
+Próximos pasos, en orden:
+1. Ambiente dev/prod separado (proyecto Supabase gondolapp-dev + rama develop)
+2. Seis migraciones faltantes (ver auditoría sección 2) — son también el
+   único backup del schema, el proyecto está en plan Free sin backups
+3. Bugs abiertos:
+   - draft-actions.ts hace APPEND de bloques al republicar sin borrar los
+     anteriores: cada edición duplica bloques
+   - misión con una foto rechazada queda en limbo: actualizarEstadoMision
+     solo resuelve si TODAS están aprobadas, el bounty queda retenido
+     para siempre
+   - el campo 'orden' no está en el select de captura/page.tsx: el sort
+     de bloques es un no-op
+4. Eliminar la foto obligatoria del bloque (que la misión sea exactamente
+   lo que el creador configuró). Se intentó en abril, terminó en rollback.
+   Hacerlo recién con ambiente de dev.
+5. RLS por fases: empezar por crear get_repositora_id()
