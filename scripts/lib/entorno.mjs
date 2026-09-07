@@ -89,6 +89,40 @@ function candidatos() {
     .filter(Boolean)
 }
 
+/** Nombre del entorno. Lo desconocido se trata como producción. */
+export function nombreDeRef(ref) {
+  return ENTORNOS_CONOCIDOS[ref] ?? 'DESCONOCIDO'
+}
+
+/**
+ * Credenciales del archivo .env*.local que corresponde a ese ref, o null.
+ * Lo usa conexion.mjs para encontrar la connection string sin que haya que
+ * exportar PGURL a mano en cada shell.
+ */
+export function credencialesDeRef(ref) {
+  const c = candidatos().find((x) => x.refUrl === ref || x.refJwt === ref)
+  if (!c) return null
+  return { archivo: c.archivo, vars: leerEnv(join(RAIZ, c.archivo)) }
+}
+
+/**
+ * Corta si el ref es de producción y no está GONDOLAPP_PROD=1.
+ * Fuente única del criterio, compartida por entorno.mjs y conexion.mjs.
+ */
+export function exigirConfirmacionProd(ref, accion = 'Esta operación escribe datos') {
+  const nombre = nombreDeRef(ref)
+  if (nombre === 'dev') return nombre
+  if (process.env.GONDOLAPP_PROD !== '1') {
+    salirCon(
+      `${accion} y "${ref}" es ${nombre === 'DESCONOCIDO' ? 'un proyecto no reconocido (se trata como PRODUCCIÓN)' : 'PRODUCCIÓN'}.\n\n` +
+      '  Para operar sobre producción hace falta un segundo acto deliberado:\n\n' +
+      `    GONDOLAPP_PROD=1 <comando> --ref ${ref}\n\n` +
+      '  Si querías dev, corregí el --ref.'
+    )
+  }
+  return nombre
+}
+
 /**
  * Resuelve contra qué proyecto va a trabajar el script, o corta.
  * Devuelve { ref, nombre, archivo, url, serviceKey }.
