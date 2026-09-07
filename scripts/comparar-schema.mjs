@@ -30,36 +30,19 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
+import { resolverConexion, cargarClient } from './lib/conexion.mjs'
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DUMP_REAL = join(RAIZ, 'docs', 'schema-real-2026-09.md')
 
-function salirCon(mensaje) {
-  console.error(`\n✗ ${mensaje}\n`)
-  process.exit(1)
-}
-
-// ── Validación de entrada (misma guarda que aplicar-migraciones.mjs) ─────────
-const pgurl = process.env.PGURL
-if (!pgurl) salirCon("Falta PGURL.\n  export PGURL='postgresql://postgres.<ref>:<password>@<host>:5432/postgres'")
-
-const indiceRef = process.argv.indexOf('--ref')
-const refEsperado = indiceRef !== -1 ? process.argv[indiceRef + 1] : null
-if (!refEsperado) salirCon('Falta --ref <project-ref>.')
-if (!pgurl.includes(refEsperado)) {
-  salirCon(`PGURL no apunta al proyecto "${refEsperado}". Verificá contra cuál base estás corriendo esto.`)
-}
+// ── Conexión y guardas (compartidas con aplicar-migraciones.mjs) ─────────────
+const { config, refEsperado, descripcion } = resolverConexion(process.argv)
 
 const indiceOut = process.argv.indexOf('--out')
 const dirSalida = indiceOut !== -1 ? process.argv[indiceOut + 1] : join(tmpdir(), 'gondolapp-schema-diff')
 mkdirSync(dirSalida, { recursive: true })
 
-let Client
-try {
-  ;({ Client } = await import('pg'))
-} catch {
-  salirCon('Falta el paquete `pg`:\n  npm install --no-save pg')
-}
+const Client = await cargarClient()
 
 // ── Las secciones tabulares del dump ─────────────────────────────────────────
 const SECCIONES = [
@@ -129,14 +112,10 @@ function tablasDelDump(texto, tituloSeccion) {
 }
 
 // ── Corrida ──────────────────────────────────────────────────────────────────
-const client = new Client({
-  connectionString: pgurl,
-  ssl: process.env.PGSSLROOTCERT
-    ? { ca: readFileSync(process.env.PGSSLROOTCERT, 'utf8') }
-    : { rejectUnauthorized: false },
-})
+const client = new Client(config)
 await client.connect()
-console.log(`\nProyecto: ${refEsperado}`)
+console.log(`\nConexión: ${descripcion}`)
+console.log(`Proyecto: ${refEsperado}`)
 
 const dumpReal = readFileSync(DUMP_REAL, 'utf8')
 const fecha = new Date().toISOString().slice(0, 10)

@@ -25,44 +25,13 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { salirCon, resolverConexion, cargarClient } from './lib/conexion.mjs'
 
 const DIR_MIGRACIONES = join(dirname(fileURLToPath(import.meta.url)), '..', 'supabase', 'migrations')
 
-function salirCon(mensaje) {
-  console.error(`\n✗ ${mensaje}\n`)
-  process.exit(1)
-}
-
-// ── Validación de entrada ────────────────────────────────────────────────────
-const pgurl = process.env.PGURL
-if (!pgurl) {
-  salirCon(
-    'Falta la variable de entorno PGURL.\n' +
-    "  export PGURL='postgresql://postgres.<ref>:<password>@<host>:5432/postgres'\n" +
-    '  (usar el Session pooler o la conexión directa — NO el Transaction pooler de 6543,\n' +
-    '   que no maneja bien multi-sentencia ni DDL con estado)'
-  )
-}
-
-const indiceRef = process.argv.indexOf('--ref')
-const refEsperado = indiceRef !== -1 ? process.argv[indiceRef + 1] : null
-if (!refEsperado) {
-  salirCon('Falta --ref <project-ref>. Es obligatorio: evita correr esto sobre el proyecto equivocado.')
-}
-if (!pgurl.includes(refEsperado)) {
-  salirCon(
-    `PGURL no apunta al proyecto "${refEsperado}".\n` +
-    '  La connection string no contiene ese ref. Verificá cuál proyecto estás por tocar\n' +
-    '  antes de seguir: esto aplica DDL y no es reversible.'
-  )
-}
-
-let Client
-try {
-  ;({ Client } = await import('pg'))
-} catch {
-  salirCon('Falta el paquete `pg`. Instalalo sin tocar el repo:\n  npm install --no-save pg')
-}
+// ── Conexión y guardas ───────────────────────────────────────────────────────
+const { config, refEsperado, descripcion, verificaSsl } = resolverConexion(process.argv)
+const Client = await cargarClient()
 
 // ── Archivos, en orden lexicográfico ─────────────────────────────────────────
 const archivos = readdirSync(DIR_MIGRACIONES).filter((f) => f.endsWith('.sql')).sort()
@@ -93,22 +62,16 @@ function contextoDelError(sql, position) {
 }
 
 // ── Corrida ──────────────────────────────────────────────────────────────────
-const client = new Client({
-  connectionString: pgurl,
-  // Supabase exige TLS. Sin un root cert a mano, no se verifica la cadena.
-  // Para verificarla, exportar PGSSLROOTCERT con la ruta al certificado.
-  ssl: process.env.PGSSLROOTCERT
-    ? { ca: readFileSync(process.env.PGSSLROOTCERT, 'utf8') }
-    : { rejectUnauthorized: false },
-})
+const client = new Client(config)
 
 await client.connect()
 
 const { rows: [info] } = await client.query('SELECT current_database() AS db, version() AS v')
-console.log(`\nBase:      ${info.db}`)
+console.log(`\nConexión:  ${descripcion}`)
+console.log(`Base:      ${info.db}`)
 console.log(`Servidor:  ${info.v.split(',')[0]}`)
 console.log(`Proyecto:  ${refEsperado}`)
-if (!process.env.PGSSLROOTCERT) console.log('SSL:       sin verificación de cadena (definí PGSSLROOTCERT para verificarla)')
+if (!verificaSsl) console.log('SSL:       sin verificación de cadena (definí PGSSLROOTCERT para verificarla)')
 console.log(`Archivos:  ${archivos.length}\n`)
 
 let aplicados = 0
