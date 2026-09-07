@@ -1187,3 +1187,27 @@ puebla. Sin ellas el filtrado de campañas por zona queda inerte — los gondole
 ven todas las campañas en vez de las de su ciudad. No bloquea la operación
 (el filtro es fail-open y la UI avisa), pero la segmentación no funciona hasta
 que se repueblen las dos.
+
+### Nunca canalizar un comando destructivo o largo
+
+Aprendido el 7/9/2026 aplicando las migraciones a dev:
+
+```bash
+# MAL — head cierra el pipe y le manda SIGPIPE a node, que muere a mitad
+node scripts/aplicar-migraciones.mjs --ref <ref> --reset --grants | head -45
+
+# BIEN — redirigir a archivo y leerlo después
+node scripts/aplicar-migraciones.mjs --ref <ref> --reset --grants > /tmp/corrida.log 2>&1
+cat /tmp/corrida.log
+```
+
+Con el pipe, el `--reset` alcanzó a borrar el esquema y la corrida murió cerca
+del archivo 37 de 57. La base quedó a medias y sin GRANTs.
+
+Peor que el corte fue lo que vino después: **el log truncado no dice dónde se
+detuvo la ejecución, solo dónde se dejó de mostrar.** Reanudar con `--desde`
+tomando el último archivo visible del log falla con errores confusos —
+`policy ... already exists`— porque en realidad se habían aplicado unos cuantos
+más. Si una corrida se corta, el punto de reanudación se determina
+**consultando la base**, no leyendo el log. Y si la base es descartable, lo
+determinista es un `--reset` limpio y volver a empezar.

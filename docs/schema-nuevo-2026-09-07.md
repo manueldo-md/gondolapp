@@ -98,6 +98,10 @@
 | comercios | created_at | timestamp with time zone | YES | now() |
 | comercios | updated_at | timestamp with time zone | YES | now() |
 | comercios | localidad_id | integer | YES | null |
+| comercios | estado | text | YES | 'activo'::text |
+| comercios | telefono | text | YES | null |
+| comercios | encargado | text | YES | null |
+| comercios | campana_id | uuid | YES | null |
 | comercios_checks | id | uuid | NO | gen_random_uuid() |
 | comercios_checks | comercio_id | uuid | YES | null |
 | comercios_checks | gondolero_id | uuid | YES | null |
@@ -112,6 +116,7 @@
 | configuracion | tipo | text | YES | 'numero'::text |
 | configuracion | seccion | text | YES | 'operacion'::text |
 | configuracion | updated_by | uuid | YES | null |
+| configuracion | id | uuid | NO | uuid_generate_v4() |
 | departamentos | id | integer | NO | nextval('departamentos_id_seq'::regclass) |
 | departamentos | nombre | text | NO | null |
 | departamentos | provincia_id | integer | NO | null |
@@ -396,9 +401,9 @@
 | tabla | conname | definicion |
 | --- | --- | --- |
 | alertas_ignoradas | alertas_ignoradas_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) |
-| alertas_ignoradas | alertas_ignoradas_distri_id_tipo_referencia_id_key | UNIQUE (distri_id, tipo, referencia_id) |
 | alertas_ignoradas | alertas_ignoradas_pkey | PRIMARY KEY (id) |
 | alertas_ignoradas | alertas_ignoradas_tipo_check | CHECK ((tipo = ANY (ARRAY['quiebre_stock'::text, 'sin_visita'::text, 'campana_riesgo'::text, 'gondolero_inactivo'::text]))) |
+| alertas_ignoradas | alertas_ignoradas_unique | UNIQUE (distri_id, tipo, referencia_id) |
 | bloque_campos | bloque_campos_bloque_id_fkey | FOREIGN KEY (bloque_id) REFERENCES bloques_foto(id) ON DELETE CASCADE |
 | bloque_campos | bloque_campos_pkey | PRIMARY KEY (id) |
 | bloque_campos | bloque_campos_tipo_check | CHECK ((tipo = ANY (ARRAY['seleccion_multiple'::text, 'seleccion_unica'::text, 'binaria'::text, 'numero'::text, 'texto'::text, 'foto'::text]))) |
@@ -433,6 +438,8 @@
 | canjes | canjes_premio_check | CHECK ((premio = ANY (ARRAY['nafta_ypf'::text, 'giftcard_ml'::text, 'credito_celular'::text, 'transferencia'::text]))) |
 | canjes | canjes_procesado_por_fkey | FOREIGN KEY (procesado_por) REFERENCES profiles(id) |
 | canjes | canjes_puntos_check | CHECK ((puntos > 0)) |
+| comercios | comercios_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) |
+| comercios | comercios_estado_check | CHECK ((estado = ANY (ARRAY['activo'::text, 'pendiente_validacion'::text, 'rechazado'::text]))) |
 | comercios | comercios_localidad_id_fkey | FOREIGN KEY (localidad_id) REFERENCES localidades(id) |
 | comercios | comercios_pkey | PRIMARY KEY (id) |
 | comercios | comercios_registrado_por_fkey | FOREIGN KEY (registrado_por) REFERENCES profiles(id) |
@@ -443,10 +450,12 @@
 | comercios_checks | comercios_checks_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) |
 | comercios_checks | comercios_checks_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) |
 | comercios_checks | comercios_checks_pkey | PRIMARY KEY (id) |
-| configuracion | configuracion_pkey | PRIMARY KEY (clave) |
+| configuracion | configuracion_clave_key | UNIQUE (clave) |
+| configuracion | configuracion_pkey | PRIMARY KEY (id) |
 | configuracion | configuracion_seccion_check | CHECK ((seccion = ANY (ARRAY['fotos'::text, 'gps'::text, 'economia'::text, 'niveles'::text, 'operacion'::text, 'compresion'::text]))) |
 | configuracion | configuracion_tipo_check | CHECK ((tipo = ANY (ARRAY['numero'::text, 'booleano'::text, 'texto'::text]))) |
 | configuracion | configuracion_updated_by_fkey | FOREIGN KEY (updated_by) REFERENCES profiles(id) |
+| departamentos | departamentos_nombre_provincia_id_key | UNIQUE (nombre, provincia_id) |
 | departamentos | departamentos_pkey | PRIMARY KEY (id) |
 | departamentos | departamentos_provincia_id_fkey | FOREIGN KEY (provincia_id) REFERENCES provincias(id) ON DELETE CASCADE |
 | distri_repo_relaciones | distri_repo_relaciones_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) |
@@ -495,6 +504,7 @@
 | gondolero_distri_solicitudes | gondolero_distri_solicitudes_estado_check | CHECK ((estado = ANY (ARRAY['pendiente'::text, 'aprobada'::text, 'rechazada'::text, 'terminada'::text]))) |
 | gondolero_distri_solicitudes | gondolero_distri_solicitudes_gondolero_id_distri_id_key | UNIQUE (gondolero_id, distri_id) |
 | gondolero_distri_solicitudes | gondolero_distri_solicitudes_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) ON DELETE CASCADE |
+| gondolero_distri_solicitudes | gondolero_distri_solicitudes_iniciado_por_check | CHECK ((iniciado_por = ANY (ARRAY['gondolero'::text, 'distri'::text]))) |
 | gondolero_distri_solicitudes | gondolero_distri_solicitudes_pkey | PRIMARY KEY (id) |
 | gondolero_localidades | gondolero_localidades_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) ON DELETE CASCADE |
 | gondolero_localidades | gondolero_localidades_localidad_id_fkey | FOREIGN KEY (localidad_id) REFERENCES localidades(id) ON DELETE CASCADE |
@@ -507,6 +517,7 @@
 | gondolero_zonas | gondolero_zonas_pkey | PRIMARY KEY (gondolero_id, zona_id) |
 | gondolero_zonas | gondolero_zonas_zona_id_fkey | FOREIGN KEY (zona_id) REFERENCES zonas(id) ON DELETE CASCADE |
 | localidades | localidades_departamento_id_fkey | FOREIGN KEY (departamento_id) REFERENCES departamentos(id) ON DELETE CASCADE |
+| localidades | localidades_nombre_departamento_id_key | UNIQUE (nombre, departamento_id) |
 | localidades | localidades_pkey | PRIMARY KEY (id) |
 | logros | logros_clave_key | UNIQUE (clave) |
 | logros | logros_pkey | PRIMARY KEY (id) |
@@ -576,6 +587,7 @@
 | profiles | profiles_puntos_disponibles_check | CHECK ((puntos_disponibles >= 0)) |
 | profiles | profiles_repositora_id_fkey | FOREIGN KEY (repositora_id) REFERENCES repositoras(id) |
 | profiles | profiles_tipo_actor_check | CHECK ((tipo_actor = ANY (ARRAY['gondolero'::text, 'fixer'::text, 'distribuidora'::text, 'marca'::text, 'admin'::text, 'repositora'::text]))) |
+| provincias | provincias_nombre_key | UNIQUE (nombre) |
 | provincias | provincias_pkey | PRIMARY KEY (id) |
 | relacion_reinicio_solicitudes | relacion_reinicio_solicitudes_estado_check | CHECK ((estado = ANY (ARRAY['pendiente'::text, 'aceptada'::text, 'rechazada'::text]))) |
 | relacion_reinicio_solicitudes | relacion_reinicio_solicitudes_pkey | PRIMARY KEY (id) |
@@ -595,18 +607,10 @@
 
 | tablename | policyname | cmd | roles | qual | with_check |
 | --- | --- | --- | --- | --- | --- |
-| alertas_ignoradas | alertas_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id
-   FROM profiles
-  WHERE (profiles.id = auth.uid()))) | null |
+| alertas_ignoradas | alertas_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id FROM profiles WHERE (profiles.id = auth.uid()))) | null |
 | bloque_campos | bloque_campos_insert | INSERT | {public} | null | (auth.uid() IS NOT NULL) |
 | bloque_campos | bloque_campos_select | SELECT | {public} | (auth.uid() IS NOT NULL) | null |
-| bloques_foto | bloques_foto_select | SELECT | {public} | (((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = bloques_foto.campana_id) AND (c.estado = 'activa'::text))))) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = bloques_foto.campana_id) AND (c.distri_id = get_distri_id()))))) OR ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = bloques_foto.campana_id) AND (c.marca_id = get_marca_id()))))) OR (get_tipo_actor() = 'admin'::text)) | null |
+| bloques_foto | bloques_foto_select | SELECT | {public} | (((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = bloques_foto.campana_id) AND (c.estado = 'activa'::text))))) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = bloques_foto.campana_id) AND (c.distri_id = get_distri_id()))))) OR ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = bloques_foto.campana_id) AND (c.marca_id = get_marca_id()))))) OR (get_tipo_actor() = 'admin'::text)) | null |
 | campana_localidades | service_role_all | ALL | {public} | true | null |
 | campana_tokens | service_role_all | ALL | {public} | true | null |
 | campana_zonas | campana_zonas_select | SELECT | {public} | (auth.uid() IS NOT NULL) | null |
@@ -623,21 +627,18 @@
 | canjes | canjes_update_admin | UPDATE | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | comercios | comercios_insert | INSERT | {public} | null | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (registrado_por = auth.uid())) |
 | comercios | comercios_select | SELECT | {public} | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text, 'admin'::text])) OR (get_tipo_actor() = 'distribuidora'::text)) | null |
-| comercios | comercios_update_distri_admin | UPDATE | {public} | ((get_tipo_actor() = 'admin'::text) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1
-   FROM profiles p
-  WHERE ((p.id = comercios.registrado_por) AND (p.distri_id = get_distri_id())))))) | null |
+| comercios | comercios_update_distri_admin | UPDATE | {public} | ((get_tipo_actor() = 'admin'::text) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = comercios.registrado_por) AND (p.distri_id = get_distri_id())))))) | null |
 | comercios_checks | service_role_all | ALL | {public} | true | null |
+| configuracion | configuracion_admin | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
 | configuracion | configuracion_select_admin | SELECT | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | configuracion | configuracion_update_admin | UPDATE | {public} | (get_tipo_actor() = 'admin'::text) | null |
-| departamentos | Lectura pública de departamentos | SELECT | {public} | true | null |
+| departamentos | public_read_departamentos | SELECT | {public} | true | null |
 | distri_repo_relaciones | service_role_all | ALL | {public} | true | null |
 | distri_repo_tokens | service_role_all | ALL | {public} | true | null |
 | distribuidoras | distribuidoras_select_gondolero | SELECT | {public} | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (validada = true)) | null |
 | distribuidoras | distribuidoras_select_own | SELECT | {public} | ((id = get_distri_id()) OR (get_tipo_actor() = 'admin'::text)) | null |
 | distribuidoras | distribuidoras_update_own | UPDATE | {public} | ((id = get_distri_id()) AND (get_tipo_actor() = 'distribuidora'::text)) | null |
-| errores_reportados | errores_admin | ALL | {public} | (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
+| errores_reportados | errores_admin | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
 | errores_reportados | errores_insert | INSERT | {public} | null | (auth.uid() IS NOT NULL) |
 | fixer_distri_solicitudes | service_role_all | ALL | {public} | true | null |
 | fixer_invitacion_tokens | service_role_all | ALL | {public} | true | null |
@@ -646,71 +647,40 @@
 | foto_respuestas | foto_respuestas_select | SELECT | {public} | (auth.uid() IS NOT NULL) | null |
 | fotos | fotos_admin | ALL | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | fotos | fotos_insert_gondolero | INSERT | {public} | null | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (gondolero_id = auth.uid())) |
-| fotos | fotos_select_distri | SELECT | {public} | ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = fotos.campana_id) AND (c.distri_id = get_distri_id()))))) | null |
+| fotos | fotos_select_distri | SELECT | {public} | ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = fotos.campana_id) AND (c.distri_id = get_distri_id()))))) | null |
 | fotos | fotos_select_gondolero | SELECT | {public} | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (gondolero_id = auth.uid())) | null |
-| fotos | fotos_select_marca | SELECT | {public} | ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = fotos.campana_id) AND (c.marca_id = get_marca_id()))))) | null |
-| fotos | fotos_update_distri_marca | UPDATE | {public} | (((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = fotos.campana_id) AND (c.distri_id = get_distri_id()))))) OR ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = fotos.campana_id) AND (c.marca_id = get_marca_id()))))) OR (get_tipo_actor() = 'admin'::text)) | null |
-| gondolero_distri_solicitudes | solicitudes_admin | ALL | {public} | (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
-| gondolero_distri_solicitudes | solicitudes_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id
-   FROM profiles
-  WHERE (profiles.id = auth.uid()))) | null |
+| fotos | fotos_select_marca | SELECT | {public} | ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = fotos.campana_id) AND (c.marca_id = get_marca_id()))))) | null |
+| fotos | fotos_update_distri_marca | UPDATE | {public} | (((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = fotos.campana_id) AND (c.distri_id = get_distri_id()))))) OR ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = fotos.campana_id) AND (c.marca_id = get_marca_id()))))) OR (get_tipo_actor() = 'admin'::text)) | null |
+| gondolero_distri_solicitudes | solicitudes_admin | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
+| gondolero_distri_solicitudes | solicitudes_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id FROM profiles WHERE (profiles.id = auth.uid()))) | null |
 | gondolero_distri_solicitudes | solicitudes_gondolero | ALL | {public} | (gondolero_id = auth.uid()) | null |
 | gondolero_localidades | service_role_all | ALL | {public} | true | null |
 | gondolero_logros | gondolero_logros_insert | INSERT | {public} | null | true |
-| gondolero_logros | gondolero_logros_select | SELECT | {public} | ((gondolero_id = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text))))) | null |
+| gondolero_logros | gondolero_logros_select | SELECT | {public} | ((gondolero_id = auth.uid()) OR (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text))))) | null |
 | gondolero_logros | gondolero_logros_update | UPDATE | {public} | (gondolero_id = auth.uid()) | null |
 | gondolero_zonas | gondolero_zonas_delete | DELETE | {public} | (gondolero_id = auth.uid()) | null |
 | gondolero_zonas | gondolero_zonas_insert | INSERT | {public} | null | (gondolero_id = auth.uid()) |
 | gondolero_zonas | gondolero_zonas_select | SELECT | {public} | ((gondolero_id = auth.uid()) OR (get_tipo_actor() = 'admin'::text)) | null |
-| localidades | Lectura pública de localidades | SELECT | {public} | true | null |
+| localidades | public_read_localidades | SELECT | {public} | true | null |
 | logros | logros_select | SELECT | {public} | (auth.uid() IS NOT NULL) | null |
-| marca_distri_relaciones | admin_gestiona_relaciones | ALL | {public} | (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
-| marca_distri_relaciones | marca_ve_sus_relaciones | SELECT | {public} | ((EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.marca_id = marca_distri_relaciones.marca_id)))) OR (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.distri_id = marca_distri_relaciones.distri_id))))) | null |
-| marca_distri_tokens | admin_gestiona_tokens_marca_distri | ALL | {public} | (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
-| marca_distri_tokens | token_publico_lectura | SELECT | {public} | true | null |
+| marca_distri_relaciones | marca_ve_sus_relaciones | SELECT | {public} | ((EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.marca_id = marca_distri_relaciones.marca_id)))) OR (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.distri_id = marca_distri_relaciones.distri_id))))) | null |
+| marca_distri_relaciones | relaciones_admin | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
+| marca_distri_relaciones | relaciones_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id FROM profiles WHERE (profiles.id = auth.uid()))) | null |
+| marca_distri_relaciones | relaciones_marca | ALL | {public} | (marca_id = ( SELECT profiles.marca_id FROM profiles WHERE (profiles.id = auth.uid()))) | null |
+| marca_distri_tokens | admin_gestiona_tokens_marca_distri | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
+| marca_distri_tokens | tokens_marca_distri_insert | INSERT | {public} | null | (auth.uid() IS NOT NULL) |
+| marca_distri_tokens | tokens_marca_distri_public | SELECT | {public} | true | null |
 | marca_repo_relaciones | service_role_all | ALL | {public} | true | null |
 | marca_repo_tokens | service_role_all | ALL | {public} | true | null |
 | marcas | marcas_select_own | SELECT | {public} | ((id = get_marca_id()) OR (get_tipo_actor() = 'admin'::text)) | null |
 | marcas | marcas_update_own | UPDATE | {public} | ((id = get_marca_id()) AND (get_tipo_actor() = 'marca'::text)) | null |
-| mensajes_campana | mensajes_select | SELECT | {public} | ((EXISTS ( SELECT 1
-   FROM participaciones p
-  WHERE ((p.campana_id = mensajes_campana.campana_id) AND (p.gondolero_id = auth.uid())))) OR ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = mensajes_campana.campana_id) AND (c.marca_id = get_marca_id()))))) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1
-   FROM campanas c
-  WHERE ((c.id = mensajes_campana.campana_id) AND (c.distri_id = get_distri_id()))))) OR (get_tipo_actor() = 'admin'::text)) | null |
+| mensajes_campana | mensajes_select | SELECT | {public} | ((EXISTS ( SELECT 1 FROM participaciones p WHERE ((p.campana_id = mensajes_campana.campana_id) AND (p.gondolero_id = auth.uid())))) OR ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = mensajes_campana.campana_id) AND (c.marca_id = get_marca_id()))))) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = mensajes_campana.campana_id) AND (c.distri_id = get_distri_id()))))) OR (get_tipo_actor() = 'admin'::text)) | null |
 | mision_respuestas | service_role_all | ALL | {service_role} | true | true |
 | misiones | service_role_all | ALL | {public} | true | null |
 | movimientos_puntos | movimientos_puntos_select | SELECT | {public} | ((gondolero_id = auth.uid()) OR (get_tipo_actor() = 'admin'::text)) | null |
 | movimientos_tokens | movimientos_tokens_select_distri | SELECT | {public} | (((actor_tipo = 'distribuidora'::text) AND (actor_id = get_distri_id()) AND (get_tipo_actor() = 'distribuidora'::text)) OR ((actor_tipo = 'marca'::text) AND (actor_id = get_marca_id()) AND (get_tipo_actor() = 'marca'::text)) OR (get_tipo_actor() = 'admin'::text)) | null |
-| notificaciones | actor_ve_sus_notificaciones | SELECT | {public} | ((actor_id = auth.uid()) OR (actor_id IN ( SELECT profiles.distri_id
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.distri_id IS NOT NULL)))) OR (actor_id IN ( SELECT profiles.marca_id
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.marca_id IS NOT NULL))))) | null |
-| notificaciones | admin_ve_notificaciones_admin | SELECT | {public} | ((actor_tipo = 'admin'::text) AND (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text))))) | null |
+| notificaciones | actor_ve_sus_notificaciones | SELECT | {public} | ((actor_id = auth.uid()) OR (actor_id IN ( SELECT profiles.distri_id FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.distri_id IS NOT NULL)))) OR (actor_id IN ( SELECT profiles.marca_id FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.marca_id IS NOT NULL))))) | null |
+| notificaciones | admin_ve_notificaciones_admin | SELECT | {public} | ((actor_tipo = 'admin'::text) AND (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text))))) | null |
 | notificaciones | gondolero_ve_sus_notificaciones | SELECT | {public} | (gondolero_id = auth.uid()) | null |
 | notificaciones | notificaciones_update_leida | UPDATE | {public} | (gondolero_id = auth.uid()) | (gondolero_id = auth.uid()) |
 | participaciones | participaciones_insert | INSERT | {public} | null | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (gondolero_id = auth.uid())) |
@@ -720,26 +690,13 @@
 | profiles | profiles_insert | INSERT | {public} | null | (id = auth.uid()) |
 | profiles | profiles_select | SELECT | {public} | ((id = auth.uid()) OR (get_tipo_actor() = 'admin'::text)) | null |
 | profiles | profiles_select_distri | SELECT | {public} | ((get_tipo_actor() = 'distribuidora'::text) AND (distri_id = get_distri_id())) | null |
-| profiles | profiles_select_marca | SELECT | {public} | ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1
-   FROM (participaciones p
-     JOIN campanas c ON ((c.id = p.campana_id)))
-  WHERE ((p.gondolero_id = profiles.id) AND (c.marca_id = get_marca_id()))))) | null |
+| profiles | profiles_select_marca | SELECT | {public} | ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1 FROM (participaciones p JOIN campanas c ON ((c.id = p.campana_id))) WHERE ((p.gondolero_id = profiles.id) AND (c.marca_id = get_marca_id()))))) | null |
 | profiles | profiles_update | UPDATE | {public} | (id = auth.uid()) | null |
-| provincias | Lectura pública de provincias | SELECT | {public} | true | null |
-| relacion_reinicio_solicitudes | actores_ven_reinicio_sus_relaciones | SELECT | {public} | (EXISTS ( SELECT 1
-   FROM marca_distri_relaciones mdr
-  WHERE ((mdr.id = relacion_reinicio_solicitudes.relacion_id) AND ((EXISTS ( SELECT 1
-           FROM profiles p
-          WHERE ((p.id = auth.uid()) AND (p.marca_id = mdr.marca_id)))) OR (EXISTS ( SELECT 1
-           FROM profiles p
-          WHERE ((p.id = auth.uid()) AND (p.distri_id = mdr.distri_id)))))))) | null |
-| relacion_reinicio_solicitudes | admin_gestiona_solicitudes_reinicio | ALL | {public} | (EXISTS ( SELECT 1
-   FROM profiles
-  WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
+| provincias | public_read_provincias | SELECT | {public} | true | null |
+| relacion_reinicio_solicitudes | actores_ven_reinicio_sus_relaciones | SELECT | {public} | (EXISTS ( SELECT 1 FROM marca_distri_relaciones mdr WHERE ((mdr.id = relacion_reinicio_solicitudes.relacion_id) AND ((EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = auth.uid()) AND (p.marca_id = mdr.marca_id)))) OR (EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = auth.uid()) AND (p.distri_id = mdr.distri_id)))))))) | null |
+| relacion_reinicio_solicitudes | admin_gestiona_solicitudes_reinicio | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
 | repositoras | service_role_all | ALL | {public} | true | null |
-| vinculacion_tokens | tokens_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id
-   FROM profiles
-  WHERE (profiles.id = auth.uid()))) | null |
+| vinculacion_tokens | tokens_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id FROM profiles WHERE (profiles.id = auth.uid()))) | null |
 | vinculacion_tokens | tokens_public_select | SELECT | {public} | true | null |
 | zonas | zonas_admin_all | ALL | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | zonas | zonas_select | SELECT | {public} | true | null |
@@ -748,8 +705,8 @@
 
 | tablename | indexname | indexdef |
 | --- | --- | --- |
-| alertas_ignoradas | alertas_ignoradas_distri_id_tipo_referencia_id_key | CREATE UNIQUE INDEX alertas_ignoradas_distri_id_tipo_referencia_id_key ON public.alertas_ignoradas USING btree (distri_id, tipo, referencia_id) |
 | alertas_ignoradas | alertas_ignoradas_pkey | CREATE UNIQUE INDEX alertas_ignoradas_pkey ON public.alertas_ignoradas USING btree (id) |
+| alertas_ignoradas | alertas_ignoradas_unique | CREATE UNIQUE INDEX alertas_ignoradas_unique ON public.alertas_ignoradas USING btree (distri_id, tipo, referencia_id) |
 | bloque_campos | bloque_campos_pkey | CREATE UNIQUE INDEX bloque_campos_pkey ON public.bloque_campos USING btree (id) |
 | bloques_foto | bloques_foto_pkey | CREATE UNIQUE INDEX bloques_foto_pkey ON public.bloques_foto USING btree (id) |
 | campana_localidades | campana_localidades_campana_id_localidad_id_key | CREATE UNIQUE INDEX campana_localidades_campana_id_localidad_id_key ON public.campana_localidades USING btree (campana_id, localidad_id) |
@@ -765,7 +722,9 @@
 | comercios | idx_comercios_lat_lng | CREATE INDEX idx_comercios_lat_lng ON public.comercios USING btree (lat, lng) |
 | comercios_checks | comercios_checks_comercio_id_gondolero_id_key | CREATE UNIQUE INDEX comercios_checks_comercio_id_gondolero_id_key ON public.comercios_checks USING btree (comercio_id, gondolero_id) |
 | comercios_checks | comercios_checks_pkey | CREATE UNIQUE INDEX comercios_checks_pkey ON public.comercios_checks USING btree (id) |
-| configuracion | configuracion_pkey | CREATE UNIQUE INDEX configuracion_pkey ON public.configuracion USING btree (clave) |
+| configuracion | configuracion_clave_key | CREATE UNIQUE INDEX configuracion_clave_key ON public.configuracion USING btree (clave) |
+| configuracion | configuracion_pkey | CREATE UNIQUE INDEX configuracion_pkey ON public.configuracion USING btree (id) |
+| departamentos | departamentos_nombre_provincia_id_key | CREATE UNIQUE INDEX departamentos_nombre_provincia_id_key ON public.departamentos USING btree (nombre, provincia_id) |
 | departamentos | departamentos_pkey | CREATE UNIQUE INDEX departamentos_pkey ON public.departamentos USING btree (id) |
 | departamentos | idx_departamentos_provincia | CREATE INDEX idx_departamentos_provincia ON public.departamentos USING btree (provincia_id) |
 | distri_repo_relaciones | distri_repo_relaciones_distri_id_repositora_id_key | CREATE UNIQUE INDEX distri_repo_relaciones_distri_id_repositora_id_key ON public.distri_repo_relaciones USING btree (distri_id, repositora_id) |
@@ -798,6 +757,7 @@
 | gondolero_logros | gondolero_logros_pkey | CREATE UNIQUE INDEX gondolero_logros_pkey ON public.gondolero_logros USING btree (id) |
 | gondolero_zonas | gondolero_zonas_pkey | CREATE UNIQUE INDEX gondolero_zonas_pkey ON public.gondolero_zonas USING btree (gondolero_id, zona_id) |
 | localidades | idx_localidades_departamento | CREATE INDEX idx_localidades_departamento ON public.localidades USING btree (departamento_id) |
+| localidades | localidades_nombre_departamento_id_key | CREATE UNIQUE INDEX localidades_nombre_departamento_id_key ON public.localidades USING btree (nombre, departamento_id) |
 | localidades | localidades_pkey | CREATE UNIQUE INDEX localidades_pkey ON public.localidades USING btree (id) |
 | logros | logros_clave_key | CREATE UNIQUE INDEX logros_clave_key ON public.logros USING btree (clave) |
 | logros | logros_pkey | CREATE UNIQUE INDEX logros_pkey ON public.logros USING btree (id) |
@@ -824,6 +784,7 @@
 | participaciones | participaciones_pkey | CREATE UNIQUE INDEX participaciones_pkey ON public.participaciones USING btree (id) |
 | profiles | profiles_codigo_gondolero_key | CREATE UNIQUE INDEX profiles_codigo_gondolero_key ON public.profiles USING btree (codigo_gondolero) |
 | profiles | profiles_pkey | CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id) |
+| provincias | provincias_nombre_key | CREATE UNIQUE INDEX provincias_nombre_key ON public.provincias USING btree (nombre) |
 | provincias | provincias_pkey | CREATE UNIQUE INDEX provincias_pkey ON public.provincias USING btree (id) |
 | relacion_reinicio_solicitudes | relacion_reinicio_solicitudes_pkey | CREATE UNIQUE INDEX relacion_reinicio_solicitudes_pkey ON public.relacion_reinicio_solicitudes USING btree (id) |
 | repositoras | repositoras_pkey | CREATE UNIQUE INDEX repositoras_pkey ON public.repositoras USING btree (id) |
@@ -987,14 +948,6 @@ AS '$libdir/postgis-3', $function$containsproperly$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public._st_coveredby(geom1 geometry, geom2 geometry)
- RETURNS boolean
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$coveredby$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public._st_coveredby(geog1 geography, geog2 geography)
  RETURNS boolean
  LANGUAGE c
@@ -1003,11 +956,11 @@ AS '$libdir/postgis-3', $function$geography_coveredby$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public._st_covers(geog1 geography, geog2 geography)
+CREATE OR REPLACE FUNCTION public._st_coveredby(geom1 geometry, geom2 geometry)
  RETURNS boolean
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$geography_covers$function$
+AS '$libdir/postgis-3', $function$coveredby$function$
 ```
 
 ```sql
@@ -1016,6 +969,14 @@ CREATE OR REPLACE FUNCTION public._st_covers(geom1 geometry, geom2 geometry)
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000
 AS '$libdir/postgis-3', $function$covers$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public._st_covers(geog1 geography, geog2 geography)
+ RETURNS boolean
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$geography_covers$function$
 ```
 
 ```sql
@@ -1035,19 +996,19 @@ AS '$libdir/postgis-3', $function$LWGEOM_dfullywithin$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public._st_distancetree(geography, geography)
- RETURNS double precision
- LANGUAGE sql
- IMMUTABLE STRICT
-AS $function$SELECT public._ST_DistanceTree($1, $2, 0.0, true)$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public._st_distancetree(geography, geography, double precision, boolean)
  RETURNS double precision
  LANGUAGE c
  IMMUTABLE STRICT COST 10000
 AS '$libdir/postgis-3', $function$geography_distance_tree$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public._st_distancetree(geography, geography)
+ RETURNS double precision
+ LANGUAGE sql
+ IMMUTABLE STRICT
+AS $function$SELECT public._ST_DistanceTree($1, $2, 0.0, true)$function$
 ```
 
 ```sql
@@ -1075,14 +1036,6 @@ AS $function$SELECT public._ST_DistanceUnCached($1, $2, 0.0, $3)$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public._st_dwithin(geog1 geography, geog2 geography, tolerance double precision, use_spheroid boolean DEFAULT true)
- RETURNS boolean
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$geography_dwithin$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public._st_dwithin(geom1 geometry, geom2 geometry, double precision)
  RETURNS boolean
  LANGUAGE c
@@ -1091,11 +1044,11 @@ AS '$libdir/postgis-3', $function$LWGEOM_dwithin$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public._st_dwithinuncached(geography, geography, double precision)
+CREATE OR REPLACE FUNCTION public._st_dwithin(geog1 geography, geog2 geography, tolerance double precision, use_spheroid boolean DEFAULT true)
  RETURNS boolean
- LANGUAGE sql
- IMMUTABLE
-AS $function$SELECT $1 OPERATOR(public.&&) public._ST_Expand($2,$3) AND $2 OPERATOR(public.&&) public._ST_Expand($1,$3) AND public._ST_DWithinUnCached($1, $2, $3, true)$function$
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$geography_dwithin$function$
 ```
 
 ```sql
@@ -1104,6 +1057,14 @@ CREATE OR REPLACE FUNCTION public._st_dwithinuncached(geography, geography, doub
  LANGUAGE c
  IMMUTABLE STRICT COST 10000
 AS '$libdir/postgis-3', $function$geography_dwithin_uncached$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public._st_dwithinuncached(geography, geography, double precision)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$SELECT $1 OPERATOR(public.&&) public._ST_Expand($2,$3) AND $2 OPERATOR(public.&&) public._ST_Expand($1,$3) AND public._ST_DWithinUnCached($1, $2, $3, true)$function$
 ```
 
 ```sql
@@ -1253,21 +1214,6 @@ $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.addgeometrycolumn(table_name character varying, column_name character varying, new_srid integer, new_type character varying, new_dim integer, use_typmod boolean DEFAULT true)
- RETURNS text
- LANGUAGE plpgsql
- STRICT
-AS $function$
-DECLARE
-	ret  text;
-BEGIN
-	SELECT public.AddGeometryColumn('','',$1,$2,$3,$4,$5, $6) into ret;
-	RETURN ret;
-END;
-$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.addgeometrycolumn(schema_name character varying, table_name character varying, column_name character varying, new_srid integer, new_type character varying, new_dim integer, use_typmod boolean DEFAULT true)
  RETURNS text
  LANGUAGE plpgsql
@@ -1277,6 +1223,21 @@ DECLARE
 	ret  text;
 BEGIN
 	SELECT public.AddGeometryColumn('',$1,$2,$3,$4,$5,$6,$7) into ret;
+	RETURN ret;
+END;
+$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.addgeometrycolumn(table_name character varying, column_name character varying, new_srid integer, new_type character varying, new_dim integer, use_typmod boolean DEFAULT true)
+ RETURNS text
+ LANGUAGE plpgsql
+ STRICT
+AS $function$
+DECLARE
+	ret  text;
+BEGIN
+	SELECT public.AddGeometryColumn('','',$1,$2,$3,$4,$5, $6) into ret;
 	RETURN ret;
 END;
 $function$
@@ -1454,19 +1415,19 @@ AS '$libdir/postgis-3', $function$BOX3D_to_BOX$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.box2d(box3d)
- RETURNS box2d
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$BOX3D_to_BOX2D$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.box2d(geometry)
  RETURNS box2d
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$LWGEOM_to_BOX2D$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.box2d(box3d)
+ RETURNS box2d
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$BOX3D_to_BOX2D$function$
 ```
 
 ```sql
@@ -1502,19 +1463,19 @@ AS '$libdir/postgis-3', $function$box2df_out$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.box3d(box2d)
- RETURNS box3d
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$BOX2D_to_BOX3D$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.box3d(geometry)
  RETURNS box3d
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$LWGEOM_to_BOX3D$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.box3d(box2d)
+ RETURNS box3d
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$BOX2D_to_BOX3D$function$
 ```
 
 ```sql
@@ -1542,6 +1503,14 @@ AS '$libdir/postgis-3', $function$BOX3D_to_BOX$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.bytea(geography)
+ RETURNS bytea
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$LWGEOM_to_bytea$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.bytea(geometry)
  RETURNS bytea
  LANGUAGE c
@@ -1550,11 +1519,10 @@ AS '$libdir/postgis-3', $function$LWGEOM_to_bytea$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.bytea(geography)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$LWGEOM_to_bytea$function$
+CREATE OR REPLACE FUNCTION public.checkauth(text, text)
+ RETURNS integer
+ LANGUAGE sql
+AS $function$ SELECT CheckAuth('', $1, $2) $function$
 ```
 
 ```sql
@@ -1588,13 +1556,6 @@ $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.checkauth(text, text)
- RETURNS integer
- LANGUAGE sql
-AS $function$ SELECT CheckAuth('', $1, $2) $function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.checkauthtrigger()
  RETURNS trigger
  LANGUAGE c
@@ -1610,19 +1571,19 @@ AS '$libdir/postgis-3', $function$gserialized_contains_box2df_geom_2d$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.contains_2d(box2df, box2df)
- RETURNS boolean
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$gserialized_contains_box2df_box2df_2d$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.contains_2d(geometry, box2df)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 1
 AS $function$SELECT $2 OPERATOR(public.@) $1;$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.contains_2d(box2df, box2df)
+ RETURNS boolean
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$gserialized_contains_box2df_box2df_2d$function$
 ```
 
 ```sql
@@ -1661,36 +1622,6 @@ BEGIN
 	END LOOP;
 
 	RETURN 'Long transactions support disabled';
-END;
-$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.dropgeometrycolumn(schema_name character varying, table_name character varying, column_name character varying)
- RETURNS text
- LANGUAGE plpgsql
- STRICT
-AS $function$
-DECLARE
-	ret text;
-BEGIN
-	SELECT public.DropGeometryColumn('',$1,$2,$3) into ret;
-	RETURN ret;
-END;
-$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.dropgeometrycolumn(table_name character varying, column_name character varying)
- RETURNS text
- LANGUAGE plpgsql
- STRICT
-AS $function$
-DECLARE
-	ret text;
-BEGIN
-	SELECT public.DropGeometryColumn('','',$1,$2) into ret;
-	RETURN ret;
 END;
 $function$
 ```
@@ -1748,19 +1679,33 @@ $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.dropgeometrytable(table_name character varying)
+CREATE OR REPLACE FUNCTION public.dropgeometrycolumn(table_name character varying, column_name character varying)
  RETURNS text
- LANGUAGE sql
+ LANGUAGE plpgsql
  STRICT
-AS $function$ SELECT public.DropGeometryTable('','',$1) $function$
+AS $function$
+DECLARE
+	ret text;
+BEGIN
+	SELECT public.DropGeometryColumn('','',$1,$2) into ret;
+	RETURN ret;
+END;
+$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.dropgeometrytable(schema_name character varying, table_name character varying)
+CREATE OR REPLACE FUNCTION public.dropgeometrycolumn(schema_name character varying, table_name character varying, column_name character varying)
  RETURNS text
- LANGUAGE sql
+ LANGUAGE plpgsql
  STRICT
-AS $function$ SELECT public.DropGeometryTable('',$1,$2) $function$
+AS $function$
+DECLARE
+	ret text;
+BEGIN
+	SELECT public.DropGeometryColumn('',$1,$2,$3) into ret;
+	RETURN ret;
+END;
+$function$
 ```
 
 ```sql
@@ -1792,6 +1737,22 @@ BEGIN
 
 END;
 $function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.dropgeometrytable(schema_name character varying, table_name character varying)
+ RETURNS text
+ LANGUAGE sql
+ STRICT
+AS $function$ SELECT public.DropGeometryTable('',$1,$2) $function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.dropgeometrytable(table_name character varying)
+ RETURNS text
+ LANGUAGE sql
+ STRICT
+AS $function$ SELECT public.DropGeometryTable('','',$1) $function$
 ```
 
 ```sql
@@ -1893,19 +1854,19 @@ AS '$libdir/postgis-3', $function$geog_brin_inclusion_add_value$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.geography(geography, integer, boolean)
- RETURNS geography
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$geography_enforce_typmod$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.geography(geometry)
  RETURNS geography
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
 AS '$libdir/postgis-3', $function$geography_from_geometry$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.geography(geography, integer, boolean)
+ RETURNS geography
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$geography_enforce_typmod$function$
 ```
 
 ```sql
@@ -2165,6 +2126,38 @@ AS '$libdir/postgis-3', $function$geom4d_brin_inclusion_add_value$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.geometry(bytea)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$LWGEOM_from_bytea$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.geometry(point)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$point_to_geometry$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.geometry(path)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$path_to_geometry$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.geometry(box2d)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$BOX2D_to_LWGEOM$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.geometry(box3d)
  RETURNS geometry
  LANGUAGE c
@@ -2181,11 +2174,11 @@ AS '$libdir/postgis-3', $function$geometry_from_geography$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.geometry(bytea)
+CREATE OR REPLACE FUNCTION public.geometry(polygon)
  RETURNS geometry
  LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$LWGEOM_from_bytea$function$
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$polygon_to_geometry$function$
 ```
 
 ```sql
@@ -2197,43 +2190,11 @@ AS '$libdir/postgis-3', $function$parse_WKT_lwgeom$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.geometry(box2d)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$BOX2D_to_LWGEOM$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.geometry(geometry, integer, boolean)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
 AS '$libdir/postgis-3', $function$geometry_enforce_typmod$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.geometry(polygon)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$polygon_to_geometry$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.geometry(path)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$path_to_geometry$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.geometry(point)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$point_to_geometry$function$
 ```
 
 ```sql
@@ -2829,7 +2790,7 @@ AS '$libdir/postgis-3', $function$gserialized_within$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.geometrytype(geometry)
+CREATE OR REPLACE FUNCTION public.geometrytype(geography)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -2837,7 +2798,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_getTYPE$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.geometrytype(geography)
+CREATE OR REPLACE FUNCTION public.geometrytype(geometry)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
@@ -3038,19 +2999,19 @@ AS '$libdir/postgis-3', $function$geometry_to_jsonb$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.lockrow(text, text, text)
- RETURNS integer
- LANGUAGE sql
- STRICT
-AS $function$ SELECT LockRow(current_schema(), $1, $2, $3, now()::timestamp+'1:00'); $function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.lockrow(text, text, text, timestamp without time zone)
  RETURNS integer
  LANGUAGE sql
  STRICT
 AS $function$ SELECT LockRow(current_schema(), $1, $2, $3, $4); $function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.lockrow(text, text, text, text)
+ RETURNS integer
+ LANGUAGE sql
+ STRICT
+AS $function$ SELECT LockRow($1, $2, $3, $4, now()::timestamp+'1:00'); $function$
 ```
 
 ```sql
@@ -3107,11 +3068,11 @@ $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.lockrow(text, text, text, text)
+CREATE OR REPLACE FUNCTION public.lockrow(text, text, text)
  RETURNS integer
  LANGUAGE sql
  STRICT
-AS $function$ SELECT LockRow($1, $2, $3, $4, now()::timestamp+'1:00'); $function$
+AS $function$ SELECT LockRow(current_schema(), $1, $2, $3, now()::timestamp+'1:00'); $function$
 ```
 
 ```sql
@@ -3132,14 +3093,6 @@ $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.overlaps_2d(box2df, box2df)
- RETURNS boolean
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$gserialized_contains_box2df_box2df_2d$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.overlaps_2d(box2df, geometry)
  RETURNS boolean
  LANGUAGE c
@@ -3152,6 +3105,22 @@ CREATE OR REPLACE FUNCTION public.overlaps_2d(geometry, box2df)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 1
+AS $function$SELECT $2 OPERATOR(public.&&) $1;$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.overlaps_2d(box2df, box2df)
+ RETURNS boolean
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$gserialized_contains_box2df_box2df_2d$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.overlaps_geog(geography, gidx)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE STRICT
 AS $function$SELECT $2 OPERATOR(public.&&) $1;$function$
 ```
 
@@ -3172,11 +3141,11 @@ AS '$libdir/postgis-3', $function$gserialized_gidx_geog_overlaps$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.overlaps_geog(geography, gidx)
+CREATE OR REPLACE FUNCTION public.overlaps_nd(gidx, gidx)
  RETURNS boolean
- LANGUAGE sql
- IMMUTABLE STRICT
-AS $function$SELECT $2 OPERATOR(public.&&) $1;$function$
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$gserialized_gidx_gidx_overlaps$function$
 ```
 
 ```sql
@@ -3185,14 +3154,6 @@ CREATE OR REPLACE FUNCTION public.overlaps_nd(geometry, gidx)
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 1
 AS $function$SELECT $2 OPERATOR(public.&&&) $1;$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.overlaps_nd(gidx, gidx)
- RETURNS boolean
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$gserialized_gidx_gidx_overlaps$function$
 ```
 
 ```sql
@@ -3228,7 +3189,7 @@ AS '$libdir/postgis-3', $function$pgis_asflatgeobuf_transfn$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.pgis_asflatgeobuf_transfn(internal, anyelement)
+CREATE OR REPLACE FUNCTION public.pgis_asflatgeobuf_transfn(internal, anyelement, boolean)
  RETURNS internal
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE COST 50
@@ -3236,7 +3197,7 @@ AS '$libdir/postgis-3', $function$pgis_asflatgeobuf_transfn$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.pgis_asflatgeobuf_transfn(internal, anyelement, boolean)
+CREATE OR REPLACE FUNCTION public.pgis_asflatgeobuf_transfn(internal, anyelement)
  RETURNS internal
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE COST 50
@@ -3308,14 +3269,6 @@ AS '$libdir/postgis-3', $function$pgis_asmvt_transfn$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.pgis_asmvt_transfn(internal, anyelement, text, integer)
- RETURNS internal
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE COST 500
-AS '$libdir/postgis-3', $function$pgis_asmvt_transfn$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.pgis_asmvt_transfn(internal, anyelement, text, integer, text, text)
  RETURNS internal
  LANGUAGE c
@@ -3340,7 +3293,15 @@ AS '$libdir/postgis-3', $function$pgis_asmvt_transfn$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.pgis_geometry_accum_transfn(internal, geometry, double precision)
+CREATE OR REPLACE FUNCTION public.pgis_asmvt_transfn(internal, anyelement, text, integer)
+ RETURNS internal
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE COST 500
+AS '$libdir/postgis-3', $function$pgis_asmvt_transfn$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.pgis_geometry_accum_transfn(internal, geometry, double precision, integer)
  RETURNS internal
  LANGUAGE c
  PARALLEL SAFE COST 50
@@ -3356,7 +3317,7 @@ AS '$libdir/postgis-3', $function$pgis_geometry_accum_transfn$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.pgis_geometry_accum_transfn(internal, geometry, double precision, integer)
+CREATE OR REPLACE FUNCTION public.pgis_geometry_accum_transfn(internal, geometry, double precision)
  RETURNS internal
  LANGUAGE c
  PARALLEL SAFE COST 50
@@ -4513,14 +4474,6 @@ AS '$libdir/postgis-3', $function$LWGEOM_affine$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_angle(line1 geometry, line2 geometry)
- RETURNS double precision
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS $function$SELECT ST_Angle(St_StartPoint($1), ST_EndPoint($1), St_StartPoint($2), ST_EndPoint($2))$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_angle(pt1 geometry, pt2 geometry, pt3 geometry, pt4 geometry DEFAULT '0101000000000000000000F87F000000000000F87F'::geometry)
  RETURNS double precision
  LANGUAGE c
@@ -4529,11 +4482,11 @@ AS '$libdir/postgis-3', $function$LWGEOM_angle$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_area(geog geography, use_spheroid boolean DEFAULT true)
+CREATE OR REPLACE FUNCTION public.st_angle(line1 geometry, line2 geometry)
  RETURNS double precision
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$geography_area$function$
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$SELECT ST_Angle(St_StartPoint($1), ST_EndPoint($1), St_StartPoint($2), ST_EndPoint($2))$function$
 ```
 
 ```sql
@@ -4542,6 +4495,14 @@ CREATE OR REPLACE FUNCTION public.st_area(geometry)
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$ST_Area$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_area(geog geography, use_spheroid boolean DEFAULT true)
+ RETURNS double precision
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$geography_area$function$
 ```
 
 ```sql
@@ -4617,6 +4578,22 @@ AS '$libdir/postgis-3', $function$WKBFromLWGEOM$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_asewkt(text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS $function$ SELECT public.ST_AsEWKT($1::public.geometry);  $function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_asewkt(geometry, integer)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$LWGEOM_asEWKT$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_asewkt(geometry)
  RETURNS text
  LANGUAGE c
@@ -4641,19 +4618,11 @@ AS '$libdir/postgis-3', $function$LWGEOM_asEWKT$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_asewkt(text)
- RETURNS text
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$ SELECT public.ST_AsEWKT($1::public.geometry);  $function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_asewkt(geometry, integer)
+CREATE OR REPLACE FUNCTION public.st_asgeojson(geom geometry, maxdecimaldigits integer DEFAULT 9, options integer DEFAULT 8)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$LWGEOM_asEWKT$function$
+AS '$libdir/postgis-3', $function$LWGEOM_asGeoJson$function$
 ```
 
 ```sql
@@ -4662,14 +4631,6 @@ CREATE OR REPLACE FUNCTION public.st_asgeojson(geog geography, maxdecimaldigits 
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS '$libdir/postgis-3', $function$geography_as_geojson$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_asgeojson(geom geometry, maxdecimaldigits integer DEFAULT 9, options integer DEFAULT 8)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$LWGEOM_asGeoJson$function$
 ```
 
 ```sql
@@ -4689,30 +4650,6 @@ AS $function$ SELECT public.ST_AsGeoJson($1::public.geometry, 9, 0);  $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_asgml(geom geometry, maxdecimaldigits integer DEFAULT 15, options integer DEFAULT 0)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE COST 500
-AS '$libdir/postgis-3', $function$LWGEOM_asGML$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_asgml(version integer, geog geography, maxdecimaldigits integer DEFAULT 15, options integer DEFAULT 0, nprefix text DEFAULT 'gml'::text, id text DEFAULT ''::text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$geography_as_gml$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_asgml(geog geography, maxdecimaldigits integer DEFAULT 15, options integer DEFAULT 0, nprefix text DEFAULT 'gml'::text, id text DEFAULT ''::text)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$geography_as_gml$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_asgml(text)
  RETURNS text
  LANGUAGE sql
@@ -4729,11 +4666,27 @@ AS '$libdir/postgis-3', $function$LWGEOM_asGML$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_ashexewkb(geometry)
+CREATE OR REPLACE FUNCTION public.st_asgml(geog geography, maxdecimaldigits integer DEFAULT 15, options integer DEFAULT 0, nprefix text DEFAULT 'gml'::text, id text DEFAULT ''::text)
  RETURNS text
  LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$LWGEOM_asHEXEWKB$function$
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$geography_as_gml$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_asgml(version integer, geog geography, maxdecimaldigits integer DEFAULT 15, options integer DEFAULT 0, nprefix text DEFAULT 'gml'::text, id text DEFAULT ''::text)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$geography_as_gml$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_asgml(geom geometry, maxdecimaldigits integer DEFAULT 15, options integer DEFAULT 0)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE COST 500
+AS '$libdir/postgis-3', $function$LWGEOM_asGML$function$
 ```
 
 ```sql
@@ -4745,11 +4698,11 @@ AS '$libdir/postgis-3', $function$LWGEOM_asHEXEWKB$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_askml(text)
+CREATE OR REPLACE FUNCTION public.st_ashexewkb(geometry)
  RETURNS text
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$ SELECT public.ST_AsKML($1::public.geometry, 15);  $function$
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$LWGEOM_asHEXEWKB$function$
 ```
 
 ```sql
@@ -4766,6 +4719,14 @@ CREATE OR REPLACE FUNCTION public.st_askml(geog geography, maxdecimaldigits inte
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS '$libdir/postgis-3', $function$geography_as_kml$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_askml(text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS $function$ SELECT public.ST_AsKML($1::public.geometry, 15);  $function$
 ```
 
 ```sql
@@ -4793,19 +4754,19 @@ AS '$libdir/postgis-3', $function$ST_AsMVTGeom$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_assvg(geom geometry, rel integer DEFAULT 0, maxdecimaldigits integer DEFAULT 15)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$LWGEOM_asSVG$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_assvg(geog geography, rel integer DEFAULT 0, maxdecimaldigits integer DEFAULT 15)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS '$libdir/postgis-3', $function$geography_as_svg$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_assvg(geom geometry, rel integer DEFAULT 0, maxdecimaldigits integer DEFAULT 15)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$LWGEOM_asSVG$function$
 ```
 
 ```sql
@@ -4817,7 +4778,23 @@ AS $function$ SELECT public.ST_AsSVG($1::public.geometry,0,15);  $function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_astext(geometry, integer)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$LWGEOM_asText$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_astext(geography, integer)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$LWGEOM_asText$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_astext(geography)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
@@ -4841,19 +4818,11 @@ AS '$libdir/postgis-3', $function$LWGEOM_asText$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_astext(geometry, integer)
- RETURNS text
+CREATE OR REPLACE FUNCTION public.st_astwkb(geom geometry, prec integer DEFAULT NULL::integer, prec_z integer DEFAULT NULL::integer, prec_m integer DEFAULT NULL::integer, with_sizes boolean DEFAULT NULL::boolean, with_boxes boolean DEFAULT NULL::boolean)
+ RETURNS bytea
  LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$LWGEOM_asText$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_astext(geography)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$LWGEOM_asText$function$
+ IMMUTABLE PARALLEL SAFE COST 50
+AS '$libdir/postgis-3', $function$TWKBFromLWGEOM$function$
 ```
 
 ```sql
@@ -4865,14 +4834,6 @@ AS '$libdir/postgis-3', $function$TWKBFromLWGEOMArray$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_astwkb(geom geometry, prec integer DEFAULT NULL::integer, prec_z integer DEFAULT NULL::integer, prec_m integer DEFAULT NULL::integer, with_sizes boolean DEFAULT NULL::boolean, with_boxes boolean DEFAULT NULL::boolean)
- RETURNS bytea
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE COST 50
-AS '$libdir/postgis-3', $function$TWKBFromLWGEOM$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_asx3d(geom geometry, maxdecimaldigits integer DEFAULT 15, options integer DEFAULT 0)
  RETURNS text
  LANGUAGE sql
@@ -4881,19 +4842,19 @@ AS $function$SELECT public._ST_AsX3D(3,$1,$2,$3,'');$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_azimuth(geog1 geography, geog2 geography)
- RETURNS double precision
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$geography_azimuth$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_azimuth(geom1 geometry, geom2 geometry)
  RETURNS double precision
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$LWGEOM_azimuth$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_azimuth(geog1 geography, geog2 geography)
+ RETURNS double precision
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$geography_azimuth$function$
 ```
 
 ```sql
@@ -4978,6 +4939,46 @@ AS '$libdir/postgis-3', $function$box2d_from_geohash$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_buffer(geography, double precision, integer)
+ RETURNS geography
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$SELECT public.geography(public.ST_Transform(public.ST_Buffer(public.ST_Transform(public.geometry($1), public._ST_BestSRID($1)), $2, $3), public.ST_SRID($1)))$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_buffer(geom geometry, radius double precision, options text DEFAULT ''::text)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$buffer$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_buffer(geom geometry, radius double precision, quadsegs integer)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS $function$ SELECT public.ST_Buffer($1, $2, CAST('quad_segs='||CAST($3 AS text) as text)) $function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_buffer(geography, double precision)
+ RETURNS geography
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$SELECT public.geography(public.ST_Transform(public.ST_Buffer(public.ST_Transform(public.geometry($1), public._ST_BestSRID($1)), $2), public.ST_SRID($1)))$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_buffer(geography, double precision, text)
+ RETURNS geography
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$SELECT public.geography(public.ST_Transform(public.ST_Buffer(public.ST_Transform(public.geometry($1), public._ST_BestSRID($1)), $2, $3), public.ST_SRID($1)))$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_buffer(text, double precision)
  RETURNS geometry
  LANGUAGE sql
@@ -4994,51 +4995,11 @@ AS $function$ SELECT public.ST_Buffer($1::public.geometry, $2, $3);  $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_buffer(geography, double precision, text)
- RETURNS geography
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT
-AS $function$SELECT public.geography(public.ST_Transform(public.ST_Buffer(public.ST_Transform(public.geometry($1), public._ST_BestSRID($1)), $2, $3), public.ST_SRID($1)))$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_buffer(text, double precision, text)
  RETURNS geometry
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT
 AS $function$ SELECT public.ST_Buffer($1::public.geometry, $2, $3);  $function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_buffer(geom geometry, radius double precision, options text DEFAULT ''::text)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$buffer$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_buffer(geography, double precision, integer)
- RETURNS geography
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT
-AS $function$SELECT public.geography(public.ST_Transform(public.ST_Buffer(public.ST_Transform(public.geometry($1), public._ST_BestSRID($1)), $2, $3), public.ST_SRID($1)))$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_buffer(geography, double precision)
- RETURNS geography
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT
-AS $function$SELECT public.geography(public.ST_Transform(public.ST_Buffer(public.ST_Transform(public.geometry($1), public._ST_BestSRID($1)), $2), public.ST_SRID($1)))$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_buffer(geom geometry, radius double precision, quadsegs integer)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS $function$ SELECT public.ST_Buffer($1, $2, CAST('quad_segs='||CAST($3 AS text) as text)) $function$
 ```
 
 ```sql
@@ -5130,14 +5091,6 @@ AS '$libdir/postgis-3', $function$cluster_within_distance_garray$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_collect(geometry[])
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$LWGEOM_collect_garray$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_collect(geom1 geometry, geom2 geometry)
  RETURNS geometry
  LANGUAGE c
@@ -5146,7 +5099,15 @@ AS '$libdir/postgis-3', $function$LWGEOM_collect$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_collectionextract(geometry, integer)
+CREATE OR REPLACE FUNCTION public.st_collect(geometry[])
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$LWGEOM_collect_garray$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_collectionextract(geometry)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -5154,7 +5115,7 @@ AS '$libdir/postgis-3', $function$ST_CollectionExtract$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_collectionextract(geometry)
+CREATE OR REPLACE FUNCTION public.st_collectionextract(geometry, integer)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -5170,19 +5131,19 @@ AS '$libdir/postgis-3', $function$ST_CollectionHomogenize$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_combinebbox(box3d, box3d)
- RETURNS box3d
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE COST 50
-AS '$libdir/postgis-3', $function$BOX3D_combine_BOX3D$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_combinebbox(box3d, geometry)
  RETURNS box3d
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE COST 50
 AS '$libdir/postgis-3', $function$BOX3D_combine$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_combinebbox(box3d, box3d)
+ RETURNS box3d
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE COST 50
+AS '$libdir/postgis-3', $function$BOX3D_combine_BOX3D$function$
 ```
 
 ```sql
@@ -5234,14 +5195,6 @@ AS '$libdir/postgis-3', $function$LWGEOM_ndims$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_coveredby(text, text)
- RETURNS boolean
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE
-AS $function$ SELECT public.ST_CoveredBy($1::public.geometry, $2::public.geometry);  $function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_coveredby(geog1 geography, geog2 geography)
  RETURNS boolean
  LANGUAGE c
@@ -5255,6 +5208,14 @@ CREATE OR REPLACE FUNCTION public.st_coveredby(geom1 geometry, geom2 geometry)
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000 SUPPORT postgis_index_supportfn
 AS '$libdir/postgis-3', $function$coveredby$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_coveredby(text, text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$ SELECT public.ST_CoveredBy($1::public.geometry, $2::public.geometry);  $function$
 ```
 
 ```sql
@@ -5354,19 +5315,19 @@ AS $function$ SELECT public.ST_Distance($1::public.geometry, $2::public.geometry
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_distance(geog1 geography, geog2 geography, use_spheroid boolean DEFAULT true)
- RETURNS double precision
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$geography_distance$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_distance(geom1 geometry, geom2 geometry)
  RETURNS double precision
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000
 AS '$libdir/postgis-3', $function$ST_Distance$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_distance(geog1 geography, geog2 geography, use_spheroid boolean DEFAULT true)
+ RETURNS double precision
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$geography_distance$function$
 ```
 
 ```sql
@@ -5378,19 +5339,19 @@ AS '$libdir/postgis-3', $function$ST_DistanceCPA$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_distancesphere(geom1 geometry, geom2 geometry)
- RETURNS double precision
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT
-AS $function$select public.ST_distance( public.geography($1), public.geography($2),false)$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_distancesphere(geom1 geometry, geom2 geometry, radius double precision)
  RETURNS double precision
  LANGUAGE c
  IMMUTABLE STRICT COST 10000
 AS '$libdir/postgis-3', $function$LWGEOM_distance_sphere$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_distancesphere(geom1 geometry, geom2 geometry)
+ RETURNS double precision
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT
+AS $function$select public.ST_distance( public.geography($1), public.geography($2),false)$function$
 ```
 
 ```sql
@@ -5450,19 +5411,19 @@ AS '$libdir/postgis-3', $function$LWGEOM_dwithin$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_dwithin(text, text, double precision)
- RETURNS boolean
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE
-AS $function$ SELECT public.ST_DWithin($1::public.geometry, $2::public.geometry, $3);  $function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_dwithin(geog1 geography, geog2 geography, tolerance double precision, use_spheroid boolean DEFAULT true)
  RETURNS boolean
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000 SUPPORT postgis_index_supportfn
 AS '$libdir/postgis-3', $function$geography_dwithin$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_dwithin(text, text, double precision)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$ SELECT public.ST_DWithin($1::public.geometry, $2::public.geometry, $3);  $function$
 ```
 
 ```sql
@@ -5490,14 +5451,6 @@ AS '$libdir/postgis-3', $function$ST_Equals$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_estimatedextent(text, text)
- RETURNS box2d
- LANGUAGE c
- STABLE STRICT SECURITY DEFINER
-AS '$libdir/postgis-3', $function$gserialized_estimated_extent$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_estimatedextent(text, text, text)
  RETURNS box2d
  LANGUAGE c
@@ -5514,19 +5467,11 @@ AS '$libdir/postgis-3', $function$gserialized_estimated_extent$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_expand(box box2d, dx double precision, dy double precision)
+CREATE OR REPLACE FUNCTION public.st_estimatedextent(text, text)
  RETURNS box2d
  LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$BOX2D_expand$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_expand(box2d, double precision)
- RETURNS box2d
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT
-AS '$libdir/postgis-3', $function$BOX2D_expand$function$
+ STABLE STRICT SECURITY DEFINER
+AS '$libdir/postgis-3', $function$gserialized_estimated_extent$function$
 ```
 
 ```sql
@@ -5538,6 +5483,14 @@ AS '$libdir/postgis-3', $function$BOX3D_expand$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_expand(box box2d, dx double precision, dy double precision)
+ RETURNS box2d
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$BOX2D_expand$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_expand(box box3d, dx double precision, dy double precision, dz double precision DEFAULT 0)
  RETURNS box3d
  LANGUAGE c
@@ -5546,7 +5499,7 @@ AS '$libdir/postgis-3', $function$BOX3D_expand$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_expand(geometry, double precision)
+CREATE OR REPLACE FUNCTION public.st_expand(geom geometry, dx double precision, dy double precision, dz double precision DEFAULT 0, dm double precision DEFAULT 0)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -5554,7 +5507,15 @@ AS '$libdir/postgis-3', $function$LWGEOM_expand$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_expand(geom geometry, dx double precision, dy double precision, dz double precision DEFAULT 0, dm double precision DEFAULT 0)
+CREATE OR REPLACE FUNCTION public.st_expand(box2d, double precision)
+ RETURNS box2d
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$BOX2D_expand$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_expand(geometry, double precision)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -5704,7 +5665,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_force_clockwise_poly$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_forcesfs(geometry, version text)
+CREATE OR REPLACE FUNCTION public.st_forcesfs(geometry)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
@@ -5712,7 +5673,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_force_sfs$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_forcesfs(geometry)
+CREATE OR REPLACE FUNCTION public.st_forcesfs(geometry, version text)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
@@ -5744,18 +5705,18 @@ AS '$libdir/postgis-3', $function$pgis_tablefromflatgeobuf$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_generatepoints(area geometry, npoints integer, seed integer)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$ST_GeneratePoints$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_generatepoints(area geometry, npoints integer)
  RETURNS geometry
  LANGUAGE c
  PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$ST_GeneratePoints$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_generatepoints(area geometry, npoints integer, seed integer)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS '$libdir/postgis-3', $function$ST_GeneratePoints$function$
 ```
 
@@ -5784,18 +5745,18 @@ AS '$libdir/postgis-3', $function$geography_from_text$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_geohash(geom geometry, maxchars integer DEFAULT 0)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$ST_GeoHash$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_geohash(geog geography, maxchars integer DEFAULT 0)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$ST_GeoHash$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_geohash(geom geometry, maxchars integer DEFAULT 0)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$ST_GeoHash$function$
 ```
 
@@ -5826,19 +5787,6 @@ AS $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_geomcollfromwkb(bytea)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS $function$
-	SELECT CASE
-	WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'GEOMETRYCOLLECTION'
-	THEN public.ST_GeomFromWKB($1)
-	ELSE NULL END
-	$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_geomcollfromwkb(bytea, integer)
  RETURNS geometry
  LANGUAGE sql
@@ -5847,6 +5795,19 @@ AS $function$
 	SELECT CASE
 	WHEN public.geometrytype(public.ST_GeomFromWKB($1, $2)) = 'GEOMETRYCOLLECTION'
 	THEN public.ST_GeomFromWKB($1, $2)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_geomcollfromwkb(bytea)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$
+	SELECT CASE
+	WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'GEOMETRYCOLLECTION'
+	THEN public.ST_GeomFromWKB($1)
 	ELSE NULL END
 	$function$
 ```
@@ -5916,11 +5877,11 @@ AS $function$ SELECT CAST(public.ST_Box2dFromGeoHash($1, $2) AS geometry); $func
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_geomfromgeojson(text)
+CREATE OR REPLACE FUNCTION public.st_geomfromgeojson(jsonb)
  RETURNS geometry
- LANGUAGE c
+ LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$geom_from_geojson$function$
+AS $function$SELECT public.ST_GeomFromGeoJson($1::text)$function$
 ```
 
 ```sql
@@ -5932,11 +5893,11 @@ AS $function$SELECT public.ST_GeomFromGeoJson($1::text)$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_geomfromgeojson(jsonb)
+CREATE OR REPLACE FUNCTION public.st_geomfromgeojson(text)
  RETURNS geometry
- LANGUAGE sql
+ LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$SELECT public.ST_GeomFromGeoJson($1::text)$function$
+AS '$libdir/postgis-3', $function$geom_from_geojson$function$
 ```
 
 ```sql
@@ -6108,19 +6069,19 @@ AS $function$ SELECT public.ST_Intersection($1::public.geometry, $2::public.geom
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_intersects(geom1 geometry, geom2 geometry)
- RETURNS boolean
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000 SUPPORT postgis_index_supportfn
-AS '$libdir/postgis-3', $function$ST_Intersects$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_intersects(text, text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE
 AS $function$ SELECT public.ST_Intersects($1::public.geometry, $2::public.geometry);  $function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_intersects(geom1 geometry, geom2 geometry)
+ RETURNS boolean
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000 SUPPORT postgis_index_supportfn
+AS '$libdir/postgis-3', $function$ST_Intersects$function$
 ```
 
 ```sql
@@ -6188,14 +6149,6 @@ AS '$libdir/postgis-3', $function$issimple$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_isvalid(geometry)
- RETURNS boolean
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$isvalid$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_isvalid(geometry, integer)
  RETURNS boolean
  LANGUAGE sql
@@ -6204,11 +6157,27 @@ AS $function$SELECT (public.ST_isValidDetail($1, $2)).valid$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_isvalid(geometry)
+ RETURNS boolean
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$isvalid$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_isvaliddetail(geom geometry, flags integer DEFAULT 0)
  RETURNS valid_detail
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000
 AS '$libdir/postgis-3', $function$isvaliddetail$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_isvalidreason(geometry)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$isvalidreason$function$
 ```
 
 ```sql
@@ -6224,27 +6193,11 @@ AS $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_isvalidreason(geometry)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$isvalidreason$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_isvalidtrajectory(geometry)
  RETURNS boolean
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000
 AS '$libdir/postgis-3', $function$ST_IsValidTrajectory$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_length(geometry)
- RETURNS double precision
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$LWGEOM_length2d_linestring$function$
 ```
 
 ```sql
@@ -6261,6 +6214,14 @@ CREATE OR REPLACE FUNCTION public.st_length(geog geography, use_spheroid boolean
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS '$libdir/postgis-3', $function$geography_length$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_length(geometry)
+ RETURNS double precision
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$LWGEOM_length2d_linestring$function$
 ```
 
 ```sql
@@ -6464,18 +6425,6 @@ AS '$libdir/postgis-3', $function$LWGEOM_line_from_mpoint$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_linefromtext(text, integer)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1, $2)) = 'LINESTRING'
-	THEN public.ST_GeomFromText($1,$2)
-	ELSE NULL END
-	$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_linefromtext(text)
  RETURNS geometry
  LANGUAGE sql
@@ -6488,13 +6437,13 @@ AS $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_linefromwkb(bytea, integer)
+CREATE OR REPLACE FUNCTION public.st_linefromtext(text, integer)
  RETURNS geometry
  LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1, $2)) = 'LINESTRING'
-	THEN public.ST_GeomFromWKB($1, $2)
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1, $2)) = 'LINESTRING'
+	THEN public.ST_GeomFromText($1,$2)
 	ELSE NULL END
 	$function$
 ```
@@ -6507,6 +6456,18 @@ CREATE OR REPLACE FUNCTION public.st_linefromwkb(bytea)
 AS $function$
 	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'LINESTRING'
 	THEN public.ST_GeomFromWKB($1)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_linefromwkb(bytea, integer)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1, $2)) = 'LINESTRING'
+	THEN public.ST_GeomFromWKB($1, $2)
 	ELSE NULL END
 	$function$
 ```
@@ -6552,18 +6513,6 @@ AS '$libdir/postgis-3', $function$linemerge$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_linestringfromwkb(bytea)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'LINESTRING'
-	THEN public.ST_GeomFromWKB($1)
-	ELSE NULL END
-	$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_linestringfromwkb(bytea, integer)
  RETURNS geometry
  LANGUAGE sql
@@ -6571,6 +6520,18 @@ CREATE OR REPLACE FUNCTION public.st_linestringfromwkb(bytea, integer)
 AS $function$
 	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1, $2)) = 'LINESTRING'
 	THEN public.ST_GeomFromWKB($1, $2)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_linestringfromwkb(bytea)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'LINESTRING'
+	THEN public.ST_GeomFromWKB($1)
 	ELSE NULL END
 	$function$
 ```
@@ -6672,7 +6633,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_makepoint$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_makepoint(double precision, double precision, double precision, double precision)
+CREATE OR REPLACE FUNCTION public.st_makepoint(double precision, double precision)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -6680,7 +6641,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_makepoint$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_makepoint(double precision, double precision)
+CREATE OR REPLACE FUNCTION public.st_makepoint(double precision, double precision, double precision, double precision)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -6784,6 +6745,18 @@ AS '$libdir/postgis-3', $function$ST_MinimumClearanceLine$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_mlinefromtext(text)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'MULTILINESTRING'
+	THEN public.ST_GeomFromText($1)
+	ELSE NULL END
+	$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_mlinefromtext(text, integer)
  RETURNS geometry
  LANGUAGE sql
@@ -6792,18 +6765,6 @@ AS $function$
 	SELECT CASE
 	WHEN public.geometrytype(public.ST_GeomFromText($1, $2)) = 'MULTILINESTRING'
 	THEN public.ST_GeomFromText($1,$2)
-	ELSE NULL END
-	$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_mlinefromtext(text)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'MULTILINESTRING'
-	THEN public.ST_GeomFromText($1)
 	ELSE NULL END
 	$function$
 ```
@@ -6833,18 +6794,6 @@ AS $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_mpointfromtext(text)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'MULTIPOINT'
-	THEN public.ST_GeomFromText($1)
-	ELSE NULL END
-	$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_mpointfromtext(text, integer)
  RETURNS geometry
  LANGUAGE sql
@@ -6852,6 +6801,18 @@ CREATE OR REPLACE FUNCTION public.st_mpointfromtext(text, integer)
 AS $function$
 	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1, $2)) = 'MULTIPOINT'
 	THEN ST_GeomFromText($1, $2)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_mpointfromtext(text)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'MULTIPOINT'
+	THEN public.ST_GeomFromText($1)
 	ELSE NULL END
 	$function$
 ```
@@ -6881,18 +6842,6 @@ AS $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_mpolyfromtext(text)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'MULTIPOLYGON'
-	THEN public.ST_GeomFromText($1)
-	ELSE NULL END
-	$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_mpolyfromtext(text, integer)
  RETURNS geometry
  LANGUAGE sql
@@ -6900,6 +6849,18 @@ CREATE OR REPLACE FUNCTION public.st_mpolyfromtext(text, integer)
 AS $function$
 	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1, $2)) = 'MULTIPOLYGON'
 	THEN public.ST_GeomFromText($1,$2)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_mpolyfromtext(text)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'MULTIPOLYGON'
+	THEN public.ST_GeomFromText($1)
 	ELSE NULL END
 	$function$
 ```
@@ -7189,14 +7150,6 @@ AS '$libdir/postgis-3', $function$LWGEOM_perimeter2d_poly$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_point(double precision, double precision, srid integer)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$ST_Point$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_point(double precision, double precision)
  RETURNS geometry
  LANGUAGE c
@@ -7205,23 +7158,19 @@ AS '$libdir/postgis-3', $function$LWGEOM_makepoint$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_point(double precision, double precision, srid integer)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$ST_Point$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_pointfromgeohash(text, integer DEFAULT NULL::integer)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE COST 50
 AS '$libdir/postgis-3', $function$point_from_geohash$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_pointfromtext(text)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'POINT'
-	THEN public.ST_GeomFromText($1)
-	ELSE NULL END
-	$function$
 ```
 
 ```sql
@@ -7237,13 +7186,13 @@ AS $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_pointfromwkb(bytea, integer)
+CREATE OR REPLACE FUNCTION public.st_pointfromtext(text)
  RETURNS geometry
  LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1, $2)) = 'POINT'
-	THEN public.ST_GeomFromWKB($1, $2)
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'POINT'
+	THEN public.ST_GeomFromText($1)
 	ELSE NULL END
 	$function$
 ```
@@ -7256,6 +7205,18 @@ CREATE OR REPLACE FUNCTION public.st_pointfromwkb(bytea)
 AS $function$
 	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'POINT'
 	THEN public.ST_GeomFromWKB($1)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_pointfromwkb(bytea, integer)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1, $2)) = 'POINT'
+	THEN public.ST_GeomFromWKB($1, $2)
 	ELSE NULL END
 	$function$
 ```
@@ -7317,18 +7278,6 @@ AS '$libdir/postgis-3', $function$ST_PointZM$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_polyfromtext(text, integer)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1, $2)) = 'POLYGON'
-	THEN public.ST_GeomFromText($1, $2)
-	ELSE NULL END
-	$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_polyfromtext(text)
  RETURNS geometry
  LANGUAGE sql
@@ -7336,6 +7285,18 @@ CREATE OR REPLACE FUNCTION public.st_polyfromtext(text)
 AS $function$
 	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1)) = 'POLYGON'
 	THEN public.ST_GeomFromText($1)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_polyfromtext(text, integer)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromText($1, $2)) = 'POLYGON'
+	THEN public.ST_GeomFromText($1, $2)
 	ELSE NULL END
 	$function$
 ```
@@ -7391,18 +7352,6 @@ AS $function$SELECT public.ST_PolyFromText($1, $2)$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_polygonfromwkb(bytea)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS $function$
-	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'POLYGON'
-	THEN public.ST_GeomFromWKB($1)
-	ELSE NULL END
-	$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_polygonfromwkb(bytea, integer)
  RETURNS geometry
  LANGUAGE sql
@@ -7410,6 +7359,18 @@ CREATE OR REPLACE FUNCTION public.st_polygonfromwkb(bytea, integer)
 AS $function$
 	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1,$2)) = 'POLYGON'
 	THEN public.ST_GeomFromWKB($1, $2)
+	ELSE NULL END
+	$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_polygonfromwkb(bytea)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$
+	SELECT CASE WHEN public.geometrytype(public.ST_GeomFromWKB($1)) = 'POLYGON'
+	THEN public.ST_GeomFromWKB($1)
 	ELSE NULL END
 	$function$
 ```
@@ -7447,14 +7408,6 @@ AS '$libdir/postgis-3', $function$ST_ReducePrecision$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_relate(geom1 geometry, geom2 geometry)
- RETURNS text
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$relate_full$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_relate(geom1 geometry, geom2 geometry, text)
  RETURNS boolean
  LANGUAGE c
@@ -7464,6 +7417,14 @@ AS '$libdir/postgis-3', $function$relate_pattern$function$
 
 ```sql
 CREATE OR REPLACE FUNCTION public.st_relate(geom1 geometry, geom2 geometry, integer)
+ RETURNS text
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$relate_full$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_relate(geom1 geometry, geom2 geometry)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000
@@ -7503,14 +7464,6 @@ AS '$libdir/postgis-3', $function$LWGEOM_reverse$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_rotate(geometry, double precision)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS $function$SELECT public.ST_Affine($1,  cos($2), -sin($2), 0,  sin($2), cos($2), 0,  0, 0, 1,  0, 0, 0)$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_rotate(geometry, double precision, geometry)
  RETURNS geometry
  LANGUAGE sql
@@ -7524,6 +7477,14 @@ CREATE OR REPLACE FUNCTION public.st_rotate(geometry, double precision, double p
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS $function$SELECT public.ST_Affine($1,  cos($2), -sin($2), 0,  sin($2),  cos($2), 0, 0, 0, 1,	$3 - cos($2) * $3 + sin($2) * $4, $4 - sin($2) * $3 - cos($2) * $4, 0)$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_rotate(geometry, double precision)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$SELECT public.ST_Affine($1,  cos($2), -sin($2), 0,  sin($2), cos($2), 0,  0, 0, 1,  0, 0, 0)$function$
 ```
 
 ```sql
@@ -7551,19 +7512,19 @@ AS $function$SELECT public.ST_Rotate($1, $2)$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_scale(geometry, geometry, origin geometry)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$ST_Scale$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_scale(geometry, double precision, double precision, double precision)
  RETURNS geometry
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS $function$SELECT public.ST_Scale($1, public.ST_MakePoint($2, $3, $4))$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_scale(geometry, geometry, origin geometry)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$ST_Scale$function$
 ```
 
 ```sql
@@ -7591,19 +7552,19 @@ AS '$libdir/postgis-3', $function$ST_Scroll$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_segmentize(geometry, double precision)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 500
-AS '$libdir/postgis-3', $function$LWGEOM_segmentize2d$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_segmentize(geog geography, max_segment_length double precision)
  RETURNS geography
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 500
 AS '$libdir/postgis-3', $function$geography_segmentize$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_segmentize(geometry, double precision)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 500
+AS '$libdir/postgis-3', $function$LWGEOM_segmentize2d$function$
 ```
 
 ```sql
@@ -7663,7 +7624,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_shortestline2d$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_simplify(geometry, double precision)
+CREATE OR REPLACE FUNCTION public.st_simplify(geometry, double precision, boolean)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -7671,7 +7632,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_simplify2d$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_simplify(geometry, double precision, boolean)
+CREATE OR REPLACE FUNCTION public.st_simplify(geometry, double precision)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -7711,22 +7672,6 @@ AS '$libdir/postgis-3', $function$ST_Snap$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_snaptogrid(geometry, double precision)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS $function$SELECT public.ST_SnapToGrid($1, 0, 0, $2, $2)$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_snaptogrid(geometry, double precision, double precision, double precision, double precision)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$LWGEOM_snaptogrid$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_snaptogrid(geometry, double precision, double precision)
  RETURNS geometry
  LANGUAGE sql
@@ -7735,11 +7680,27 @@ AS $function$SELECT public.ST_SnapToGrid($1, 0, 0, $2, $3)$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.st_snaptogrid(geometry, double precision)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$SELECT public.ST_SnapToGrid($1, 0, 0, $2, $2)$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.st_snaptogrid(geom1 geometry, geom2 geometry, double precision, double precision, double precision, double precision)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$LWGEOM_snaptogrid_pointoff$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_snaptogrid(geometry, double precision, double precision, double precision, double precision)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS '$libdir/postgis-3', $function$LWGEOM_snaptogrid$function$
 ```
 
 ```sql
@@ -7767,18 +7728,18 @@ AS '$libdir/postgis-3', $function$ST_ShapeGrid$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_srid(geog geography)
- RETURNS integer
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS '$libdir/postgis-3', $function$LWGEOM_get_srid$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_srid(geom geometry)
  RETURNS integer
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT
+AS '$libdir/postgis-3', $function$LWGEOM_get_srid$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_srid(geog geography)
+ RETURNS integer
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$LWGEOM_get_srid$function$
 ```
 
@@ -7799,7 +7760,7 @@ AS '$libdir/postgis-3', $function$ST_Subdivide$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_summary(geometry)
+CREATE OR REPLACE FUNCTION public.st_summary(geography)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -7807,7 +7768,7 @@ AS '$libdir/postgis-3', $function$LWGEOM_summary$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_summary(geography)
+CREATE OR REPLACE FUNCTION public.st_summary(geometry)
  RETURNS text
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
@@ -7854,23 +7815,6 @@ AS '$libdir/postgis-3', $function$touches$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_transform(geom geometry, from_proj text, to_proj text)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS $function$SELECT public.postgis_transform_geometry($1, $2, $3, 0)$function$
-```
-
-```sql
-CREATE OR REPLACE FUNCTION public.st_transform(geom geometry, from_proj text, to_srid integer)
- RETURNS geometry
- LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS $function$SELECT public.postgis_transform_geometry($1, $2, proj4text, $3)
-	FROM spatial_ref_sys WHERE srid=$3;$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_transform(geom geometry, to_proj text)
  RETURNS geometry
  LANGUAGE sql
@@ -7888,11 +7832,20 @@ AS '$libdir/postgis-3', $function$transform$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_translate(geometry, double precision, double precision)
+CREATE OR REPLACE FUNCTION public.st_transform(geom geometry, from_proj text, to_srid integer)
  RETURNS geometry
  LANGUAGE sql
- IMMUTABLE PARALLEL SAFE STRICT COST 50
-AS $function$SELECT public.ST_Translate($1, $2, $3, 0)$function$
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS $function$SELECT public.postgis_transform_geometry($1, $2, proj4text, $3)
+	FROM spatial_ref_sys WHERE srid=$3;$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_transform(geom geometry, from_proj text, to_proj text)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS $function$SELECT public.postgis_transform_geometry($1, $2, $3, 0)$function$
 ```
 
 ```sql
@@ -7901,6 +7854,14 @@ CREATE OR REPLACE FUNCTION public.st_translate(geometry, double precision, doubl
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS $function$SELECT public.ST_Affine($1, 1, 0, 0, 0, 1, 0, 0, 0, 1, $2, $3, $4)$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_translate(geometry, double precision, double precision)
+ RETURNS geometry
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE STRICT COST 50
+AS $function$SELECT public.ST_Translate($1, $2, $3, 0)$function$
 ```
 
 ```sql
@@ -7929,14 +7890,6 @@ AS '$libdir/postgis-3', $function$ST_UnaryUnion$function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.st_union(geom1 geometry, geom2 geometry, gridsize double precision)
- RETURNS geometry
- LANGUAGE c
- IMMUTABLE PARALLEL SAFE STRICT COST 10000
-AS '$libdir/postgis-3', $function$ST_Union$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.st_union(geometry[])
  RETURNS geometry
  LANGUAGE c
@@ -7946,6 +7899,14 @@ AS '$libdir/postgis-3', $function$pgis_union_geometry_array$function$
 
 ```sql
 CREATE OR REPLACE FUNCTION public.st_union(geom1 geometry, geom2 geometry)
+ RETURNS geometry
+ LANGUAGE c
+ IMMUTABLE PARALLEL SAFE STRICT COST 10000
+AS '$libdir/postgis-3', $function$ST_Union$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.st_union(geom1 geometry, geom2 geometry, gridsize double precision)
  RETURNS geometry
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 10000
@@ -8265,21 +8226,6 @@ $function$
 ```
 
 ```sql
-CREATE OR REPLACE FUNCTION public.updategeometrysrid(character varying, character varying, character varying, integer)
- RETURNS text
- LANGUAGE plpgsql
- STRICT
-AS $function$
-DECLARE
-	ret  text;
-BEGIN
-	SELECT public.UpdateGeometrySRID('',$1,$2,$3,$4) into ret;
-	RETURN ret;
-END;
-$function$
-```
-
-```sql
 CREATE OR REPLACE FUNCTION public.updategeometrysrid(character varying, character varying, integer)
  RETURNS text
  LANGUAGE plpgsql
@@ -8289,6 +8235,21 @@ DECLARE
 	ret  text;
 BEGIN
 	SELECT public.UpdateGeometrySRID('','',$1,$2,$3) into ret;
+	RETURN ret;
+END;
+$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.updategeometrysrid(character varying, character varying, character varying, integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ STRICT
+AS $function$
+DECLARE
+	ret  text;
+BEGIN
+	SELECT public.UpdateGeometrySRID('',$1,$2,$3,$4) into ret;
 	RETURN ret;
 END;
 $function$
