@@ -144,6 +144,12 @@ export interface FotoMisionInput {
   timestampDispositivo: string
   blurScore: number | null
   respuestas: { campo_id: string; valor: unknown }[]
+  /**
+   * Presente solo para fotos de campos tipo='foto'.
+   * undefined = foto del bloque (comportamiento original).
+   * uuid      = foto generada para ese campo específico (campo_id en DB).
+   */
+  campoId?: string
 }
 
 export interface RegistrarMisionParams {
@@ -228,8 +234,11 @@ export async function registrarMision(params: RegistrarMisionParams) {
     throw new Error('No pudimos crear la misión: ' + misionError.message)
   }
 
-  const puntosPorFoto = params.fotos.length > 0
-    ? Math.round(params.puntosTotal / params.fotos.length)
+  // Puntos distribuidos solo entre fotos de bloque (campoId === undefined).
+  // Las fotos de campo siempre tienen puntos_otorgados = 0.
+  const fotosBloque = params.fotos.filter(f => !f.campoId)
+  const puntosPorFoto = fotosBloque.length > 0
+    ? Math.round(params.puntosTotal / fotosBloque.length)
     : 0
 
   // 2. Insertar fotos vinculadas a la misión
@@ -251,7 +260,10 @@ export async function registrarMision(params: RegistrarMisionParams) {
         precio_confirmado:     foto.precioConfirmado,
         blur_score:            foto.blurScore ?? null,
         estado:                'pendiente',
-        puntos_otorgados:      puntosPorFoto,
+        // Fotos de campo: puntos 0 (los puntos van sobre la foto del bloque).
+        puntos_otorgados:      foto.campoId ? 0 : puntosPorFoto,
+        // Nueva columna: null para foto del bloque, uuid para foto de campo.
+        campo_id:              foto.campoId ?? null,
       })
       .select('id')
       .single()
@@ -260,7 +272,9 @@ export async function registrarMision(params: RegistrarMisionParams) {
       throw new Error('Error al guardar foto en la misión: ' + fotoError.message)
     }
 
-    if (foto.respuestas.length > 0) {
+    // Respuestas de formulario: solo para fotos de bloque.
+    // Las fotos de campo no generan foto_respuestas — son su propia fila en fotos.
+    if (!foto.campoId && foto.respuestas.length > 0) {
       await db.from('foto_respuestas').insert(
         foto.respuestas.map(r => ({
           foto_id:  fotoData.id,

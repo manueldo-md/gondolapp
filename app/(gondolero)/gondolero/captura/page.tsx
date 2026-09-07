@@ -895,20 +895,37 @@ function CapturaContent() {
         : null
 
       // 3. Registrar la misión completa en DB
-      // Preparar respuestas: subir blobs de campos tipo 'foto' y reemplazar con URLs
+      // Preparar respuestas: subir blobs de campos no-foto y reemplazar con URLs.
+      // Los campos tipo='foto' se suben y se registran como filas propias en fotos
+      // (no como texto en foto_respuestas).
+      const campoFotosInput: {
+        bloqueId: string
+        campoId: string
+        storagePath: string
+        url: string
+        timestampDispositivo: string
+      }[] = []
+
       const fotosConRespuestas = await Promise.all(
         uploadResults.map(async r => {
           const respuestasProcesadas: { campo_id: string; valor: unknown }[] = []
           for (const [campo_id, valor] of Object.entries(r.respuestas)) {
             if (valor === undefined || valor === null || valor === '') continue
             if (valor instanceof File || valor instanceof Blob) {
-              // Subir foto de campo adicional
+              // Campo tipo='foto': subir imagen y acumular como foto propia en fotos.
+              // NO va a respuestasProcesadas.
               const campoPath = generarPathFoto(campana.id, deviceId)
               const fd = new FormData()
               fd.append('foto', valor instanceof File ? valor : new File([valor], 'foto-campo.jpg', { type: 'image/jpeg' }))
               fd.append('storagePath', campoPath)
               const { url: campoUrl } = await subirFoto(fd)
-              respuestasProcesadas.push({ campo_id, valor: campoUrl })
+              campoFotosInput.push({
+                bloqueId:             r.bloqueId ?? bloqueGenericoId ?? '',
+                campoId:              campo_id,
+                storagePath:          campoPath,
+                url:                  campoUrl,
+                timestampDispositivo: r.timestampDispositivo,
+              })
             } else {
               respuestasProcesadas.push({ campo_id, valor })
             }
@@ -917,24 +934,44 @@ function CapturaContent() {
         })
       )
 
+      // puntosTotal: calculado SOLO sobre fotos de bloque (fotosConRespuestas.length).
+      // Las fotos de campo no entran en este conteo — ni en puntos_por_mision
+      // ni en el modo legacy puntos_por_foto.
+      const puntosTotal = campana.puntos_por_mision > 0
+        ? campana.puntos_por_mision
+        : campana.puntos_por_foto * fotosConRespuestas.length
+
       const result = await registrarMision({
         campanaId: campana.id,
         comercioId: comercio.id,
         deviceId,
         lat, lng,
-        // Usar puntos_por_mision si la campaña lo tiene, fallback a puntos_por_foto (legacy)
-        puntosTotal: campana.puntos_por_mision > 0
-          ? campana.puntos_por_mision
-          : campana.puntos_por_foto * fotosConRespuestas.length,
-        fotos: fotosConRespuestas.map(r => ({
-          bloqueId:             r.bloqueId ?? bloqueGenericoId ?? '',
-          storagePath:          r.storagePath,
-          url:                  r.url,
-          precioConfirmado:     r.precio ? parseFloat(r.precio) : null,
-          timestampDispositivo: r.timestampDispositivo,
-          blurScore:            r.blurScore,
-          respuestas:           r.respuestasProcesadas,
-        })),
+        puntosTotal,
+        fotos: [
+          // Fotos de bloque (una por bloque, con sus respuestas de formulario no-foto)
+          ...fotosConRespuestas.map(r => ({
+            bloqueId:             r.bloqueId ?? bloqueGenericoId ?? '',
+            storagePath:          r.storagePath,
+            url:                  r.url,
+            precioConfirmado:     r.precio ? parseFloat(r.precio) : null,
+            timestampDispositivo: r.timestampDispositivo,
+            blurScore:            r.blurScore,
+            respuestas:           r.respuestasProcesadas,
+            // campoId ausente → registrarMision sabe que es foto de bloque
+          })),
+          // Fotos de campo (una por cada campo tipo='foto' capturado)
+          // puntos_otorgados = 0, campo_id = campoId, no generan foto_respuestas
+          ...campoFotosInput.map(cf => ({
+            bloqueId:             cf.bloqueId,
+            storagePath:          cf.storagePath,
+            url:                  cf.url,
+            precioConfirmado:     null,
+            timestampDispositivo: cf.timestampDispositivo,
+            blurScore:            null,
+            respuestas:           [] as { campo_id: string; valor: unknown }[],
+            campoId:              cf.campoId,
+          })),
+        ],
       })
 
       // Liberar object URLs
