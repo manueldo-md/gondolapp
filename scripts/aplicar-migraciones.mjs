@@ -34,8 +34,25 @@ const { config, refEsperado, descripcion, verificaSsl } = resolverConexion(proce
 const Client = await cargarClient()
 
 // ── Archivos, en orden lexicográfico ─────────────────────────────────────────
-const archivos = readdirSync(DIR_MIGRACIONES).filter((f) => f.endsWith('.sql')).sort()
-if (archivos.length === 0) salirCon(`No hay archivos .sql en ${DIR_MIGRACIONES}`)
+const todos = readdirSync(DIR_MIGRACIONES).filter((f) => f.endsWith('.sql')).sort()
+if (todos.length === 0) salirCon(`No hay archivos .sql en ${DIR_MIGRACIONES}`)
+
+// --desde <archivo>: reanudar desde ese archivo inclusive.
+//
+// Para qué: si la corrida corta en el archivo N, ese archivo se revirtió entero
+// pero los N-1 anteriores quedaron aplicados. Volver a empezar desde cero contra
+// esa base NO funciona: varias migraciones del set no son re-ejecutables (crean
+// policies sin DROP previo, por ejemplo). Lo correcto es arreglar el archivo que
+// falló y reanudar desde ahí.
+const indiceDesde = process.argv.indexOf('--desde')
+const desde = indiceDesde !== -1 ? process.argv[indiceDesde + 1] : null
+if (indiceDesde !== -1 && !desde) salirCon('--desde necesita un nombre de archivo.')
+if (desde && !todos.includes(desde)) {
+  salirCon(`--desde "${desde}" no existe en ${DIR_MIGRACIONES}.\n  Tiene que ser el nombre exacto del archivo.`)
+}
+
+const archivos = desde ? todos.slice(todos.indexOf(desde)) : todos
+const omitidos = todos.length - archivos.length
 
 // ── Contexto del error: ubicar la sentencia que falló ────────────────────────
 // Postgres devuelve `position` como offset en caracteres sobre el string
@@ -72,7 +89,11 @@ console.log(`Base:      ${info.db}`)
 console.log(`Servidor:  ${info.v.split(',')[0]}`)
 console.log(`Proyecto:  ${refEsperado}`)
 if (!verificaSsl) console.log('SSL:       sin verificación de cadena (definí PGSSLROOTCERT para verificarla)')
-console.log(`Archivos:  ${archivos.length}\n`)
+console.log(
+  omitidos > 0
+    ? `Archivos:  ${archivos.length} de ${todos.length} (${omitidos} omitidos por --desde ${desde})\n`
+    : `Archivos:  ${archivos.length}\n`
+)
 
 let aplicados = 0
 const arranque = Date.now()
