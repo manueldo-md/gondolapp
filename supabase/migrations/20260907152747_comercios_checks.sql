@@ -7,7 +7,7 @@
 -- POR QUÉ FALTABA: creada a mano en el SQL Editor. Es la segunda de las dos
 -- tablas que docs/AUDITORIA-2026-09.md sección 2.2 marca como ausentes.
 --
--- Forma tomada de docs/schema-real-2026-09.md (secciones 1, 2, 3 y 4).
+-- Forma tomada de docs/schema-real-2026-09-pre-incidente.md (secciones 1, 2, 3 y 4).
 --
 -- OJO (no lo arregla esta migración): la política de esta tabla es
 -- `FOR ALL USING (true)`, así que cualquier usuario autenticado puede leer los

@@ -9,7 +9,7 @@
 -- tablas que docs/AUDITORIA-2026-09.md sección 2.2 marca como ausentes de toda
 -- migración. La columna repositora_id se agregó después, también a mano.
 --
--- Forma tomada de docs/schema-real-2026-09.md (secciones 1, 2, 3 y 4).
+-- Forma tomada de docs/schema-real-2026-09-pre-incidente.md (secciones 1, 2, 3 y 4).
 -- =============================================================================
 
 -- gen_random_bytes() vive en pgcrypto y la 001 no la habilita.

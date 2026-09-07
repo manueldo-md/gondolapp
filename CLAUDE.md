@@ -992,7 +992,13 @@ Cerrado en esta sesión:
   (migración 20260907110057_fotos_campo_id.sql, ex 045).
 
 Documentos de referencia:
-- docs/schema-real-2026-09.md — fuente de verdad de la DB
+- docs/schema-real-2026-09.md — fuente de verdad de la DB. Regenerado desde
+  producción el 7/9/2026 después de la reconstrucción; ya no tiene divergencias
+  con las migraciones. Se verificó que dev, levantado por separado desde las
+  mismas 57 migraciones, produce ese documento byte a byte.
+- docs/schema-real-2026-09-pre-incidente.md — el dump anterior al DROP SCHEMA,
+  solo como registro histórico. Es el insumo del que salieron los grupos A, B y
+  C de la reconciliación de migraciones.
 - docs/AUDITORIA-2026-09.md — auditoría completa, con Top 10 de prioridades
 
 Próximos pasos, en orden:

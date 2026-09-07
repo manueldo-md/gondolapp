@@ -30,7 +30,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
-import { resolverConexion, cargarClient } from './lib/conexion.mjs'
+import { resolverConexion, cargarClient, conectar } from './lib/conexion.mjs'
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DUMP_REAL = join(RAIZ, 'docs', 'schema-real-2026-09.md')
@@ -85,7 +85,9 @@ const SECCIONES = [
 const SQL_FUNCIONES = `SELECT p.proname, pg_get_functiondef(p.oid) AS definicion
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.prokind = 'f'
-  ORDER BY p.proname`
+  -- Ordenar solo por nombre deja las sobrecargas (PostGIS tiene decenas) en
+  -- orden no determinista, y el diff marca diferencias que no existen.
+  ORDER BY p.proname, pg_get_function_identity_arguments(p.oid)`
 
 const SQL_TRIGGERS = `SELECT event_object_table, trigger_name, action_timing, event_manipulation
   FROM information_schema.triggers WHERE trigger_schema = 'public'
@@ -172,7 +174,7 @@ function tablasDelDump(texto, tituloSeccion, ncols) {
 
 // ── Corrida ──────────────────────────────────────────────────────────────────
 const client = new Client(config)
-await client.connect()
+await conectar(client, refEsperado, descripcion)
 console.log(`\nConexión: ${descripcion}`)
 console.log(`Proyecto: ${refEsperado}`)
 

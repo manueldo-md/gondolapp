@@ -5,7 +5,7 @@
 -- auth.users.
 --
 -- POR QUÉ FALTABA: es uno de los cambios ejecutados a mano el 7/9/2026. El dump
--- de docs/schema-real-2026-09.md se tomó ANTES de aplicarlo, por eso la sección
+-- de docs/schema-real-2026-09-pre-incidente.md se tomó ANTES de aplicarlo, por eso la sección
 -- 5 de ese documento tenía la versión vieja.
 --
 -- POR QUÉ IMPORTA: raw_user_meta_data es literalmente lo que el cliente manda

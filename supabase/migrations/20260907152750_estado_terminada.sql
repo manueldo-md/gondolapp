@@ -5,7 +5,7 @@
 -- fixer_repo_solicitudes.
 --
 -- POR QUÉ FALTABA: es uno de los cambios ejecutados a mano el 7/9/2026,
--- documentado al inicio de docs/schema-real-2026-09.md ("Cambios aplicados
+-- documentado al inicio de docs/schema-real-2026-09-pre-incidente.md ("Cambios aplicados
 -- DESPUÉS de tomar este dump"). Cerró el bug de desvinculación abierto desde
 -- abril: el código escribe estado='terminada' y el CHECK original solo aceptaba
 -- ('pendiente','aprobada','rechazada'), así que la desvinculación fallaba.

@@ -16,7 +16,7 @@
 -- POR QUÉ FALTABA: las tres columnas se agregaron a mano al SQL Editor cuando
 -- se sumó el actor repositora. Ver docs/AUDITORIA-2026-09.md sección 2.2 y 2.5.
 --
--- Forma tomada de docs/schema-real-2026-09.md (secciones 1 y 2).
+-- Forma tomada de docs/schema-real-2026-09-pre-incidente.md (secciones 1 y 2).
 -- =============================================================================
 
 -- ── Columnas ─────────────────────────────────────────────────────────────────

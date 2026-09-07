@@ -2,7 +2,7 @@
 -- Objetos que existen en producción y no estaban en ninguna migración
 -- =============================================================================
 -- Grupo A de la comparación del 7/9/2026 entre la base reconstruida desde las
--- migraciones y docs/schema-real-2026-09.md. Todo esto se creó a mano en el
+-- migraciones y docs/schema-real-2026-09-pre-incidente.md. Todo esto se creó a mano en el
 -- SQL Editor de Supabase entre marzo y abril de 2026 y nunca se versionó.
 --
 -- De los 35 ítems del grupo A:

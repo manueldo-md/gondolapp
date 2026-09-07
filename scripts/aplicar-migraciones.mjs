@@ -202,7 +202,12 @@ let aplicados = 0
 const arranque = Date.now()
 
 for (const archivo of archivos) {
-  const sql = readFileSync(join(DIR_MIGRACIONES, archivo), 'utf8')
+  // Normalizar los fines de línea. En Windows git checkoutea los .sql con CRLF
+  // y Postgres guarda esos retornos de carro dentro del cuerpo de las
+  // funciones. No cambia la semántica, pero hace que el mismo schema se vea
+  // distinto según el sistema operativo donde se aplicó, y ensucia todas las
+  // comparaciones posteriores.
+  const sql = readFileSync(join(DIR_MIGRACIONES, archivo), 'utf8').split('\r\n').join('\n')
   const t0 = Date.now()
   try {
     await client.query(sql)

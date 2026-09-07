@@ -4,7 +4,7 @@
 -- QUÉ CUBRE: get_tipo_actor(), get_distri_id() y get_marca_id().
 --
 -- POR QUÉ FALTABA: cambio ejecutado a mano el 7/9/2026, documentado al inicio
--- de docs/schema-real-2026-09.md.
+-- de docs/schema-real-2026-09-pre-incidente.md.
 --
 -- POR QUÉ IMPORTA: las tres son SECURITY DEFINER y toda la RLS del sistema
 -- depende de ellas. Sin search_path fijo, un rol que pueda crear objetos en un

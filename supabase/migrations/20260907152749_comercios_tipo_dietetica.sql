@@ -9,7 +9,7 @@
 -- comercio de ese tipo falla con constraint violation.
 -- Ver docs/AUDITORIA-2026-09.md sección 2.5.
 --
--- El orden de la lista replica el de docs/schema-real-2026-09.md sección 2,
+-- El orden de la lista replica el de docs/schema-real-2026-09-pre-incidente.md sección 2,
 -- para que la definición del constraint sea idéntica al dump carácter por
 -- carácter y el diff posterior no marque una diferencia cosmética.
 -- =============================================================================
