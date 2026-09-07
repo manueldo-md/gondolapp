@@ -480,6 +480,23 @@ supabase gen types typescript --local > types/database.ts
 
 ---
 
+## 10b. TIPOS DE LA BASE DE DATOS
+
+`types/database.ts` se genera desde el schema real de Supabase.
+Regenerar **SIEMPRE** que cambie el schema:
+
+```bash
+npx supabase gen types typescript --project-id xzznzustgsacmfwsupux > types/database.ts
+```
+
+Requiere estar logueado (`npx supabase login`). No editar el archivo a mano.
+
+**Nota:** gran parte del código todavía usa `as any` y anotaciones de tipo
+escritas a mano, donde TypeScript no valida contra estos tipos. Sacar esos
+casts es deuda pendiente (ver `docs/AUDITORIA-2026-09.md`, sección 9.3).
+
+---
+
 ## 11. FLUJOS CRÍTICOS — CÓMO FUNCIONAN
 
 ### Flujo de captura de foto (gondolero)
