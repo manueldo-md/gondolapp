@@ -145,7 +145,9 @@ export default async function CampanasPage() {
 
     const campanaIdsConZona = [
       ...(campanaZonasOldRes.data ?? []).map((cz: { campana_id: string }) => cz.campana_id),
-      ...(campanaZonasNewRes.data ?? []).map((cl: { campana_id: string }) => cl.campana_id),
+      ...(campanaZonasNewRes.data ?? [])
+        .map((cl: { campana_id: string | null }) => cl.campana_id)
+        .filter((id): id is string => id !== null),
     ]
 
     const { data: campanas, error } = await query
@@ -160,7 +162,9 @@ export default async function CampanasPage() {
     ])
     const campanasConAlgunaZona = new Set([
       ...(todasZonasOldRes.data ?? []).map((cz: { campana_id: string }) => cz.campana_id),
-      ...(todasZonasNewRes.data ?? []).map((cl: { campana_id: string }) => cl.campana_id),
+      ...(todasZonasNewRes.data ?? [])
+        .map((cl: { campana_id: string | null }) => cl.campana_id)
+        .filter((id): id is string => id !== null),
     ])
 
     listaActivas = todas.filter(c =>
