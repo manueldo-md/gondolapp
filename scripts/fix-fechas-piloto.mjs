@@ -22,17 +22,52 @@ const db = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// gondolero_id → fecha base del relevamiento
-const FECHA_POR_GONDOLERO = {
-  '206b3176-ff50-42c1-83f2-68fade16d221': '2026-03-11', // Agustín
-  'e7b4a6ae-f0c0-4e8a-9d4b-1b2d59c9ecf1': '2026-03-11', // Alejandro
-  '05ef9fa6-7f05-469e-b965-6694d5caaf39': '2026-03-11', // Martín
-  '4a22d255-b2f8-43e4-a248-0a536490c882': '2026-03-12', // Gonzalo
-  'f6de6101-bf73-4839-bc2b-8c4b62465d2d': '2026-03-12', // Guillermo
-  '9aa2e6f3-6c15-46bb-89a8-33a66a4327d9': '2026-03-12', // Raúl
-  'cd6dbbcc-0c1c-4d98-a02c-2cf240a9deeb': '2026-03-13', // José
-  'd7ec9c81-64a2-423f-8ba7-737fe8530b70': '2026-03-13', // Juan
-  'f9c376da-840c-42a3-bead-0820e2ce2673': '2026-03-14', // Marisol
+// ── Fecha base del relevamiento, por gondolero ───────────────────────────────
+// Antes esto mapeaba gondolero_id hardcodeados. Los ids los genera Supabase al
+// crear cada cuenta, así que son distintos en cada ambiente: en dev el script
+// no mapeaba ninguna misión y, sin la guarda, habría reportado 0 en silencio.
+// Es el mismo problema que ya tuvimos con el id de la campaña y con los
+// localidad_id.
+//
+// La clave ahora es el email, que sí es estable entre ambientes: el seed crea
+// siempre las mismas cuentas <nombre>@demo.gondolapp.com. El id se resuelve en
+// runtime contra auth.users.
+const FECHA_POR_EMAIL = {
+  'agustin@demo.gondolapp.com':   '2026-03-11',
+  'alejandro@demo.gondolapp.com': '2026-03-11',
+  'martin@demo.gondolapp.com':    '2026-03-11',
+  'gonzalo@demo.gondolapp.com':   '2026-03-12',
+  'guillermo@demo.gondolapp.com': '2026-03-12',
+  'raul@demo.gondolapp.com':      '2026-03-12',
+  'jose@demo.gondolapp.com':      '2026-03-13',
+  'juan@demo.gondolapp.com':      '2026-03-13',
+  'marisol@demo.gondolapp.com':   '2026-03-14',
+}
+
+// gondolero_id → fecha, se llena en runtime resolviendo los emails de arriba
+const FECHA_POR_GONDOLERO = {}
+
+async function resolverGondoleros() {
+  const encontrados = new Map()
+  let page = 1
+  while (true) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error) { console.error('❌ No se pudieron listar los usuarios:', error.message); process.exit(1) }
+    if (!data?.users?.length) break
+    for (const u of data.users) {
+      const email = u.email?.toLowerCase()
+      if (email && FECHA_POR_EMAIL[email]) encontrados.set(email, u.id)
+    }
+    if (data.users.length < 1000) break
+    page++
+  }
+
+  for (const [email, fecha] of Object.entries(FECHA_POR_EMAIL)) {
+    const id = encontrados.get(email)
+    if (!id) { console.log(`  ⚠️  Sin cuenta para ${email} — sus misiones se omiten`); continue }
+    FECHA_POR_GONDOLERO[id] = fecha
+  }
+  console.log(`Gondoleros resueltos: ${Object.keys(FECHA_POR_GONDOLERO).length} de ${Object.keys(FECHA_POR_EMAIL).length}`)
 }
 
 // Horario de campo: entre 8:30 y 18:00, distribuir misiones en orden
@@ -48,6 +83,7 @@ function timestampParaMision(fechaBase, indice, total) {
 
 async function run() {
   CAMPANA_ID = await resolverCampanaId(db)
+  await resolverGondoleros()
 
   // 1. Traer todas las misiones de la campaña
   const { data: misiones, error: mErr } = await db
@@ -81,15 +117,14 @@ async function run() {
 
   console.log(`\nMisiones a actualizar: ${misionTimestamps.size}`)
 
-  // Los gondolero_id de FECHA_POR_GONDOLERO también están hardcodeados. Hoy
-  // siguen siendo válidos porque auth.users sobrevivió al DROP SCHEMA, pero si
-  // alguna vez se recrean las cuentas, este script volvería a "andar" sin hacer
-  // nada. Cortar acá en vez de reportar 0 en silencio.
+  // Cortar en vez de reportar 0 en silencio. Esta guarda ya sirvió una vez:
+  // detectó en dev que los gondolero_id estaban hardcodeados, que es lo que
+  // motivó resolverlos por email.
   if (misionTimestamps.size === 0) {
     console.error('\n✗ Ninguna misión quedó mapeada a una fecha.')
-    console.error(`  La campaña tiene ${misiones?.length ?? 0} misiones, pero ningún gondolero_id`)
-    console.error('  coincide con los de FECHA_POR_GONDOLERO. Si se recrearon las cuentas,')
-    console.error('  hay que actualizar ese mapa con los ids nuevos.\n')
+    console.error(`  La campaña tiene ${misiones?.length ?? 0} misiones, pero ninguna pertenece`)
+    console.error('  a los gondoleros de FECHA_POR_EMAIL. Revisá que el seed haya creado las')
+    console.error('  cuentas <nombre>@demo.gondolapp.com en este ambiente.\n')
     process.exit(1)
   }
 

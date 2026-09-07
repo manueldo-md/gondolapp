@@ -1299,3 +1299,53 @@ en el deploy de dev se ve y se arregla en minutos.
 
 Si aparece ese error en un deploy, la causa es siempre la misma: falta
 `NEXT_PUBLIC_APP_URL` en ese proyecto de Vercel.
+
+---
+
+## Poblar un ambiente desde cero — los seis pasos
+
+**El seed solo no alcanza.** Correr `seed-demo-completo.ts` y parar ahí deja el
+ambiente con síntomas que parecen bugs de la app: **presencia 0% y las fotos sin
+cargar**. Pasó en producción tras la reconstrucción y volvió a pasar en dev.
+No falla nada: los datos quedan a medias y la app los muestra vacíos.
+
+Los seis pasos, en orden. Cada uno depende del anterior.
+
+```bash
+npx tsx scripts/seed-zonas.ts               --ref <project-ref>
+npx tsx scripts/seed-demo-completo.ts       --ref <project-ref>
+npx tsx scripts/fix-localidad-comercios.mjs --ref <project-ref>
+npx tsx scripts/fix-declaracion-georgalos.mjs --ref <project-ref>
+npx tsx scripts/fix-fechas-piloto.mjs       --ref <project-ref>
+npx tsx scripts/fix-foto-urls-v2.mjs        --ref <project-ref>
+```
+
+Requisitos: `npm install --no-save pg tsx` (ojo, instalarlos **juntos**: un
+`npm install --no-save X` borra los `--no-save` anteriores), un
+`.env.<nombre>.local` con las credenciales del proyecto, y `GONDOLAPP_PROD=1`
+adelante si el destino es producción.
+
+Qué aporta cada uno, y qué se rompe si falta:
+
+| Paso | Aporta | Si falta |
+|---|---|---|
+| `seed-zonas` | 24 provincias, 524 departamentos, 942 localidades | Todo lo demás falla: los comercios no tienen dónde ubicarse |
+| `seed-demo-completo` | Entidades, usuarios, comercios, campañas, misiones, fotos, puntos | No hay nada |
+| `fix-localidad-comercios` | `comercios.localidad_id` | El filtrado por zona queda inerte y el paso de `campana_localidades` del seed no asigna nada |
+| `fix-declaracion-georgalos` | `fotos.declaracion` desde el CSV | **Presencia 0%**: sin declaración no hay producto presente que contar |
+| `fix-fechas-piloto` | `created_at` real del relevamiento (11–14/3/2026) | Todo el piloto aparece con fecha del seed |
+| `fix-foto-urls-v2` | URLs de Drive en formato `thumbnail` | **Fotos sin cargar**: el seed escribe `/uc?export=view` y `next.config.js` solo admite `/thumbnail` |
+
+Los cuatro `fix-*` leen el CSV del piloto de
+`OneDrive/LABORAL.OL/Biomega/Georgalos/`. Sin ese archivo no corren.
+
+### Cómo verificar que quedó completo
+
+Los síntomas son silenciosos, así que conviene chequear a mano:
+
+- **Presencia** distinta de 0% en el detalle de la campaña Georgalos
+- **Fotos** que cargan, y sus URLs con `thumbnail` y no con `uc?export=view`
+- **Fechas** de las misiones entre el 11 y el 14 de marzo de 2026
+- `comercios` con `localidad_id IS NULL` en **cero**
+- `campana_localidades` con filas: si está vacía, el filtro por zona no
+  discrimina y todos ven todas las campañas
