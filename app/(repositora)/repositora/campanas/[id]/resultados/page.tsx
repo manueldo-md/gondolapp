@@ -80,14 +80,15 @@ export default async function RepoCampanaResultadosPage({
     .from('fotos')
     .select('id, url, storage_path, estado, precio_detectado, created_at, gondolero:profiles(nombre,alias), comercio:comercios(nombre,direccion)')
     .eq('campana_id', params.id)
+    .is('campo_id', null)  // excluir fotos de campo (campo tipo='foto')
     .order('created_at', { ascending: false })
     .limit(200)
   if (tab) fotosQuery = fotosQuery.eq('estado', tab)
 
   const [fotosData, fotosCuenta, precioData, partData, bloquesData] = await Promise.all([
     fotosQuery,
-    admin.from('fotos').select('id, estado').eq('campana_id', params.id),
-    admin.from('fotos').select('precio_detectado, precio_confirmado, created_at, gondolero:profiles(alias), comercio:comercios(nombre, direccion)').eq('campana_id', params.id).eq('estado', 'aprobada'),
+    admin.from('fotos').select('id, estado').eq('campana_id', params.id).is('campo_id', null),
+    admin.from('fotos').select('precio_detectado, precio_confirmado, created_at, gondolero:profiles(alias), comercio:comercios(nombre, direccion)').eq('campana_id', params.id).eq('estado', 'aprobada').is('campo_id', null),
     admin.from('participaciones').select('gondolero_id', { count: 'exact', head: true }).eq('campana_id', params.id),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any).from('bloques_foto').select('id, orden, instruccion, bloque_campos(id, tipo, pregunta, opciones, orden)').eq('campana_id', params.id).order('orden'),

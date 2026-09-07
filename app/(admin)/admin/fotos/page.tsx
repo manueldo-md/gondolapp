@@ -27,6 +27,7 @@ export default async function FotosAdminPage({
     `)
     .order('created_at', { ascending: false })
     .limit(60)
+    .is('campo_id', null)  // excluir fotos de campo (campo tipo='foto')
 
   if (filtroEstado !== 'todos') {
     query = query.eq('estado', filtroEstado)

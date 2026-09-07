@@ -115,6 +115,7 @@ export default async function GondolasPage({
     .select('id, storage_path, url, declaracion, estado, created_at, precio_confirmado, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
     .order('created_at', { ascending: false })
     .limit(100)
+    .is('campo_id', null)  // excluir fotos de campo (campo tipo='foto')
 
   if (filtrosCampana) {
     query = query.eq('campana_id', filtrosCampana)

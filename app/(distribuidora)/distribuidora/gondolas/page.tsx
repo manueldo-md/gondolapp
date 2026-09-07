@@ -260,6 +260,7 @@ export default async function GondolasPage({
     .in('campana_id', safeCampanaIds)
     .order('created_at', { ascending: false })
     .limit(150)
+    .is('campo_id', null)  // excluir fotos de campo (campo tipo='foto')
 
   // Filtros de tab y búsqueda
   if (tabActivo === 'pendiente') {
@@ -280,12 +281,13 @@ export default async function GondolasPage({
 
   const fotosRaw = (data as FotoPendienteRaw[] | null) ?? []
 
-  // Count de pendientes (para el badge del tab)
+  // Count de pendientes (para el badge del tab) — excluir fotos de campo
   const { count: pendienteCount } = await admin
     .from('fotos')
     .select('*', { count: 'exact', head: true })
     .eq('estado', 'pendiente')
     .in('campana_id', safeCampanaIds)
+    .is('campo_id', null)
 
   // Generar URLs firmadas para el bucket privado
   const fotos: FotoPendiente[] = await Promise.all(
