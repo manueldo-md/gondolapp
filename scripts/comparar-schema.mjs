@@ -50,6 +50,7 @@ const SECCIONES = [
     n: 1,
     titulo: '1. Tablas y columnas',
     columnas: ['table_name', 'column_name', 'data_type', 'is_nullable', 'column_default'],
+    clave: 2,
     sql: `SELECT table_name, column_name, data_type, is_nullable, column_default
           FROM information_schema.columns WHERE table_schema = 'public'
           ORDER BY table_name, ordinal_position`,
@@ -58,6 +59,7 @@ const SECCIONES = [
     n: 2,
     titulo: '2. Constraints',
     columnas: ['tabla', 'conname', 'definicion'],
+    clave: 2,
     sql: `SELECT conrelid::regclass::text AS tabla, conname, pg_get_constraintdef(oid) AS definicion
           FROM pg_constraint WHERE connamespace = 'public'::regnamespace
           ORDER BY conrelid::regclass::text, conname`,
@@ -66,6 +68,7 @@ const SECCIONES = [
     n: 3,
     titulo: '3. Políticas RLS',
     columnas: ['tablename', 'policyname', 'cmd', 'roles', 'qual', 'with_check'],
+    clave: 2,
     sql: `SELECT tablename, policyname, cmd, roles::text AS roles, qual, with_check
           FROM pg_policies WHERE schemaname = 'public' ORDER BY tablename, policyname`,
   },
@@ -73,6 +76,7 @@ const SECCIONES = [
     n: 4,
     titulo: '4. Índices',
     columnas: ['tablename', 'indexname', 'indexdef'],
+    clave: 2,
     sql: `SELECT tablename, indexname, indexdef FROM pg_indexes
           WHERE schemaname = 'public' ORDER BY tablename, indexname`,
   },
@@ -88,26 +92,81 @@ const SQL_TRIGGERS = `SELECT event_object_table, trigger_name, action_timing, ev
   ORDER BY event_object_table, trigger_name`
 
 // ── Normalización para comparar ──────────────────────────────────────────────
-const celda = (v) => (v === null || v === undefined ? 'null' : String(v))
-const normalizar = (s) => s.replace(/`/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
-const claveFila = (cols) => cols.map(normalizar).join(' | ')
+// Postgres devuelve los `qual` de las policies con saltos de línea internos.
+// Volcarlos crudos parte la fila markdown en varias líneas y corrompe tanto el
+// documento como la comparación: en la primera corrida, 20 de 89 policies
+// quedaron mal por esto. Se colapsan a un espacio, y se escapan los '|' para
+// que no inventen columnas.
+const celda = (v) =>
+  v === null || v === undefined ? 'null' : String(v).replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim()
+
+// Comparar el texto crudo produce falsos positivos: el dump fue transcrito a
+// mano en partes y no coincide carácter por carácter con lo que emite
+// Postgres. Se normaliza lo que es puramente de forma:
+//   - negrita markdown y backticks del documento
+//   - casts explícitos: 'admin' y 'admin'::text son el mismo valor
+//   - espaciado dentro de paréntesis y alrededor de comas
+const normalizar = (s) =>
+  String(s)
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/::[a-z][a-z0-9_ ]*(\[\])?/g, '')
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
+    .replace(/\s*,\s*/g, ',')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+// Dos filas que solo difieren en paréntesis son ruido de transcripción del
+// dump, no una diferencia de schema.
+const soloParentesis = (a, b) => a !== b && a.replace(/[()]/g, '') === b.replace(/[()]/g, '')
+
 const esTruncada = (linea) => linea.includes(' ... ')
 
-// ── Parseo de las tablas markdown del dump ───────────────────────────────────
-function tablasDelDump(texto, tituloSeccion) {
+// ── Parseo de las tablas markdown ────────────────────────────────────────────
+// Reensambla filas partidas en varias líneas. Hace falta para leer documentos
+// generados antes del fix de `celda()`, y para tolerar cualquier edición manual
+// que meta un salto de línea dentro de una celda.
+const ENCABEZADOS = new Set(['table_name', 'tabla', 'tablename'])
+
+function tablasDelDump(texto, tituloSeccion, ncols) {
   const lineas = texto.split('\n')
   const inicio = lineas.findIndex((l) => l.trim() === `## ${tituloSeccion}`)
   if (inicio === -1) return null
+
   const filas = []
+  let buffer = null
+  const cerrar = () => {
+    if (buffer === null) return
+    const t = buffer.trim()
+    if (t.endsWith('|')) {
+      const cols = t.slice(1, -1).split('|').map((c) => c.trim())
+      if (cols.length === ncols && !ENCABEZADOS.has(cols[0])) filas.push({ cols, linea: t })
+    }
+    buffer = null
+  }
+  const completa = () => {
+    const t = buffer.trim()
+    return t.endsWith('|') && t.slice(1, -1).split('|').length === ncols
+  }
+
   for (let i = inicio + 1; i < lineas.length; i++) {
     const l = lineas[i].trim()
     if (l.startsWith('## ')) break
-    if (!l.startsWith('|')) continue
-    if (/^\|[\s|:-]+\|$/.test(l)) continue // separador
-    const cols = l.slice(1, -1).split('|').map((c) => c.trim())
-    if (cols.length < 2) continue
-    filas.push({ cols, linea: l })
+    if (/^\|[\s|:-]+\|$/.test(l)) { cerrar(); continue } // separador
+    if (l.startsWith('|')) {
+      cerrar()
+      buffer = l
+      if (completa()) cerrar()
+    } else if (buffer !== null) {
+      buffer += ' ' + l
+      if (completa()) cerrar()
+    }
   }
+  cerrar()
   return filas
 }
 
@@ -127,8 +186,13 @@ const salidaMd = [
   '',
 ]
 
-let totalFaltan = 0
-let totalSobran = 0
+// Clasificación pedida:
+//   A — existe en producción y no en las migraciones → se hizo a mano, falta versionarla
+//   B — existe en las migraciones y no en producción → la migración nunca se aplicó
+//   C — existe en las dos pero distinto → divergencia real, hay que decidir
+const grupoA = []
+const grupoB = []
+const grupoC = []
 let totalNoComparables = 0
 
 for (const seccion of SECCIONES) {
@@ -146,37 +210,58 @@ for (const seccion of SECCIONES) {
   const tsvNuevo = filasNuevas.map((f) => f.map(normalizar).join('\t')).sort()
   writeFileSync(join(dirSalida, `schema-nuevo-${seccion.n}.tsv`), tsvNuevo.join('\n') + '\n', 'utf8')
 
-  // comparación contra el dump
-  const filasReales = tablasDelDump(dumpReal, seccion.titulo)
+  const filasReales = tablasDelDump(dumpReal, seccion.titulo, seccion.columnas.length)
   if (!filasReales) {
     console.log(`\n[${seccion.n}] ${seccion.titulo}: no se encontró la sección en el dump, se omite la comparación`)
     continue
   }
-  const datos = filasReales.filter((f) => f.cols[0] !== seccion.columnas[0]) // saca el encabezado
-  const truncadas = datos.filter((f) => esTruncada(f.linea))
-  const comparables = datos.filter((f) => !esTruncada(f.linea))
+  writeFileSync(
+    join(dirSalida, `schema-real-${seccion.n}.tsv`),
+    filasReales.map((f) => f.cols.map(normalizar).join('\t')).sort().join('\n') + '\n',
+    'utf8'
+  )
 
-  const tsvReal = comparables.map((f) => f.cols.map(normalizar).join('\t')).sort()
-  writeFileSync(join(dirSalida, `schema-real-${seccion.n}.tsv`), tsvReal.join('\n') + '\n', 'utf8')
+  // Se compara por clave (las primeras `clave` columnas identifican el objeto),
+  // no por fila completa. Así una diferencia de detalle sale como C y no como
+  // un par A+B espurio.
+  const claveDe = (cols) => cols.slice(0, seccion.clave).map(normalizar).join('::')
+  const porClaveReal = new Map(filasReales.map((f) => [claveDe(f.cols), f]))
+  const porClaveNueva = new Map(filasNuevas.map((c) => [claveDe(c), c]))
 
-  const setReal = new Set(tsvReal)
-  const setNuevo = new Set(tsvNuevo)
-  const faltan = tsvReal.filter((k) => !setNuevo.has(k))   // están en producción, no en la base nueva
-  const sobran = tsvNuevo.filter((k) => !setReal.has(k))   // están en la base nueva, no en producción
-
-  totalFaltan += faltan.length
-  totalSobran += sobran.length
-  totalNoComparables += truncadas.length
+  let noComparables = 0
+  for (const [k, f] of porClaveReal) {
+    const g = porClaveNueva.get(k)
+    if (!g) { grupoA.push({ sec: seccion.n, k, detalle: f.cols.join(' | ') }); continue }
+    // Una fila truncada a mano en el dump existe, pero su texto no sirve para comparar.
+    if (esTruncada(f.linea)) { noComparables++; continue }
+    const a = f.cols.map(normalizar).join('\t')
+    const b = g.map(normalizar).join('\t')
+    if (a === b) continue
+    if (soloParentesis(a, b)) { noComparables++; continue }
+    grupoC.push({ sec: seccion.n, k, prod: f.cols.slice(seccion.clave).join(' | '), dev: g.slice(seccion.clave).join(' | ') })
+  }
+  for (const [k, c] of porClaveNueva) {
+    if (!porClaveReal.has(k)) grupoB.push({ sec: seccion.n, k, detalle: c.join(' | ') })
+  }
+  totalNoComparables += noComparables
 
   console.log(`\n[${seccion.n}] ${seccion.titulo}`)
-  console.log(`    dump: ${datos.length} filas (${truncadas.length} truncadas, no comparables)`)
-  console.log(`    base nueva: ${filasNuevas.length} filas`)
-  console.log(`    faltan en la base nueva: ${faltan.length}`)
-  console.log(`    sobran en la base nueva: ${sobran.length}`)
-  for (const f of faltan.slice(0, 15)) console.log(`      - ${f.replace(/\t/g, ' | ')}`)
-  if (faltan.length > 15) console.log(`      ... y ${faltan.length - 15} más`)
-  for (const f of sobran.slice(0, 15)) console.log(`      + ${f.replace(/\t/g, ' | ')}`)
-  if (sobran.length > 15) console.log(`      ... y ${sobran.length - 15} más`)
+  console.log(`    producción: ${filasReales.length}   base nueva: ${filasNuevas.length}   no comparables: ${noComparables}`)
+}
+
+const NOMBRE_SEC = { 1: 'columna', 2: 'constraint', 3: 'policy', 4: 'índice' }
+for (const [etiqueta, grupo, glosa] of [
+  ['A', grupoA, 'en PRODUCCIÓN y no en las migraciones → se hizo a mano, falta escribir la migración'],
+  ['B', grupoB, 'en las MIGRACIONES y no en producción → la migración nunca se aplicó'],
+]) {
+  console.log(`\n${'═'.repeat(70)}\nGRUPO ${etiqueta} (${grupo.length}) — ${glosa}\n`)
+  for (const x of grupo) console.log(`  [${NOMBRE_SEC[x.sec]}] ${x.detalle}`)
+}
+console.log(`\n${'═'.repeat(70)}\nGRUPO C (${grupoC.length}) — distinto en ambos → divergencia real, decidir cuál queda\n`)
+for (const x of grupoC) {
+  console.log(`  [${NOMBRE_SEC[x.sec]}] ${x.k}`)
+  console.log(`        prod: ${x.prod}`)
+  console.log(`        dev : ${x.dev}`)
 }
 
 // ── Funciones y triggers: se vuelcan para diff manual ────────────────────────
@@ -202,14 +287,16 @@ writeFileSync(rutaSalida, salidaMd.join('\n'), 'utf8')
 await client.end()
 
 // ── Resumen ──────────────────────────────────────────────────────────────────
+const totalReales = grupoA.length + grupoB.length + grupoC.length
 console.log(`\n${'─'.repeat(70)}`)
-console.log(`Faltan en la base nueva: ${totalFaltan}   Sobran: ${totalSobran}   No comparables: ${totalNoComparables}`)
+console.log(`A=${grupoA.length}  B=${grupoB.length}  C=${grupoC.length}   →  ${totalReales} diferencias reales`)
+console.log(`No comparables (truncadas en el dump o solo distintas en paréntesis): ${totalNoComparables}`)
 console.log(`\nDocumento: ${rutaSalida}`)
 console.log(`TSVs:      ${dirSalida}`)
 console.log(`\nPara ver una sección en detalle:`)
 console.log(`  diff "${join(dirSalida, 'schema-real-1.tsv')}" "${join(dirSalida, 'schema-nuevo-1.tsv')}"`)
 console.log(
-  totalFaltan === 0 && totalSobran === 0
+  totalReales === 0
     ? '\n✓ Las secciones comparables coinciden. Revisar igual las funciones y las filas no comparables.\n'
-    : '\n✗ Hay diferencias. Cada una es algo que las migraciones no reproducen, o ruido de formato del dump.\n'
+    : '\n✗ Hay diferencias. Ver la clasificación de arriba antes de tocar nada.\n'
 )
