@@ -16,7 +16,9 @@ sección 2.** El cambio 4 **sí** está reflejado en la sección 5: la definici�
 `handle_new_user()` que figura ahí ya es la vigente, actualizada con la copia
 real de producción.
 
-Los cuatro están versionados en `supabase/migrations/` (archivos 050 a 052).
+Los cuatro están versionados en `supabase/migrations/`:
+`20260907152750_estado_terminada.sql`, `20260907152751_search_path_helpers.sql`
+y `20260907152752_handle_new_user_whitelist.sql`.
 
 ```sql
 -- 1. Bug de desvinculación: faltaba el estado 'terminada'
@@ -51,7 +53,7 @@ ALTER FUNCTION public.get_marca_id()   SET search_path = public, pg_temp;
 --    metadata, valida que el distri_id exista en distribuidoras, y tolera un
 --    distri_id malformado sin abortar el alta.
 --    La definición completa está en la sección 5 de este documento y en
---    supabase/migrations/052_handle_new_user_whitelist.sql.
+--    supabase/migrations/20260907152752_handle_new_user_whitelist.sql.
 --    Con esto, reabrir el registro público ya no reintroduce la escalada a
 --    admin. Verificado el 7/9/2026 con pg_get_functiondef().
 ```
@@ -1044,7 +1046,7 @@ $function$
 > profile con un `UPDATE` inmediatamente después del `createUser()`. Un alta por
 > fuera de ese panel dejaría ambos campos en `NULL`.
 >
-> Versionado en `supabase/migrations/052_handle_new_user_whitelist.sql`.
+> Versionado en `supabase/migrations/20260907152752_handle_new_user_whitelist.sql`.
 
 ```sql
 CREATE OR REPLACE FUNCTION public.trigger_set_updated_at()

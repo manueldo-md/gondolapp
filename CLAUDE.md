@@ -988,7 +988,8 @@ Cerrado en esta sesión:
 - types/database.ts generado con tipos reales (3230 líneas)
 - Bug de campos tipo 'foto': la imagen se guardaba como URL de texto en
   foto_respuestas en lugar de generar su propia fila en fotos.
-  Resuelto en 3 etapas + columna fotos.campo_id (migración 045).
+  Resuelto en 3 etapas + columna fotos.campo_id
+  (migración 20260907110057_fotos_campo_id.sql, ex 045).
 
 Documentos de referencia:
 - docs/schema-real-2026-09.md — fuente de verdad de la DB

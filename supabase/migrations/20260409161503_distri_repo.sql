@@ -1,7 +1,7 @@
--- NOTA (reconciliación): la 039_distri_repo_relaciones.sql ya crea
+-- NOTA (reconciliación): la 20260408192350_distri_repo_relaciones.sql ya crea
 -- distri_repo_relaciones con un CHECK más restrictivo y sin updated_at. El
 -- CREATE TABLE IF NOT EXISTS de abajo queda en no-op sobre una base fresca; la
--- forma final la corrige la 053_reconciliacion_conflictos.sql.
+-- forma final la corrige la 20260907152753_reconciliacion_conflictos.sql.
 --
 -- El DROP POLICY agregado no es cosmético: sin él, este CREATE POLICY aborta
 -- con "policy already exists" (la 039 ya creó una con el mismo nombre sobre la
