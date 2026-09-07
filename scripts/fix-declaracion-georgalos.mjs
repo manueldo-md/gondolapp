@@ -11,8 +11,11 @@ import fs from 'fs'
 import dotenv from 'dotenv'
 dotenv.config({ path: '.env.local' })
 
+import { resolverCampanaId } from './lib/campana.mjs'
+
 const CSV_PATH   = 'C:/Users/manue/OneDrive/LABORAL.OL/Biomega/Georgalos/Reporte Georgalos al 12032026.07.30hs.csv'
-const CAMPANA_ID = 'c3621111-597b-445b-8129-69a6fe81cb9c' // Relevamiento snacks · Entre Ríos Q1 2026
+// El id se resuelve por nombre en run(): el seed recrea la campaña con id nuevo
+let CAMPANA_ID = null
 
 const db = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -35,6 +38,8 @@ function dirMatch(dbDir, csvDir) {
 }
 
 async function run() {
+  CAMPANA_ID = await resolverCampanaId(db)
+
   // ── 1. Leer CSV ──────────────────────────────────────────────
   const text = fs.readFileSync(CSV_PATH).toString('latin1')
   const lines = text.split('\n').filter(l => l.trim()).slice(1) // skip header

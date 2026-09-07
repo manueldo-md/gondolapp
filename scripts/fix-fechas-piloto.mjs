@@ -8,7 +8,10 @@ import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
 dotenv.config({ path: '.env.local' })
 
-const CAMPANA_ID = 'c3621111-597b-445b-8129-69a6fe81cb9c'
+import { resolverCampanaId } from './lib/campana.mjs'
+
+// El id se resuelve por nombre en run(): el seed recrea la campaña con id nuevo
+let CAMPANA_ID = null
 
 const db = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -41,6 +44,8 @@ function timestampParaMision(fechaBase, indice, total) {
 }
 
 async function run() {
+  CAMPANA_ID = await resolverCampanaId(db)
+
   // 1. Traer todas las misiones de la campaña
   const { data: misiones, error: mErr } = await db
     .from('misiones')
@@ -72,6 +77,18 @@ async function run() {
   }
 
   console.log(`\nMisiones a actualizar: ${misionTimestamps.size}`)
+
+  // Los gondolero_id de FECHA_POR_GONDOLERO también están hardcodeados. Hoy
+  // siguen siendo válidos porque auth.users sobrevivió al DROP SCHEMA, pero si
+  // alguna vez se recrean las cuentas, este script volvería a "andar" sin hacer
+  // nada. Cortar acá en vez de reportar 0 en silencio.
+  if (misionTimestamps.size === 0) {
+    console.error('\n✗ Ninguna misión quedó mapeada a una fecha.')
+    console.error(`  La campaña tiene ${misiones?.length ?? 0} misiones, pero ningún gondolero_id`)
+    console.error('  coincide con los de FECHA_POR_GONDOLERO. Si se recrearon las cuentas,')
+    console.error('  hay que actualizar ese mapa con los ids nuevos.\n')
+    process.exit(1)
+  }
 
   // 4. Actualizar misiones de a una (para respetar el timestamp individual)
   let okM = 0, errM = 0
