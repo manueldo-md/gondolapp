@@ -1,6 +1,6 @@
 -- =============================================================================
 -- GondolApp — Migración inicial
--- Archivo: supabase/migrations/001_initial_schema.sql
+-- Archivo: supabase/migrations/20260401215627_initial_schema.sql
 -- Ejecutar en orden en el editor SQL de Supabase
 -- =============================================================================
 

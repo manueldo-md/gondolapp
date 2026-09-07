@@ -35,7 +35,7 @@ CREATE POLICY "marca_ve_sus_relaciones" ON marca_distri_relaciones
     OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND distri_id = marca_distri_relaciones.distri_id)
   );
 
-CREATE POLICY "admin_gestiona_relaciones" ON marca_distri_relaciones
+CREATE POLICY "relaciones_admin" ON marca_distri_relaciones
   FOR ALL USING (
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND tipo_actor = 'admin')
   );
@@ -46,5 +46,5 @@ CREATE POLICY "admin_gestiona_tokens_marca_distri" ON marca_distri_tokens
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND tipo_actor = 'admin')
   );
 
-CREATE POLICY "token_publico_lectura" ON marca_distri_tokens
+CREATE POLICY "tokens_marca_distri_public" ON marca_distri_tokens
   FOR SELECT USING (true);

@@ -10,8 +10,15 @@
 
 ## Cambios aplicados DESPUÉS de tomar este dump
 
-Los siguientes tres cambios se ejecutaron el 7 de septiembre de 2026, después de
-generar los dumps de abajo. **No están reflejados en las secciones 2 y 5.**
+Los siguientes cuatro cambios se ejecutaron el 7 de septiembre de 2026, después
+de generar los dumps de abajo. **Los cambios 1 y 2 no están reflejados en la
+sección 2.** El cambio 4 **sí** está reflejado en la sección 5: la definición de
+`handle_new_user()` que figura ahí ya es la vigente, actualizada con la copia
+real de producción.
+
+Los cuatro están versionados en `supabase/migrations/`:
+`20260907152750_estado_terminada.sql`, `20260907152751_search_path_helpers.sql`
+y `20260907152752_handle_new_user_whitelist.sql`.
 
 ```sql
 -- 1. Bug de desvinculación: faltaba el estado 'terminada'
@@ -32,10 +39,23 @@ ALTER FUNCTION public.get_marca_id()   SET search_path = public, pg_temp;
 ```
 -- 3. Registro público CERRADO en el dashboard de Supabase
 --    (Authentication → Sign In / Providers → "Allow new users to sign up" → OFF)
---    Motivo: handle_new_user() copia tipo_actor desde raw_user_meta_data sin
+--    Motivo: handle_new_user() copiaba tipo_actor desde raw_user_meta_data sin
 --    validar, así que con la anon key cualquiera podía registrarse como admin.
 --    El alta desde el panel admin usa auth.admin.createUser() con service_role
 --    y NO se ve afectada — verificado el 7/9/2026 creando un gondolero de prueba.
+--
+--    NOTA: esto fue la MITIGACIÓN. El fix de fondo es el cambio 4.
+```
+
+```
+-- 4. handle_new_user() con whitelist de tipo_actor — FIX DE FONDO, APLICADO.
+--    Fuerza tipo_actor='gondolero' para cualquier valor que llegue por
+--    metadata, valida que el distri_id exista en distribuidoras, y tolera un
+--    distri_id malformado sin abortar el alta.
+--    La definición completa está en la sección 5 de este documento y en
+--    supabase/migrations/20260907152752_handle_new_user_whitelist.sql.
+--    Con esto, reabrir el registro público ya no reintroduce la escalada a
+--    admin. Verificado el 7/9/2026 con pg_get_functiondef().
 ```
 
 ## Cómo se generó
@@ -971,33 +991,62 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
+DECLARE
+  _tipo      text;
+  _distri_id uuid;
 BEGIN
+  _tipo := NEW.raw_user_meta_data->>'tipo_actor';
+  IF _tipo IS DISTINCT FROM 'gondolero' THEN
+    _tipo := 'gondolero';
+  END IF;
+  BEGIN
+    _distri_id := (NEW.raw_user_meta_data->>'distri_id')::uuid;
+    IF _distri_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM distribuidoras WHERE id = _distri_id) THEN
+      _distri_id := NULL;
+    END IF;
+  EXCEPTION WHEN others THEN
+    _distri_id := NULL;
+  END;
   INSERT INTO public.profiles (id, tipo_actor, nombre, alias, distri_id)
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'tipo_actor', 'gondolero'),
-    COALESCE(NEW.raw_user_meta_data->>'nombre', NEW.email),
+    _tipo,
+    COALESCE(NULLIF(trim(NEW.raw_user_meta_data->>'nombre'), ''), NEW.email),
     NEW.raw_user_meta_data->>'alias',
-    (NEW.raw_user_meta_data->>'distri_id')::uuid
+    _distri_id
   );
   RETURN NEW;
 END;
 $function$
 ```
 
-> **VULNERABILIDAD CRÍTICA (mitigada, no resuelta).** `raw_user_meta_data` es lo
-> que el cliente envía en `options.data` del `signUp()`. La función copia
-> `tipo_actor` y `distri_id` sin validarlos contra ninguna lista blanca. Con el
-> registro público habilitado, cualquiera con la anon key podía registrarse como
-> `tipo_actor: 'admin'` y obtener control total: toda la RLS del sistema depende
-> de `get_tipo_actor()`. Tampoco setea `repositora_id`.
+> **Vulnerabilidad RESUELTA el 7/9/2026.** Actualizado: esta es la definición
+> vigente, traída de producción con `pg_get_functiondef()` y verificada el
+> 7/9/2026. El dump original de este documento tenía la versión previa, porque
+> se tomó antes de aplicar el fix.
 >
-> **Mitigación aplicada el 7/9/2026:** se cerró el registro público en el
-> dashboard. El agujero deja de ser explotable, pero **la función sigue sin
-> validar** — al reabrir el registro público la vulnerabilidad vuelve. El fix de
-> fondo (lista blanca dentro de la función) requiere primero verificar si el alta
-> desde el panel admin depende de este trigger o escribe el profile por separado.
+> **Qué era el problema.** `raw_user_meta_data` es lo que el cliente envía en
+> `options.data` del `signUp()`. La versión anterior copiaba `tipo_actor` sin
+> validarlo contra ninguna lista blanca: con el registro público habilitado,
+> cualquiera con la anon key podía registrarse como `tipo_actor: 'admin'` y
+> obtener control total, porque toda la RLS del sistema depende de
+> `get_tipo_actor()`.
+>
+> **Qué hace la versión actual.** Fuerza `tipo_actor = 'gondolero'` para
+> cualquier valor que llegue por metadata; valida que el `distri_id` exista de
+> verdad en `distribuidoras` y lo descarta si no; y envuelve el cast a `uuid` en
+> un bloque `EXCEPTION`, así un `distri_id` malformado deja el campo en `NULL`
+> en lugar de abortar el alta. También tiene el `search_path` fijo.
+>
+> **Sigue siendo cierto que no setea `repositora_id`** — ni `celular`, que sí
+> figuraba en la migración 015. El alta desde el panel admin lo cubre: pisa el
+> profile con un `UPDATE` inmediatamente después del `createUser()`. Un alta por
+> fuera de ese panel dejaría ambos campos en `NULL`.
+>
+> Versionado en `supabase/migrations/20260907152752_handle_new_user_whitelist.sql`.
 
 ```sql
 CREATE OR REPLACE FUNCTION public.trigger_set_updated_at()

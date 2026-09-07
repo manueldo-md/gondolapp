@@ -13,7 +13,13 @@ CREATE TABLE IF NOT EXISTS alertas_ignoradas (
   created_at    timestamptz DEFAULT now(),
 
   -- Unique constraint para el upsert (una entrada activa por combinación)
-  UNIQUE (distri_id, tipo, referencia_id)
+  --
+  -- RENOMBRADO 7/9/2026: sin nombre explícito, Postgres la llamaba
+  -- alertas_ignoradas_distri_id_tipo_referencia_id_key. En producción se creó
+  -- a mano como alertas_ignoradas_unique. Se fija el nombre acá, en el origen,
+  -- para que una base fresca coincida — el índice que la respalda toma el
+  -- mismo nombre, así que esto alinea la constraint y el índice de una.
+  CONSTRAINT alertas_ignoradas_unique UNIQUE (distri_id, tipo, referencia_id)
 );
 
 ALTER TABLE alertas_ignoradas ENABLE ROW LEVEL SECURITY;

@@ -1,3 +1,11 @@
+-- NOTA (reconciliación): esta migración quedó SUPERSEDED por la
+-- 20260409161503_distri_repo.sql, que define distri_repo_relaciones con el CHECK que
+-- incluye 'terminada' y con updated_at. Como la 040 usa CREATE TABLE IF NOT
+-- EXISTS, sobre una base fresca gana ESTA definición (más restrictiva) y la
+-- 040 queda en no-op. La forma final la corrige la
+-- 20260907152753_reconciliacion_conflictos.sql. No borrar este archivo: producción ya lo
+-- tiene aplicado.
+
 -- Relación explícita distribuidora ↔ repositora
 CREATE TABLE IF NOT EXISTS distri_repo_relaciones (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -916,6 +916,65 @@ async function main() {
   console.log(`  ✓ ${logrosCandidatos.length} logros procesados`)
 
   // ════════════════════════════════════════════════════════════
+  // PASO 17 — ZONAS DE LAS CAMPAÑAS (campana_localidades)
+  // ════════════════════════════════════════════════════════════
+  // Agregado el 7/9/2026. Antes el seed no poblaba esta tabla, y con
+  // campana_localidades vacía el filtro por zona de
+  // app/(gondolero)/gondolero/campanas/page.tsx queda inerte: trata a toda
+  // campaña sin zona como "abierta por defecto", así que todos los gondoleros
+  // ven todas las campañas.
+  //
+  // La localidad de una campaña se deriva de los comercios efectivamente
+  // relevados en ella. Es el dato más fiel — dice dónde se trabajó — y sirve
+  // igual para Entre Ríos, Córdoba o Rosario sin lógica por provincia.
+  //
+  // Requiere que los comercios tengan localidad_id. Si venís de una
+  // restauración, corré antes fix-localidad-comercios.mjs; si no, esta tabla
+  // queda a medias y el paso lo avisa.
+  console.log('\n──── PASO 17: Zonas de las campañas ────')
+
+  const { data: misionesConComercio } = await (db as any)
+    .from('misiones')
+    .select('campana_id, comercio_id')
+
+  const comercioIds = [...new Set((misionesConComercio ?? []).map((m: any) => m.comercio_id).filter(Boolean))]
+  const localidadPorComercio = new Map<string, number>()
+  if (comercioIds.length) {
+    const { data: comerciosLoc } = await (db as any)
+      .from('comercios')
+      .select('id, localidad_id')
+      .in('id', comercioIds)
+    for (const c of comerciosLoc ?? []) {
+      if (c.localidad_id != null) localidadPorComercio.set(c.id, c.localidad_id)
+    }
+  }
+
+  const paresCampanaLocalidad = new Set<string>()
+  let sinLocalidad = 0
+  for (const m of misionesConComercio ?? []) {
+    const loc = localidadPorComercio.get(m.comercio_id)
+    if (loc == null) { sinLocalidad++; continue }
+    paresCampanaLocalidad.add(`${m.campana_id}|${loc}`)
+  }
+
+  let zonasOk = 0
+  for (const par of paresCampanaLocalidad) {
+    const [campanaId, locStr] = par.split('|')
+    const { error } = await (db as any)
+      .from('campana_localidades')
+      .upsert(
+        { campana_id: campanaId, localidad_id: Number(locStr) },
+        { onConflict: 'campana_id,localidad_id', ignoreDuplicates: true }
+      )
+    if (!error) zonasOk++
+  }
+
+  console.log(`  ✓ ${zonasOk} pares campaña→localidad asignados`)
+  if (sinLocalidad > 0) {
+    console.log(`  ⚠️  ${sinLocalidad} misiones con comercio sin localidad_id — corré fix-localidad-comercios.mjs y volvé a correr este paso`)
+  }
+
+  // ════════════════════════════════════════════════════════════
   // RESUMEN
   // ════════════════════════════════════════════════════════════
   console.log('\n' + '═'.repeat(55))

@@ -45,7 +45,15 @@ CREATE INDEX IF NOT EXISTS notificaciones_actor_leida_idx
 
 -- 5. Policy para que cada actor vea sus propias notificaciones
 --    (gondolero ya tiene su policy; esta cubre marca/distri/admin)
-CREATE POLICY IF NOT EXISTS "actor_ver_sus_notificaciones"
+--
+-- CORREGIDO 7/9/2026 — decía CREATE POLICY IF NOT EXISTS, que Postgres
+-- rechaza con 42601 syntax error: CREATE POLICY no admite IF NOT EXISTS.
+-- Tal cual estaba, este archivo nunca pudo haber corrido: la sintaxis es
+-- inválida. En producción se aplicó de otra forma o no se aplicó — otra
+-- pieza del historial perdido. Se usa el mismo patrón que el resto del set:
+-- DROP POLICY IF EXISTS antes del CREATE.
+DROP POLICY IF EXISTS "actor_ver_sus_notificaciones" ON notificaciones;
+CREATE POLICY "actor_ver_sus_notificaciones"
   ON notificaciones
   FOR SELECT
   USING (

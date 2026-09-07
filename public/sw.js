@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gondolapp-v3'
+const CACHE_NAME = 'gondolapp-v4'
 const STATIC_URLS = [
   '/',
   '/gondolero/campanas',
@@ -33,6 +33,22 @@ self.addEventListener('activate', (event) => {
 
 // Interceptar requests
 self.addEventListener('fetch', (event) => {
+  // ── Solo el propio origen ───────────────────────────────────────────────
+  // Sin esto, el SW interceptaba TODOS los requests y los re-emitía con
+  // fetch(event.request), incluidos los <img> cross-origin. Eso convierte una
+  // carga de imagen en un Fetch API, y ahí deja de gobernarla `img-src` de la
+  // CSP y pasa a gobernarla `connect-src` — que es por qué las fotos de Drive
+  // y de picsum daban "Refused to connect" aunque estuvieran permitidas en
+  // img-src.
+  //
+  // Cachear recursos de otros dominios tampoco aportaba nada: son inmutables
+  // y el browser ya los cachea solo. Al no llamar a respondWith(), el request
+  // sigue su curso normal y no pasa por el SW.
+  //
+  // Además de arreglar el síntoma, esto evita que cada dominio de imágenes
+  // nuevo (Storage de Supabase, un CDN, lo que venga) obligue a tocar la CSP.
+  if (new URL(event.request.url).origin !== self.location.origin) return
+
   // Solo para navegación (páginas)
   if (event.request.mode === 'navigate') {
     event.respondWith(

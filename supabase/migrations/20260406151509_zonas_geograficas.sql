@@ -1,3 +1,12 @@
+-- NOTA (reconciliación): la tabla campana_localidades que se crea más abajo
+-- quedó SUPERSEDED por la 20260409185450_campana_localidades.sql, que la define con
+-- `id uuid` como PK y UNIQUE(campana_id, localidad_id) — la forma real de
+-- producción. Como la 041 usa CREATE TABLE IF NOT EXISTS, sobre una base
+-- fresca gana la definición de ESTE archivo (PK compuesta, sin columna id) y
+-- la 041 queda en no-op. Lo mismo aplica a sus políticas y a la columna
+-- created_at de gondolero_localidades.
+-- Todo eso lo corrige la 20260907152753_reconciliacion_conflictos.sql.
+
 -- ============================================================
 -- 032 — Sistema de zonas geográficas de Argentina
 -- Provincia → Departamento → Localidad (tres niveles)
@@ -62,9 +71,9 @@ ALTER TABLE provincias    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE departamentos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE localidades   ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Lectura pública de provincias"    ON provincias    FOR SELECT USING (true);
-CREATE POLICY "Lectura pública de departamentos" ON departamentos FOR SELECT USING (true);
-CREATE POLICY "Lectura pública de localidades"   ON localidades   FOR SELECT USING (true);
+CREATE POLICY "public_read_provincias"    ON provincias    FOR SELECT USING (true);
+CREATE POLICY "public_read_departamentos" ON departamentos FOR SELECT USING (true);
+CREATE POLICY "public_read_localidades"   ON localidades   FOR SELECT USING (true);
 
 -- ── RLS — gondolero_localidades ──────────────────────────────
 ALTER TABLE gondolero_localidades ENABLE ROW LEVEL SECURITY;

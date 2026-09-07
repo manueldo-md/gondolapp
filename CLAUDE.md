@@ -988,7 +988,8 @@ Cerrado en esta sesión:
 - types/database.ts generado con tipos reales (3230 líneas)
 - Bug de campos tipo 'foto': la imagen se guardaba como URL de texto en
   foto_respuestas en lugar de generar su propia fila en fotos.
-  Resuelto en 3 etapas + columna fotos.campo_id (migración 045).
+  Resuelto en 3 etapas + columna fotos.campo_id
+  (migración 20260907110057_fotos_campo_id.sql, ex 045).
 
 Documentos de referencia:
 - docs/schema-real-2026-09.md — fuente de verdad de la DB
@@ -1010,3 +1011,179 @@ Próximos pasos, en orden:
    lo que el creador configuró). Se intentó en abril, terminó en rollback.
    Hacerlo recién con ambiente de dev.
 5. RLS por fases: empezar por crear get_repositora_id()
+
+---
+
+## Deuda conocida — scripts de seed
+
+Detectada al reconstruir producción el 7/9/2026 después de un
+`DROP SCHEMA public CASCADE` ejecutado por error. Los scripts corrieron bien y
+restauraron el piloto completo, pero tienen dos defectos que hay que conocer
+antes de volver a usarlos.
+
+### `scripts/seed-demo-completo.ts`
+
+**1. El encabezado miente: NO es idempotente "en todo".**
+Dice *"Idempotente: usa ON CONFLICT DO NOTHING / upsert en todo"*. Es cierto
+para marcas, distribuidoras, repositoras, gondoleros, fixers, comercios del
+CSV, campañas, bloques, participaciones y para las misiones y fotos de la
+campaña 1 (Georgalos) — todos buscan antes de insertar.
+
+**No lo es** para las misiones y fotos de las campañas 5, 6 y 7, que insertan
+sin ninguna guarda de existencia. Correr el script dos veces las duplica.
+
+**2. El filtro de comercios ficticios está roto.**
+```ts
+.from('comercios').select('id').eq('nombre', c.nombre).eq('ciudad' as any, c.ciudad)
+```
+`comercios` **no tiene columna `ciudad`**. El `as any` silencia a TypeScript;
+en runtime PostgREST devuelve 42703, el script no chequea el error, interpreta
+"no existe" e inserta igual. O sea que los ~72 comercios ficticios se duplican
+en cada corrida.
+
+**Consecuencia práctica:** el script es seguro sobre tablas vacías, que es el
+caso para el que se usó. **No lo corras sobre una base ya poblada** sin
+arreglar estos dos puntos antes.
+
+Lo que sí funciona bien y conviene no romper: reutiliza las entidades
+existentes buscando por `razon_social` exacto, y los usuarios de auth por
+email, así que no duplica cuentas. Pero esa reutilización depende de la
+coincidencia **exacta** del nombre — cualquier diferencia de acento, puntuación
+o espaciado crea una entidad nueva con otro ID.
+
+### `scripts/seed-zonas.ts`
+
+No es idempotente por diseño: **arranca borrando** `campana_localidades`,
+`gondolero_localidades`, `localidades`, `departamentos` y `provincias`, en ese
+orden. Es inocuo sobre tablas vacías, pero correrlo con datos ya cargados
+**borra las zonas asignadas a gondoleros y las localidades de las campañas**,
+que no las repone nadie. Ver la nota sobre `gondolero_localidades` más abajo.
+
+---
+
+## Restauración de producción tras un `DROP SCHEMA public CASCADE`
+
+Procedimiento ejecutado el 7/9/2026 después de que se corriera
+`DROP SCHEMA public CASCADE` sobre producción por error. Quedó documentado
+porque funcionó y porque el paso 2 no está en ninguna migración.
+
+### Qué sobrevive y qué no
+
+**`auth.users` sobrevive.** Vive en el esquema `auth`, no en `public`, así que
+el `DROP SCHEMA public` no lo toca: **las cuentas no se pierden**, con sus ids,
+emails y contraseñas intactos.
+
+**`public.profiles` sí se pierde**, porque está en `public`. Y con él se pierde
+el vínculo entre cada cuenta y su `tipo_actor`, `distri_id`, alias y puntos.
+Resultado: usuarios que pueden loguearse pero no tienen perfil, así que la app
+no sabe qué son y el middleware no los puede redirigir.
+
+Storage tampoco se toca — las fotos siguen ahí. En este proyecto además las del
+piloto están en Google Drive, no en Storage.
+
+### Orden de ejecución
+
+Los pasos son secuenciales y ninguno es opcional.
+
+**1. Aplicar las migraciones** (57 al 7/9/2026)
+
+```bash
+node scripts/aplicar-migraciones.mjs --ref <project-ref>
+```
+
+Requiere `PGURL` en el entorno y `npm install --no-save pg`. El `--ref` se
+valida contra la connection string: es la guarda para no aplicar DDL al
+proyecto equivocado.
+
+**2. Reponer los GRANT del esquema — EL PASO QUE FALTA EN TODAS LAS MIGRACIONES**
+
+`DROP SCHEMA public` se lleva los permisos de los roles de Supabase junto con el
+esquema, y **ninguna migración los repone** porque los crea Supabase al
+provisionar el proyecto, no el versionado del schema.
+
+Sin esto la app **no lee absolutamente nada** aunque los datos estén todos: cada
+query devuelve `permission denied for schema public`. Es el fallo más
+desconcertante de todos, porque la base se ve perfecta desde el SQL Editor —
+que corre como `postgres` y no necesita estos grants.
+
+```sql
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+
+GRANT ALL ON ALL TABLES    IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES  IN SCHEMA public TO anon, authenticated, service_role;
+
+-- Para que los objetos que se creen DESPUÉS también queden accesibles:
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES    TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON ROUTINES  TO anon, authenticated, service_role;
+```
+
+> Los `GRANT ALL` son amplios a propósito: replican lo que Supabase configura de
+> fábrica. Lo que efectivamente limita el acceso de `anon` y `authenticated` es
+> la RLS, no estos permisos. No los restrinjas sin revisar antes toda la RLS.
+
+**3. Restaurar entidades y perfiles**
+
+SQL manual a partir de un CSV de `profiles` exportado de antes del incidente.
+Restaura las filas de `profiles` con sus ids originales — que siguen siendo
+válidos porque `auth.users` no se perdió — más las entidades
+(`distribuidoras`, `marcas`, `repositoras`) con sus ids originales.
+
+Restaurar las entidades con **los mismos ids** es lo que evita que el paso 5
+cree duplicados.
+
+**4. Geografía**
+
+```bash
+npx tsx --env-file=.env.local scripts/seed-zonas.ts
+```
+
+24 provincias, 524 departamentos, 942 localidades. Requiere `npm i -D tsx`.
+**Arranca borrando cinco tablas** — inocuo sobre tablas vacías, destructivo si
+ya hay datos. Ver "Deuda conocida — scripts de seed".
+
+**5. Piloto y datos de demo**
+
+```bash
+npx tsx --env-file=.env.local scripts/seed-demo-completo.ts
+```
+
+Reconstruye comercios, campañas, misiones, fotos, relaciones, puntos y logros.
+Reutiliza las entidades existentes buscando por `razon_social` **exacto**, y las
+cuentas de auth por email, así que no duplica usuarios. El CSV del piloto está
+embebido en el script: no depende de ningún archivo externo.
+
+**6. Localidad de los comercios**
+
+```bash
+npx tsx --env-file=.env.local scripts/fix-localidad-comercios.mjs
+```
+
+Asigna `localidad_id` a los comercios que lo tengan en null. Solo toca los que
+están sin asignar, así que es seguro re-ejecutarlo. Los que no resuelva
+—típicamente los ficticios de otras provincias— se completan por SQL.
+
+**7. Datos reales del piloto Georgalos**
+
+```bash
+npx tsx --env-file=.env.local scripts/fix-declaracion-georgalos.mjs
+npx tsx --env-file=.env.local scripts/fix-fechas-piloto.mjs
+```
+
+Corrigen `fotos.declaracion` desde el CSV y las fechas del relevamiento real
+(11-14 de marzo de 2026). Desde el 7/9/2026 resuelven la campaña **por nombre**
+vía `scripts/lib/campana.mjs` y cortan con error si no la encuentran; antes
+tenían el id hardcodeado y reportaban "Misiones en DB: 0" en silencio cuando el
+seed la recreaba con id nuevo.
+
+### Lo que este procedimiento NO restaura
+
+`gondolero_localidades` y `campana_localidades` quedan vacías: ningún script las
+puebla. Sin ellas el filtrado de campañas por zona queda inerte — los gondoleros
+ven todas las campañas en vez de las de su ciudad. No bloquea la operación
+(el filtro es fail-open y la UI avisa), pero la segmentación no funciona hasta
+que se repueblen las dos.

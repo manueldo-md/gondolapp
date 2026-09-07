@@ -391,7 +391,9 @@ CREATE POLICY cc_admin ON comercios_checks FOR ALL USING (get_tipo_actor() = 'ad
 
 ### 2.1 Corrección de diagnóstico previo
 
-**El directorio `supabase/migrations/` NO está vacío.** Contiene 44 archivos `.sql` numerados del 001 al 044. El diagnóstico anterior fue un falso negativo de la herramienta de búsqueda.
+**El directorio `supabase/migrations/` NO está vacío.** Al momento de la auditoría contenía 44 archivos `.sql` numerados del 001 al 044 (47 en realidad: los números 021 y 039 estaban duplicados, y existía un 045). El diagnóstico anterior fue un falso negativo de la herramienta de búsqueda.
+
+> **ACTUALIZADO 7/9/2026:** son 56 archivos y ya no usan numeración ordinal — se renombraron todos al formato de timestamps del CLI (`YYYYMMDDHHMMSS_nombre.sql`). Las referencias por número en este documento corresponden a la nomenclatura vieja.
 
 Sin embargo, el problema de desincronización sigue siendo real y significativo. La causa raíz es diferente:
 
@@ -447,20 +449,20 @@ Los tres cambios aplicados después del dump (documentados en el encabezado de `
 Los siguientes conflictos revelan que parte del schema fue construido en el SQL Editor *antes* de que se escribiera la migración que lo documenta — por eso los `CREATE TABLE IF NOT EXISTS` son no-ops en producción.
 
 **Tabla `distri_repo_relaciones` definida dos veces:**
-- `039_distri_repo_relaciones.sql`: crea la tabla con `CHECK (estado IN ('activa','inactiva'))` y sin `updated_at`.
-- `040_distri_repo.sql`: también crea la tabla (IF NOT EXISTS) con `CHECK (estado IN ('activa','inactiva','terminada'))` y con `updated_at`.
+- `20260408192350_distri_repo_relaciones.sql`: crea la tabla con `CHECK (estado IN ('activa','inactiva'))` y sin `updated_at`.
+- `20260409161503_distri_repo.sql`: también crea la tabla (IF NOT EXISTS) con `CHECK (estado IN ('activa','inactiva','terminada'))` y con `updated_at`.
 - **DB real**: tiene `'terminada'` en el CHECK y tiene `updated_at` → coincide con 040.
 - **Conclusión**: la tabla fue creada manualmente en el SQL Editor con el schema de 040 antes de que se escribieran ambas migraciones. Las dos migraciones son no-ops en producción. Si se corriera sobre una DB limpia, 039 ganaría (se ejecuta primero) y la tabla quedaría sin `'terminada'` y sin `updated_at` — inconsistente con el código.
 
 **Tabla `campana_localidades` definida dos veces:**
-- `032_zonas_geograficas.sql`: crea `campana_localidades` con `PRIMARY KEY (campana_id, localidad_id)` — sin columna `id`.
-- `041_campana_localidades.sql`: también crea `campana_localidades` (IF NOT EXISTS) con `id uuid PRIMARY KEY` y UNIQUE(campana_id, localidad_id).
+- `20260406151509_zonas_geograficas.sql`: crea `campana_localidades` con `PRIMARY KEY (campana_id, localidad_id)` — sin columna `id`.
+- `20260409185450_campana_localidades.sql`: también crea `campana_localidades` (IF NOT EXISTS) con `id uuid PRIMARY KEY` y UNIQUE(campana_id, localidad_id).
 - **DB real** (`schema-real-2026-09.md` líneas 98–101): tiene columna `id uuid gen_random_uuid()` → coincide con 041.
 - **Conclusión**: la tabla fue creada manualmente con el schema de 041. Si se corriera sobre una DB limpia, 032 ganaría (se ejecuta primero) y la tabla quedaría con PK compuesto y sin la columna `id` — inconsistente con el código (que hace `select('id')` sobre esta tabla).
 
 **Numeración duplicada (021):**
-- `021_multi_distri_gondolero.sql`
-- `021_relacion_reinicio.sql`
+- `20260404134949_multi_distri_gondolero.sql`
+- `20260404134950_relacion_reinicio.sql`
 - Dos archivos con el mismo número de secuencia. En el CLI de Supabase esto es un error fatal. Aplicados a mano no hay problema, pero la ambigüedad de orden es un riesgo.
 
 **Schema de `gondolero_localidades` diverge de migration 032:**
@@ -508,9 +510,16 @@ Asumiendo que se corren en orden sobre una base limpia con el schema inicial de 
 
 ### 2.6 Plan de reconciliación (corregido)
 
-El trabajo ya **no es** escribir el schema entero desde cero — la mayoría del schema ya está en las 44 migraciones. El trabajo es escribir las **migraciones faltantes** que cubran la divergencia.
+> **ACTUALIZADO 7/9/2026 — este plan ya se ejecutó, con desviaciones.** Lo que
+> sigue es la propuesta original de la auditoría, conservada como registro. Al
+> implementarla aparecieron tres cosas que la auditoría no había detectado, y
+> además todas las migraciones se renombraron al formato de timestamps del CLI
+> (`YYYYMMDDHHMMSS_nombre.sql`), así que la numeración de abajo ya no existe.
+> Ver la tabla de equivalencia al final de esta sección.
 
-**Migraciones a crear:**
+El trabajo ya **no es** escribir el schema entero desde cero — la mayoría del schema ya está en las migraciones existentes. El trabajo es escribir las **migraciones faltantes** que cubran la divergencia.
+
+**Migraciones a crear (propuesta original, superada):**
 
 ```
 045_campana_tokens.sql              — CREATE TABLE campana_tokens (con repositora_id)
@@ -525,12 +534,27 @@ El trabajo ya **no es** escribir el schema entero desde cero — la mayoría del
                                       SET search_path = public, pg_temp (cambios del 7/9/2026)
 ```
 
-**Migraciones existentes que necesitan corrección de conflicto:**
-- Renombrar `021_relacion_reinicio.sql` → `021b_relacion_reinicio.sql` para eliminar duplicado de número
-- Anotar en comentario de `039_distri_repo_relaciones.sql` que es superceded por `040_distri_repo.sql`
-- Anotar en comentario de `032_zonas_geograficas.sql` que `campana_localidades` fue superseded por `041_campana_localidades.sql`
+**Qué se implementó realmente:**
 
-**Prerequisito técnico:** Correr `supabase init` para crear `config.toml` y conectar la CLI al proyecto. Esto habilita `supabase migration list` para auditar el estado remoto, y `supabase db push` para aplicar migraciones de forma controlada en staging.
+| Archivo | Cubre |
+|---|---|
+| `20260409185451_bloque_campos_foto_respuestas.sql` | **No estaba en el plan.** Crea `bloque_campos` y `foto_respuestas`, que ninguna migración creaba. Va antes de `bloque_campos_tipo_foto` porque esa les hace `ALTER` y las referencia en un FK — sin esto una base limpia aborta ahí y nunca llega al resto. |
+| `20260907152746_campana_tokens.sql` | `campana_tokens` con `repositora_id` + extensión `pgcrypto`, que la migración inicial nunca habilitó |
+| `20260907152747_comercios_checks.sql` | `comercios_checks` |
+| `20260907152748_campanas_via_ejecucion_repositora.sql` | `via_ejecucion`, `repositora_id`, `motivo_rechazo` + CHECKs de `via_ejecucion` y `financiada_por` |
+| `20260907152749_comercios_tipo_dietetica.sql` | CHECK de `comercios.tipo` con `'dietetica'` |
+| `20260907152750_estado_terminada.sql` | CHECK con `'terminada'` en las dos tablas de solicitudes |
+| `20260907152751_search_path_helpers.sql` | `search_path` fijo en los tres helpers de RLS |
+| `20260907152752_handle_new_user_whitelist.sql` | **No estaba en el plan.** `handle_new_user()` con whitelist de `tipo_actor`, copia literal de producción |
+| `20260907152753_reconciliacion_conflictos.sql` | Los conflictos internos entre migraciones (ver abajo) |
+
+**Migraciones existentes que necesitaban corrección de conflicto:**
+- Se resolvieron los números duplicados (`021` y `039` aparecían dos veces). El renombrado general a timestamps eliminó la clase entera de problema.
+- Anotado en `20260408192350_distri_repo_relaciones.sql` que quedó superseded por `20260409161503_distri_repo.sql`.
+- Anotado en `20260406151509_zonas_geograficas.sql` que `campana_localidades` quedó superseded por `20260409185450_campana_localidades.sql`.
+- **No detectado por la auditoría:** las dos migraciones de `distri_repo_relaciones` creaban una policy con el mismo nombre sobre la misma tabla, y `CREATE POLICY` no admite `IF NOT EXISTS`. Sobre una base limpia eso aborta la corrida entera. Se agregó `DROP POLICY IF EXISTS` en `20260409161503_distri_repo.sql`. Efecto lateral útil: ese archivo pasó a ser re-ejecutable, cosa que antes no era.
+
+**Prerequisito técnico:** Correr `supabase init` para crear `config.toml` y conectar la CLI al proyecto. Esto habilita `supabase migration list` para auditar el estado remoto, y `supabase db push` para aplicar migraciones de forma controlada en staging. **Cuidado:** `config.toml` se genera con `[auth] enable_signup = true`, que es lo contrario de la mitigación aplicada el 7/9. Revisar y fijar en `false` antes de commitearlo.
 
 ---
 
@@ -872,7 +896,7 @@ Esto es un riesgo de mantenimiento alto: los errores de schema (columna renombra
 | 2 | **Crear `get_repositora_id()`** | Prerequisito de todo el RLS de repositora | Sin él, todo el actor repositora corre sin walled garden real | 30min (SQL) | #3, #4 |
 | 3 | **RLS correctas en misiones** | Cualquier gondolero puede leer misiones de todos los demás | Espionaje operativo entre distribuidoras competidoras | 1 día (SQL + code, ver sección 1.6 fase 3) | — |
 | 4 | **RLS correctas en tablas de repositora** (`repositoras`, `distri_repo_relaciones`, `marca_repo_relaciones`) | Datos de relaciones comerciales expuestos | Competidores ven con quién trabaja cada actor | 4h (SQL) | `get_repositora_id()` |
-| 5 | **Migraciones faltantes + `supabase init`** | La DB real tiene 10+ objetos/cambios sin migración. Una DB fresca corriendo las 44 migraciones existentes fallaría en producción con constraint violations y columnas faltantes | No se puede hacer staging ni onboarding; cualquier reset de la DB produce una app rota | 1 día (6 migraciones nuevas del 045 al 050 + `supabase init`) | — |
+| 5 | **Migraciones faltantes + `supabase init`** | La DB real tiene 10+ objetos/cambios sin migración. Una DB fresca corriendo las 44 migraciones existentes fallaría en producción con constraint violations y columnas faltantes | No se puede hacer staging ni onboarding; cualquier reset de la DB produce una app rota | 1 día (6 migraciones nuevas + `supabase init`) — **HECHO el 7/9/2026: fueron 9, no 6; ver sección 2.6.** `supabase init` sigue pendiente | — |
 | 6 | **Generar `types/database.ts` real** | Todo el código usa `any` implícito; errores de schema solo se detectan en runtime | Bugs silenciosos imposibles de detectar en build | 2h (`supabase gen types`) + ajustes | — |
 | 7 | **Unificar sistema de zonas** | Dos sistemas paralelos con escritura divergente; gondoleros nuevos van al sistema viejo | Al escalar, la detección de campañas por zona será inconsistente | 2–3 días | — |
 | 8 | **Resolver bug de bloques en captura** | El flujo principal del negocio tiene un bug intermitente no reproducible consistentemente | Gondoleros que no pueden completar misiones = datos perdidos del piloto | 1 día (investigación + fix) | — |

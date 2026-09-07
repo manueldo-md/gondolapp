@@ -1,4 +1,4 @@
--- 045_fotos_campo_id.sql
+-- 20260907110057_fotos_campo_id.sql
 -- Agrega campo_id a la tabla fotos para registrar fotos de campos tipo='foto'
 -- como filas propias en fotos (en vez de guardar la URL como texto en foto_respuestas).
 --
