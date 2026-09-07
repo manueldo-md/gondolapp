@@ -1217,3 +1217,84 @@ tomando el último archivo visible del log falla con errores confusos —
 más. Si una corrida se corta, el punto de reanudación se determina
 **consultando la base**, no leyendo el log. Y si la base es descartable, lo
 determinista es un `--reset` limpio y volver a empezar.
+
+---
+
+## Los dos ambientes
+
+Montado el 7/9/2026, después de que un `DROP SCHEMA` sobre producción dejara en
+claro que no había dónde probar.
+
+| | Producción | Dev |
+|---|---|---|
+| Rama | `main` | `dev` |
+| Proyecto Supabase | `xzznzustgsacmfwsupux` | `mqeymmprvpclpyjpujvf` |
+| Proyecto Vercel | el original | uno **separado**, con Production Branch = `dev` |
+| Credenciales locales | `.env.local` | `.env.dev.local` |
+
+### Por qué dos proyectos de Vercel y no Preview Environments
+
+El plan Free no permite valores distintos por ambiente dentro de un proyecto:
+el selector de Environments está deshabilitado. Pero sí permite varios
+proyectos, y cada uno tiene sus propias variables. Dos proyectos esquivan la
+limitación sin pelearla.
+
+La alternativa era elegir credenciales en el código según
+`VERCEL_GIT_COMMIT_REF`. Se descartó: mete lógica de selección de credenciales
+en la app, donde un bug apunta producción a dev o —peor— dev a producción. Y
+como `NEXT_PUBLIC_*` se inlinea en build time, la selección tendría que vivir
+en `next.config.js` para no terminar embebiendo los dos juegos de credenciales
+en el bundle del cliente. Es volver frágil algo que puede ser trivial.
+
+### Variables en Vercel
+
+De las 20 variables, **solo tres cambian entre ambientes**:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Las otras 17 se copian igual. `PGURL` **no va a Vercel**: es solo para los
+scripts locales.
+
+`NEXT_PUBLIC_APP_URL` sí hay que cambiarla en el proyecto de dev, apuntándola a
+su propia URL de deploy. Si queda con la de producción, los links de invitación
+generados desde dev mandan a la gente a producción. Ver "Deuda: URLs con
+fallback a producción" más abajo.
+
+Y hay que agregar la URL del deploy de dev a las **Redirect URLs** del proyecto
+Supabase de dev (Authentication → URL Configuration), o el login no vuelve.
+
+### Regla de trabajo
+
+1. Se desarrolla contra `dev`: rama `dev`, base de dev, su propio deploy.
+2. Se prueba ahí, incluido lo que solo anda en un celular real — GPS, cámara,
+   giroscopio, el validador de inclinación. Esas APIs exigen contexto seguro:
+   **no funcionan por `http://` contra una IP de la LAN**, solo por HTTPS o
+   `localhost`. Por eso el deploy de dev, y no exponer el `npm run dev`.
+3. Cuando está probado, se mergea `dev` → `main`, y eso deploya a producción.
+4. Los cambios de schema van como migración en `supabase/migrations/`, se
+   aplican primero a dev con `aplicar-migraciones.mjs --ref <dev>`, y recién
+   después a producción.
+
+### Deuda: URLs con fallback a producción
+
+Hay **11 lugares** que arman links de invitación así:
+
+```ts
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp-delta.vercel.app'
+```
+
+Siete caen a `gondolapp-delta.vercel.app` y cuatro a `gondolapp.com`, sin un
+criterio claro. **El fallback es peor que un error**: si alguien olvida setear
+`NEXT_PUBLIC_APP_URL` en el proyecto de dev, los links de invitación generados
+desde dev apuntan en silencio a producción, y quien los abra termina operando
+sobre datos reales creyendo que está en dev.
+
+Lo correcto sería cortar con un error explícito cuando falta la variable, en
+vez de adivinar un dominio. El patrón bien resuelto ya existe en el repo:
+`app/auth/recuperar/page.tsx` usa `window.location.origin`, que se adapta solo
+al ambiente.
+
+`NEXT_PUBLIC_SUPABASE_REDIRECT_URL` está declarada en los `.env` pero **no la
+usa ninguna línea del código**. O se conecta o se borra.
