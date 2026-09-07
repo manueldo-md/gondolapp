@@ -56,9 +56,15 @@ const nextConfig = {
       // deja de estar gobernada por img-src y pasa a estarlo por connect-src.
       // Sin esto el browser tira "Fetch API cannot load ... Refused to connect".
       // Ver el fix de fondo en public/sw.js, que ignora el cross-origin.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://picsum.photos https://drive.google.com https://*.googleusercontent.com",
-      // lh3.googleusercontent.com: destino real del redirect 302 de drive.google.com/thumbnail
-      "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://*.googleusercontent.com https://picsum.photos",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://picsum.photos https://*.picsum.photos https://drive.google.com https://*.googleusercontent.com",
+      // Hay que permitir el dominio de ENTRADA y el de DESTINO de cada redirect.
+      // Ya pasó tres veces:
+      //   drive.google.com/thumbnail  → 302 → lh3.googleusercontent.com
+      //   picsum.photos               → 302 → fastly.picsum.photos
+      // La CSP se evalúa contra la URL final, así que permitir solo el primero
+      // no alcanza y el error habla de un dominio que no está en ningún lado
+      // del código.
+      "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://*.googleusercontent.com https://picsum.photos https://*.picsum.photos",
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",
       "media-src 'self' blob:",

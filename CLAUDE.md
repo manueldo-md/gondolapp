@@ -1349,3 +1349,50 @@ Los síntomas son silenciosos, así que conviene chequear a mano:
 - `comercios` con `localidad_id IS NULL` en **cero**
 - `campana_localidades` con filas: si está vacía, el filtro por zona no
   discrimina y todos ven todas las campañas
+
+### Regla de ramas: `main` nunca recibe commits directos
+
+Todo trabajo entra por `dev`. `main` solo avanza por merge desde `dev`, y como
+nunca tiene commits propios ese merge es **siempre fast-forward**: no hay
+conflictos ni divergencia posible.
+
+```
+trabajo → dev → (se prueba en el deploy de dev) → main → producción
+```
+
+Para verificar que están alineadas, dos comandos:
+
+```bash
+git log --oneline dev..main    # commits en main que no están en dev
+git log --oneline main..dev    # commits en dev que no están en main
+```
+
+- **Los dos vacíos**: alineadas.
+- **Solo el segundo con contenido**: normal, `dev` está adelante. Falta mergear.
+- **El primero con contenido**: alguien commiteó directo a `main`. Hay que
+  traerlo a `dev` antes de seguir, o el próximo merge deja de ser fast-forward.
+
+Esto no es teórico: el 7/9/2026 se perdió un rato buscando en `dev` unos fixes
+de CSP que en realidad ya tenía, porque no había forma rápida de saber el
+estado. Los dos comandos de arriba lo responden en un segundo.
+
+### La CSP y los redirects de imágenes
+
+Cuando se agrega un origen de imágenes a `img-src`, hay que permitir **el
+dominio de entrada y el de destino** de cualquier redirect. La CSP se evalúa
+contra la URL final, así que permitir solo el primero no alcanza — y el error
+menciona un dominio que no aparece en ninguna parte del código, que es lo que
+lo hace difícil de diagnosticar.
+
+Ya pasó tres veces:
+
+| Se pide | Redirige a | Hay que permitir |
+|---|---|---|
+| `drive.google.com/thumbnail` | `lh3.googleusercontent.com` | `*.googleusercontent.com` |
+| `picsum.photos` | `fastly.picsum.photos` | `*.picsum.photos` |
+
+Alternativa de fondo, para no seguir enumerando: servir toda imagen remota por
+`next/image`. El browser pide `/_next/image?url=...`, que es mismo origen, y
+entonces `img-src 'self'` alcanza para cualquier dominio. La lista de orígenes
+permitidos queda solo en `images.remotePatterns` de `next.config.js`, que es
+server-side y **no le afectan los redirects**: el servidor los sigue solo.
