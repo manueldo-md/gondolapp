@@ -7,6 +7,7 @@
 import { createClient } from '@supabase/supabase-js'
 import fs from 'fs'
 import { resolverEntorno } from './lib/entorno.mjs'
+import { textoCsvPiloto } from './lib/csv-piloto.mjs'
 
 // Escribe datos: el proyecto se declara con --ref y se valida contra las
 // credenciales antes de tocar nada. Ver scripts/lib/entorno.mjs.
@@ -14,7 +15,6 @@ const ENTORNO = resolverEntorno(process.argv)
 
 import { resolverCampanaId } from './lib/campana.mjs'
 
-const CSV_PATH = 'C:/Users/manue/OneDrive/LABORAL.OL/Biomega/Georgalos/Reporte Georgalos al 12032026.07.30hs.csv'
 // El id se resuelve por nombre en run(): el seed recrea la campaña con id nuevo
 let CAMPANA_ID = null
 
@@ -51,7 +51,7 @@ async function run() {
   CAMPANA_ID = await resolverCampanaId(db)
 
   // ── 1. Leer CSV ──────────────────────────────────────────────
-  const text = fs.readFileSync(CSV_PATH).toString('latin1')
+  const text = textoCsvPiloto()
   const lines = text.split('\n').filter(l => l.trim()).slice(1)
 
   const csvRows = []

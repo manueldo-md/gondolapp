@@ -18,12 +18,12 @@
 import { createClient } from '@supabase/supabase-js'
 import fs from 'fs'
 import { resolverEntorno } from './lib/entorno.mjs'
+import { textoCsvPiloto } from './lib/csv-piloto.mjs'
 
 // Escribe datos: el proyecto se declara con --ref y se valida contra las
 // credenciales antes de tocar nada. Ver scripts/lib/entorno.mjs.
 const ENTORNO = resolverEntorno(process.argv)
 
-const CSV_PATH = 'C:/Users/manue/OneDrive/LABORAL.OL/Biomega/Georgalos/Reporte Georgalos al 12032026.07.30hs.csv'
 
 const db = createClient(
   ENTORNO.url,
@@ -59,8 +59,7 @@ function dirMatch(dbDir, csvDir) {
 
 async function run() {
   // 1. Leer CSV
-  const buf = fs.readFileSync(CSV_PATH)
-  const text = buf.toString('latin1')
+  const text = textoCsvPiloto()
   const lines = text.split('\n').filter(l => l.trim())
 
   // Skip header line

@@ -13,12 +13,12 @@
 import { createClient } from '@supabase/supabase-js'
 import fs from 'fs'
 import { resolverEntorno } from './lib/entorno.mjs'
+import { textoCsvPiloto } from './lib/csv-piloto.mjs'
 
 // Escribe datos: el proyecto se declara con --ref y se valida contra las
 // credenciales antes de tocar nada. Ver scripts/lib/entorno.mjs.
 const ENTORNO = resolverEntorno(process.argv)
 
-const CSV_PATH = 'C:/Users/manue/OneDrive/LABORAL.OL/Biomega/Georgalos/Reporte Georgalos al 12032026.07.30hs.csv'
 
 const db = createClient(
   ENTORNO.url,
@@ -63,13 +63,13 @@ const localidadesPorNombre = new Map()
 async function cargarLocalidades() {
   const { data, error } = await db
     .from('localidades')
-    .select('id, nombre, departamentos!inner(provincias!inner(nombre))')
+    .select('id, nombre, departamentos!inner(nombre, provincias!inner(nombre))')
   if (error) { console.error('❌ No se pudieron leer las localidades:', error.message); process.exit(1) }
 
   for (const l of data) {
     const clave = normCiudad(l.nombre)
     if (!localidadesPorNombre.has(clave)) localidadesPorNombre.set(clave, [])
-    localidadesPorNombre.get(clave).push({ id: l.id, provincia: l.departamentos.provincias.nombre })
+    localidadesPorNombre.get(clave).push({ id: l.id, provincia: l.departamentos.provincias.nombre, depto: l.departamentos.nombre })
   }
   const ambiguos = [...localidadesPorNombre.values()].filter(v => v.length > 1).length
   console.log(`Localidades cargadas: ${data.length} (${localidadesPorNombre.size} nombres distintos, ${ambiguos} repetidos entre provincias)`)
@@ -90,7 +90,15 @@ function resolverLocalidad(ciudad) {
   const enPreferida = candidatos.filter(c => c.provincia === PROVINCIA_PREFERIDA)
   if (enPreferida.length === 1) return enPreferida[0].id
 
-  console.log(`  ⚠️  "${nombre}" existe en ${candidatos.map(c => c.provincia).join(', ')} — ambiguo, se omite`)
+  // Desempate: la cabecera del departamento homónimo. Cuando un CSV dice
+  // "Colón" a secas se refiere a la ciudad de Colón, departamento Colón, y no
+  // a un paraje del mismo nombre en otro departamento de la misma provincia.
+  const cabecera = (enPreferida.length ? enPreferida : candidatos)
+    .filter(c => normCiudad(c.depto) === normCiudad(nombre))
+  if (cabecera.length === 1) return cabecera[0].id
+
+  const detalle = candidatos.map(c => `${c.provincia}/${c.depto}`).join(', ')
+  console.log(`  ⚠️  "${nombre}" es ambiguo (${detalle}) — se omite`)
   return null
 }
 
@@ -144,7 +152,7 @@ async function run() {
   console.log(`  Sin dirección (estrategia Nominatim): ${sinDir.length}\n`)
 
   // ── 2. Leer CSV → mapa dirección → ciudad ─────────────────────────────────
-  const text = fs.readFileSync(CSV_PATH).toString('latin1')
+  const text = textoCsvPiloto()
   const lines = text.split('\n').filter(l => l.trim()).slice(1)
   const csvRows = lines.map(line => {
     const cols = line.split(';')
@@ -187,29 +195,33 @@ async function run() {
   // ── ESTRATEGIA B: Sin dirección → Nominatim por lat/lng ───────────────────
   console.log('\n── Estrategia B: Nominatim por lat/lng ──────────────────────────')
 
-  // Localidades de Entre Ríos, resueltas por NOMBRE de provincia.
-  // Antes se filtraba por `departamento_id >= 1 && <= 18`, "basado en los datos
-  // vistos" — otra suposición sobre ids seriales que se rompe con solo cambiar
-  // el orden del seed.
-  const { data: locsEntreRios } = await db
-    .from('localidades')
-    .select('id, nombre, departamentos!inner(provincias!inner(nombre))')
-    .eq('departamentos.provincias.nombre', 'Entre Ríos')
-  console.log(`  Localidades de Entre Ríos cargadas: ${locsEntreRios?.length ?? 0}`)
-
+  // Busca en TODAS las localidades del país, no solo en Entre Ríos.
+  //
+  // Antes se filtraba a Entre Ríos —primero por `departamento_id >= 1 && <= 18`
+  // "basado en los datos vistos", después por nombre de provincia— y eso hacía
+  // que los comercios de otras provincias no resolvieran nunca: los 12 a 16
+  // ficticios de Córdoba quedaban siempre sin localidad y había que asignarlos
+  // a mano por SQL. Nominatim devuelve bien "Córdoba"; el que no la encontraba
+  // era este filtro.
   function buscarLocalidad(nombreNominatim) {
     if (!nombreNominatim) return null
+    // Exacto y con alias, ya consciente de la provincia
+    const exacto = resolverLocalidad(nombreNominatim)
+    if (exacto) return exacto
+
+    // Aproximado, sobre todo el país. Ante varios candidatos, prefiere la
+    // provincia del piloto; si aun así hay empate, no adivina.
     const norm = normCiudad(nombreNominatim)
-    // Primero los alias conocidos del CSV
-    const porAlias = resolverLocalidad(nombreNominatim)
-    if (porAlias) return porAlias
-    // Luego buscar en tabla
-    const match = (locsEntreRios ?? []).find(l =>
-      normCiudad(l.nombre) === norm ||
-      normCiudad(l.nombre).includes(norm) ||
-      norm.includes(normCiudad(l.nombre))
-    )
-    return match?.id ?? null
+    const candidatos = []
+    for (const [nombre, entradas] of localidadesPorNombre.entries()) {
+      if (nombre.includes(norm) || norm.includes(nombre)) candidatos.push(...entradas)
+    }
+    if (candidatos.length === 0) return null
+    if (candidatos.length === 1) return candidatos[0].id
+
+    const enPreferida = candidatos.filter(c => c.provincia === PROVINCIA_PREFERIDA)
+    if (enPreferida.length === 1) return enPreferida[0].id
+    return null
   }
 
   let okB = 0, noMatchB = 0, errorB = 0
