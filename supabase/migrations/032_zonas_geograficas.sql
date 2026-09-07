@@ -1,3 +1,12 @@
+-- NOTA (reconciliación): la tabla campana_localidades que se crea más abajo
+-- quedó SUPERSEDED por la 041_campana_localidades.sql, que la define con
+-- `id uuid` como PK y UNIQUE(campana_id, localidad_id) — la forma real de
+-- producción. Como la 041 usa CREATE TABLE IF NOT EXISTS, sobre una base
+-- fresca gana la definición de ESTE archivo (PK compuesta, sin columna id) y
+-- la 041 queda en no-op. Lo mismo aplica a sus políticas y a la columna
+-- created_at de gondolero_localidades.
+-- Todo eso lo corrige la 053_reconciliacion_conflictos.sql.
+
 -- ============================================================
 -- 032 — Sistema de zonas geográficas de Argentina
 -- Provincia → Departamento → Localidad (tres niveles)
