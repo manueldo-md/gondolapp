@@ -1011,3 +1011,50 @@ Próximos pasos, en orden:
    lo que el creador configuró). Se intentó en abril, terminó en rollback.
    Hacerlo recién con ambiente de dev.
 5. RLS por fases: empezar por crear get_repositora_id()
+
+---
+
+## Deuda conocida — scripts de seed
+
+Detectada al reconstruir producción el 7/9/2026 después de un
+`DROP SCHEMA public CASCADE` ejecutado por error. Los scripts corrieron bien y
+restauraron el piloto completo, pero tienen dos defectos que hay que conocer
+antes de volver a usarlos.
+
+### `scripts/seed-demo-completo.ts`
+
+**1. El encabezado miente: NO es idempotente "en todo".**
+Dice *"Idempotente: usa ON CONFLICT DO NOTHING / upsert en todo"*. Es cierto
+para marcas, distribuidoras, repositoras, gondoleros, fixers, comercios del
+CSV, campañas, bloques, participaciones y para las misiones y fotos de la
+campaña 1 (Georgalos) — todos buscan antes de insertar.
+
+**No lo es** para las misiones y fotos de las campañas 5, 6 y 7, que insertan
+sin ninguna guarda de existencia. Correr el script dos veces las duplica.
+
+**2. El filtro de comercios ficticios está roto.**
+```ts
+.from('comercios').select('id').eq('nombre', c.nombre).eq('ciudad' as any, c.ciudad)
+```
+`comercios` **no tiene columna `ciudad`**. El `as any` silencia a TypeScript;
+en runtime PostgREST devuelve 42703, el script no chequea el error, interpreta
+"no existe" e inserta igual. O sea que los ~72 comercios ficticios se duplican
+en cada corrida.
+
+**Consecuencia práctica:** el script es seguro sobre tablas vacías, que es el
+caso para el que se usó. **No lo corras sobre una base ya poblada** sin
+arreglar estos dos puntos antes.
+
+Lo que sí funciona bien y conviene no romper: reutiliza las entidades
+existentes buscando por `razon_social` exacto, y los usuarios de auth por
+email, así que no duplica cuentas. Pero esa reutilización depende de la
+coincidencia **exacta** del nombre — cualquier diferencia de acento, puntuación
+o espaciado crea una entidad nueva con otro ID.
+
+### `scripts/seed-zonas.ts`
+
+No es idempotente por diseño: **arranca borrando** `campana_localidades`,
+`gondolero_localidades`, `localidades`, `departamentos` y `provincias`, en ese
+orden. Es inocuo sobre tablas vacías, pero correrlo con datos ya cargados
+**borra las zonas asignadas a gondoleros y las localidades de las campañas**,
+que no las repone nadie. Ver la nota sobre `gondolero_localidades` más abajo.
