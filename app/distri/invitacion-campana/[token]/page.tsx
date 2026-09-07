@@ -5,6 +5,7 @@ import { Clock, Target, Camera, Building2, AlertCircle, LogIn } from 'lucide-rea
 import { InvitacionAcciones } from './invitacion-acciones'
 import type { TipoCampana } from '@/types'
 import { labelTipoCampana } from '@/lib/utils'
+import { appUrl } from '@/lib/app-url'
 
 const TIPO_COLOR: Record<TipoCampana, string> = {
   relevamiento: 'bg-indigo-100 text-indigo-700',
@@ -74,7 +75,7 @@ export default async function InvitacionCampanaPage({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp.com'
+  const baseUrl = appUrl()
   const loginUrl = `/auth?redirect=/distri/invitacion-campana/${params.token}`
 
   return (
@@ -189,7 +190,7 @@ export default async function InvitacionCampanaPage({
         {/* Footer */}
         <p className="text-center text-xs text-gray-400">
           Esta invitación fue generada por GondolApp para {marcaNombre ?? 'una marca'}.{' '}
-          <a href={appUrl} className="text-indigo-600 hover:underline">gondolapp.com</a>
+          <a href={baseUrl} className="text-indigo-600 hover:underline">gondolapp.com</a>
         </p>
 
       </main>

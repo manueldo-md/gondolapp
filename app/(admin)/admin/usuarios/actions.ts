@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoActor } from '@/types'
 import { generarAlias } from '@/lib/aliases'
+import { appUrl } from '@/lib/app-url'
 
 function generarCodigo(nombre: string, prefix4: string = 'FIXR'): string {
   const prefix = nombre.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase() || prefix4
@@ -58,7 +59,7 @@ export async function enviarEmailRecuperacion(
     type: 'recovery',
     email,
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/nueva-password`,
+      redirectTo: `${appUrl()}/auth/nueva-password`,
     },
   })
   if (error) return { error: error.message }

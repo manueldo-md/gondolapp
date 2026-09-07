@@ -15,6 +15,7 @@ import {
   descartarCambiosMarca,
 } from './draft-actions'
 import { ReenviarBtn } from './reenviar-btn'
+import { appUrl } from '@/lib/app-url'
 
 function adminClient() {
   return createSupabaseClient(
@@ -62,7 +63,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
       .from('campana_tokens').select('token')
       .eq('campana_id', params.id).eq('usado', false).gt('expira_at', new Date().toISOString()).maybeSingle()
     if (tokenRow?.token) {
-      linkInvitacion = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp.com'}/distri/invitacion-campana/${tokenRow.token}`
+      linkInvitacion = `${appUrl()}/distri/invitacion-campana/${tokenRow.token}`
     }
   }
   if (c.estado === 'pendiente_aprobacion' && c.via_ejecucion === 'repositora') {
@@ -70,7 +71,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
       .from('campana_tokens').select('token')
       .eq('campana_id', params.id).eq('usado', false).gt('expira_at', new Date().toISOString()).maybeSingle()
     if (tokenRow?.token) {
-      linkInvitacionRepo = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp.com'}/repo/invitacion-campana/${tokenRow.token}`
+      linkInvitacionRepo = `${appUrl()}/repo/invitacion-campana/${tokenRow.token}`
     }
   }
 

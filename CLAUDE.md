@@ -1277,24 +1277,25 @@ Supabase de dev (Authentication → URL Configuration), o el login no vuelve.
    aplican primero a dev con `aplicar-migraciones.mjs --ref <dev>`, y recién
    después a producción.
 
-### Deuda: URLs con fallback a producción
+### Cómo se arman los links que salen de la app
 
-Hay **11 lugares** que arman links de invitación así:
+Los links de invitación y de recuperación de contraseña necesitan saber a qué
+ambiente apuntar. Hay dos formas, según dónde corra el código:
 
-```ts
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp-delta.vercel.app'
-```
+**En servidor** (server actions y server components): `appUrl()` de
+`lib/app-url.ts`, que lee `NEXT_PUBLIC_APP_URL` y **tira error si falta**.
 
-Siete caen a `gondolapp-delta.vercel.app` y cuatro a `gondolapp.com`, sin un
-criterio claro. **El fallback es peor que un error**: si alguien olvida setear
-`NEXT_PUBLIC_APP_URL` en el proyecto de dev, los links de invitación generados
-desde dev apuntan en silencio a producción, y quien los abra termina operando
-sobre datos reales creyendo que está en dev.
+**En cliente**: `window.location.origin`, que se adapta solo y no depende de
+ninguna variable. Ver `app/auth/recuperar/page.tsx`.
 
-Lo correcto sería cortar con un error explícito cuando falta la variable, en
-vez de adivinar un dominio. El patrón bien resuelto ya existe en el repo:
-`app/auth/recuperar/page.tsx` usa `window.location.origin`, que se adapta solo
-al ambiente.
+Por qué el helper tira error en vez de tener un default: hasta el 7/9/2026
+había 11 lugares con un fallback a un dominio de producción hardcodeado —siete
+a `gondolapp-delta.vercel.app` y cuatro a `gondolapp.com`, sin criterio claro.
+Con dos ambientes eso es peligroso: si falta la variable en el deploy de dev,
+los links generados desde dev apuntan en silencio a producción y quien los abra
+se vincula contra datos reales creyendo que está en dev. **No falla, cruza de
+ambiente sin avisar**, que es el peor modo de falla posible. Un error explícito
+en el deploy de dev se ve y se arregla en minutos.
 
-`NEXT_PUBLIC_SUPABASE_REDIRECT_URL` está declarada en los `.env` pero **no la
-usa ninguna línea del código**. O se conecta o se borra.
+Si aparece ese error en un deploy, la causa es siempre la misma: falta
+`NEXT_PUBLIC_APP_URL` en ese proyecto de Vercel.

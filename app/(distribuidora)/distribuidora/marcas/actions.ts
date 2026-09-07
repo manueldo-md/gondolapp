@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { appUrl } from '@/lib/app-url'
 
 function adminClient() {
   return createAdminClient(
@@ -38,8 +39,8 @@ export async function generarLinkInvitacionDistri(
 
   if (error) return { error: `No se pudo generar el link: ${error.message}` }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://gondolapp-delta.vercel.app'
-  const link = `${appUrl}/vinculacion-marca?token=${token}`
+  const baseUrl = appUrl()
+  const link = `${baseUrl}/vinculacion-marca?token=${token}`
   console.log('[generarLinkDistri] link generado:', link)
   return { link }
 }

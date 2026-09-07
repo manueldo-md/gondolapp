@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { appUrl } from '@/lib/app-url'
 
 function adminClient() {
   return createAdminClient(
@@ -46,8 +47,8 @@ export async function generarLinkInvitacionDistriRepo(
 
   if (error) return { error: `No se pudo generar el link: ${error.message}` }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://gondolapp-delta.vercel.app'
-  return { link: `${appUrl}/vinculacion-distri-repo?token=${token}` }
+  const baseUrl = appUrl()
+  return { link: `${baseUrl}/vinculacion-distri-repo?token=${token}` }
 }
 
 export async function terminarRelacionDistriRepo(

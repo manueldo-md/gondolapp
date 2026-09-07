@@ -5,6 +5,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
+import { appUrl } from '@/lib/app-url'
 
 function adminClient() {
   return createAdminClient(
@@ -36,7 +37,7 @@ export async function generarLinkInvitacionFixer(
 
   if (error) return { error: 'No se pudo generar el link. Intentá de nuevo.' }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://gondolapp-delta.vercel.app'
+  const baseUrl = appUrl()
   const link = `${baseUrl}/fixer-vinculacion?token=${token}`
   return { link }
 }
