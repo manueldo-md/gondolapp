@@ -1002,7 +1002,9 @@ Documentos de referencia:
 - docs/AUDITORIA-2026-09.md — auditoría completa, con Top 10 de prioridades
 
 Próximos pasos, en orden:
-1. Ambiente dev/prod separado (proyecto Supabase gondolapp-dev + rama develop)
+1. ✅ Ambiente dev/prod separado — cerrado el 8/9/2026. Ver sección "Los dos
+   ambientes" para la referencia completa (Supabase dev: mqeymmprvpclpyjpujvf,
+   rama: dev, deploy: gondolapp-dev.vercel.app).
 2. Seis migraciones faltantes (ver auditoría sección 2) — son también el
    único backup del schema, el proyecto está en plan Free sin backups
 3. Bugs abiertos:

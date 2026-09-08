@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
@@ -162,8 +163,7 @@ export default async function ComerciosPendientesDistriPage() {
                     <div className="flex items-start gap-2.5">
                       {fachadasSignedMap[c.id] ? (
                         <a href={fachadasSignedMap[c.id]} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={fachadasSignedMap[c.id]} alt={`Fachada de ${c.nombre}`} className="w-10 h-10 rounded-lg object-cover border border-gray-200 hover:border-gondo-amber-400 transition-colors" />
+                          <Image src={fachadasSignedMap[c.id]} alt={`Fachada de ${c.nombre}`} width={40} height={40} className="w-10 h-10 rounded-lg object-cover border border-gray-200 hover:border-gondo-amber-400 transition-colors" />
                         </a>
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">

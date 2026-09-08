@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
@@ -174,8 +175,7 @@ export default async function RepoDashboardPage() {
                 <div key={f.id} className="flex items-center gap-3 px-5 py-3">
                   <div className="w-10 h-10 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
                     {f.url && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={f.url} alt="" className="w-full h-full object-cover" />
+                      <Image src={f.url} alt="" width={40} height={40} className="w-full h-full object-cover" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">

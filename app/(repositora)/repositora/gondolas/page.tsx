@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
@@ -165,8 +166,7 @@ export default async function RepoGondolasPage({
                       <td className="px-4 py-3">
                         <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0">
                           {f.url && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={f.url} alt="" className="w-full h-full object-cover" />
+                            <Image src={f.url} alt="" width={48} height={48} className="w-full h-full object-cover" />
                           )}
                         </div>
                       </td>
