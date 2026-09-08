@@ -2204,8 +2204,8 @@ function CapturaContent() {
               )
             })()}
 
-            {/* Precio — si el bloque lo requiere */}
-            {bloqueActual.solicitarPrecio && (
+            {/* Precio — si el campo tipo='foto' principal del bloque lo requiere */}
+            {(bloqueActual.campos.find(c => c.tipo === 'foto')?.solicitar_precio ?? false) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   ¿A cuánto está {bloqueActual.instruccion}?
@@ -2401,11 +2401,11 @@ function CapturaContent() {
               </button>
             </div>
 
-            {/* Precio — si el bloque lo requiere y no hay formulario (se pide aquí) */}
-            {bloqueActual?.solicitarPrecio && !tieneCampos && (
+            {/* Precio — si el campo tipo='foto' del bloque lo requiere y no hay formulario */}
+            {(bloqueActual?.campos.find(c => c.tipo === 'foto')?.solicitar_precio ?? false) && !tieneCampos && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  ¿A cuánto está {bloqueActual.instruccion}?
+                  ¿A cuánto está {bloqueActual?.instruccion}?
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
