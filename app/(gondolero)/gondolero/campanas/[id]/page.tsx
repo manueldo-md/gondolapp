@@ -351,22 +351,28 @@ export default async function CampanaDetallePage({
           </div>
         )}
 
-        {/* Bloques de foto */}
-        {bloques.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 p-4">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Fotos requeridas</h2>
-            <div className="space-y-3">
-              {bloques.map((bloque, i) => (
-                <div key={bloque.id} className="flex gap-3">
-                  <div className="w-6 h-6 rounded-full bg-gondo-verde-50 text-gondo-verde-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
-                    {i + 1}
+        {/* Bloques de foto — solo si al menos un bloque tiene un campo tipo='foto' */}
+        {(() => {
+          const bloquesConFoto = bloques.filter(b =>
+            (b.bloque_campos ?? []).some(c => c.tipo === 'foto')
+          )
+          if (bloquesConFoto.length === 0) return null
+          return (
+            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">Fotos requeridas</h2>
+              <div className="space-y-3">
+                {bloquesConFoto.map((bloque, i) => (
+                  <div key={bloque.id} className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-gondo-verde-50 text-gondo-verde-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                      {i + 1}
+                    </div>
+                    <p className="text-sm text-gray-600 leading-relaxed">{bloque.instruccion}</p>
                   </div>
-                  <p className="text-sm text-gray-600 leading-relaxed">{bloque.instruccion}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* ── Sección de misiones (solo para participantes activos) ── */}
         {yaUnido && (

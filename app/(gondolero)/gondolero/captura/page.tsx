@@ -1997,20 +1997,33 @@ function CapturaContent() {
   // ── Layout con header para el resto de los pasos ──────────────────────────
 
   const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
-  // tieneCampos: solo cuenta campos no-foto para el progreso/back-nav del formulario
+  // tieneCampos: campos no-foto del bloque actual (formulario)
   const tieneCampos = (bloqueActual?.campos?.filter(c => c.tipo !== 'foto').length ?? 0) > 0
+  // tieneBloqueFoto: true si el bloque actual tiene al menos un campo tipo='foto'
+  const tieneBloqueFoto = (bloqueActual?.campos?.filter(c => c.tipo === 'foto').length ?? 0) > 0
   const esCampanaComercio = campana?.tipo === 'comercios'
   const totalBloques = campana?.bloques?.length ?? 1
+  // La barra de progreso se arma dinámicamente según los campos del bloque:
+  // - si hay fotos: se incluye el paso formulario-camara
+  // - si no hay fotos: ese paso no existe y no ocupa barra
   const PASOS_LABEL = esCampanaComercio
     ? ['Ubicación', 'Formulario', 'Fachada']
-    : tieneCampos
+    : tieneBloqueFoto && tieneCampos
       ? ['Comercio', 'Ubicación', 'Foto', 'Formulario', 'Confirmar', 'Enviar misión']
-      : ['Comercio', 'Ubicación', 'Foto', 'Confirmar', 'Enviar misión']
+      : tieneBloqueFoto
+        ? ['Comercio', 'Ubicación', 'Foto', 'Confirmar', 'Enviar misión']
+        : tieneCampos
+          ? ['Comercio', 'Ubicación', 'Formulario', 'Confirmar', 'Enviar misión']
+          : ['Comercio', 'Ubicación', 'Confirmar', 'Enviar misión']
   const PASOS_KEY: Paso[] = esCampanaComercio
     ? ['comercios-gps', 'comercios-formulario', 'comercios-fachada']
-    : tieneCampos
-      ? ['comercios-gps', 'gps', 'camara', 'formulario', 'confirmacion', 'mision-resumen']
-      : ['comercios-gps', 'gps', 'camara', 'confirmacion', 'mision-resumen']
+    : tieneBloqueFoto && tieneCampos
+      ? ['comercios-gps', 'gps', 'formulario-camara', 'formulario', 'confirmacion', 'mision-resumen']
+      : tieneBloqueFoto
+        ? ['comercios-gps', 'gps', 'formulario-camara', 'confirmacion', 'mision-resumen']
+        : tieneCampos
+          ? ['comercios-gps', 'gps', 'formulario', 'confirmacion', 'mision-resumen']
+          : ['comercios-gps', 'gps', 'confirmacion', 'mision-resumen']
   const pasoActualIdx = PASOS_KEY.indexOf(paso)
 
   return (
@@ -2306,8 +2319,10 @@ function CapturaContent() {
                   className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
                 >
                   {campana.bloques.length > 1
-                    ? `Comenzar misión · ${campana.bloques.length} fotos`
-                    : 'Continuar — Abrir cámara'}
+                    ? `Comenzar misión · ${campana.bloques.length} bloques`
+                    : tieneBloqueFoto
+                      ? 'Continuar — Abrir cámara'
+                      : 'Continuar'}
                 </button>
               </>
             )}
@@ -2509,7 +2524,7 @@ function CapturaContent() {
         )}
 
         {/* ── PASO 5: CONFIRMACIÓN ── */}
-        {paso === 'confirmacion' && comercio && (fotoPreview || ultimoCampoFotoPreviewUrl) && (
+        {paso === 'confirmacion' && comercio && (
           <div className="space-y-4">
             <p className="text-sm font-semibold text-gray-700">Resumen antes de enviar</p>
 
