@@ -147,6 +147,22 @@ interface FotoCapturadaLocal {
   timestampDispositivo: string
 }
 
+/**
+ * Bloque completado — reemplaza FotoCapturadaLocal en el flujo nuevo (Paso 5a).
+ * En Paso 5b se elimina `blob` y `previewUrl` (la foto de bloque pasa a ser
+ * el primer campo tipo='foto' en `respuestas`).
+ */
+interface BloqueCompletadoLocal {
+  bloqueIdx: number
+  bloqueId: string | null
+  blob: Blob           // Foto de bloque (campo_id = null en DB). Se elimina en Paso 5b.
+  previewUrl: string
+  precio: string
+  respuestas: Record<string, unknown>
+  blurScore: number | null
+  timestampDispositivo: string
+}
+
 const TIPOS_COMERCIO: { value: TipoComercio; label: string; emoji: string }[] = [
   { value: 'almacen',      label: 'Almacén',      emoji: '🧺' },
   { value: 'kiosco',       label: 'Kiosco',       emoji: '🗞️' },
@@ -644,6 +660,8 @@ function CapturaContent() {
   const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
   const [bloqueActualIdx, setBloqueActualIdx] = useState(0)
   const [fotosCapturadas, setFotosCapturadas] = useState<FotoCapturadaLocal[]>([])
+  // Paso 5a: nuevo estado que reemplaza fotosCapturadas
+  const [bloquesCompletados, setBloquesCompletados] = useState<BloqueCompletadoLocal[]>([])
   // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
   const [campoFotoActualId, setCampoFotoActualId] = useState<string | null>(null)
   // Foto pendiente de confirmación en 'formulario-camara-blur' (blur bajo, esperando decisión del gondolero)
@@ -951,10 +969,45 @@ function CapturaContent() {
     }
   }
 
+  // ── Confirmar bloque (Paso 5a) ────────────────────────────────────────────────
+  // Reemplaza guardarFotoLocal: escribe en bloquesCompletados en vez de fotosCapturadas.
+  // El botón "Guardar" en confirmacion llama a esta función a partir de 5a.
+  const confirmarBloque = () => {
+    const bloqueActual = campana?.bloques[bloqueActualIdx] ?? null
+    if (!fotoBlob || !fotoPreview || !campana) return
+
+    const nuevoBloque: BloqueCompletadoLocal = {
+      bloqueIdx:            bloqueActualIdx,
+      bloqueId:             bloqueActual?.id ?? null,
+      blob:                 fotoBlob,
+      previewUrl:           fotoPreview,
+      precio,
+      respuestas:           { ...respuestas },
+      blurScore,
+      timestampDispositivo: new Date().toISOString(),
+    }
+    setBloquesCompletados(prev => [
+      ...prev.filter(b => b.bloqueIdx !== bloqueActualIdx),
+      nuevoBloque,
+    ])
+
+    setFotoBlob(null); setFotoPreview(null)
+    setPrecio(''); setRespuestas({}); setBlurScore(null)
+
+    const isLast = bloqueActualIdx >= (campana.bloques.length || 1) - 1
+    if (isLast) {
+      cerrarMisionStream()
+      setPaso('mision-resumen')
+    } else {
+      setBloqueActualIdx(prev => prev + 1)
+      setPaso('camara')
+    }
+  }
+
   // ── Enviar misión completa (todas las fotos juntas) ───────────────────────────
 
   const handleEnviarMision = async () => {
-    if (!comercio || !campana || fotosCapturadas.length === 0) return
+    if (!comercio || !campana || bloquesCompletados.length === 0) return
     if (!navigator.onLine) {
       setErrorGlobal('Necesitás conexión a internet para enviar la misión.')
       return
@@ -969,7 +1022,7 @@ function CapturaContent() {
     try {
       // 1. Comprimir y subir todas las fotos en paralelo
       const uploadResults = await Promise.all(
-        fotosCapturadas.map(async (f) => {
+        bloquesCompletados.map(async (f) => {
           console.log('[compresión] Antes:', (f.blob.size / 1024).toFixed(1), 'KB')
           const compressed = await comprimirImagen(f.blob, comprConfig.maxSizeMB, comprConfig.maxWidth, comprConfig.calidad)
           console.log('[compresión] Después:', (compressed.size / 1024).toFixed(1), 'KB')
@@ -1068,7 +1121,7 @@ function CapturaContent() {
       })
 
       // Liberar object URLs
-      fotosCapturadas.forEach(f => URL.revokeObjectURL(f.previewUrl))
+      bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
 
       setPuntosGanados(result.puntos)
       setPaso('exito')
@@ -1156,10 +1209,10 @@ function CapturaContent() {
     }
   }
 
-  // Limpiar preview URL al desmontar — solo si NO está guardada en fotosCapturadas
+  // Limpiar preview URL al desmontar — solo si NO está guardada en bloquesCompletados
   useEffect(() => {
     return () => {
-      if (fotoPreview && !fotosCapturadas.some(f => f.previewUrl === fotoPreview)) {
+      if (fotoPreview && !bloquesCompletados.some(b => b.previewUrl === fotoPreview)) {
         URL.revokeObjectURL(fotoPreview)
       }
     }
@@ -1938,15 +1991,15 @@ function CapturaContent() {
                 router.back()
               } else if (paso === 'mision-resumen') {
                 // Restaurar el último bloque para que el usuario pueda re-revisar
-                const lastFoto = fotosCapturadas[fotosCapturadas.length - 1]
-                if (lastFoto) {
-                  setFotoBlob(lastFoto.blob)
-                  setFotoPreview(lastFoto.previewUrl)
-                  setPrecio(lastFoto.precio)
-                  setRespuestas(lastFoto.respuestas)
-                  setBlurScore(lastFoto.blurScore)
-                  setBloqueActualIdx(lastFoto.bloqueIdx)
-                  setFotosCapturadas(prev => prev.slice(0, -1))
+                const lastBloque = bloquesCompletados[bloquesCompletados.length - 1]
+                if (lastBloque) {
+                  setFotoBlob(lastBloque.blob)
+                  setFotoPreview(lastBloque.previewUrl)
+                  setPrecio(lastBloque.precio)
+                  setRespuestas(lastBloque.respuestas)
+                  setBlurScore(lastBloque.blurScore)
+                  setBloqueActualIdx(lastBloque.bloqueIdx)
+                  setBloquesCompletados(prev => prev.slice(0, -1))
                 }
                 setPaso('confirmacion')
               } else {
@@ -2455,7 +2508,7 @@ function CapturaContent() {
             </div>
 
             <button
-              onClick={guardarFotoLocal}
+              onClick={confirmarBloque}
               className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch text-base shadow-lg"
             >
               {bloqueActualIdx < totalBloques - 1
@@ -2471,7 +2524,7 @@ function CapturaContent() {
             <div>
               <p className="text-sm font-semibold text-gray-700">Revisá antes de enviar</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                {fotosCapturadas.length} foto{fotosCapturadas.length !== 1 ? 's' : ''} listas para enviar
+                {bloquesCompletados.length} foto{bloquesCompletados.length !== 1 ? 's' : ''} listas para enviar
               </p>
             </div>
 
@@ -2485,10 +2538,10 @@ function CapturaContent() {
             </div>
 
             {/* Grid de fotos */}
-            <div className={`grid gap-2 ${fotosCapturadas.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              {fotosCapturadas.map((f, i) => (
+            <div className={`grid gap-2 ${bloquesCompletados.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {bloquesCompletados.map((b, i) => (
                 <div key={i} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
-                  <Image src={f.previewUrl} alt={`Foto ${i + 1}`} fill className="object-cover" />
+                  <Image src={b.previewUrl} alt={`Foto ${i + 1}`} fill className="object-cover" />
                   <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium">
                     Foto {i + 1}
                   </div>
