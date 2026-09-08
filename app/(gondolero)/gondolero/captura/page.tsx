@@ -2376,13 +2376,13 @@ function CapturaContent() {
           const totalCampos = bloqueActual.campos.length
           return (
           <div className="space-y-5">
+            {/* Solo el progreso. La pregunta va una sola vez, en el <label> del
+                campo: pegada al control, que es donde sirve para responder y
+                donde la necesita un lector de pantalla. Antes se repetía acá
+                arriba y se veía duplicada en cada pantalla del flujo. */}
             <div>
-              <p className="text-[11px] text-gray-400 mb-1">
+              <p className="text-[11px] text-gray-400">
                 Campo {campoActualIdx + 1} de {totalCampos}
-              </p>
-              <p className="text-sm font-semibold text-gray-800">
-                {campo.pregunta}
-                {campo.obligatorio && <span className="text-red-400 ml-1">*</span>}
               </p>
             </div>
 
@@ -2650,9 +2650,30 @@ function CapturaContent() {
         {paso === 'mision-resumen' && comercio && campana && (
           <div className="space-y-4">
             {(() => {
-              // Solo mostrar bloques que tienen preview (= tuvieron foto)
-              const bloquesConFoto = bloquesCompletados.filter(b => !!b.previewUrl)
-              const cantFotos = bloquesConFoto.length
+              // Las fotos se cuentan por CAMPO, no por bloque.
+              //
+              // Antes esto era `bloquesCompletados.filter(b => !!b.previewUrl)` y
+              // contaba bloques: con dos campos tipo='foto' en el mismo bloque
+              // mostraba "1 foto" y listaba una sola, porque además usaba
+              // `campos.find(c => c.tipo === 'foto')` — el primero nomás.
+              // Las dos fotos siempre se enviaron bien (viven en b.respuestas,
+              // una entrada por campo); lo que fallaba era el resumen.
+              //
+              // `previewUrl` no sirve como fuente: es un solo string que cada
+              // captura pisa, así que solo conserva la última.
+              const fotosListas = bloquesCompletados.flatMap(b => {
+                const bloque = campana.bloques[b.bloqueIdx]
+                // Foto de bloque del flujo viejo (campo_id = null en DB)
+                const deBloque = b.blob
+                  ? [{ instruccion: bloque?.instruccion ?? 'Foto de la góndola' }]
+                  : []
+                // Una por cada campo tipo='foto' que tenga respuesta, en orden
+                const deCampos = (bloque?.campos ?? [])
+                  .filter(c => c.tipo === 'foto' && b.respuestas[c.id])
+                  .map(c => ({ instruccion: c.pregunta }))
+                return [...deBloque, ...deCampos]
+              })
+              const cantFotos = fotosListas.length
               return (
                 <>
                   <div>
@@ -2676,9 +2697,8 @@ function CapturaContent() {
                   {/* Lista de fotos listas — texto, sin imagen para evitar previews rotos */}
                   {cantFotos > 0 && (
                     <div className="space-y-2">
-                      {bloquesConFoto.map((b, i) => {
-                        const campoFoto = campana.bloques[b.bloqueIdx]?.campos?.find(c => c.tipo === 'foto')
-                        const instruccion = campoFoto?.pregunta ?? `Foto ${i + 1}`
+                      {fotosListas.map((foto, i) => {
+                        const instruccion = foto.instruccion || `Foto ${i + 1}`
                         return (
                           <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-3">
                             <div className="w-8 h-8 rounded-lg bg-gondo-verde-50 flex items-center justify-center shrink-0">
