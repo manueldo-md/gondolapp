@@ -1,10 +1,10 @@
-import Image from 'next/image'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Images } from 'lucide-react'
 import { formatearFechaHora } from '@/lib/utils'
 import type { DeclaracionFoto } from '@/types'
+import { FotoLightbox } from '@/components/shared/foto-lightbox'
 
 function adminClient() {
   return createAdminClient(
@@ -164,11 +164,11 @@ export default async function RepoGondolasPage({
                   {lista.map(f => (
                     <tr key={f.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
-                        <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0">
-                          {f.url && (
-                            <Image src={f.url} alt="" width={48} height={48} className="w-full h-full object-cover" />
-                          )}
-                        </div>
+                        <FotoLightbox
+                          src={f.url || null}
+                          alt={`Foto de ${f.comercio?.nombre ?? 'comercio'}`}
+                          containerClassName="relative w-12 h-12 rounded-lg overflow-hidden shrink-0"
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-gray-900">

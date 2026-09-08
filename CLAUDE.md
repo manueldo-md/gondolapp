@@ -1378,6 +1378,22 @@ Esto no es teórico: el 7/9/2026 se perdió un rato buscando en `dev` unos fixes
 de CSP que en realidad ya tenía, porque no había forma rápida de saber el
 estado. Los dos comandos de arriba lo responden en un segundo.
 
+### Idea pendiente: unificar vista de góndolas entre paneles
+
+Hoy cada panel tiene su propio layout para mostrar las fotos:
+- Marca y admin: vista de tarjetas (foto grande, grid).
+- Repositora y distribuidora: vista de lista (thumbnail pequeño + detalle en tabla).
+
+La idea es agregar un selector "Tarjetas / Lista" en todos los paneles, de modo
+que el usuario pueda alternar según su preferencia. El estado podría vivir en
+localStorage (por panel) para que persista entre sesiones sin servidor.
+
+No implementar hasta definir si las dos vistas deben ser idénticas entre paneles
+o si cada rol tiene restricciones distintas (p. ej. el panel de repositora no
+tiene botones de aprobar/rechazar, solo lectura).
+
+---
+
 ### La CSP y los redirects de imágenes
 
 Cuando se agrega un origen de imágenes a `img-src`, hay que permitir **el
