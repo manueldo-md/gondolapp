@@ -2624,65 +2624,80 @@ function CapturaContent() {
         {/* ── MISIÓN RESUMEN — envío final ── */}
         {paso === 'mision-resumen' && comercio && campana && (
           <div className="space-y-4">
-            <div>
-              <p className="text-sm font-semibold text-gray-700">Revisá antes de enviar</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {bloquesCompletados.length} foto{bloquesCompletados.length !== 1 ? 's' : ''} listas para enviar
-              </p>
-            </div>
-
-            {/* Comercio */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
-              <MapPin size={16} className="text-gray-400 shrink-0" />
-              <div>
-                <p className="text-xs text-gray-400">Comercio</p>
-                <p className="font-semibold text-gray-900">{comercio.nombre}</p>
-              </div>
-            </div>
-
-            {/* Grid de fotos */}
-            <div className={`grid gap-2 ${bloquesCompletados.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              {bloquesCompletados.map((b, i) => (
-                <div key={i} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
-                  <Image src={b.previewUrl} alt={`Foto ${i + 1}`} fill className="object-cover" />
-                  <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium">
-                    Foto {i + 1}
+            {(() => {
+              // Solo mostrar bloques que tienen preview (= tuvieron foto)
+              const bloquesConFoto = bloquesCompletados.filter(b => !!b.previewUrl)
+              const cantFotos = bloquesConFoto.length
+              return (
+                <>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">Revisá antes de enviar</p>
+                    {cantFotos > 0 && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {cantFotos} foto{cantFotos !== 1 ? 's' : ''} listas para enviar
+                      </p>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
 
-            {/* Puntos */}
-            <div className="bg-gondo-verde-50 rounded-2xl p-4 flex items-center gap-3">
-              <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
-              <div>
-                <p className="text-xs text-gray-500">Puntos por esta misión</p>
-                <p className="text-lg font-bold text-gondo-verde-400">
-                  +{formatearPuntos(
-                    campana.puntos_por_mision > 0
-                      ? campana.puntos_por_mision
-                      : campana.puntos_por_foto * fotosCapturadas.length
-                  )} pts
-                </p>
-              </div>
-            </div>
+                  {/* Comercio */}
+                  <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
+                    <MapPin size={16} className="text-gray-400 shrink-0" />
+                    <div>
+                      <p className="text-xs text-gray-400">Comercio</p>
+                      <p className="font-semibold text-gray-900">{comercio.nombre}</p>
+                    </div>
+                  </div>
 
-            {errorGlobal && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm space-y-1">
-                <p>{errorGlobal}</p>
-                <BotonReportarError errorTecnico={errorGlobal} />
-              </div>
-            )}
+                  {/* Grid de fotos — solo si hay al menos una */}
+                  {cantFotos > 0 && (
+                    <div className={`grid gap-2 ${cantFotos > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      {bloquesConFoto.map((b, i) => (
+                        <div key={i} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
+                          <Image src={b.previewUrl} alt={`Foto ${i + 1}`} fill className="object-cover" />
+                          <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium">
+                            Foto {i + 1}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-            <button
-              onClick={handleEnviarMision}
-              disabled={enviando}
-              className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-60 min-h-touch text-base shadow-lg"
-            >
-              {enviando
-                ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando misión...</span>
-                : `Enviar misión completa · ${fotosCapturadas.length} foto${fotosCapturadas.length !== 1 ? 's' : ''}`}
-            </button>
+                  {/* Puntos */}
+                  <div className="bg-gondo-verde-50 rounded-2xl p-4 flex items-center gap-3">
+                    <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
+                    <div>
+                      <p className="text-xs text-gray-500">Puntos por esta misión</p>
+                      <p className="text-lg font-bold text-gondo-verde-400">
+                        +{formatearPuntos(
+                          campana.puntos_por_mision > 0
+                            ? campana.puntos_por_mision
+                            : campana.puntos_por_foto * cantFotos
+                        )} pts
+                      </p>
+                    </div>
+                  </div>
+
+                  {errorGlobal && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm space-y-1">
+                      <p>{errorGlobal}</p>
+                      <BotonReportarError errorTecnico={errorGlobal} />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleEnviarMision}
+                    disabled={enviando}
+                    className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-60 min-h-touch text-base shadow-lg"
+                  >
+                    {enviando
+                      ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando misión...</span>
+                      : cantFotos > 0
+                        ? `Enviar misión completa · ${cantFotos} foto${cantFotos !== 1 ? 's' : ''}`
+                        : 'Enviar misión completa'}
+                  </button>
+                </>
+              )
+            })()}
           </div>
         )}
 
