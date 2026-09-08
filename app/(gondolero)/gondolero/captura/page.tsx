@@ -177,12 +177,17 @@ function PasoCamara({
   onCaptura,
   onVolver,
   externalStream,
+  sesionId,
 }: {
   onCaptura: (blob: Blob, previewUrl: string) => void
   onVolver: () => void
   /** Stream gestionado por el padre. Si se provee, PasoCamara no llama
    *  getUserMedia ni detiene los tracks — el padre controla el ciclo de vida. */
   externalStream?: MediaStream
+  /** Identifica la captura en curso (el id del campo tipo='foto').
+   *  Cuando cambia, se reinicia el estado de captura sin desmontar el
+   *  componente. Ver el efecto de "nueva sesión" más abajo. */
+  sesionId?: string | null
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -211,6 +216,33 @@ function PasoCamara({
       videoRef.current.play().catch(() => {})
     }
   }, [camEstado])
+
+  // ── Nueva sesión de captura, sin desmontar ─────────────────────────────────
+  // Con dos campos tipo='foto' seguidos, el padre solo cambia campoFotoActualId:
+  // `paso` sigue siendo 'formulario-camara', así que React reutiliza esta misma
+  // instancia y NO hay remount. Antes el remount era lo que reseteaba el estado
+  // post-captura, y sin él quedaban dos cosas rotas:
+  //
+  //   - `capturando` seguía en true (solo se resetea en los caminos de error y
+  //     de inclinación), así que el botón de disparo quedaba deshabilitado
+  //     girando para siempre.
+  //   - capturar() dejó `srcObject` en null y el efecto que reconecta depende
+  //     de [camEstado], que sigue en 'activo' y no vuelve a dispararse: el
+  //     <video> quedaba sin fuente y la pantalla en negro.
+  //
+  // Este efecto hace lo que haría un remount, pero deja el giroscopio en paz:
+  // su efecto corre con [] y en iOS 13+ requestPermission() solo funciona desde
+  // un gesto de usuario, así que reinicializarlo lo dejaría sin permiso y sin
+  // validador de inclinación, en silencio.
+  useEffect(() => {
+    setCapturando(false)
+    const stream = externalStream ?? streamRef.current
+    if (stream && videoRef.current) {
+      streamRef.current = stream
+      videoRef.current.srcObject = stream
+      videoRef.current.play().catch(() => {})
+    }
+  }, [sesionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Iniciar/reiniciar stream de cámara (streamKey como trigger de reinicio)
   useEffect(() => {
@@ -347,6 +379,10 @@ function PasoCamara({
         setCapturaInclinada(true)
         setCapturando(false)
       } else {
+        // Resetear también acá: es el camino exitoso y era el único que no lo
+        // hacía. Si el padre desmonta el componente da igual, pero si lo
+        // reutiliza para otro campo foto, sin esto el botón queda trabado.
+        setCapturando(false)
         onCaptura(blob, previewUrl)
       }
     }, 'image/jpeg', 0.92)
@@ -1404,6 +1440,7 @@ function CapturaContent() {
         </div>
         <PasoCamara
           externalStream={misionStreamRef.current ?? undefined}
+          sesionId={campoFotoActualId}
           onCaptura={async (blob, previewUrl) => {
             // ── Blur detection (solo si el campo lo requiere, default: sí) ────
             if (campoCamara?.blur_requerido !== false) {
@@ -1440,6 +1477,7 @@ function CapturaContent() {
     return (
       <PasoCamara
         externalStream={misionStreamRef.current ?? undefined}
+        sesionId="camara-bloque"
         onCaptura={async (blob, previewUrl) => {
           console.log('Foto capturada, iniciando blur detection...')
           console.log('Blob size:', blob.size, 'type:', blob.type)
