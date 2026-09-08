@@ -112,6 +112,10 @@ interface CampoBloque {
   opciones: string[] | null
   obligatorio: boolean
   orden: number
+  /** Solo aplica cuando tipo='foto'. Default DB: true. */
+  blur_requerido?: boolean
+  /** Solo aplica cuando tipo='foto'. Default DB: false. */
+  solicitar_precio?: boolean
 }
 
 interface BloqueData {
@@ -683,7 +687,7 @@ function CapturaContent() {
 
       supabase
         .from('campanas')
-        .select('id, nombre, tipo, puntos_por_foto, puntos_por_mision, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden ) )')
+        .select('id, nombre, tipo, puntos_por_foto, puntos_por_mision, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido, solicitar_precio ) )')
         .eq('id', campanaId)
         .eq('estado', 'activa')
         .single()
@@ -723,6 +727,14 @@ function CapturaContent() {
               primerBloqueId: bloquesData[0]?.id ?? null,
             }
             setCampana(campanaData)
+            // Log para verificar que blur_requerido y solicitar_precio lleguen desde DB
+            console.log('[Paso 2] Campos por bloque:', bloquesData.map(b => ({
+              bloque: b.id,
+              campos: b.campos.map(c => ({
+                id: c.id, tipo: c.tipo, pregunta: c.pregunta,
+                blur_requerido: c.blur_requerido, solicitar_precio: c.solicitar_precio,
+              })),
+            })))
             // Guardar en caché para uso offline futuro
             await set(CAMPANA_CACHE_PREFIX + campanaId, campanaData)
           }
