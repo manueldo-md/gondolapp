@@ -156,9 +156,13 @@ const TIPOS_COMERCIO: { value: TipoComercio; label: string; emoji: string }[] = 
 function PasoCamara({
   onCaptura,
   onVolver,
+  externalStream,
 }: {
   onCaptura: (blob: Blob, previewUrl: string) => void
   onVolver: () => void
+  /** Stream gestionado por el padre. Si se provee, PasoCamara no llama
+   *  getUserMedia ni detiene los tracks — el padre controla el ciclo de vida. */
+  externalStream?: MediaStream
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -192,6 +196,20 @@ function PasoCamara({
   useEffect(() => {
     let cancelado = false
 
+    // ── Stream externo (gestionado por el padre) ──────────────────────────────
+    // El padre ya hizo getUserMedia antes de montar este componente, así que
+    // el stream llega listo: lo conectamos directamente sin nueva solicitud.
+    if (externalStream) {
+      streamRef.current = externalStream
+      setCamEstado('activo')
+      return () => {
+        cancelado = true
+        // No parar los tracks: el padre decide cuándo cerrar el stream.
+        if (videoRef.current) videoRef.current.srcObject = null
+      }
+    }
+
+    // ── Stream propio (sin stream externo, fallback al comportamiento anterior) ─
     const conectarStream = (stream: MediaStream) => {
       if (cancelado) { stream.getTracks().forEach(t => t.stop()); return }
       streamRef.current = stream
@@ -226,7 +244,7 @@ function PasoCamara({
       cancelado = true
       streamRef.current?.getTracks().forEach(t => t.stop())
     }
-  }, [streamKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [externalStream, streamKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Escuchar orientación del dispositivo (giroscopio)
   useEffect(() => {
@@ -278,8 +296,14 @@ function PasoCamara({
     canvas.height = video.videoHeight || 720
     canvas.getContext('2d')!.drawImage(video, 0, 0)
 
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    streamRef.current = null
+    // Stream externo: desconectar el video pero no parar los tracks — el padre los gestiona.
+    // Stream propio: parar como antes para que el LED de cámara se apague inmediatamente.
+    if (externalStream) {
+      if (videoRef.current) videoRef.current.srcObject = null
+    } else {
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+    }
 
     // Capturar posición exacta en el momento del disparo
     const gammaAlCapturar = inclinacion?.gamma ?? 0
@@ -306,23 +330,34 @@ function PasoCamara({
         onCaptura(blob, previewUrl)
       }
     }, 'image/jpeg', 0.92)
-  }, [capturando, onCaptura, inclinacion, gyroDisponible])
+  }, [capturando, onCaptura, inclinacion, gyroDisponible, externalStream])
 
   const handleArchivo = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    streamRef.current?.getTracks().forEach(t => t.stop())
+    if (!externalStream) streamRef.current?.getTracks().forEach(t => t.stop())
     onCaptura(file, URL.createObjectURL(file))
-  }, [onCaptura])
+  }, [onCaptura, externalStream])
 
   // Reiniciar cámara para repetir foto inclinada
   const repetirFoto = useCallback(() => {
     if (pendingCaptura) URL.revokeObjectURL(pendingCaptura.previewUrl)
     setPendingCaptura(null)
     setCapturaInclinada(false)
-    setCamEstado('iniciando')
-    setStreamKey(k => k + 1)
-  }, [pendingCaptura])
+
+    if (externalStream) {
+      // Stream externo sigue vivo — solo re-adjuntar al <video>
+      streamRef.current = externalStream
+      if (videoRef.current) {
+        videoRef.current.srcObject = externalStream
+        videoRef.current.play().catch(() => {})
+      }
+      setCamEstado('activo')
+    } else {
+      setCamEstado('iniciando')
+      setStreamKey(k => k + 1)
+    }
+  }, [pendingCaptura, externalStream])
 
   // ── Vista: advertencia de inclinación ─────────────────────────────────────
   if (capturaInclinada && pendingCaptura) {
@@ -547,6 +582,47 @@ function CapturaContent() {
   // Offline
   const [modoOffline, setModoOffline] = useState(false)
   const comerciosCacheRef = useRef<ComercioRow[]>([])
+
+  // ── Stream de cámara compartido entre bloques ─────────────────────────────
+  // El stream se abre una vez al inicio del tramo fotográfico y se cierra
+  // cuando ya no quedan más bloques/campos tipo='foto' por capturar.
+  // Esto evita el ciclo getUserMedia → stop → getUserMedia entre bloques
+  // que causaba NotAllowedError en algunos Android (bug del rollback de abril).
+  const misionStreamRef = useRef<MediaStream | null>(null)
+
+  const abrirMisionStream = useCallback(async () => {
+    if (misionStreamRef.current) return // ya abierto
+    const adjuntarHandlers = (stream: MediaStream) => {
+      misionStreamRef.current = stream
+      // Detectar revocación externa de permisos (usuario va a configuración y deniega)
+      stream.getTracks().forEach(track => {
+        track.onended = () => {
+          if (misionStreamRef.current === stream) misionStreamRef.current = null
+        }
+      })
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 } },
+        audio: false,
+      })
+      adjuntarHandlers(stream)
+    } catch {
+      // Fallback: cualquier cámara (desktop o sin cámara trasera)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        adjuntarHandlers(stream)
+      } catch {
+        // Si falla el fallback, misionStreamRef queda null y PasoCamara
+        // usará su propio getUserMedia (degradación graceful)
+      }
+    }
+  }, [])
+
+  const cerrarMisionStream = useCallback(() => {
+    misionStreamRef.current?.getTracks().forEach(t => t.stop())
+    misionStreamRef.current = null
+  }, [])
   const [comerciosPendientes, setComerciosPendientes] = useState<ComercioTempItem[]>([])
 
   // Datos del flujo
@@ -851,8 +927,11 @@ function CapturaContent() {
 
     const isLast = bloqueActualIdx >= (campana.bloques.length || 1) - 1
     if (isLast) {
+      // No hay más bloques con foto — cerrar stream
+      cerrarMisionStream()
       setPaso('mision-resumen')
     } else {
+      // El stream sigue abierto para el siguiente bloque
       setBloqueActualIdx(prev => prev + 1)
       setPaso('camara')
     }
@@ -1122,6 +1201,7 @@ function CapturaContent() {
           </p>
         </div>
         <PasoCamara
+          externalStream={misionStreamRef.current ?? undefined}
           onCaptura={(blob) => {
             const file = blob instanceof File
               ? blob
@@ -1157,6 +1237,7 @@ function CapturaContent() {
   if (paso === 'camara') {
     return (
       <PasoCamara
+        externalStream={misionStreamRef.current ?? undefined}
         onCaptura={async (blob, previewUrl) => {
           console.log('Foto capturada, iniciando blur detection...')
           console.log('Blob size:', blob.size, 'type:', blob.type)
@@ -1186,7 +1267,11 @@ function CapturaContent() {
             }
           }
         }}
-        onVolver={() => setPaso('gps')}
+        onVolver={() => {
+          // Usuario vuelve al GPS — cerrar el stream (se reabrirá si vuelve a avanzar)
+          cerrarMisionStream()
+          setPaso('gps')
+        }}
       />
     )
   }
@@ -2002,7 +2087,12 @@ function CapturaContent() {
                   </div>
                 )}
                 <button
-                  onClick={() => setPaso('camara')}
+                  onClick={async () => {
+                    // Abrir el stream ANTES de montar PasoCamara: evita el ciclo
+                    // getUserMedia→stop→getUserMedia entre bloques (bug Android abril).
+                    await abrirMisionStream()
+                    setPaso('camara')
+                  }}
                   className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
                 >
                   {campana.bloques.length > 1
