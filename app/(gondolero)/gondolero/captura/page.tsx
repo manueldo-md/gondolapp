@@ -92,7 +92,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'formulario-camara-blur' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
 
 interface ComercioRow {
@@ -646,6 +646,8 @@ function CapturaContent() {
   const [fotosCapturadas, setFotosCapturadas] = useState<FotoCapturadaLocal[]>([])
   // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
   const [campoFotoActualId, setCampoFotoActualId] = useState<string | null>(null)
+  // Foto pendiente de confirmación en 'formulario-camara-blur' (blur bajo, esperando decisión del gondolero)
+  const [campoFotoBlurPending, setCampoFotoBlurPending] = useState<{ blob: Blob; previewUrl: string } | null>(null)
 
   // ── Estado extra para flujo COMERCIOS ─────────────────────────────────────
   const [cmNombre,    setCmNombre]    = useState('')
@@ -1200,6 +1202,68 @@ function CapturaContent() {
     )
   }
 
+  // ── PASO BLUR CAMPO FOTO — advertencia de nitidez para un campo tipo='foto' ──
+  if (paso === 'formulario-camara-blur' && campoFotoBlurPending && campoFotoActualId) {
+    const bloqueParaCamara = campana?.bloques[bloqueActualIdx] ?? null
+
+    // Aceptar la foto borrosa y avanzar al siguiente campo o paso
+    const aceptarFotoBorrosa = () => {
+      const { blob } = campoFotoBlurPending
+      const file = blob instanceof File
+        ? blob
+        : new File([blob], 'campo-foto.jpg', { type: 'image/jpeg' })
+      const nuevasRespuestas = { ...respuestas, [campoFotoActualId]: file }
+      setRespuestas(nuevasRespuestas)
+      setCampoFotoBlurPending(null)
+      const siguienteFoto = bloqueParaCamara?.campos.find(
+        c => c.tipo === 'foto' && !(nuevasRespuestas[c.id] instanceof File)
+      ) ?? null
+      if (siguienteFoto) {
+        setCampoFotoActualId(siguienteFoto.id)
+        setPaso('formulario-camara')
+      } else {
+        setCampoFotoActualId(null)
+        const camposNonFoto = bloqueParaCamara?.campos.filter(c => c.tipo !== 'foto') ?? []
+        setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
+      }
+    }
+
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col">
+        <div className="relative flex-1">
+          <Image src={campoFotoBlurPending.previewUrl} alt="Preview" fill className="object-contain" />
+        </div>
+        <div className="bg-amber-50 border-t border-amber-200 px-5 py-5 shrink-0">
+          <div className="flex items-start gap-3 mb-4">
+            <span className="text-2xl shrink-0">📐</span>
+            <div>
+              <p className="font-semibold text-amber-900 text-base">La foto está borrosa</p>
+              <p className="text-sm text-amber-700 mt-0.5">¿Querés tomarla de nuevo?</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <button
+              onClick={() => {
+                URL.revokeObjectURL(campoFotoBlurPending.previewUrl)
+                setCampoFotoBlurPending(null)
+                setPaso('formulario-camara')
+              }}
+              className="w-full py-3.5 bg-amber-500 text-white font-semibold rounded-xl min-h-touch"
+            >
+              Repetir foto
+            </button>
+            <button
+              onClick={aceptarFotoBorrosa}
+              className="w-full py-3.5 border border-amber-300 text-amber-700 font-semibold rounded-xl min-h-touch"
+            >
+              Usar igual
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ── PASO CÁMARA DE CAMPO FOTO — abre PasoCamara para capturar un campo tipo='foto' ──
   if (paso === 'formulario-camara' && campoFotoActualId) {
     const bloqueParaCamara = campana?.bloques[bloqueActualIdx] ?? null
@@ -1214,7 +1278,17 @@ function CapturaContent() {
         </div>
         <PasoCamara
           externalStream={misionStreamRef.current ?? undefined}
-          onCaptura={(blob) => {
+          onCaptura={async (blob, previewUrl) => {
+            // ── Blur detection (solo si el campo lo requiere, default: sí) ────
+            if (campoCamara?.blur_requerido !== false) {
+              const score = await calcularBlur(blob)
+              if (score < BLUR_THRESHOLD) {
+                setCampoFotoBlurPending({ blob, previewUrl })
+                setPaso('formulario-camara-blur')
+                return
+              }
+            }
+
             const file = blob instanceof File
               ? blob
               : new File([blob], 'campo-foto.jpg', { type: 'image/jpeg' })
@@ -1877,21 +1951,22 @@ function CapturaContent() {
                 setPaso('confirmacion')
               } else {
                 const prev: Record<Paso, Paso> = {
-                  comercio:              'comercios-gps',
-                  gps:                   'comercios-gps',
-                  camara:                'gps',
-                  'blur-advertencia':    'camara',
-                  formulario:            'camara',
-                  'formulario-camara':   'camara',
-                  confirmacion:          tieneCampos ? 'formulario' : 'camara',
-                  'mision-resumen':      'confirmacion',
-                  exito:                 'mision-resumen',
-                  'exito-offline':       'mision-resumen',
-                  'comercios-gps':       'comercios-gps',
-                  'comercios-existente': 'comercios-gps',
-                  'comercios-formulario':'comercios-gps',
-                  'comercios-fachada':   'comercios-formulario',
-                  'comercios-exito':     'comercios-gps',
+                  comercio:                    'comercios-gps',
+                  gps:                         'comercios-gps',
+                  camara:                      'gps',
+                  'blur-advertencia':          'camara',
+                  formulario:                  'camara',
+                  'formulario-camara':         'camara',
+                  'formulario-camara-blur':    'formulario-camara',
+                  confirmacion:                tieneCampos ? 'formulario' : 'camara',
+                  'mision-resumen':            'confirmacion',
+                  exito:                       'mision-resumen',
+                  'exito-offline':             'mision-resumen',
+                  'comercios-gps':             'comercios-gps',
+                  'comercios-existente':       'comercios-gps',
+                  'comercios-formulario':      'comercios-gps',
+                  'comercios-fachada':         'comercios-formulario',
+                  'comercios-exito':           'comercios-gps',
                 }
                 setPaso(prev[paso])
               }
