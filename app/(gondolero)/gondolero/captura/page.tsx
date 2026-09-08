@@ -666,6 +666,8 @@ function CapturaContent() {
   const [ultimoCampoFotoPreviewUrl, setUltimoCampoFotoPreviewUrl] = useState<string | null>(null)
   // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
   const [campoFotoActualId, setCampoFotoActualId] = useState<string | null>(null)
+  // Índice del campo actual en el array ordenado del bloque (flujo secuencial por orden)
+  const [campoActualIdx, setCampoActualIdx] = useState(0)
   // Foto pendiente de confirmación en 'formulario-camara-blur' (blur bajo, esperando decisión del gondolero)
   const [campoFotoBlurPending, setCampoFotoBlurPending] = useState<{ blob: Blob; previewUrl: string } | null>(null)
 
@@ -972,6 +974,54 @@ function CapturaContent() {
   }
 
   // ── Confirmar bloque (Paso 5a) ────────────────────────────────────────────────
+  // ── Helpers de navegación secuencial por campo ──────────────────────────────
+  // Avanza al campo en la posición `idx` del bloque actual (en orden).
+  // Si idx >= total campos: pasa a confirmacion.
+  function irAlCampo(idx: number) {
+    const campos = campana?.bloques[bloqueActualIdx]?.campos ?? []
+    setCampoActualIdx(idx)
+    if (idx >= campos.length) {
+      setCampoFotoActualId(null)
+      setPaso('confirmacion')
+      return
+    }
+    const campo = campos[idx]
+    if (campo.tipo === 'foto') {
+      setCampoFotoActualId(campo.id)
+      setPaso('formulario-camara')
+    } else {
+      setCampoFotoActualId(null)
+      setPaso('formulario')
+    }
+  }
+
+  // Retrocede al campo en la posición `idx`. Deshace la respuesta si es necesario.
+  // Si idx < 0: cierra stream y vuelve a GPS.
+  function volverAlCampo(idx: number) {
+    const campos = campana?.bloques[bloqueActualIdx]?.campos ?? []
+    if (idx < 0) {
+      setCampoFotoActualId(null)
+      cerrarMisionStream()
+      setPaso('gps')
+      return
+    }
+    const campo = campos[idx]
+    setCampoActualIdx(idx)
+    if (campo.tipo === 'foto') {
+      // Deshacer la foto capturada para que se pueda retomar
+      setRespuestas(prev => { const r = { ...prev }; delete r[campo.id]; return r })
+      if (ultimoCampoFotoPreviewUrl) {
+        URL.revokeObjectURL(ultimoCampoFotoPreviewUrl)
+        setUltimoCampoFotoPreviewUrl(null)
+      }
+      setCampoFotoActualId(campo.id)
+      setPaso('formulario-camara')
+    } else {
+      setCampoFotoActualId(null)
+      setPaso('formulario')
+    }
+  }
+
   // Reemplaza guardarFotoLocal: escribe en bloquesCompletados en vez de fotosCapturadas.
   // El botón "Guardar" en confirmacion llama a esta función a partir de 5a.
   const confirmarBloque = () => {
@@ -1011,16 +1061,20 @@ function CapturaContent() {
     } else {
       const nextIdx = bloqueActualIdx + 1
       setBloqueActualIdx(nextIdx)
-      // Avanzar al primer campo foto del siguiente bloque (flujo nuevo)
-      const nextBloque = campana.bloques[nextIdx]
-      const primerFotoNext = nextBloque?.campos.find(c => c.tipo === 'foto') ?? null
-      if (primerFotoNext) {
-        setCampoFotoActualId(primerFotoNext.id)
-        setPaso('formulario-camara')
+      setCampoActualIdx(0)  // Resetear al primer campo del nuevo bloque
+      const campos = campana.bloques[nextIdx]?.campos ?? []
+      if (campos.length === 0) {
+        setCampoFotoActualId(null)
+        setPaso('confirmacion')
       } else {
-        // Bloque sin foto — ir directo al formulario o confirmacion
-        const nonFoto = nextBloque?.campos.filter(c => c.tipo !== 'foto') ?? []
-        setPaso(nonFoto.length > 0 ? 'formulario' : 'confirmacion')
+        const primerCampo = campos[0]
+        if (primerCampo.tipo === 'foto') {
+          setCampoFotoActualId(primerCampo.id)
+          setPaso('formulario-camara')
+        } else {
+          setCampoFotoActualId(null)
+          setPaso('formulario')
+        }
       }
     }
   }
@@ -1295,20 +1349,9 @@ function CapturaContent() {
       const file = blob instanceof File
         ? blob
         : new File([blob], 'campo-foto.jpg', { type: 'image/jpeg' })
-      const nuevasRespuestas = { ...respuestas, [campoFotoActualId]: file }
-      setRespuestas(nuevasRespuestas)
+      setRespuestas(prev => ({ ...prev, [campoFotoActualId]: file }))
       setCampoFotoBlurPending(null)
-      const siguienteFoto = bloqueParaCamara?.campos.find(
-        c => c.tipo === 'foto' && !(nuevasRespuestas[c.id] instanceof File)
-      ) ?? null
-      if (siguienteFoto) {
-        setCampoFotoActualId(siguienteFoto.id)
-        setPaso('formulario-camara')
-      } else {
-        setCampoFotoActualId(null)
-        const camposNonFoto = bloqueParaCamara?.campos.filter(c => c.tipo !== 'foto') ?? []
-        setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
-      }
+      irAlCampo(campoActualIdx + 1)
     }
 
     return (
@@ -1380,25 +1423,12 @@ function CapturaContent() {
             setRespuestas(nuevasRespuestas)
             if (ultimoCampoFotoPreviewUrl) URL.revokeObjectURL(ultimoCampoFotoPreviewUrl)
             setUltimoCampoFotoPreviewUrl(previewUrl)
-            // Buscar siguiente campo tipo='foto' aún no capturado
-            const siguienteFoto = bloqueParaCamara?.campos.find(
-              c => c.tipo === 'foto' && !(nuevasRespuestas[c.id] instanceof File)
-            ) ?? null
-            if (siguienteFoto) {
-              // Encadenar al siguiente campo foto (sin cambiar de paso)
-              setCampoFotoActualId(siguienteFoto.id)
-            } else {
-              // No hay más fotos de campo — avanzar al formulario o confirmacion
-              setCampoFotoActualId(null)
-              const camposNonFoto = bloqueParaCamara?.campos.filter(c => c.tipo !== 'foto') ?? []
-              setPaso(camposNonFoto.length > 0 ? 'formulario' : 'confirmacion')
-            }
+            // Avanzar secuencialmente al siguiente campo en orden
+            irAlCampo(campoActualIdx + 1)
           }}
           onVolver={() => {
-            // Paso 5b: volver al GPS (no al paso 'camara' que ya no existe en el flujo)
-            setCampoFotoActualId(null)
-            cerrarMisionStream()
-            setPaso('gps')
+            // Volver al campo anterior; si es el primero, volver al GPS
+            volverAlCampo(campoActualIdx - 1)
           }}
         />
       </div>
@@ -2003,28 +2033,24 @@ function CapturaContent() {
   const tieneBloqueFoto = (bloqueActual?.campos?.filter(c => c.tipo === 'foto').length ?? 0) > 0
   const esCampanaComercio = campana?.tipo === 'comercios'
   const totalBloques = campana?.bloques?.length ?? 1
-  // La barra de progreso se arma dinámicamente según los campos del bloque:
-  // - si hay fotos: se incluye el paso formulario-camara
-  // - si no hay fotos: ese paso no existe y no ocupa barra
+  // La barra de progreso usa pasos fijos; formulario-camara y formulario-camara-blur
+  // se mapean al mismo slot que 'formulario' para no duplicar la barra.
+  const tieneCamposOFotos = (bloqueActual?.campos?.length ?? 0) > 0
   const PASOS_LABEL = esCampanaComercio
     ? ['Ubicación', 'Formulario', 'Fachada']
-    : tieneBloqueFoto && tieneCampos
-      ? ['Comercio', 'Ubicación', 'Foto', 'Formulario', 'Confirmar', 'Enviar misión']
-      : tieneBloqueFoto
-        ? ['Comercio', 'Ubicación', 'Foto', 'Confirmar', 'Enviar misión']
-        : tieneCampos
-          ? ['Comercio', 'Ubicación', 'Formulario', 'Confirmar', 'Enviar misión']
-          : ['Comercio', 'Ubicación', 'Confirmar', 'Enviar misión']
+    : tieneCamposOFotos
+      ? ['Comercio', 'Ubicación', 'Campos', 'Confirmar', 'Enviar misión']
+      : ['Comercio', 'Ubicación', 'Confirmar', 'Enviar misión']
   const PASOS_KEY: Paso[] = esCampanaComercio
     ? ['comercios-gps', 'comercios-formulario', 'comercios-fachada']
-    : tieneBloqueFoto && tieneCampos
-      ? ['comercios-gps', 'gps', 'formulario-camara', 'formulario', 'confirmacion', 'mision-resumen']
-      : tieneBloqueFoto
-        ? ['comercios-gps', 'gps', 'formulario-camara', 'confirmacion', 'mision-resumen']
-        : tieneCampos
-          ? ['comercios-gps', 'gps', 'formulario', 'confirmacion', 'mision-resumen']
-          : ['comercios-gps', 'gps', 'confirmacion', 'mision-resumen']
-  const pasoActualIdx = PASOS_KEY.indexOf(paso)
+    : tieneCamposOFotos
+      ? ['comercios-gps', 'gps', 'formulario', 'confirmacion', 'mision-resumen']
+      : ['comercios-gps', 'gps', 'confirmacion', 'mision-resumen']
+  // formulario-camara y formulario-camara-blur mapean al slot 'formulario' en la barra
+  const pasoParaProgreso: Paso = (paso === 'formulario-camara' || paso === 'formulario-camara-blur')
+    ? 'formulario'
+    : paso
+  const pasoActualIdx = PASOS_KEY.indexOf(pasoParaProgreso)
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -2048,33 +2074,16 @@ function CapturaContent() {
                   setBloquesCompletados(prev => prev.slice(0, -1))
                 }
                 setPaso('confirmacion')
-              } else if (paso === 'formulario-camara') {
-                // Paso 5b: volver al GPS (el paso 'camara' ya no existe en el flujo normal)
-                setCampoFotoActualId(null)
-                cerrarMisionStream()
-                setPaso('gps')
-              } else if (paso === 'formulario') {
-                // Volver al último campo foto del bloque para que el gondolero pueda repetirlo
-                const lastFoto = bloqueActual?.campos.filter(c => c.tipo === 'foto').pop() ?? null
-                if (lastFoto) {
-                  // Limpiar la foto capturada para que se pueda retomar
-                  setRespuestas(prev => { const r = { ...prev }; delete r[lastFoto.id]; return r })
-                  if (ultimoCampoFotoPreviewUrl) { URL.revokeObjectURL(ultimoCampoFotoPreviewUrl); setUltimoCampoFotoPreviewUrl(null) }
-                  setCampoFotoActualId(lastFoto.id)
-                  setPaso('formulario-camara')
+              } else if (paso === 'formulario-camara' || paso === 'formulario') {
+                // Flujo secuencial: volver al campo anterior (o GPS si es el primero)
+                volverAlCampo(campoActualIdx - 1)
+              } else if (paso === 'confirmacion') {
+                // Volver al último campo del bloque
+                const campos = bloqueActual?.campos ?? []
+                if (campos.length > 0) {
+                  volverAlCampo(campos.length - 1)
                 } else {
                   cerrarMisionStream(); setPaso('gps')
-                }
-              } else if (paso === 'confirmacion' && !tieneCampos) {
-                // Sin formulario: volver al último campo foto
-                const lastFoto = bloqueActual?.campos.filter(c => c.tipo === 'foto').pop() ?? null
-                if (lastFoto) {
-                  setRespuestas(prev => { const r = { ...prev }; delete r[lastFoto.id]; return r })
-                  if (ultimoCampoFotoPreviewUrl) { URL.revokeObjectURL(ultimoCampoFotoPreviewUrl); setUltimoCampoFotoPreviewUrl(null) }
-                  setCampoFotoActualId(lastFoto.id)
-                  setPaso('formulario-camara')
-                } else {
-                  setPaso('formulario')
                 }
               } else {
                 const prev: Record<Paso, Paso> = {
@@ -2082,10 +2091,10 @@ function CapturaContent() {
                   gps:                         'comercios-gps',
                   camara:                      'gps',           // dead code (5c eliminará este paso)
                   'blur-advertencia':          'camara',        // dead code (5c eliminará este paso)
-                  formulario:                  'formulario-camara',
-                  'formulario-camara':         'gps',
+                  formulario:                  'gps',           // fallback (normalmente manejado arriba)
+                  'formulario-camara':         'gps',           // fallback (normalmente manejado arriba)
                   'formulario-camara-blur':    'formulario-camara',
-                  confirmacion:                'formulario',    // solo llega acá si tieneCampos (else-if de arriba)
+                  confirmacion:                'formulario',    // fallback (normalmente manejado arriba)
                   'mision-resumen':            'confirmacion',
                   exito:                       'mision-resumen',
                   'exito-offline':             'mision-resumen',
@@ -2305,16 +2314,9 @@ function CapturaContent() {
                     // Abrir el stream ANTES de montar PasoCamara: evita el ciclo
                     // getUserMedia→stop→getUserMedia entre bloques (bug Android abril).
                     await abrirMisionStream()
-                    // Paso 5b: ir directo al primer campo tipo='foto' del bloque
-                    const primerFoto = campana.bloques[bloqueActualIdx]?.campos.find(c => c.tipo === 'foto') ?? null
-                    if (primerFoto) {
-                      setCampoFotoActualId(primerFoto.id)
-                      setPaso('formulario-camara')
-                    } else {
-                      // Bloque sin campo foto — ir a formulario o directo a confirmacion
-                      const nonFoto = campana.bloques[bloqueActualIdx]?.campos.filter(c => c.tipo !== 'foto') ?? []
-                      setPaso(nonFoto.length > 0 ? 'formulario' : 'confirmacion')
-                    }
+                    // Avanzar al primer campo del bloque en orden
+                    setCampoActualIdx(0)
+                    irAlCampo(0)
                   }}
                   className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
                 >
@@ -2329,40 +2331,25 @@ function CapturaContent() {
           </div>
         )}
 
-        {/* ── PASO FORMULARIO ── */}
-        {paso === 'formulario' && campana && bloqueActual && bloqueActual.campos.filter(c => c.tipo !== 'foto').length > 0 && (
+        {/* ── PASO FORMULARIO — muestra UN campo a la vez en orden ── */}
+        {paso === 'formulario' && campana && bloqueActual && (() => {
+          const campo = bloqueActual.campos[campoActualIdx]
+          if (!campo || campo.tipo === 'foto') return null  // Seguridad: no debería ocurrir
+          const totalCampos = bloqueActual.campos.length
+          return (
           <div className="space-y-5">
-            {(() => {
-              const camposNonFoto = bloqueActual.campos.filter(c => c.tipo !== 'foto')
-              const oblig = camposNonFoto.filter(c => c.obligatorio).length
-              return (
-                <p className="text-sm font-semibold text-gray-700">
-                  Preguntas adicionales ({oblig} obligatoria{oblig !== 1 ? 's' : ''})
-                </p>
-              )
-            })()}
+            <div>
+              <p className="text-[11px] text-gray-400 mb-1">
+                Campo {campoActualIdx + 1} de {totalCampos}
+              </p>
+              <p className="text-sm font-semibold text-gray-800">
+                {campo.pregunta}
+                {campo.obligatorio && <span className="text-red-400 ml-1">*</span>}
+              </p>
+            </div>
 
-            {/* Precio — si el campo tipo='foto' principal del bloque lo requiere */}
-            {(bloqueActual.campos.find(c => c.tipo === 'foto')?.solicitar_precio ?? false) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  ¿A cuánto está {bloqueActual.instruccion}?
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={precio}
-                    onChange={e => setPrecio(e.target.value)}
-                    placeholder="0"
-                    className="w-full pl-7 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
-                  />
-                </div>
-              </div>
-            )}
-
-            {bloqueActual.campos.filter(c => c.tipo !== 'foto').map(campo => {
+            {/* Un solo campo — el que corresponde al índice actual */}
+            {[campo].map(campo => {
               const val = respuestas[campo.id]
               return (
                 <div key={campo.id} className="space-y-2">
@@ -2501,19 +2488,18 @@ function CapturaContent() {
               )
             })}
 
+            {/* Botón Continuar: válida solo el campo actual */}
             {(() => {
-              // Solo validar campos no-foto: los campos tipo='foto' se capturan en pasos previos
-              const camposObligatoriosNonFoto = bloqueActual.campos.filter(c => c.obligatorio && c.tipo !== 'foto')
-              const todosCompletos = camposObligatoriosNonFoto.every(c => {
-                const v = respuestas[c.id]
+              const estaCompleto = !campo.obligatorio || (() => {
+                const v = respuestas[campo.id]
                 if (v === undefined || v === null || v === '') return false
                 if (Array.isArray(v) && v.length === 0) return false
                 return true
-              })
+              })()
               return (
                 <button
-                  onClick={() => setPaso('confirmacion')}
-                  disabled={!todosCompletos}
+                  onClick={() => irAlCampo(campoActualIdx + 1)}
+                  disabled={!estaCompleto}
                   className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-40 min-h-touch"
                 >
                   Continuar
@@ -2521,7 +2507,8 @@ function CapturaContent() {
               )
             })()}
           </div>
-        )}
+          )
+        })()}
 
         {/* ── PASO 5: CONFIRMACIÓN ── */}
         {paso === 'confirmacion' && comercio && (
@@ -2648,17 +2635,24 @@ function CapturaContent() {
                     </div>
                   </div>
 
-                  {/* Grid de fotos — solo si hay al menos una */}
+                  {/* Lista de fotos listas — texto, sin imagen para evitar previews rotos */}
                   {cantFotos > 0 && (
-                    <div className={`grid gap-2 ${cantFotos > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                      {bloquesConFoto.map((b, i) => (
-                        <div key={i} className="relative aspect-video rounded-xl overflow-hidden bg-gray-100">
-                          <Image src={b.previewUrl} alt={`Foto ${i + 1}`} fill className="object-cover" />
-                          <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-md font-medium">
-                            Foto {i + 1}
+                    <div className="space-y-2">
+                      {bloquesConFoto.map((b, i) => {
+                        const campoFoto = campana.bloques[b.bloqueIdx]?.campos?.find(c => c.tipo === 'foto')
+                        const instruccion = campoFoto?.pregunta ?? `Foto ${i + 1}`
+                        return (
+                          <div key={i} className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 p-3">
+                            <div className="w-8 h-8 rounded-lg bg-gondo-verde-50 flex items-center justify-center shrink-0">
+                              <Camera size={14} className="text-gondo-verde-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Foto {i + 1} · lista</p>
+                              <p className="text-sm text-gray-700 leading-snug truncate">{instruccion}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
 

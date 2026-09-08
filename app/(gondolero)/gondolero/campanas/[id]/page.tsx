@@ -19,7 +19,7 @@ type BloqueFotoRow = {
   orden: number
   instruccion: string
   tipo_contenido: string
-  bloque_campos: { tipo: string }[] | null
+  bloque_campos: { tipo: string; pregunta: string | null }[] | null
 }
 
 type CampanaDetalle = {
@@ -112,7 +112,7 @@ export default async function CampanaDetallePage({
       objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
       marca:marcas ( razon_social ),
-      bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( tipo ) )
+      bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( tipo, pregunta ) )
     `)
     .eq('id', params.id)
     .single()
@@ -366,7 +366,9 @@ export default async function CampanaDetallePage({
                     <div className="w-6 h-6 rounded-full bg-gondo-verde-50 text-gondo-verde-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
                       {i + 1}
                     </div>
-                    <p className="text-sm text-gray-600 leading-relaxed">{bloque.instruccion}</p>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      {(bloque.bloque_campos ?? []).find(c => c.tipo === 'foto')?.pregunta ?? bloque.instruccion}
+                    </p>
                   </div>
                 ))}
               </div>
