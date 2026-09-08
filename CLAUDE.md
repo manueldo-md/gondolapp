@@ -67,8 +67,9 @@ IA de fotos:  Desactivada en MVP — validación manual. V2: Google Vertex AI Vi
 ```
 gondolapp/
 ├── CLAUDE.md                    # Este archivo
-├── .env.local                   # Variables de entorno (NUNCA commitear)
-├── .env.example                 # Template de variables (sí commitear)
+├── .env.local                   # Credenciales de PRODUCCIÓN (NUNCA commitear)
+├── .env.dev.local               # Credenciales de DEV (NUNCA commitear)
+├── data/georgalos-piloto.csv    # CSV del piloto, usado por los scripts de seed
 ├── next.config.js
 ├── tailwind.config.js
 ├── tsconfig.json
@@ -136,6 +137,16 @@ gondolapp/
 ---
 
 ## 5. ESQUEMA DE BASE DE DATOS — TABLAS PRINCIPALES
+
+> **Esto es el diseño original de V1 y sirve para entender el modelo, no para
+> consultar el schema.** La base creció bastante desde entonces: `comercios`
+> tiene `estado`, `telefono`, `encargado`, `campana_id` y `localidad_id`;
+> `campanas` tiene `via_ejecucion`, `repositora_id` y varias más; existen tablas
+> enteras que no figuran acá (`misiones`, `bloque_campos`, `foto_respuestas`,
+> `campana_tokens`, la geografía de tres niveles, todo el actor repositora).
+>
+> **La fuente de verdad es `docs/schema-real-2026-09.md`**, generado desde
+> producción. Ante cualquier duda sobre una columna, ese archivo manda.
 
 ### Usuarios y actores
 
@@ -586,14 +597,9 @@ casts es deuda pendiente (ver `docs/AUDITORIA-2026-09.md`, sección 9.3).
 ## 14. GIT Y DEPLOY
 
 ```bash
-# Rama principal
-main → producción en Vercel (auto-deploy)
-
-# Ramas de desarrollo
-feature/gondolero-captura
-feature/distribuidora-panel
-feature/marca-campanas
-feature/admin-basico
+# Dos ramas, dos ambientes. Ver "Los dos ambientes" y "Regla de ramas".
+dev  → gondolapp-dev.vercel.app  (Supabase mqeymmprvpclpyjpujvf)
+main → app.gondolapp.com         (Supabase xzznzustgsacmfwsupux)
 
 # Mensajes de commit en español
 git commit -m "feat: agregar validación GPS en flujo de captura"
@@ -601,11 +607,10 @@ git commit -m "fix: corregir cálculo de puntos en tablero"
 git commit -m "chore: actualizar esquema de base de datos"
 ```
 
-**Vercel:**
-- Conectado al repo de GitHub
-- Deploy automático en push a `main`
-- Preview deployments en cada PR
-- Variables de entorno configuradas en el dashboard de Vercel
+**Vercel:** dos proyectos separados, uno por rama, cada uno con sus propias
+variables. El plan Free no permite valores distintos por ambiente dentro de un
+mismo proyecto, así que los preview deployments no sirven para apuntar a otra
+base. El detalle está en "Los dos ambientes".
 
 ---
 
@@ -639,8 +644,12 @@ git commit -m "chore: actualizar esquema de base de datos"
 
 - Auto-ejecutar todos los comandos bash y npm sin confirmación
 - Auto-crear y editar archivos sin confirmación
-- Commit y push automático a main al terminar cada tarea
-- Solo pausar ante: borrado de archivos, cambios en .env.local
+- **Commitear y pushear a `dev`, nunca a `main`.** `main` solo avanza por
+  fast-forward desde `dev`, y ese merge lo pide el usuario explícitamente. Ver
+  "Regla de ramas". (Hasta el 8/9/2026 acá decía "commit y push automático a
+  main"; con dos ambientes eso deploya a producción sin pasar por dev.)
+- Solo pausar ante: borrado de archivos, cambios en `.env.local` o
+  `.env.dev.local`, y cualquier escritura sobre producción
 - Nunca pedir permiso para leer archivos del proyecto
 
 ---
@@ -1005,16 +1014,19 @@ Próximos pasos, en orden:
 1. ✅ Ambiente dev/prod separado — cerrado el 8/9/2026. Ver sección "Los dos
    ambientes" para la referencia completa (Supabase dev: mqeymmprvpclpyjpujvf,
    rama: dev, deploy: gondolapp-dev.vercel.app).
-2. Seis migraciones faltantes (ver auditoría sección 2) — son también el
-   único backup del schema, el proyecto está en plan Free sin backups
+2. ✅ Migraciones faltantes — cerrado el 7/9/2026. Fueron nueve, no seis
+   (aparecieron `bloque_campos` y `foto_respuestas`, que no estaban en la
+   auditoría). Producción y dev se levantan desde las 57 migraciones y dan un
+   schema idéntico byte a byte. Ver sección 2.6 de la auditoría.
 3. Bugs abiertos:
    - draft-actions.ts hace APPEND de bloques al republicar sin borrar los
      anteriores: cada edición duplica bloques
    - misión con una foto rechazada queda en limbo: actualizarEstadoMision
      solo resuelve si TODAS están aprobadas, el bounty queda retenido
      para siempre
-   - el campo 'orden' no está en el select de captura/page.tsx: el sort
-     de bloques es un no-op
+   (El tercero que figuraba acá —"el campo 'orden' no está en el select de
+   captura/page.tsx"— ya está resuelto: `orden` se pide en el select y los
+   campos se ordenan con él. Verificado el 8/9/2026.)
 4. Eliminar la foto obligatoria del bloque (que la misión sea exactamente
    lo que el creador configuró). Se intentó en abril, terminó en rollback.
    Hacerlo recién con ambiente de dev.
@@ -1141,60 +1153,36 @@ Restaura las filas de `profiles` con sus ids originales — que siguen siendo
 válidos porque `auth.users` no se perdió — más las entidades
 (`distribuidoras`, `marcas`, `repositoras`) con sus ids originales.
 
-Restaurar las entidades con **los mismos ids** es lo que evita que el paso 5
+Restaurar las entidades con **los mismos ids** es lo que evita que el seed
 cree duplicados.
 
-**4. Geografía**
+**4 a 7. Poblar los datos**
+
+Un solo comando: ver "Poblar un ambiente desde cero".
 
 ```bash
-npx tsx --env-file=.env.local scripts/seed-zonas.ts
+GONDOLAPP_PROD=1 npx tsx scripts/poblar-ambiente.mjs --ref xzznzustgsacmfwsupux
 ```
 
-24 provincias, 524 departamentos, 942 localidades. Requiere `npm i -D tsx`.
-**Arranca borrando cinco tablas** — inocuo sobre tablas vacías, destructivo si
-ya hay datos. Ver "Deuda conocida — scripts de seed".
+Encadena geografía, seed del piloto y los cuatro fix, y **verifica al final**.
+Es lo que evita el modo de falla de esta restauración: el 7/9 se corrieron los
+pasos sueltos, faltaron dos, y el ambiente quedó con presencia 0% y las fotos
+sin cargar sin que nada avisara.
 
-**5. Piloto y datos de demo**
-
-```bash
-npx tsx --env-file=.env.local scripts/seed-demo-completo.ts
-```
-
-Reconstruye comercios, campañas, misiones, fotos, relaciones, puntos y logros.
-Reutiliza las entidades existentes buscando por `razon_social` **exacto**, y las
-cuentas de auth por email, así que no duplica usuarios. El CSV del piloto está
-embebido en el script: no depende de ningún archivo externo.
-
-**6. Localidad de los comercios**
-
-```bash
-npx tsx --env-file=.env.local scripts/fix-localidad-comercios.mjs
-```
-
-Asigna `localidad_id` a los comercios que lo tengan en null. Solo toca los que
-están sin asignar, así que es seguro re-ejecutarlo. Los que no resuelva
-—típicamente los ficticios de otras provincias— se completan por SQL.
-
-**7. Datos reales del piloto Georgalos**
-
-```bash
-npx tsx --env-file=.env.local scripts/fix-declaracion-georgalos.mjs
-npx tsx --env-file=.env.local scripts/fix-fechas-piloto.mjs
-```
-
-Corrigen `fotos.declaracion` desde el CSV y las fechas del relevamiento real
-(11-14 de marzo de 2026). Desde el 7/9/2026 resuelven la campaña **por nombre**
-vía `scripts/lib/campana.mjs` y cortan con error si no la encuentran; antes
-tenían el id hardcodeado y reportaban "Misiones en DB: 0" en silencio cuando el
-seed la recreaba con id nuevo.
+Todos los scripts exigen `--ref`, buscan las credenciales por ese ref entre los
+`.env*.local`, y piden `GONDOLAPP_PROD=1` cuando el destino es producción.
+Requiere `npm install --no-save pg tsx`.
 
 ### Lo que este procedimiento NO restaura
 
-`gondolero_localidades` y `campana_localidades` quedan vacías: ningún script las
-puebla. Sin ellas el filtrado de campañas por zona queda inerte — los gondoleros
-ven todas las campañas en vez de las de su ciudad. No bloquea la operación
-(el filtro es fail-open y la UI avisa), pero la segmentación no funciona hasta
-que se repueblen las dos.
+`gondolero_localidades` queda vacía: ningún script la puebla, porque cada
+gondolero elige sus localidades desde su propio perfil. Mientras esté vacía, el
+filtro de campañas por zona es fail-open — el gondolero ve todas las campañas y
+la UI le muestra un aviso para que las configure. No bloquea la operación, pero
+la segmentación por gondolero no funciona.
+
+`campana_localidades` **sí** se puebla, desde el 8/9/2026, en el séptimo paso.
+
 
 ### Nunca canalizar un comando destructivo o largo
 
@@ -1304,22 +1292,33 @@ Si aparece ese error en un deploy, la causa es siempre la misma: falta
 
 ---
 
-## Poblar un ambiente desde cero — los seis pasos
+## Poblar un ambiente desde cero
 
-**El seed solo no alcanza.** Correr `seed-demo-completo.ts` y parar ahí deja el
-ambiente con síntomas que parecen bugs de la app: **presencia 0% y las fotos sin
-cargar**. Pasó en producción tras la reconstrucción y volvió a pasar en dev.
-No falla nada: los datos quedan a medias y la app los muestra vacíos.
-
-Los seis pasos, en orden. Cada uno depende del anterior.
+**Un comando:**
 
 ```bash
-npx tsx scripts/seed-zonas.ts               --ref <project-ref>
-npx tsx scripts/seed-demo-completo.ts       --ref <project-ref>
-npx tsx scripts/fix-localidad-comercios.mjs --ref <project-ref>
-npx tsx scripts/fix-declaracion-georgalos.mjs --ref <project-ref>
-npx tsx scripts/fix-fechas-piloto.mjs       --ref <project-ref>
-npx tsx scripts/fix-foto-urls-v2.mjs        --ref <project-ref>
+npx tsx scripts/poblar-ambiente.mjs --ref <project-ref>
+```
+
+Encadena los siete pasos, se niega a correr sobre un ambiente ya poblado
+(`seed-demo-completo` no es idempotente — ver "Deuda conocida") y, sobre todo,
+**verifica al final y falla si quedó incompleto**.
+
+Esa verificación es lo que justifica el script. **El seed solo no alcanza**, y
+un ambiente a medias NO se queja: da **presencia 0% y las fotos sin cargar**,
+síntomas que parecen bugs de la app y mandan a cazar errores que no existen.
+Pasó en producción tras la reconstrucción y volvió a pasar en dev.
+
+Los siete pasos, si hace falta correr alguno suelto:
+
+```bash
+npx tsx scripts/seed-zonas.ts                    --ref <project-ref>
+npx tsx scripts/seed-demo-completo.ts            --ref <project-ref>
+npx tsx scripts/fix-localidad-comercios.mjs      --ref <project-ref>
+npx tsx scripts/fix-declaracion-georgalos.mjs    --ref <project-ref>
+npx tsx scripts/fix-fechas-piloto.mjs            --ref <project-ref>
+npx tsx scripts/fix-foto-urls-v2.mjs             --ref <project-ref>
+npx tsx scripts/asignar-campana-localidades.mjs  --ref <project-ref>
 ```
 
 Requisitos: `npm install --no-save pg tsx` (ojo, instalarlos **juntos**: un
@@ -1337,9 +1336,17 @@ Qué aporta cada uno, y qué se rompe si falta:
 | `fix-declaracion-georgalos` | `fotos.declaracion` desde el CSV | **Presencia 0%**: sin declaración no hay producto presente que contar |
 | `fix-fechas-piloto` | `created_at` real del relevamiento (11–14/3/2026) | Todo el piloto aparece con fecha del seed |
 | `fix-foto-urls-v2` | URLs de Drive en formato `thumbnail` | **Fotos sin cargar**: el seed escribe `/uc?export=view` y `next.config.js` solo admite `/thumbnail` |
+| `asignar-campana-localidades` | `campana_localidades` | Todos los gondoleros ven todas las campañas: el filtro por zona trata a la campaña sin zona como abierta |
 
-Los cuatro `fix-*` leen el CSV del piloto de
-`OneDrive/LABORAL.OL/Biomega/Georgalos/`. Sin ese archivo no corren.
+El CSV del piloto está **versionado en el repo**, en `data/georgalos-piloto.csv`,
+y `scripts/lib/csv-piloto.mjs` es lo único que sabe dónde vive. Hasta el
+8/9/2026 los scripts lo leían de una ruta de OneDrive, lo que hacía que el
+procedimiento no fuera reproducible fuera de una máquina.
+
+Por qué `asignar-campana-localidades` va al final y no dentro del seed: se
+derivan de los comercios relevados, así que necesita que
+`fix-localidad-comercios` ya haya corrido. Cuando vivía dentro del seed (paso 2)
+siempre asignaba cero.
 
 ### Cómo verificar que quedó completo
 
