@@ -69,6 +69,7 @@ function CampanaCard({
   gondoleroComerciosCompletados,
   fotosRechazadas = 0,
   misionRetakeId,
+  misionesConRechazo = 0,
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
@@ -77,6 +78,7 @@ function CampanaCard({
   gondoleroComerciosCompletados?: number
   fotosRechazadas?: number
   misionRetakeId?: string
+  misionesConRechazo?: number
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
@@ -256,14 +258,18 @@ function CampanaCard({
             ⚠️ {fotosRechazadas === 1 ? 'Tenés una foto rechazada' : `Tenés ${fotosRechazadas} fotos rechazadas`}
           </p>
           <p className="text-xs text-amber-600 mt-0.5">
-            Rehacé {fotosRechazadas === 1 ? 'esa foto' : 'esas fotos'} para completar la misión.
+            {misionesConRechazo > 1
+              ? `Son de ${misionesConRechazo} misiones distintas. Se rehacen de a una.`
+              : `Rehacé ${fotosRechazadas === 1 ? 'esa foto' : 'esas fotos'} para completar la misión.`}
           </p>
           {misionRetakeId && (
             <Link
               href={`/gondolero/captura?campana=${campana.id}&retake=${misionRetakeId}`}
               className="mt-2 block w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-center text-xs font-semibold rounded-lg min-h-touch flex items-center justify-center"
             >
-              Retomar misión →
+              {/* El botón entra a UNA misión: con rechazos en varias, decirlo.
+                  Antes prometía rehacerlas todas y rehacía las de una sola. */}
+              {misionesConRechazo > 1 ? 'Retomar una misión →' : 'Retomar misión →'}
             </Link>
           )}
         </div>
@@ -403,6 +409,7 @@ export function CampanasSections({
   comerciosCompletadosRecord,
   fotosRechazadasRecord = {},
   misionRetakeRecord = {},
+  misionesConRechazoRecord = {},
 }: {
   misCampanas: CampanaCardData[]
   disponibles: CampanaCardData[]
@@ -412,6 +419,7 @@ export function CampanasSections({
   comerciosCompletadosRecord: Record<string, number>
   fotosRechazadasRecord?: Record<string, number>
   misionRetakeRecord?: Record<string, string>
+  misionesConRechazoRecord?: Record<string, number>
 }) {
   const hayAlgo = misCampanas.length + disponibles.length + finalizadas.length > 0
 
@@ -452,6 +460,7 @@ export function CampanasSections({
               gondoleroComerciosCompletados={comerciosCompletadosRecord[c.id] ?? 0}
               fotosRechazadas={fotosRechazadasRecord[c.id] ?? 0}
               misionRetakeId={misionRetakeRecord[c.id]}
+              misionesConRechazo={misionesConRechazoRecord[c.id] ?? 0}
             />
           ))}
         </Seccion>

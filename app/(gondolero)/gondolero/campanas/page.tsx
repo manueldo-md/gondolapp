@@ -104,11 +104,18 @@ export default async function CampanasPage() {
   // Fotos rechazadas por campaña (para mostrar aviso de recaptura)
   const fotosRechazadasPorCampana = new Map<string, number>()
   const misionRetakePorCampana = new Map<string, string>()  // campana_id → primer mision_id con rechazos
+  // Misiones distintas con rechazos: el botón de recaptura entra a UNA misión,
+  // así que el aviso tiene que decirlo cuando hay más de una. Sin esto el texto
+  // prometía rehacer todas las fotos y el botón rehacía las de una sola.
+  const misionesConRechazoPorCampana = new Map<string, Set<string>>()
   for (const f of (fotosRechazadasRes.data ?? []) as { campana_id: string; mision_id: string }[]) {
     fotosRechazadasPorCampana.set(f.campana_id, (fotosRechazadasPorCampana.get(f.campana_id) ?? 0) + 1)
     if (!misionRetakePorCampana.has(f.campana_id)) {
       misionRetakePorCampana.set(f.campana_id, f.mision_id)
     }
+    const set = misionesConRechazoPorCampana.get(f.campana_id) ?? new Set<string>()
+    set.add(f.mision_id)
+    misionesConRechazoPorCampana.set(f.campana_id, set)
   }
 
   // Relaciones marca-distri activas
@@ -256,6 +263,9 @@ export default async function CampanasPage() {
   const comerciosCompletadosRecord: Record<string, number> = Object.fromEntries(misionesCountMap.entries())
   const fotosRechazadasRecord: Record<string, number> = Object.fromEntries(fotosRechazadasPorCampana.entries())
   const misionRetakeRecord: Record<string, string> = Object.fromEntries(misionRetakePorCampana.entries())
+  const misionesConRechazoRecord: Record<string, number> = Object.fromEntries(
+    Array.from(misionesConRechazoPorCampana.entries()).map(([id, set]) => [id, set.size])
+  )
 
   const totalActivas = misCampanas.length + disponibles.length
 
@@ -295,6 +305,7 @@ export default async function CampanasPage() {
           comerciosCompletadosRecord={comerciosCompletadosRecord}
           fotosRechazadasRecord={fotosRechazadasRecord}
           misionRetakeRecord={misionRetakeRecord}
+          misionesConRechazoRecord={misionesConRechazoRecord}
         />
       </div>
     </div>
