@@ -108,8 +108,8 @@ export function CamposBloqueBuilder({
 
       {/* Estado vacío */}
       {campos.length === 0 && (
-        <p className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-          Sin preguntas — el gondolero solo declarará resultado.
+        <p className="text-xs text-amber-600 text-center py-4 bg-amber-50 rounded-lg border border-dashed border-amber-200">
+          Agregá al menos un campo para poder publicar la campaña.
         </p>
       )}
 

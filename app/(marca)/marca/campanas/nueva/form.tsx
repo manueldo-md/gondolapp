@@ -14,7 +14,6 @@ interface Step1 {
   nombre: string
   tipo: TipoCampana
   instruccion: string
-  instruccion_bloque: string
   tipo_contenido: TipoContenidoBloque
   puntos_por_mision: string
   solicitar_precio: boolean
@@ -74,13 +73,12 @@ export function NuevaCampanaForm({
   const [campos, setCampos] = useState<CampoBloque[]>([])
 
   const [s1, setS1] = useState<Step1>({
-    nombre:             '',
-    tipo:               'relevamiento',
-    instruccion:        '',
-    instruccion_bloque: '',
-    tipo_contenido:     'propios',
-    puntos_por_mision:  '50',
-    solicitar_precio:   false,
+    nombre:            '',
+    tipo:              'relevamiento',
+    instruccion:       '',
+    tipo_contenido:    'propios',
+    puntos_por_mision: '50',
+    solicitar_precio:  false,
   })
 
   const [s2, setS2] = useState<Step2>({
@@ -103,7 +101,7 @@ export function NuevaCampanaForm({
     repositora_id: reposVinculadas[0]?.id ?? '',
   })
 
-  const paso1Valido = s1.nombre.trim().length >= 3 && s1.tipo
+  const paso1Valido = s1.nombre.trim().length >= 3 && s1.tipo && campos.length > 0
 
   const paso3Valido =
     s3.via_ejecucion === 'gondolapp' ||
@@ -225,20 +223,6 @@ export function NuevaCampanaForm({
                 placeholder="Qué deben hacer los gondoleros en esta campaña..."
                 rows={3}
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"
-              />
-            </div>
-
-            {/* Instrucción del bloque */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Instrucción de la foto
-              </label>
-              <input
-                type="text"
-                value={s1.instruccion_bloque}
-                onChange={e => setS1(p => ({ ...p, instruccion_bloque: e.target.value }))}
-                placeholder="Ej: Fotografiar toda la góndola de lácteos"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"
               />
             </div>
 

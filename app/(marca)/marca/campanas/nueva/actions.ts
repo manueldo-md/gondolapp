@@ -79,44 +79,39 @@ export async function crearCampana(formData: FormData) {
 
   const campanaId = campana.id
 
-  // Crear bloque de foto
-  const instruccionBloque = formData.get('instruccion_bloque') as string
-  const tipoContenido = (formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios'
+  // Crear bloque con sus campos (se requiere al menos un campo)
+  const camposJson = formData.get('campos_json') as string | null
+  let camposValidos: { tipo: string; pregunta: string; opciones: string[]; obligatorio: boolean; orden: number }[] = []
+  if (camposJson) {
+    try {
+      const campos = JSON.parse(camposJson) as typeof camposValidos
+      camposValidos = campos.filter(c => c.tipo === 'foto' || c.pregunta.trim())
+    } catch { /* inválido */ }
+  }
+  if (camposValidos.length === 0) return { error: 'El bloque debe tener al menos un campo configurado.' }
 
+  const tipoContenido = (formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios'
   const solicitarPrecio = formData.get('solicitar_precio') === 'true'
   const { data: bloque } = await admin.from('bloques_foto').insert({
-    campana_id:      campanaId,
-    orden:           1,
-    instruccion:     instruccionBloque || (formData.get('instruccion') as string) || '',
-    tipo_contenido:  tipoContenido,
+    campana_id:       campanaId,
+    orden:            1,
+    instruccion:      (formData.get('instruccion') as string) || '',
+    tipo_contenido:   tipoContenido,
     solicitar_precio: solicitarPrecio,
   }).select('id').single()
 
-  // Insertar campos dinámicos del bloque (si los hay)
-  const camposJson = formData.get('campos_json') as string | null
-  if (camposJson && bloque?.id) {
-    try {
-      const campos = JSON.parse(camposJson) as {
-        tipo: string; pregunta: string; opciones: string[]
-        obligatorio: boolean; orden: number
-      }[]
-      // Para campos tipo 'foto', la pregunta es opcional (es la instrucción de la foto).
-      // Para el resto, sí se requiere pregunta no vacía.
-      const camposValidos = campos.filter(c => c.tipo === 'foto' || c.pregunta.trim())
-      if (camposValidos.length > 0) {
-        const { error: errCampos } = await admin.from('bloque_campos').insert(
-          camposValidos.map(c => ({
-            bloque_id:   bloque.id,
-            tipo:        c.tipo,
-            pregunta:    c.pregunta.trim() || (c.tipo === 'foto' ? 'Fotografiá el producto' : ''),
-            opciones:    c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
-            obligatorio: c.obligatorio,
-            orden:       c.orden,
-          }))
-        )
-        if (errCampos) console.error('[crearCampana] Error insertando bloque_campos:', errCampos.message)
-      }
-    } catch (e) { console.error('[crearCampana] Error parseando campos_json:', e) }
+  if (bloque?.id) {
+    const { error: errCampos } = await admin.from('bloque_campos').insert(
+      camposValidos.map(c => ({
+        bloque_id:   bloque.id,
+        tipo:        c.tipo,
+        pregunta:    c.pregunta.trim() || (c.tipo === 'foto' ? 'Fotografiá el producto' : ''),
+        opciones:    c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
+        obligatorio: c.obligatorio,
+        orden:       c.orden,
+      }))
+    )
+    if (errCampos) console.error('[crearCampana] Error insertando bloque_campos:', errCampos.message)
   }
 
   // Descontar tokens

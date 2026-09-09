@@ -1034,6 +1034,23 @@ Próximos pasos, en orden:
 
 ---
 
+## Deuda conocida — formularios de campaña duplicados
+
+Los cuatro formularios de creación de campaña comparten la misma lógica pero
+están duplicados en cuatro rutas distintas. Cada cambio en la UX del editor
+debe aplicarse en los cuatro archivos. Hasta que se extraigan a un componente
+compartido, cualquier modificación al flujo de creación requiere editar:
+
+- `app/(marca)/marca/campanas/nueva/form.tsx` + `nueva/actions.ts`
+- `app/(admin)/admin/campanas/nueva/page.tsx` + `nueva/actions.ts`
+- `app/(distribuidora)/distribuidora/campanas/nueva/page.tsx` + `nueva/actions.ts`
+- (repositora no tiene formulario propio todavía)
+
+El único componente compartido hoy es `components/shared/campos-bloque-builder.tsx`.
+La unificación es trabajo de refactor puro — sin cambios de producto.
+
+---
+
 ## Deuda conocida — scripts de seed
 
 Detectada al reconstruir producción el 7/9/2026 después de un

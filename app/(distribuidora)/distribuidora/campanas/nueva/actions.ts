@@ -57,43 +57,39 @@ export async function crearCampanaInterna(formData: FormData) {
     if (errZonas) console.error('[crearCampanaInterna] Error insertando campana_localidades:', errZonas.message)
   }
 
-  // Crear bloque de foto genérico
-  const instruccion = (formData.get('instruccion') as string) || 'Fotografiá la góndola'
+  // Crear bloque con sus campos (se requiere al menos un campo)
+  const camposJson = formData.get('campos_json') as string | null
+  let camposValidos: { tipo: string; pregunta: string; opciones: string[]; obligatorio: boolean; orden: number }[] = []
+  if (camposJson) {
+    try {
+      const parsed = JSON.parse(camposJson) as typeof camposValidos
+      camposValidos = parsed.filter(c => c.tipo === 'foto' || c.pregunta.trim())
+    } catch { /* inválido */ }
+  }
+  if (camposValidos.length === 0) return { error: 'El bloque debe tener al menos un campo configurado.' }
+
   const tipoContenido = (formData.get('tipo_contenido') as string) || 'propios'
   const solicitarPrecio = formData.get('solicitar_precio') === 'true'
   const { data: bloque } = await admin.from('bloques_foto').insert({
-    campana_id:      campana.id,
-    orden:           1,
-    instruccion,
-    tipo_contenido:  tipoContenido,
+    campana_id:       campana.id,
+    orden:            1,
+    instruccion:      (formData.get('instruccion') as string) || '',
+    tipo_contenido:   tipoContenido,
     solicitar_precio: solicitarPrecio,
   }).select('id').single()
 
-  // Insertar campos dinámicos del bloque (si los hay)
-  const camposJson = formData.get('campos_json') as string | null
-  if (camposJson && bloque?.id) {
-    try {
-      const campos = JSON.parse(camposJson) as {
-        tipo: string; pregunta: string; opciones: string[]
-        obligatorio: boolean; orden: number
-      }[]
-      // Para campos tipo 'foto', la pregunta es opcional (es la instrucción de la foto).
-      // Para el resto, sí se requiere pregunta no vacía.
-      const camposValidos = campos.filter(c => c.tipo === 'foto' || c.pregunta.trim())
-      if (camposValidos.length > 0) {
-        const { error: errCampos } = await admin.from('bloque_campos').insert(
-          camposValidos.map(c => ({
-            bloque_id:   bloque.id,
-            tipo:        c.tipo,
-            pregunta:    c.pregunta.trim() || (c.tipo === 'foto' ? 'Fotografiá el producto' : ''),
-            opciones:    c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
-            obligatorio: c.obligatorio,
-            orden:       c.orden,
-          }))
-        )
-        if (errCampos) console.error('[crearCampanaInterna] Error insertando bloque_campos:', errCampos.message)
-      }
-    } catch (e) { console.error('[crearCampanaInterna] Error parseando campos_json:', e) }
+  if (bloque?.id) {
+    const { error: errCampos } = await admin.from('bloque_campos').insert(
+      camposValidos.map(c => ({
+        bloque_id:   bloque.id,
+        tipo:        c.tipo,
+        pregunta:    c.pregunta.trim() || (c.tipo === 'foto' ? 'Fotografiá el producto' : ''),
+        opciones:    c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
+        obligatorio: c.obligatorio,
+        orden:       c.orden,
+      }))
+    )
+    if (errCampos) console.error('[crearCampanaInterna] Error insertando bloque_campos:', errCampos.message)
   }
 
   revalidatePath('/distribuidora/campanas')

@@ -37,6 +37,7 @@ export default function NuevaCampanaPage() {
     e.preventDefault()
     setErrorMsg(null)
     if (form.nombre.trim().length < 3) { setErrorMsg('El nombre debe tener al menos 3 caracteres.'); return }
+    if (campos.length === 0) { setErrorMsg('El bloque debe tener al menos un campo configurado.'); return }
 
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => fd.set(k, v))
