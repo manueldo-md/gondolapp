@@ -2328,6 +2328,12 @@ function CapturaContent() {
                   'comercios-formulario':      'comercios-gps',
                   'comercios-fachada':         'comercios-formulario',
                   'comercios-exito':           'comercios-gps',
+                  // Inalcanzable: retake-intro es punto de entrada del flujo
+                  // (?retake=misionId) y renderiza su propio header con
+                  // router.back(), así que retorna antes de llegar acá. Se mapea
+                  // a sí mismo por la misma razón que 'comercios-gps': el tipo
+                  // Record<Paso, Paso> exige la clave.
+                  'retake-intro':              'retake-intro',
                 }
                 setPaso(prev[paso])
               }

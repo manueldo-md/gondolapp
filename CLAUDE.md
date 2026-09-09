@@ -502,6 +502,18 @@ npx supabase gen types typescript --project-id xzznzustgsacmfwsupux > types/data
 
 Requiere estar logueado (`npx supabase login`). No editar el archivo a mano.
 
+> **Regenerar los tipos es parte de la migración, no un paso aparte.** Si se
+> agrega una columna y no se regenera `types/database.ts`, el código local
+> compila igual —los `as any` que hay repartidos lo tapan— y **el build revienta
+> recién en el deploy**. Pasó el 9/9/2026 con `fotos.campo_id`: dev quedó caído
+> hasta regenerar. La secuencia completa es: escribir la migración → aplicarla a
+> dev → regenerar los tipos → `npm run build` → recién ahí commitear.
+
+> **Verificar siempre con `npm run build`, no con `tsc --noEmit`.** El build
+> corre el chequeo de tipos de Next sobre todo el árbol de rutas, que agarra
+> cosas que `tsc` suelto no ve. Dos deploys seguidos se cayeron el 9/9/2026 por
+> errores que el build local hubiera detectado.
+
 **Nota:** gran parte del código todavía usa `as any` y anotaciones de tipo
 escritas a mano, donde TypeScript no valida contra estos tipos. Sacar esos
 casts es deuda pendiente (ver `docs/AUDITORIA-2026-09.md`, sección 9.3).
@@ -1535,6 +1547,20 @@ texto, pero la pantalla de Actividad donde se lee esa notificación no lo format
 de manera destacada. Solución: revisar `app/(gondolero)/gondolero/actividad/` y
 asegurarse de que el campo `body` de la notificación se muestre completo, no
 truncado.
+
+### Notificaciones: marcar como leídas individualmente
+Hoy al entrar a la sección de notificaciones se marcan **todas** como leídas de
+una. Si el gondolero tenía cinco nuevas y abrió una sola, pierde el rastro de
+las otras cuatro: no tiene forma de saber cuáles no había visto.
+
+Debería marcarse cada notificación al abrirla o tocarla, no al entrar a la
+lista. Las no leídas en negrita y las leídas en normal, como cualquier bandeja
+de entrada.
+
+Aparte, evaluar un botón de "marcar todas como leídas" para el que quiera
+limpiar de una — pero como acción explícita, no como efecto de entrar.
+
+Registrado el 9/9/2026.
 
 ### Notificaciones push — pendiente V2
 La app es una PWA. Supabase Realtime + badge en navbar es el canal actual para
