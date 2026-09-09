@@ -9,6 +9,7 @@ import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { tiempoRelativo } from '@/lib/utils'
 import { accionMasiva, cambiarEstadoFoto } from './actions'
 import { FotoRespuestas } from '@/components/shared/foto-respuestas'
+import { SelectorMotivoRechazo } from '@/components/shared/selector-motivo-rechazo'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,10 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
   const [menuAbierto, setMenuAbierto]       = useState<string | null>(null)
   const [toasts, setToasts]                 = useState<Toast[]>([])
   const [isPendingMasiva, startMasiva]      = useTransition()
+  // Rechazo masivo: un solo motivo para todas las seleccionadas. Obligatorio,
+  // igual que en el individual — es lo que el gondolero lee para recapturar.
+  const [rechazandoMasivo, setRechazandoMasivo] = useState(false)
+  const [motivoMasivo, setMotivoMasivo]         = useState<string | null>(null)
 
   const haySeleccion = seleccionados.size > 0
 
@@ -130,11 +135,16 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
 
   // ── Acción masiva ─────────────────────────────────────────────────────────────
 
-  function ejecutarAccionMasiva(accion: 'aprobada' | 'rechazada' | 'archivada' | 'pendiente') {
+  function ejecutarAccionMasiva(
+    accion: 'aprobada' | 'rechazada' | 'archivada' | 'pendiente',
+    motivo?: string,
+  ) {
     const ids = Array.from(seleccionados)
     startMasiva(async () => {
-      const { procesadas, errores } = await accionMasiva(ids, accion)
+      const { procesadas, errores } = await accionMasiva(ids, accion, motivo)
       setSeleccionados(new Set())
+      setRechazandoMasivo(false)
+      setMotivoMasivo(null)
       if (errores > 0) {
         agregarToast(`${procesadas} fotos procesadas · ${errores} con error`, 'warning')
       } else {
@@ -145,9 +155,9 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
 
   // ── Cambio individual ────────────────────────────────────────────────────────
 
-  const ejecutarCambio = useCallback((fotoId: string, nuevoEstado: string) => {
+  const ejecutarCambio = useCallback((fotoId: string, nuevoEstado: string, motivo?: string) => {
     // Fire and forget — el card tiene su propio isPending
-    cambiarEstadoFoto(fotoId, nuevoEstado)
+    cambiarEstadoFoto(fotoId, nuevoEstado, motivo)
       .then(() => agregarToast(`Estado actualizado: ${ESTADO_LABEL[nuevoEstado] ?? nuevoEstado}`))
       .catch(() => agregarToast('Error al actualizar el estado', 'warning'))
   }, [agregarToast])
@@ -203,7 +213,7 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
             </button>
             <button
               disabled={isPendingMasiva}
-              onClick={() => ejecutarAccionMasiva('rechazada')}
+              onClick={() => setRechazandoMasivo(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors"
             >
               {isPendingMasiva ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
@@ -221,6 +231,33 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
         </div>
       )}
 
+      {/* Motivo del rechazo masivo — se aplica a todas las seleccionadas */}
+      {haySeleccion && rechazandoMasivo && (
+        <div className="mb-4 p-3 border border-red-200 bg-red-50/40 rounded-xl space-y-3">
+          <p className="text-xs text-gray-600">
+            El motivo se aplica a las {seleccionados.size} foto{seleccionados.size !== 1 ? 's' : ''} seleccionada{seleccionados.size !== 1 ? 's' : ''}.
+          </p>
+          <SelectorMotivoRechazo onChange={setMotivoMasivo} disabled={isPendingMasiva} />
+          <div className="flex gap-2">
+            <button
+              disabled={isPendingMasiva || !motivoMasivo}
+              onClick={() => ejecutarAccionMasiva('rechazada', motivoMasivo ?? undefined)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {isPendingMasiva ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
+              Confirmar rechazo
+            </button>
+            <button
+              disabled={isPendingMasiva}
+              onClick={() => { setRechazandoMasivo(false); setMotivoMasivo(null) }}
+              className="px-3 py-2 border border-gray-200 text-gray-500 text-xs rounded-lg hover:bg-white disabled:opacity-50 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Grid ──────────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
         {fotos.map(f => (
@@ -233,7 +270,7 @@ export function FotosGrid({ fotos }: { fotos: FotoItem[] }) {
             menuAbierto={menuAbierto === f.id}
             onMenuToggle={() => setMenuAbierto(menuAbierto === f.id ? null : f.id)}
             onMenuClose={() => setMenuAbierto(null)}
-            onCambiarEstado={(nuevoEstado) => ejecutarCambio(f.id, nuevoEstado)}
+            onCambiarEstado={(nuevoEstado, motivo) => ejecutarCambio(f.id, nuevoEstado, motivo)}
           />
         ))}
       </div>
@@ -268,7 +305,7 @@ interface FotoCardProps {
   menuAbierto: boolean
   onMenuToggle: () => void
   onMenuClose: () => void
-  onCambiarEstado: (nuevoEstado: string) => void
+  onCambiarEstado: (nuevoEstado: string, motivo?: string) => void
 }
 
 function FotoCard({
@@ -277,10 +314,18 @@ function FotoCard({
 }: FotoCardProps) {
   const [isPending, startTransition] = useTransition()
   const [confirmando, setConfirmando] = useState<MenuAccion | null>(null)
+  // El rechazo desde el menú del card también pide motivo: la server action lo
+  // exige y el gondolero lo necesita para saber qué corregir.
+  const [rechazando, setRechazando] = useState<MenuAccion | null>(null)
+  const [motivo, setMotivo]         = useState<string | null>(null)
 
   const acciones = MENU_ACCIONES[foto.estado] ?? []
 
   function handleAccion(accion: MenuAccion) {
+    if (accion.nuevoEstado === 'rechazada') {
+      setRechazando(accion)
+      return
+    }
     if (accion.advertencia) {
       setConfirmando(accion)
       return
@@ -288,11 +333,13 @@ function FotoCard({
     ejecutar(accion.nuevoEstado)
   }
 
-  function ejecutar(nuevoEstado: string) {
+  function ejecutar(nuevoEstado: string, motivoRechazo?: string) {
     setConfirmando(null)
+    setRechazando(null)
+    setMotivo(null)
     onMenuClose()
     startTransition(() => {
-      onCambiarEstado(nuevoEstado)
+      onCambiarEstado(nuevoEstado, motivoRechazo)
     })
   }
 
@@ -362,11 +409,35 @@ function FotoCard({
 
             {menuAbierto && (
               <div
-                className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden"
+                className={`absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-30 overflow-hidden ${
+                  rechazando ? 'w-72' : 'w-56'
+                }`}
                 onClick={e => e.stopPropagation()}
               >
-                {/* Confirmación de advertencia */}
-                {confirmando ? (
+                {/* Motivo del rechazo — obligatorio */}
+                {rechazando ? (
+                  <div className="p-3 space-y-2">
+                    {rechazando.advertencia && (
+                      <p className="text-xs font-semibold text-amber-700">⚠️ {rechazando.advertencia}</p>
+                    )}
+                    <SelectorMotivoRechazo onChange={setMotivo} disabled={isPending} />
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => { setRechazando(null); setMotivo(null) }}
+                        className="flex-1 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        disabled={!motivo}
+                        onClick={() => ejecutar('rechazada', motivo ?? undefined)}
+                        className="flex-1 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  </div>
+                ) : confirmando ? (
                   <div className="p-3 space-y-2">
                     <p className="text-xs font-semibold text-amber-700">⚠️ {confirmando.advertencia}</p>
                     <p className="text-[11px] text-gray-500">¿Confirmar &ldquo;{confirmando.label}&rdquo;?</p>

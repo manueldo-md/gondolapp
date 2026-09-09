@@ -3,42 +3,37 @@
 import { useState, useTransition } from 'react'
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { aprobarFotoAdmin, rechazarFotoAdmin } from './actions'
+import { SelectorMotivoRechazo } from '@/components/shared/selector-motivo-rechazo'
 
 export function FotoAccionesAdmin({ fotoId }: { fotoId: string }) {
   const [pendingAprobar, startAprobar] = useTransition()
   const [pendingRechazar, startRechazar] = useTransition()
   const [rechazando, setRechazando] = useState(false)
-  const [motivo, setMotivo] = useState('')
+  const [motivo, setMotivo] = useState<string | null>(null)
 
   const ocupado = pendingAprobar || pendingRechazar
 
   const handleConfirmarRechazo = () => {
     startRechazar(async () => {
-      await rechazarFotoAdmin(fotoId, motivo.trim() || undefined)
+      await rechazarFotoAdmin(fotoId, motivo ?? undefined)
     })
   }
 
   if (rechazando) {
     return (
       <div className="pt-1 space-y-2">
-        <textarea
-          value={motivo}
-          onChange={e => setMotivo(e.target.value)}
-          placeholder="Motivo del rechazo (opcional)"
-          rows={2}
-          className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-red-300 placeholder:text-gray-400"
-        />
+        <SelectorMotivoRechazo onChange={setMotivo} disabled={ocupado} />
         <div className="flex gap-2">
           <button
             onClick={handleConfirmarRechazo}
-            disabled={ocupado}
+            disabled={ocupado || !motivo}
             className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
           >
             {pendingRechazar ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
             Confirmar rechazo
           </button>
           <button
-            onClick={() => { setRechazando(false); setMotivo('') }}
+            onClick={() => { setRechazando(false); setMotivo(null) }}
             disabled={ocupado}
             className="px-3 py-1.5 border border-gray-200 text-gray-500 text-xs rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >

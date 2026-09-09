@@ -186,6 +186,12 @@ export async function aprobarFoto(fotoId: string) {
 }
 
 export async function rechazarFoto(fotoId: string, motivoRechazo?: string) {
+  // El motivo es obligatorio: con la recaptura activa, un rechazo sin explicar
+  // manda al gondolero a repetir el mismo error a ciegas. Se valida en el
+  // servidor y no solo en la UI, porque hay varias vias de rechazo.
+  const motivo = motivoRechazo?.trim()
+  if (!motivo) throw new Error('Falta el motivo del rechazo')
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -200,7 +206,7 @@ export async function rechazarFoto(fotoId: string, motivoRechazo?: string) {
 
   const { error } = await adminClient
     .from('fotos')
-    .update({ estado: 'rechazada', puntos_otorgados: 0, motivo_rechazo: motivoRechazo ?? null })
+    .update({ estado: 'rechazada', puntos_otorgados: 0, motivo_rechazo: motivo })
     .eq('id', fotoId)
 
   if (error) throw new Error('No se pudo rechazar la foto: ' + error.message)
@@ -210,9 +216,9 @@ export async function rechazarFoto(fotoId: string, motivoRechazo?: string) {
 
   if (foto?.gondolero_id) {
     const mensajeBase = `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada.`
-    const mensajeMotivo = motivoRechazo
-      ? ` Motivo: ${motivoRechazo}. Podés retomar la misión y rehacer esa foto.`
-      : ' Podés retomar la misión y rehacer esa foto.'
+    // El motivo siempre está: se valida arriba. Va en la notificación y no
+    // solo en la pantalla de retake, porque es donde el gondolero se entera.
+    const mensajeMotivo = ` Motivo: ${motivo}. Podés retomar la misión y rehacer esa foto.`
     await adminClient.from('notificaciones').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'foto_rechazada',
@@ -236,9 +242,15 @@ export async function rechazarFoto(fotoId: string, motivoRechazo?: string) {
 
 export async function accionMasivaDistri(
   fotoIds: string[],
-  accion: 'aprobada' | 'rechazada'
+  accion: 'aprobada' | 'rechazada',
+  motivoRechazo?: string
 ) {
   if (!fotoIds.length) return
+
+  // El motivo es obligatorio también en el rechazo masivo: el gondolero rehace
+  // la foto a partir de lo que dice el rechazo. Se aplica el mismo a todas.
+  const motivo = motivoRechazo?.trim()
+  if (accion === 'rechazada' && !motivo) throw new Error('Falta el motivo del rechazo')
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -260,7 +272,10 @@ export async function accionMasivaDistri(
   const idsElegibles = fotos.map((f: { id: string }) => f.id)
 
   if (accion === 'rechazada') {
-    await adminClient.from('fotos').update({ estado: 'rechazada', puntos_otorgados: 0 }).in('id', idsElegibles)
+    await adminClient
+      .from('fotos')
+      .update({ estado: 'rechazada', puntos_otorgados: 0, motivo_rechazo: motivo })
+      .in('id', idsElegibles)
     const notifs = fotos
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((f: any) => f.gondolero_id)
@@ -269,7 +284,7 @@ export async function accionMasivaDistri(
         gondolero_id: f.gondolero_id,
         tipo:         'foto_rechazada',
         titulo:       'Foto no aprobada ❌',
-        mensaje:      `Tu foto en ${f.comercios?.nombre ?? 'el comercio'} no fue aprobada. Podés retomar la misión y rehacer esa foto.`,
+        mensaje:      `Tu foto en ${f.comercios?.nombre ?? 'el comercio'} no fue aprobada. Motivo: ${motivo}. Podés retomar la misión y rehacer esa foto.`,
         campana_id:   f.campana_id,
       }))
     if (notifs.length) await adminClient.from('notificaciones').insert(notifs)

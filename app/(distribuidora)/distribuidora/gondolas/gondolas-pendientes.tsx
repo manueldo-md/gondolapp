@@ -8,6 +8,7 @@ import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { aprobarFoto, rechazarFoto, accionMasivaDistri } from './actions'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
+import { SelectorMotivoRechazo } from '@/components/shared/selector-motivo-rechazo'
 
 const DECL_LABEL: Record<DeclaracionFoto, string> = {
   producto_presente:      'Producto presente',
@@ -38,6 +39,11 @@ interface FotoPendiente {
 export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
+  // Rechazo masivo: un solo motivo para todas las seleccionadas. El motivo es
+  // obligatorio también acá — es el texto que el gondolero lee para saber qué
+  // corregir en la recaptura.
+  const [rechazandoMasivo, setRechazandoMasivo] = useState(false)
+  const [motivoMasivo, setMotivoMasivo] = useState<string | null>(null)
 
   const todosIds = fotos.map(f => f.id)
   const todosSeleccionados = todosIds.length > 0 && todosIds.every(id => seleccionados.has(id))
@@ -56,11 +62,13 @@ export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
     else setSeleccionados(new Set(todosIds))
   }
 
-  function ejecutarAccion(accion: 'aprobada' | 'rechazada') {
+  function ejecutarAccion(accion: 'aprobada' | 'rechazada', motivo?: string) {
     const ids = Array.from(seleccionados)
     startTransition(async () => {
-      await accionMasivaDistri(ids, accion)
+      await accionMasivaDistri(ids, accion, motivo)
       setSeleccionados(new Set())
+      setRechazandoMasivo(false)
+      setMotivoMasivo(null)
     })
   }
 
@@ -106,7 +114,7 @@ export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
             </button>
             <button
               disabled={isPending}
-              onClick={() => ejecutarAccion('rechazada')}
+              onClick={() => setRechazandoMasivo(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 text-sm font-semibold rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
             >
               {isPending ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
@@ -115,6 +123,33 @@ export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
           </div>
         )}
       </div>
+
+      {/* Motivo del rechazo masivo — se aplica a todas las seleccionadas */}
+      {haySeleccion && rechazandoMasivo && (
+        <div className="mb-4 p-3 border border-red-200 bg-red-50/40 rounded-xl space-y-3">
+          <p className="text-xs text-gray-600">
+            El motivo se aplica a las {seleccionados.size} foto{seleccionados.size !== 1 ? 's' : ''} seleccionada{seleccionados.size !== 1 ? 's' : ''}.
+          </p>
+          <SelectorMotivoRechazo onChange={setMotivoMasivo} disabled={isPending} />
+          <div className="flex gap-2">
+            <button
+              disabled={isPending || !motivoMasivo}
+              onClick={() => ejecutarAccion('rechazada', motivoMasivo ?? undefined)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {isPending ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+              Confirmar rechazo
+            </button>
+            <button
+              disabled={isPending}
+              onClick={() => { setRechazandoMasivo(false); setMotivoMasivo(null) }}
+              className="px-3 py-2 border border-gray-200 text-gray-500 text-sm rounded-lg hover:bg-white disabled:opacity-50 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -226,7 +261,37 @@ export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
 function SingleFotoAcciones({ fotoId }: { fotoId: string }) {
   const [pendingAprobar, startAprobar] = useTransition()
   const [pendingRechazar, startRechazar] = useTransition()
+  // Esta vía rechazaba sin pedir motivo: llamaba rechazarFoto(fotoId) a secas.
+  // Era la que dejaba al gondolero con una notificación que decía "no fue
+  // aprobada" y nada más.
+  const [rechazando, setRechazando] = useState(false)
+  const [motivo, setMotivo] = useState<string | null>(null)
   const ocupado = pendingAprobar || pendingRechazar
+
+  if (rechazando) {
+    return (
+      <div className="space-y-2">
+        <SelectorMotivoRechazo onChange={setMotivo} disabled={ocupado} />
+        <div className="flex gap-2">
+          <button
+            onClick={() => startRechazar(() => rechazarFoto(fotoId, motivo ?? undefined))}
+            disabled={ocupado || !motivo}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {pendingRechazar ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+            Confirmar rechazo
+          </button>
+          <button
+            onClick={() => { setRechazando(false); setMotivo(null) }}
+            disabled={ocupado}
+            className="px-3 py-2.5 border border-gray-200 text-gray-500 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-2">
@@ -239,7 +304,7 @@ function SingleFotoAcciones({ fotoId }: { fotoId: string }) {
         Aprobar
       </button>
       <button
-        onClick={() => startRechazar(() => rechazarFoto(fotoId))}
+        onClick={() => setRechazando(true)}
         disabled={ocupado}
         className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-red-300 text-red-600 text-sm font-semibold rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
       >
