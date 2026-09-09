@@ -94,6 +94,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'formulario-camara-blur' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
+  | 'retake-intro'
 
 interface ComercioRow {
   id: string
@@ -145,6 +146,18 @@ interface FotoCapturadaLocal {
   respuestas: Record<string, unknown>
   blurScore: number | null
   timestampDispositivo: string
+}
+
+/**
+ * Foto rechazada que el gondolero debe volver a sacar.
+ * Cargada desde DB al entrar en modo retake (?retake=misionId).
+ */
+interface FotoRechazadaRetake {
+  id: string           // foto.id — necesario para el UPDATE al retomar
+  campo_id: string | null
+  bloque_id: string
+  motivo_rechazo: string | null
+  comercio_id: string
 }
 
 /**
@@ -628,7 +641,8 @@ function CapturaContent() {
   const { encolar } = useOfflineQueue()
   const gps = useGPS()
 
-  const campanaId = searchParams.get('campana') ?? ''
+  const campanaId    = searchParams.get('campana') ?? ''
+  const retakeMisionId = searchParams.get('retake')  ?? ''
 
   const [paso, setPaso] = useState<Paso>('comercios-gps')
   const [campana, setCampana] = useState<CampanaData | null>(null)
@@ -698,6 +712,8 @@ function CapturaContent() {
   const [fotosCapturadas, setFotosCapturadas] = useState<FotoCapturadaLocal[]>([])
   // Paso 5a: nuevo estado que reemplaza fotosCapturadas
   const [bloquesCompletados, setBloquesCompletados] = useState<BloqueCompletadoLocal[]>([])
+  // Retake: fotos rechazadas de la misión a rehacer
+  const [fotosRetake, setFotosRetake] = useState<FotoRechazadaRetake[]>([])
   // Paso 5b: preview URL del último campo foto capturado (para confirmacion cuando fotoPreview es null)
   const [ultimoCampoFotoPreviewUrl, setUltimoCampoFotoPreviewUrl] = useState<string | null>(null)
   // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
@@ -805,6 +821,38 @@ function CapturaContent() {
     cargarCampana()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campanaId])
+
+  // Modo retake: cargar fotos rechazadas de la misión y precargar el comercio.
+  // Solo se activa cuando campana ya cargó (cargando=false) para poder mostrar
+  // los nombres de los campos en la pantalla introductoria.
+  useEffect(() => {
+    if (!retakeMisionId || !campana || cargando) return
+
+    supabase
+      .from('fotos')
+      .select('id, campo_id, bloque_id, motivo_rechazo, comercio_id')
+      .eq('mision_id', retakeMisionId)
+      .eq('estado', 'rechazada')
+      .then(async ({ data, error }) => {
+        if (error || !data || data.length === 0) {
+          setErrorGlobal('No encontramos fotos rechazadas para esta misión.')
+          return
+        }
+        setFotosRetake(data as FotoRechazadaRetake[])
+
+        // Precargar el comercio para saltear la selección en el flujo de retake
+        const comercioId = (data[0] as FotoRechazadaRetake).comercio_id
+        const { data: com } = await supabase
+          .from('comercios')
+          .select('id, nombre, direccion, lat, lng, tipo, validado')
+          .eq('id', comercioId)
+          .single()
+        if (com) setComercio(com as ComercioRow)
+
+        setPaso('retake-intro')
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retakeMisionId, campana?.id, cargando])
 
   // Inicializar caché de comercios y manejar comercio_nuevo param
   useEffect(() => {
@@ -1111,6 +1159,61 @@ function CapturaContent() {
           setCampoFotoActualId(null)
           setPaso('formulario')
         }
+      }
+    }
+  }
+
+  // ── Iniciar recaptura (modo retake) ───────────────────────────────────────────
+  // Filtra campana.bloques para dejar solo los campos rechazados y arranca el flujo.
+  // El comercio ya está cargado desde useEffect arriba; se saltea el paso de selección.
+
+  const iniciarRetake = () => {
+    if (!campana || fotosRetake.length === 0) return
+
+    const rechazadasCampoIds = new Set(
+      fotosRetake.filter(f => f.campo_id).map(f => f.campo_id!)
+    )
+    const bloqueIdsLegacy = new Set(
+      fotosRetake.filter(f => !f.campo_id).map(f => f.bloque_id)
+    )
+
+    // Construir un campana virtual con solo los campos/bloques a rehacer
+    const bloquesRetake = campana.bloques
+      .map(bloque => {
+        // Foto de bloque sin campo específico (flujo legacy): rehacer el bloque entero
+        if (bloqueIdsLegacy.has(bloque.id)) return bloque
+        // Foto de campo específico: filtrar solo los campos rechazados
+        const campos = bloque.campos.filter(c => rechazadasCampoIds.has(c.id))
+        if (campos.length === 0) return null
+        return { ...bloque, campos }
+      })
+      .filter((b): b is BloqueData => b !== null)
+
+    if (bloquesRetake.length === 0) {
+      setErrorGlobal('No se encontraron campos para rehacer.')
+      return
+    }
+
+    // Reemplazar campana con la versión filtrada para que el flujo normal funcione
+    setCampana({ ...campana, bloques: bloquesRetake })
+    setBloqueActualIdx(0)
+    setCampoActualIdx(0)
+
+    const primerBloque = bloquesRetake[0]
+    const primerosCampos = primerBloque.campos
+
+    if (primerosCampos.length === 0) {
+      // Bloque legacy: ir directo a la cámara de bloque
+      abrirMisionStream()
+      setPaso('camara')
+    } else {
+      const primerCampo = primerosCampos[0]
+      if (primerCampo.tipo === 'foto') {
+        abrirMisionStream()
+        setCampoFotoActualId(primerCampo.id)
+        setPaso('formulario-camara')
+      } else {
+        setPaso('formulario')
       }
     }
   }
@@ -1671,6 +1774,90 @@ function CapturaContent() {
             className="w-full max-w-xs py-4 bg-gondo-verde-400 text-white font-semibold rounded-2xl min-h-touch"
           >
             Volver
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── MODO RETAKE — pantalla introductoria ────────────────────────────────────
+  // Muestra las fotos rechazadas con su motivo antes de arrancar la recaptura.
+  if (paso === 'retake-intro') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 flex items-center gap-3">
+          <button
+            onClick={() => router.back()}
+            className="p-1.5 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <p className="text-xs text-gray-400">{campana?.nombre}</p>
+            <h1 className="text-base font-bold text-gray-900">Fotos a rehacer</h1>
+          </div>
+        </div>
+
+        <div className="px-4 py-5 space-y-4">
+          {/* Explicación */}
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+            <p className="text-sm font-semibold text-amber-800 mb-1">
+              {fotosRetake.length === 1
+                ? 'Tenés 1 foto rechazada en esta misión'
+                : `Tenés ${fotosRetake.length} fotos rechazadas en esta misión`}
+            </p>
+            <p className="text-xs text-amber-700">
+              Sacá de nuevo las fotos indicadas. Si las aprueban, la misión se acredita.
+            </p>
+          </div>
+
+          {/* Comercio */}
+          {comercio && (
+            <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-3">
+              <MapPin size={18} className="text-gondo-verde-400 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{comercio.nombre}</p>
+                {comercio.direccion && (
+                  <p className="text-xs text-gray-400">{comercio.direccion}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Lista de fotos rechazadas */}
+          <div className="space-y-2">
+            {fotosRetake.map((foto, i) => {
+              const campo = campana?.bloques
+                .flatMap(b => b.campos)
+                .find(c => c.id === foto.campo_id)
+              return (
+                <div
+                  key={foto.id}
+                  className="bg-white border border-red-100 rounded-2xl px-4 py-3"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-red-500 text-sm">❌</span>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {campo?.pregunta ?? `Foto ${i + 1}`}
+                    </p>
+                  </div>
+                  {foto.motivo_rechazo ? (
+                    <p className="text-xs text-gray-500 ml-5">
+                      Motivo: {foto.motivo_rechazo}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-400 ml-5">Sin motivo especificado</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <button
+            onClick={iniciarRetake}
+            className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
+          >
+            Empezar recaptura
           </button>
         </div>
       </div>

@@ -158,5 +158,34 @@ FROM zonas WHERE nombre = 'Concordia';
 -- WHERE id = (SELECT id FROM auth.users WHERE email = 'marca@georgalos.com');
 
 -- =============================================================================
+-- VINCULAR GONDOLEROS DE DEV A BIOMEGA
+-- Ejecutar después de crear los usuarios gondolero1@test.com / gondolero2@test.com.
+-- Sin esto: distri_id queda null en profiles y el gondolero no tiene relación
+-- activa con la distribuidora → campañas financiadas por Biomega no aparecen.
+-- =============================================================================
+
+-- 1. Crear solicitudes aprobadas (relación gondolero ↔ distri)
+INSERT INTO gondolero_distri_solicitudes (gondolero_id, distri_id, estado, iniciado_por)
+SELECT
+  u.id,
+  '11111111-0000-0000-0000-000000000001'::uuid,   -- Biomega S.A.
+  'aprobada',
+  'distri'
+FROM auth.users u
+JOIN profiles p ON p.id = u.id
+WHERE u.email IN ('gondolero1@test.com', 'gondolero2@test.com')
+  AND p.tipo_actor = 'gondolero'
+ON CONFLICT (gondolero_id, distri_id) DO NOTHING;
+
+-- 2. Sincronizar distri_id en profiles (necesario para RLS profiles_select_distri)
+UPDATE profiles
+SET distri_id = '11111111-0000-0000-0000-000000000001'
+WHERE id IN (
+  SELECT id FROM auth.users
+  WHERE email IN ('gondolero1@test.com', 'gondolero2@test.com')
+)
+AND tipo_actor = 'gondolero';
+
+-- =============================================================================
 -- FIN DEL SEED
 -- =============================================================================

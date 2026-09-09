@@ -1522,3 +1522,28 @@ WHERE m.estado = 'pendiente'
   AND f.id IS NULL
 ORDER BY m.created_at;
 ```
+
+---
+
+## 19. Bugs conocidos / pendientes de pulido
+
+### motivo_rechazo se guarda pero no se muestra en notificación
+El campo `fotos.motivo_rechazo` se escribe correctamente cuando el revisor rechaza.
+El gondolero lo ve en la pantalla de retake (`retake-intro` en captura).
+**Bug pendiente:** la notificación enviada al gondolero SÍ incluye el motivo en el
+texto, pero la pantalla de Actividad donde se lee esa notificación no lo formatea
+de manera destacada. Solución: revisar `app/(gondolero)/gondolero/actividad/` y
+asegurarse de que el campo `body` de la notificación se muestre completo, no
+truncado.
+
+### Notificaciones push — pendiente V2
+La app es una PWA. Supabase Realtime + badge en navbar es el canal actual para
+avisar al gondolero. Las push notifications nativas del browser (Service Worker +
+Web Push API) están en V2. Ver sección "EXCLUIDO DEL MVP" en §8.
+Antes de implementar: evaluar soporte en iOS Safari (requiere iOS 16.4+ y que
+el usuario haya instalado la PWA en el home screen).
+
+### distri_id null en gondoleros de dev
+El seed no vincula automáticamente los gondoleros de dev a Biomega. Solución:
+correr el bloque SQL al final de `supabase/seed.sql` después de crear los usuarios
+en Supabase Auth. Ver comentario "VINCULAR GONDOLEROS DE DEV A BIOMEGA" en el seed.
