@@ -1463,3 +1463,62 @@ Alternativa de fondo, para no seguir enumerando: servir toda imagen remota por
 entonces `img-src 'self'` alcanza para cualquier dominio. La lista de orígenes
 permitidos queda solo en `images.remotePatterns` de `next.config.js`, que es
 server-side y **no le afectan los redirects**: el servidor los sigue solo.
+
+---
+
+## MERGE dev → main (pendiente, requiere sesión dedicada)
+
+No mergear hasta tener tiempo de probar producción inmediatamente después.
+
+**Lo que acumula `dev` respecto a `main`:**
+- Refactor completo del flujo de captura (foto implícita eliminada, misiones
+  con campos configurables)
+- Panel de resultados unificado (`lib/resultados.ts` + `ResultadosView.tsx`)
+- Fix del limbo de misiones: Casos A (survey-only) y B (todas aprobadas)
+- `mision_respuestas`: unificación de respuestas (migración Etapa 1 corrida
+  en dev, pendiente en producción)
+- `motivo_rechazo` en fotos + aviso de recaptura en la app del gondolero
+
+**Antes del merge — aplicar en producción (Supabase xzznzustgsacmfwsupux):**
+1. Migración `fotos_campo_id` (columna `campo_id` en `fotos`)
+2. Migración `mision_respuestas` (tabla nueva + Etapa 1 SQL de migración de datos)
+3. Migración `fotos_motivo_rechazo` (columna `motivo_rechazo` en `fotos`)
+4. Cualquier otra migración pendiente entre ambos proyectos Supabase
+5. Correr el script de diagnóstico de misiones en limbo y decidir si repararlas
+   (script de conteo — solo lectura, ver pendientes)
+
+**Después del merge — verificar en producción:**
+- Flujo de captura completo con un gondolero real
+- Campañas existentes siguen pidiendo las mismas fotos que antes
+- Los cuatro paneles de resultados (marca, distri, repositora, admin)
+- Contador de misiones completadas en todos los paneles
+- Campañas de solo preguntas muestran respuestas
+
+**Script de diagnóstico de misiones en limbo** (solo lectura, correr antes del merge):
+```sql
+-- Misiones pendientes con todas las fotos resueltas (Caso B sin disparar, o Caso C en limbo)
+SELECT
+  m.id          AS mision_id,
+  m.estado,
+  m.gondolero_id,
+  m.campana_id,
+  m.created_at,
+  COUNT(f.id)                                          AS total_fotos,
+  COUNT(f.id) FILTER (WHERE f.estado = 'aprobada')    AS aprobadas,
+  COUNT(f.id) FILTER (WHERE f.estado = 'rechazada')   AS rechazadas,
+  COUNT(f.id) FILTER (WHERE f.estado IN ('pendiente','en_revision')) AS pendientes
+FROM misiones m
+JOIN fotos f ON f.mision_id = m.id
+WHERE m.estado = 'pendiente'
+GROUP BY m.id
+HAVING COUNT(f.id) FILTER (WHERE f.estado IN ('pendiente','en_revision')) = 0
+ORDER BY m.created_at;
+
+-- Misiones pendientes sin fotos (survey-only que no se auto-aprobaron)
+SELECT m.id, m.gondolero_id, m.campana_id, m.created_at
+FROM misiones m
+LEFT JOIN fotos f ON f.mision_id = m.id
+WHERE m.estado = 'pendiente'
+  AND f.id IS NULL
+ORDER BY m.created_at;
+```
