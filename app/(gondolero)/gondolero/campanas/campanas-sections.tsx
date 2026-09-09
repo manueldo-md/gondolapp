@@ -68,6 +68,7 @@ function CampanaCard({
   misDistriIds,
   gondoleroComerciosCompletados,
   fotosRechazadas = 0,
+  misionRetakeId,
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
@@ -75,6 +76,7 @@ function CampanaCard({
   misDistriIds: string[]
   gondoleroComerciosCompletados?: number
   fotosRechazadas?: number
+  misionRetakeId?: string
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
@@ -259,7 +261,11 @@ function CampanaCard({
       {/* CTA */}
       <div className="px-4 pb-4">
         <Link
-          href={`/gondolero/campanas/${campana.id}`}
+          href={
+            participando && fotosRechazadas > 0 && misionRetakeId
+              ? `/gondolero/captura?campana=${campana.id}&retake=${misionRetakeId}`
+              : `/gondolero/campanas/${campana.id}`
+          }
           className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
             participando
               ? fotosRechazadas > 0
@@ -392,6 +398,7 @@ export function CampanasSections({
   misDistriIds,
   comerciosCompletadosRecord,
   fotosRechazadasRecord = {},
+  misionRetakeRecord = {},
 }: {
   misCampanas: CampanaCardData[]
   disponibles: CampanaCardData[]
@@ -400,6 +407,7 @@ export function CampanasSections({
   misDistriIds: string[]
   comerciosCompletadosRecord: Record<string, number>
   fotosRechazadasRecord?: Record<string, number>
+  misionRetakeRecord?: Record<string, string>
 }) {
   const hayAlgo = misCampanas.length + disponibles.length + finalizadas.length > 0
 
@@ -439,6 +447,7 @@ export function CampanasSections({
               misDistriIds={misDistriIds}
               gondoleroComerciosCompletados={comerciosCompletadosRecord[c.id] ?? 0}
               fotosRechazadas={fotosRechazadasRecord[c.id] ?? 0}
+              misionRetakeId={misionRetakeRecord[c.id]}
             />
           ))}
         </Seccion>

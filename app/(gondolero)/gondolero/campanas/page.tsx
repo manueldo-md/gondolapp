@@ -65,10 +65,10 @@ export default async function CampanasPage() {
       .from('misiones')
       .select('campana_id')
       .eq('gondolero_id', user.id),
-    // Fotos rechazadas: saber si hay algo para rehacer por campaña
+    // Fotos rechazadas: saber si hay algo para rehacer por campaña (con mision_id para el link de retake)
     supabase
       .from('fotos')
-      .select('campana_id')
+      .select('campana_id, mision_id')
       .eq('gondolero_id', user.id)
       .eq('estado', 'rechazada'),
   ])
@@ -100,8 +100,12 @@ export default async function CampanasPage() {
 
   // Fotos rechazadas por campaña (para mostrar aviso de recaptura)
   const fotosRechazadasPorCampana = new Map<string, number>()
-  for (const f of (fotosRechazadasRes.data ?? []) as { campana_id: string }[]) {
+  const misionRetakePorCampana = new Map<string, string>()  // campana_id → primer mision_id con rechazos
+  for (const f of (fotosRechazadasRes.data ?? []) as { campana_id: string; mision_id: string }[]) {
     fotosRechazadasPorCampana.set(f.campana_id, (fotosRechazadasPorCampana.get(f.campana_id) ?? 0) + 1)
+    if (!misionRetakePorCampana.has(f.campana_id)) {
+      misionRetakePorCampana.set(f.campana_id, f.mision_id)
+    }
   }
 
   // Relaciones marca-distri activas
@@ -248,6 +252,7 @@ export default async function CampanasPage() {
   // Progreso por campaña: contar misiones directamente
   const comerciosCompletadosRecord: Record<string, number> = Object.fromEntries(misionesCountMap.entries())
   const fotosRechazadasRecord: Record<string, number> = Object.fromEntries(fotosRechazadasPorCampana.entries())
+  const misionRetakeRecord: Record<string, string> = Object.fromEntries(misionRetakePorCampana.entries())
 
   const totalActivas = misCampanas.length + disponibles.length
 
@@ -286,6 +291,7 @@ export default async function CampanasPage() {
           misDistriIds={misDistriIds}
           comerciosCompletadosRecord={comerciosCompletadosRecord}
           fotosRechazadasRecord={fotosRechazadasRecord}
+          misionRetakeRecord={misionRetakeRecord}
         />
       </div>
     </div>
