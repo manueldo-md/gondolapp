@@ -300,6 +300,12 @@ export default async function DashboardPage() {
     .filter(c => c.estado === 'activa')
     .sort((a, b) => (a.fecha_fin ?? '').localeCompare(b.fecha_fin ?? ''))
 
+  // Count de fotos aprobadas por campaña (todas, independientemente de declaracion)
+  const fotosPorCampana = new Map<string, number>()
+  for (const f of fotos) {
+    fotosPorCampana.set(f.campana_id, (fotosPorCampana.get(f.campana_id) ?? 0) + 1)
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -351,9 +357,10 @@ export default async function DashboardPage() {
         ) : (
           <div className="divide-y divide-gray-50">
             {campanasActivasList.map(c => {
+              const total = fotosPorCampana.get(c.id) ?? 0
               const stat  = campanaStatMap.get(c.id)
-              const total = stat ? stat.presente + stat.noEncontrado + stat.soloCompetencia : 0
-              const pct   = total > 0 && stat ? Math.round((stat.presente / total) * 100) : null
+              const totalDecl = stat ? stat.presente + stat.noEncontrado + stat.soloCompetencia : 0
+              const pct   = totalDecl > 0 && stat ? Math.round((stat.presente / totalDecl) * 100) : null
               const diasRestantes = c.fecha_fin
                 ? Math.ceil((new Date(c.fecha_fin).getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24))
                 : null

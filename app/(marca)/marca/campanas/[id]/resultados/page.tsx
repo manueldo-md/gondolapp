@@ -105,6 +105,12 @@ export default async function MarcaCampanaResultadosPage({
     for (const campo of (bloque.bloque_campos ?? [])) camposMap.set(campo.id, campo)
   }
 
+  // Detectar si la campaña tiene algún campo tipo 'foto'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tieneCamposFoto = ((bloquesData.data ?? []) as any[]).some(b =>
+    (b.bloque_campos ?? []).some((campo: { tipo: string }) => campo.tipo === 'foto')
+  )
+
   const fotoRespuestasMap = new Map<string, { campo_id: string; valor: unknown }[]>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allRespuestas = ((respuestasData.data ?? []) as any[])
@@ -215,19 +221,34 @@ export default async function MarcaCampanaResultadosPage({
       />
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        {[
-          { label: 'Fotos totales',  value: totalFotos,           color: 'text-gray-900' },
-          { label: 'Aprobadas',      value: fotosAprobadas,        color: 'text-green-600' },
-          { label: 'Pendientes',     value: counts['pendiente']??0, color: 'text-amber-600' },
-          { label: 'Gondoleros',     value: gondoleroCount,        color: 'text-gondo-indigo-600' },
-        ].map(m => (
-          <div key={m.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className={`text-2xl font-bold ${m.color}`}>{m.value}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{m.label}</p>
-          </div>
-        ))}
-      </div>
+      {tieneCamposFoto ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          {[
+            { label: 'Fotos totales',  value: totalFotos,           color: 'text-gray-900' },
+            { label: 'Aprobadas',      value: fotosAprobadas,        color: 'text-green-600' },
+            { label: 'Pendientes',     value: counts['pendiente']??0, color: 'text-amber-600' },
+            { label: 'Gondoleros',     value: gondoleroCount,        color: 'text-gondo-indigo-600' },
+          ].map(m => (
+            <div key={m.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+              <p className={`text-2xl font-bold ${m.color}`}>{m.value}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{m.label}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          {[
+            { label: 'Comercios relevados', value: c.comercios_relevados ?? 0, color: 'text-gray-900' },
+            { label: 'Misiones completadas', value: fotosAprobadas,             color: 'text-green-600' },
+            { label: 'Gondoleros activos',  value: gondoleroCount,              color: 'text-gondo-indigo-600' },
+          ].map(m => (
+            <div key={m.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+              <p className={`text-2xl font-bold ${m.color}`}>{m.value}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{m.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Progreso */}
       {c.objetivo_comercios && c.objetivo_comercios > 0 && (
@@ -366,79 +387,89 @@ export default async function MarcaCampanaResultadosPage({
         </div>
       )}
 
-      {/* Grid de fotos */}
-      <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-        <TabFilter tabActivo={tab} counts={counts} />
-        <p className="text-sm text-gray-500">
-          {fotos.length} foto{fotos.length !== 1 ? 's' : ''}
-          {tab ? ` ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}` : ''}
-        </p>
-      </div>
+      {/* Grid de fotos (solo si la campaña tiene campos tipo foto) */}
+      {tieneCamposFoto ? (
+        <>
+          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+            <TabFilter tabActivo={tab} counts={counts} />
+            <p className="text-sm text-gray-500">
+              {fotos.length} foto{fotos.length !== 1 ? 's' : ''}
+              {tab ? ` ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}` : ''}
+            </p>
+          </div>
 
-      {fotos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center bg-white rounded-xl border border-gray-200">
-          <Camera size={32} className="text-gray-300 mb-4" />
-          <p className="text-sm text-gray-400">
-            {tab ? `No hay fotos ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}s.` : 'Todavía no hay fotos en esta campaña.'}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {fotos.map((f: any) => (
-            <div key={f.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
-              <FotoLightbox
-                src={f.signedUrl}
-                alt={`Foto de ${f.comercio?.nombre ?? 'comercio'}`}
-                containerClassName="relative w-full h-52 shrink-0"
-                modalFooter={
-                  fotoRespuestasMap.has(f.id) && camposMap.size > 0
-                    ? (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-white/80 uppercase tracking-wide mb-2">Respuestas del formulario</p>
-                        {fotoRespuestasMap.get(f.id)!.map(r => {
-                          const campo = camposMap.get(r.campo_id)
-                          if (!campo) return null
-                          return (
-                            <div key={r.campo_id} className="flex justify-between gap-2">
-                              <span className="text-xs text-white/70 shrink-0">{campo.pregunta}</span>
-                              <span className="text-xs font-medium text-white text-right">{fmtValor(r.valor, campo.tipo)}</span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                    : undefined
-                }
-              >
-                <span className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_COLOR[f.estado as EstadoFoto]}`}>
-                  {ESTADO_LABEL[f.estado as EstadoFoto]}
-                </span>
-              </FotoLightbox>
-              <div className="p-4 flex-1 flex flex-col gap-2.5">
-                <div className="flex items-start gap-2">
-                  <MapPin size={13} className="text-gray-400 mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 text-sm truncate">{f.comercio?.nombre ?? 'Comercio'}</p>
-                    {f.comercio?.direccion && <p className="text-xs text-gray-400 truncate">{f.comercio.direccion}</p>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <User size={13} className="text-gray-400 shrink-0" />
-                  <span className="text-xs text-gray-600 truncate">{f.gondolero?.alias ?? f.gondolero?.nombre ?? 'Gondolero'}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
-                  {f.precio_detectado != null ? <span className="font-medium text-gray-600">${f.precio_detectado}</span> : <span />}
-                  <div className="flex items-center gap-1"><Clock size={11} /><span>{formatearFechaHora(f.created_at)}</span></div>
-                </div>
-              </div>
-              {f.estado === 'pendiente' && (
-                <div className="px-4 pb-4 shrink-0">
-                  <MarcaFotoAcciones fotoId={f.id} estado={f.estado} />
-                </div>
-              )}
+          {fotos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center bg-white rounded-xl border border-gray-200">
+              <Camera size={32} className="text-gray-300 mb-4" />
+              <p className="text-sm text-gray-400">
+                {tab ? `No hay fotos ${ESTADO_LABEL[tab as EstadoFoto]?.toLowerCase() ?? tab}s.` : 'Todavía no hay fotos en esta campaña.'}
+              </p>
             </div>
-          ))}
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {fotos.map((f: any) => (
+                <div key={f.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
+                  <FotoLightbox
+                    src={f.signedUrl}
+                    alt={`Foto de ${f.comercio?.nombre ?? 'comercio'}`}
+                    containerClassName="relative w-full h-52 shrink-0"
+                    modalFooter={
+                      fotoRespuestasMap.has(f.id) && camposMap.size > 0
+                        ? (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold text-white/80 uppercase tracking-wide mb-2">Respuestas del formulario</p>
+                            {fotoRespuestasMap.get(f.id)!.map(r => {
+                              const campo = camposMap.get(r.campo_id)
+                              if (!campo) return null
+                              return (
+                                <div key={r.campo_id} className="flex justify-between gap-2">
+                                  <span className="text-xs text-white/70 shrink-0">{campo.pregunta}</span>
+                                  <span className="text-xs font-medium text-white text-right">{fmtValor(r.valor, campo.tipo)}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                        : undefined
+                    }
+                  >
+                    <span className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_COLOR[f.estado as EstadoFoto]}`}>
+                      {ESTADO_LABEL[f.estado as EstadoFoto]}
+                    </span>
+                  </FotoLightbox>
+                  <div className="p-4 flex-1 flex flex-col gap-2.5">
+                    <div className="flex items-start gap-2">
+                      <MapPin size={13} className="text-gray-400 mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-900 text-sm truncate">{f.comercio?.nombre ?? 'Comercio'}</p>
+                        {f.comercio?.direccion && <p className="text-xs text-gray-400 truncate">{f.comercio.direccion}</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <User size={13} className="text-gray-400 shrink-0" />
+                      <span className="text-xs text-gray-600 truncate">{f.gondolero?.alias ?? f.gondolero?.nombre ?? 'Gondolero'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
+                      {f.precio_detectado != null ? <span className="font-medium text-gray-600">${f.precio_detectado}</span> : <span />}
+                      <div className="flex items-center gap-1"><Clock size={11} /><span>{formatearFechaHora(f.created_at)}</span></div>
+                    </div>
+                  </div>
+                  {f.estado === 'pendiente' && (
+                    <div className="px-4 pb-4 shrink-0">
+                      <MarcaFotoAcciones fotoId={f.id} estado={f.estado} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-16 text-center bg-white rounded-xl border border-gray-200">
+          <Camera size={28} className="text-gray-300 mb-3" />
+          <p className="text-sm font-medium text-gray-500">Esta campaña no incluye fotos</p>
+          <p className="text-xs text-gray-400 mt-1">Las respuestas del formulario se muestran arriba.</p>
         </div>
       )}
     </div>
