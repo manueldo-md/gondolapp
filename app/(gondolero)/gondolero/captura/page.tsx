@@ -2005,10 +2005,13 @@ function CapturaContent() {
           </button>
 
           {/* Descartar — salida para el que ya no puede volver al comercio.
-              Secundario a propósito: la acción esperada es rehacer la foto. */}
+              Botón sólido, del mismo tamaño que "Empezar recaptura": es una
+              acción real, no una nota al pie. Como subrayado apenas se veía y
+              el gondolero que no puede volver se quedaba sin salida visible.
+              El rojo y el modal son los que marcan que tiene consecuencias. */}
           <button
             onClick={() => setConfirmandoDescarte(true)}
-            className="w-full py-3 text-gray-500 text-sm font-medium underline min-h-touch"
+            className="w-full py-4 bg-red-600 text-white font-bold rounded-2xl min-h-touch"
           >
             No puedo volver al comercio
           </button>
