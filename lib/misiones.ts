@@ -1,35 +1,138 @@
 /**
  * lib/misiones.ts
- * Helper de servidor para actualizar el estado de una misión
- * tras la aprobación de una de sus fotos.
+ * Helpers de servidor para gestionar el estado de misiones.
  *
- * Diseño:
- * - Se invoca desde las tres actions de aprobación (admin, distri, marca).
- * - No lanza errores propios: loguea y retorna silenciosamente para no
- *   interrumpir el flujo principal de aprobación de foto.
- * - opera siempre con el client admin (service_role) que ya viene creado.
+ * Tres casos cubiertos:
+ *
+ * A. Misión sin fotos (survey-only): se aprueba al registrarse.
+ *    → resolverMisionDirecta() llamada desde captura/actions.ts
+ *
+ * B. Misión con TODAS las fotos aprobadas: se aprueba.
+ *    → actualizarEstadoMision() desde actions de aprobación
+ *
+ * C. Misión con alguna foto rechazada y ninguna pendiente: se rechaza.
+ *    → actualizarEstadoMision() desde actions de rechazo (nuevo)
+ *
+ * En B y C el entry-point es actualizarEstadoMision(), que opera sobre
+ * el mision_id derivado del fotoId.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+// ── Núcleo interno ────────────────────────────────────────────────────────────
+
 /**
- * Después de aprobar una foto:
- * 1. Verifica si TODAS las fotos de la misión están aprobadas.
- * 2. Si sí → actualiza misiones.estado = 'aprobada'.
- * 3. Cuenta misiones aprobadas del gondolero en la campaña.
- * 4. Si count >= minParaCobrar → libera bounty_estado = 'acreditado'
- *    en la misión actual y en todas las anteriores que estuviesen retenidas.
- * 5. Si count < minParaCobrar → bounty_estado permanece 'retenido'.
+ * Aprueba una misión y libera el bounty si el gondolero alcanzó el mínimo
+ * de misiones para cobrar. Compartido entre Caso A y Caso B.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function aprobarMisionCore(params: {
+  misionId: string
+  gondoleroId: string
+  campanaId: string
+  minParaCobrar: number
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: SupabaseClient<any, any, any>
+}): Promise<void> {
+  const { misionId, gondoleroId, campanaId, minParaCobrar, admin } = params
+
+  // 1. Marcar misión como aprobada
+  await admin
+    .from('misiones')
+    .update({ estado: 'aprobada' })
+    .eq('id', misionId)
+
+  // 2. Contar misiones aprobadas del gondolero en la campaña
+  //    (incluye la que acabamos de actualizar)
+  const { count: misionesAprobadas } = await admin
+    .from('misiones')
+    .select('id', { count: 'exact', head: true })
+    .eq('campana_id',   campanaId)
+    .eq('gondolero_id', gondoleroId)
+    .eq('estado',       'aprobada')
+
+  const countAprobadas = misionesAprobadas ?? 0
+
+  if (countAprobadas >= minParaCobrar) {
+    // 3a. Obtener puntos de las misiones retenidas antes de liberarlas
+    const { data: misionesRetenidas } = await admin
+      .from('misiones')
+      .select('id, puntos_total')
+      .eq('campana_id',   campanaId)
+      .eq('gondolero_id', gondoleroId)
+      .eq('bounty_estado', 'retenido')
+
+    // 3b. Liberar todas las misiones retenidas (incluye la actual)
+    await admin
+      .from('misiones')
+      .update({ bounty_estado: 'acreditado' })
+      .eq('campana_id',   campanaId)
+      .eq('gondolero_id', gondoleroId)
+      .eq('bounty_estado', 'retenido')
+
+    // 3c. Insertar movimiento por el total liberado.
+    //     El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const totalPuntos = (misionesRetenidas ?? []).reduce(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (sum, m) => sum + (((m as any).puntos_total as number) ?? 0), 0
+    )
+    if (totalPuntos > 0) {
+      await admin.from('movimientos_puntos').insert({
+        gondolero_id: gondoleroId,
+        tipo:         'credito',
+        monto:        Math.round(totalPuntos),
+        concepto:     `Puntos desbloqueados · ${countAprobadas} misiones aprobadas`,
+        campana_id:   campanaId,
+      })
+    }
+  }
+  // Si count < minParaCobrar → bounty_estado permanece 'retenido'.
+}
+
+// ── API pública ───────────────────────────────────────────────────────────────
+
+/**
+ * CASO A — Misión survey-only (sin fotos).
+ * Llamar desde registrarMision() cuando params.fotos.length === 0,
+ * inmediatamente después de guardar mision_respuestas.
+ * Aprueba la misión y libera bounty si corresponde.
+ */
+export async function resolverMisionDirecta(params: {
+  misionId:     string
+  gondoleroId:  string
+  campanaId:    string
+  minParaCobrar: number
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: SupabaseClient<any, any, any>
+}): Promise<void> {
+  try {
+    await aprobarMisionCore(params)
+  } catch (err) {
+    console.error('[resolverMisionDirecta] Error (no-op):', err)
+  }
+}
+
+/**
+ * CASOS B y C — Después de aprobar O rechazar una foto:
+ *
+ * B. Si TODAS las fotos de la misión están aprobadas → aprueba la misión.
+ * C. Si todas están resueltas (aprobada | rechazada) y hay ≥1 rechazada
+ *    → rechaza la misión (bounty queda retenido; no se liberan puntos).
+ * -  Si aún hay fotos pendientes o en revisión → no hace nada.
+ *
+ * minParaCobrar solo se usa en el Caso B (aprobación); en el Caso C es
+ * irrelevante y puede omitirse (se asume 1).
  */
 export async function actualizarEstadoMision(params: {
   fotoId:        string
   gondoleroId:   string
   campanaId:     string
-  minParaCobrar: number
+  minParaCobrar?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin:         SupabaseClient<any, any, any>
+  admin: SupabaseClient<any, any, any>
 }): Promise<void> {
-  const { fotoId, gondoleroId, campanaId, minParaCobrar, admin } = params
+  const { fotoId, gondoleroId, campanaId, minParaCobrar = 1, admin } = params
 
   try {
     // 1. Obtener mision_id de la foto
@@ -43,74 +146,34 @@ export async function actualizarEstadoMision(params: {
     const misionId: string | null = (fotoData as any)?.mision_id ?? null
     if (!misionId) return  // foto sin misión (flujo legacy sin misiones)
 
-    // 2. Verificar si TODAS las fotos de la misión están aprobadas
-    const [{ count: totalFotos }, { count: fotosAprobadas }] = await Promise.all([
-      admin.from('fotos')
-        .select('id', { count: 'exact', head: true })
-        .eq('mision_id', misionId),
-      admin.from('fotos')
-        .select('id', { count: 'exact', head: true })
-        .eq('mision_id', misionId)
-        .eq('estado', 'aprobada'),
-    ])
+    // 2. Leer estados de todas las fotos de la misión
+    const { data: fotosData } = await admin
+      .from('fotos')
+      .select('estado')
+      .eq('mision_id', misionId)
 
-    const todasAprobadas = (totalFotos ?? 0) > 0 && (fotosAprobadas ?? 0) === (totalFotos ?? 0)
-    if (!todasAprobadas) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const estados = (fotosData ?? []).map((f: any) => f.estado as string)
+    const total     = estados.length
+    if (total === 0) return
 
-    // 3. Actualizar misiones.estado = 'aprobada'
-    await admin
-      .from('misiones')
-      .update({ estado: 'aprobada' })
-      .eq('id', misionId)
+    const aprobadas  = estados.filter(e => e === 'aprobada').length
+    const rechazadas = estados.filter(e => e === 'rechazada').length
+    const pendientes = estados.filter(e => e === 'pendiente' || e === 'en_revision').length
 
-    // 4. Contar misiones aprobadas del gondolero en esta campaña
-    //    (incluye la que acabamos de actualizar en el paso anterior)
-    const { count: misionesAprobadas } = await admin
-      .from('misiones')
-      .select('id', { count: 'exact', head: true })
-      .eq('campana_id',  campanaId)
-      .eq('gondolero_id', gondoleroId)
-      .eq('estado', 'aprobada')
+    if (aprobadas === total) {
+      // Caso B: todas aprobadas → aprobar misión y liberar bounty
+      await aprobarMisionCore({ misionId, gondoleroId, campanaId, minParaCobrar, admin })
 
-    const countAprobadas = misionesAprobadas ?? 0
-
-    if (countAprobadas >= minParaCobrar) {
-      // 5a. Obtener puntos de las misiones retenidas antes de liberarlas
-      const { data: misionesRetenidas } = await admin
-        .from('misiones')
-        .select('id, puntos_total')
-        .eq('campana_id',   campanaId)
-        .eq('gondolero_id',  gondoleroId)
-        .eq('bounty_estado', 'retenido')
-
-      // 5b. Liberar todas las misiones retenidas (incluye la actual, que aún
-      //     tiene bounty_estado = 'retenido' desde registrarMision)
+    } else if (pendientes === 0 && rechazadas > 0) {
+      // Caso C: ninguna pendiente, al menos una rechazada → rechazar misión
+      // El bounty_estado permanece 'retenido'; no se acreditan puntos.
       await admin
         .from('misiones')
-        .update({ bounty_estado: 'acreditado' })
-        .eq('campana_id',   campanaId)
-        .eq('gondolero_id',  gondoleroId)
-        .eq('bounty_estado', 'retenido')
-
-      // 5c. Acreditar puntos: insertar un movimiento por el total liberado.
-      //     El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles
-      //     automáticamente — no hay que hacerlo manualmente.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const totalPuntos = (misionesRetenidas ?? []).reduce(
-        (sum, m) => sum + (((m as any).puntos_total as number) ?? 0), 0
-      )
-      if (totalPuntos > 0) {
-        await admin.from('movimientos_puntos').insert({
-          gondolero_id: gondoleroId,
-          tipo:         'credito',
-          monto:        Math.round(totalPuntos),
-          concepto:     `Puntos desbloqueados · ${countAprobadas} misiones aprobadas`,
-          campana_id:   campanaId,
-        })
-      }
+        .update({ estado: 'rechazada' })
+        .eq('id', misionId)
     }
-    // Si count < minParaCobrar → bounty_estado se queda en 'retenido'
-    //   y no se inserta ningún movimiento de puntos todavía.
+    // Si aún hay pendientes/en_revision → esperar; no hacer nada.
 
   } catch (err) {
     console.error('[actualizarEstadoMision] Error (no-op):', err)

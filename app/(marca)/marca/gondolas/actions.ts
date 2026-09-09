@@ -215,6 +215,15 @@ export async function rechazarFotoMarca(fotoId: string) {
       mensaje:      `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
       campana_id:   foto.campana_id,
     })
+
+    // Resolver el estado de la misión (Caso C: si todas las fotos ya fueron
+    // resueltas y alguna fue rechazada → marcar misión como rechazada).
+    await actualizarEstadoMision({
+      fotoId,
+      gondoleroId: foto.gondolero_id,
+      campanaId:   foto.campana_id,
+      admin,
+    })
   }
 
   revalidatePath('/marca/gondolas')

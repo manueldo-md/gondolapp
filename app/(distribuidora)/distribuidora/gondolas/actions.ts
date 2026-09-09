@@ -216,6 +216,14 @@ export async function rechazarFoto(fotoId: string) {
       mensaje:      `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
       campana_id:   foto.campana_id,
     })
+
+    // Resolver el estado de la misión (Caso C)
+    await actualizarEstadoMision({
+      fotoId,
+      gondoleroId: foto.gondolero_id,
+      campanaId:   foto.campana_id,
+      admin:       adminClient,
+    })
   }
 
   revalidatePath('/distribuidora/gondolas')
@@ -260,6 +268,15 @@ export async function accionMasivaDistri(
         campana_id:   f.campana_id,
       }))
     if (notifs.length) await adminClient.from('notificaciones').insert(notifs)
+    // Resolver estado de misión por cada foto rechazada (Caso C)
+    for (const f of fotos.filter((f: any) => f.gondolero_id && f.campana_id)) {
+      await actualizarEstadoMision({
+        fotoId:      f.id,
+        gondoleroId: f.gondolero_id,
+        campanaId:   f.campana_id,
+        admin:       adminClient,
+      })
+    }
     revalidatePath('/distribuidora/gondolas')
     return
   }

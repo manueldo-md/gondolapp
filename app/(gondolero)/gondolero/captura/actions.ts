@@ -11,6 +11,7 @@ import {
   existeNotifReciente,
 } from '@/lib/notificaciones'
 import { registrarChecksGPSInterno } from './actions-checks'
+import { resolverMisionDirecta } from '@/lib/misiones'
 
 export async function obtenerConfigCompresion(): Promise<ConfigCompresion> {
   return getConfigCompresion()
@@ -184,7 +185,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // Verificar que la campaña existe y está activa
   const { data: campana, error: campanaErr } = await db0
     .from('campanas')
-    .select('id, estado, nombre, max_comercios_por_gondolero, tope_total_comercios, comercios_relevados, distri_id, marca_id')
+    .select('id, estado, nombre, max_comercios_por_gondolero, tope_total_comercios, comercios_relevados, distri_id, marca_id, min_comercios_para_cobrar')
     .eq('id', params.campanaId)
     .single()
 
@@ -297,7 +298,18 @@ export async function registrarMision(params: RegistrarMisionParams) {
     if (errResp) console.error('[registrarMision] Error insertando mision_respuestas:', errResp.message)
   }
 
-  // 4. NO acreditar puntos aquí — bounty_estado='retenido' hasta aprobación.
+  // 4. Misiones sin fotos (survey-only): aprobar inmediatamente.
+  //    No hay fotos que moderar; la misión se completa en el acto.
+  if (params.fotos.length === 0) {
+    await resolverMisionDirecta({
+      misionId:      mision.id,
+      gondoleroId:   user.id,
+      campanaId:     params.campanaId,
+      minParaCobrar: campana.min_comercios_para_cobrar ?? 1,
+      admin,
+    })
+  }
+  // Para misiones con fotos: bounty_estado='retenido' hasta aprobación de fotos.
   // Los puntos se acreditan en actualizarEstadoMision cuando todas las fotos
   // están aprobadas Y el gondolero alcanzó el mínimo de misiones para cobrar.
 
