@@ -1033,9 +1033,12 @@ Próximos pasos, en orden:
 3. Bugs abiertos:
    - draft-actions.ts hace APPEND de bloques al republicar sin borrar los
      anteriores: cada edición duplica bloques
-   - misión con una foto rechazada queda en limbo: actualizarEstadoMision
-     solo resuelve si TODAS están aprobadas, el bounty queda retenido
-     para siempre
+   - ✅ misión con una foto rechazada queda en limbo — cerrado el 9/9/2026
+     con la recaptura. La foto rechazada se marca con `reemplazada_por` al
+     rehacerla y `actualizarEstadoMision` ya no la cuenta, así que la misión
+     puede aprobarse. Queda pendiente el caso de una foto rechazada que el
+     gondolero nunca rehace: ahí el bounty sigue retenido y no hay quién lo
+     libere.
    (El tercero que figuraba acá —"el campo 'orden' no está en el select de
    captura/page.tsx"— ya está resuelto: `orden` se pide en el select y los
    campos se ordenan con él. Verificado el 8/9/2026.)
@@ -1495,8 +1498,12 @@ No mergear hasta tener tiempo de probar producción inmediatamente después.
 1. Migración `fotos_campo_id` (columna `campo_id` en `fotos`)
 2. Migración `mision_respuestas` (tabla nueva + Etapa 1 SQL de migración de datos)
 3. Migración `fotos_motivo_rechazo` (columna `motivo_rechazo` en `fotos`)
-4. Cualquier otra migración pendiente entre ambos proyectos Supabase
-5. Correr el script de diagnóstico de misiones en limbo y decidir si repararlas
+4. Migración `20260909170000_fotos_reemplazada_por.sql` (columna
+   `reemplazada_por` en `fotos`). **Sin ella la recaptura rompe en producción**:
+   la app filtra por esa columna en el aviso de fotos rechazadas y en
+   `actualizarEstadoMision`. Aplicada en dev el 9/9/2026.
+5. Cualquier otra migración pendiente entre ambos proyectos Supabase
+6. Correr el script de diagnóstico de misiones en limbo y decidir si repararlas
    (script de conteo — solo lectura, ver pendientes)
 
 **Después del merge — verificar en producción:**
