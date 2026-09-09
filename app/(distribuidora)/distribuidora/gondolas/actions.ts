@@ -57,19 +57,6 @@ export async function aprobarFoto(fotoId: string) {
     })
     .eq('id', fotoId)
 
-  // Cascade: aprobar fotos de campo del mismo bloque y misión (campo_id IS NOT NULL).
-  // Corre antes de actualizarEstadoMision para que totalFotos === fotosAprobadas.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bloqueId: string | null = (foto as any).bloque_id ?? null
-  if (misionId && bloqueId) {
-    await adminClient.from('fotos')
-      .update({ estado: 'aprobada', puntos_otorgados: 0 })
-      .eq('mision_id', misionId)
-      .eq('bloque_id', bloqueId)
-      .not('campo_id', 'is', null)
-      .neq('estado', 'aprobada')
-  }
-
   // 3. Fotos sin misión (flujo legacy): acreditar directamente sin retención.
   //    Fotos con misión: actualizarEstadoMision acredita cuando se alcanza
   //    el mínimo de misiones para cobrar.
@@ -221,16 +208,6 @@ export async function rechazarFoto(fotoId: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const foto = fotoRaw as any
 
-  // Cascade: rechazar fotos de campo del mismo bloque y misión.
-  if (foto?.mision_id && foto?.bloque_id) {
-    await adminClient.from('fotos')
-      .update({ estado: 'rechazada', puntos_otorgados: 0 })
-      .eq('mision_id', foto.mision_id)
-      .eq('bloque_id', foto.bloque_id)
-      .not('campo_id', 'is', null)
-      .neq('estado', 'rechazada')
-  }
-
   if (foto?.gondolero_id) {
     await adminClient.from('notificaciones').insert({
       gondolero_id: foto.gondolero_id,
@@ -271,18 +248,6 @@ export async function accionMasivaDistri(
 
   if (accion === 'rechazada') {
     await adminClient.from('fotos').update({ estado: 'rechazada', puntos_otorgados: 0 }).in('id', idsElegibles)
-    // Cascade: rechazar fotos de campo de cada bloque/misión afectado
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const f of fotos as any[]) {
-      if (f.mision_id && f.bloque_id) {
-        await adminClient.from('fotos')
-          .update({ estado: 'rechazada', puntos_otorgados: 0 })
-          .eq('mision_id', f.mision_id)
-          .eq('bloque_id', f.bloque_id)
-          .not('campo_id', 'is', null)
-          .neq('estado', 'rechazada')
-      }
-    }
     const notifs = fotos
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((f: any) => f.gondolero_id)
@@ -309,17 +274,6 @@ export async function accionMasivaDistri(
       : campana?.puntos_por_foto ?? 0
 
     await adminClient.from('fotos').update({ estado: 'aprobada', puntos_otorgados: puntos }).eq('id', foto.id)
-
-    // Cascade: aprobar fotos de campo del mismo bloque y misión.
-    // Corre antes de actualizarEstadoMision para que totalFotos === fotosAprobadas.
-    if (misionIdFoto && foto.bloque_id) {
-      await adminClient.from('fotos')
-        .update({ estado: 'aprobada', puntos_otorgados: 0 })
-        .eq('mision_id', misionIdFoto)
-        .eq('bloque_id', foto.bloque_id)
-        .not('campo_id', 'is', null)
-        .neq('estado', 'aprobada')
-    }
 
     if (!foto.gondolero_id) continue
 

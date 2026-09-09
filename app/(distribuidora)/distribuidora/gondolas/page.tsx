@@ -17,6 +17,7 @@ import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-res
 
 interface FotoPendienteRaw {
   id: string
+  mision_id: string | null
   url: string
   storage_path: string | null
   declaracion: DeclaracionFoto
@@ -247,20 +248,20 @@ export default async function GondolasPage({
   const NULL_UUID = '00000000-0000-0000-0000-000000000000'
   const safeCampanaIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
 
-  // Visibilidad: fotos de campañas propias de esta distribuidora
+  // Visibilidad: fotos de campañas propias de esta distribuidora — sin filtro campo_id
   let query = admin
     .from('fotos')
     .select(`
-      id, url, storage_path, declaracion, precio_detectado, precio_confirmado, created_at, campana_id,
+      id, mision_id, url, storage_path, declaracion, precio_detectado, precio_confirmado, created_at, campana_id,
       gondolero:profiles ( nombre, alias ),
       comercio:comercios  ( nombre, direccion ),
       campana:campanas    ( nombre, tipo ),
       bloque:bloques_foto ( instruccion )
     `)
     .in('campana_id', safeCampanaIds)
+    .order('mision_id', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(150)
-    .is('campo_id', null)  // excluir fotos de campo (campo tipo='foto')
 
   // Filtros de tab y búsqueda
   if (tabActivo === 'pendiente') {
@@ -281,13 +282,12 @@ export default async function GondolasPage({
 
   const fotosRaw = (data as FotoPendienteRaw[] | null) ?? []
 
-  // Count de pendientes (para el badge del tab) — excluir fotos de campo
+  // Count de pendientes (para el badge del tab)
   const { count: pendienteCount } = await admin
     .from('fotos')
     .select('*', { count: 'exact', head: true })
     .eq('estado', 'pendiente')
     .in('campana_id', safeCampanaIds)
-    .is('campo_id', null)
 
   // Generar URLs firmadas para el bucket privado
   const fotos: FotoPendiente[] = await Promise.all(
@@ -300,7 +300,7 @@ export default async function GondolasPage({
     })
   )
 
-  // ── Respuestas de formulario dinámico ─────────────────────────────────────
+  // ── Respuestas — flujo viejo (foto_respuestas) + flujo nuevo (mision_respuestas) ──
   const fotoIds = fotos.map(f => f.id)
   const respuestasMap: Record<string, RespuestaItem[]> = {}
   if (fotoIds.length > 0) {
@@ -315,6 +315,31 @@ export default async function GondolasPage({
         if (!campo) continue
         if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
         respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+      }
+    }
+  }
+  // Flujo nuevo: respuestas de campo no-foto guardadas en mision_respuestas
+  const misionIds = [...new Set((fotos as FotoPendiente[]).map(f => f.mision_id).filter(Boolean) as string[])]
+  if (misionIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: misionRespsData } = await (admin as any)
+      .from('mision_respuestas')
+      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .in('mision_id', misionIds)
+    if (misionRespsData) {
+      const misionToFotoIds = new Map<string, string[]>()
+      fotos.forEach(f => {
+        if (!f.mision_id) return
+        if (!misionToFotoIds.has(f.mision_id)) misionToFotoIds.set(f.mision_id, [])
+        misionToFotoIds.get(f.mision_id)!.push(f.id)
+      })
+      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
+        if (!campo) continue
+        for (const fid of (misionToFotoIds.get(r.mision_id) ?? [])) {
+          if (!respuestasMap[fid]) respuestasMap[fid] = []
+          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+        }
       }
     }
   }

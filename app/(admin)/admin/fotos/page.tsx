@@ -20,14 +20,14 @@ export default async function FotosAdminPage({
   let query = admin
     .from('fotos')
     .select(`
-      id, url, storage_path, estado, declaracion, puntos_otorgados, precio_detectado, precio_confirmado, created_at,
+      id, mision_id, url, storage_path, estado, declaracion, puntos_otorgados, precio_detectado, precio_confirmado, created_at,
       gondolero:profiles!gondolero_id(nombre, alias),
       comercio:comercios(nombre),
       campana:campanas(nombre)
     `)
+    .order('mision_id', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(60)
-    .is('campo_id', null)  // excluir fotos de campo (campo tipo='foto')
 
   if (filtroEstado !== 'todos') {
     query = query.eq('estado', filtroEstado)
@@ -60,8 +60,8 @@ export default async function FotosAdminPage({
   const signedMap: Record<string, string | null> = {}
   signed.forEach(s => { signedMap[s.id] = s.signedUrl })
 
-  // Fetch respuestas de formulario dinámico
-  const fotoIds = fotos.map(f => f.id)
+  // Respuestas — flujo viejo (foto_respuestas) + flujo nuevo (mision_respuestas)
+  const fotoIds = fotos.map((f: { id: string }) => f.id)
   const respuestasMap: Record<string, { pregunta: string; tipo: string; valor: unknown }[]> = {}
   if (fotoIds.length > 0) {
     const { data: respsData } = await admin
@@ -75,6 +75,33 @@ export default async function FotosAdminPage({
         if (!campo) continue
         if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
         respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+      }
+    }
+  }
+  // Flujo nuevo: respuestas de campos no-foto en mision_respuestas
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const misionIds = [...new Set((fotos as any[]).map((f: { mision_id: string | null }) => f.mision_id).filter(Boolean) as string[])]
+  if (misionIds.length > 0) {
+    const { data: misionRespsData } = await admin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from('mision_respuestas' as any)
+      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .in('mision_id', misionIds)
+    if (misionRespsData) {
+      const misionToFotoIds = new Map<string, string[]>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fotos.forEach((f: { id: string; mision_id: string | null }) => {
+        if (!f.mision_id) return
+        if (!misionToFotoIds.has(f.mision_id)) misionToFotoIds.set(f.mision_id, [])
+        misionToFotoIds.get(f.mision_id)!.push(f.id)
+      })
+      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
+        if (!campo) continue
+        for (const fid of (misionToFotoIds.get(r.mision_id) ?? [])) {
+          if (!respuestasMap[fid]) respuestasMap[fid] = []
+          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+        }
       }
     }
   }

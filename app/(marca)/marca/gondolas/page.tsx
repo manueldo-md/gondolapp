@@ -11,6 +11,7 @@ import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-res
 
 interface FotoRow {
   id: string
+  mision_id: string | null
   storage_path: string | null
   url: string | null
   declaracion: DeclaracionFoto
@@ -109,13 +110,13 @@ export default async function GondolasPage({
   const filtrosCampana = searchParams.campana ?? ''
   const filtroEstado = searchParams.estado ?? ''
 
-  // Query de fotos
+  // Query de fotos — sin filtro campo_id: el modelo nuevo asigna campo_id a toda foto
   let query = admin
     .from('fotos')
-    .select('id, storage_path, url, declaracion, estado, created_at, precio_confirmado, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
+    .select('id, mision_id, storage_path, url, declaracion, estado, created_at, precio_confirmado, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
+    .order('mision_id', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(100)
-    .is('campo_id', null)  // excluir fotos de campo (campo tipo='foto')
 
   if (filtrosCampana) {
     query = query.eq('campana_id', filtrosCampana)
@@ -144,7 +145,9 @@ export default async function GondolasPage({
     })
   )
 
-  // Fetch respuestas de formulario dinámico
+  // Fetch respuestas — dos orígenes:
+  // 1. foto_respuestas: flujo viejo (respuesta colgaba de la foto del bloque)
+  // 2. mision_respuestas: flujo nuevo (respuesta de campo no-foto va a la misión)
   const fotoIds = fotos.map(f => f.id)
   const respuestasMap: Record<string, RespuestaItem[]> = {}
   if (fotoIds.length > 0) {
@@ -159,6 +162,32 @@ export default async function GondolasPage({
         if (!campo) continue
         if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
         respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+      }
+    }
+  }
+  // Respuestas del flujo nuevo: mision_respuestas agrupadas por misión → distribuidas a las fotos de esa misión
+  const misionIds = [...new Set(fotos.map(f => f.mision_id).filter(Boolean) as string[])]
+  if (misionIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: misionRespsData } = await (admin as any)
+      .from('mision_respuestas')
+      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .in('mision_id', misionIds)
+    if (misionRespsData) {
+      // Mapa mision_id → foto ids (puede haber varias fotos por misión)
+      const misionToFotoIds = new Map<string, string[]>()
+      fotos.forEach(f => {
+        if (!f.mision_id) return
+        if (!misionToFotoIds.has(f.mision_id)) misionToFotoIds.set(f.mision_id, [])
+        misionToFotoIds.get(f.mision_id)!.push(f.id)
+      })
+      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
+        if (!campo) continue
+        for (const fid of (misionToFotoIds.get(r.mision_id) ?? [])) {
+          if (!respuestasMap[fid]) respuestasMap[fid] = []
+          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+        }
       }
     }
   }

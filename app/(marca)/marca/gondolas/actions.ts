@@ -57,19 +57,6 @@ export async function aprobarFotoMarca(fotoId: string) {
     })
     .eq('id', fotoId)
 
-  // Cascade: aprobar fotos de campo del mismo bloque y misión (campo_id IS NOT NULL).
-  // Corre antes de actualizarEstadoMision para que totalFotos === fotosAprobadas.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bloqueId: string | null = (foto as any).bloque_id ?? null
-  if (misionId && bloqueId) {
-    await admin.from('fotos')
-      .update({ estado: 'aprobada', puntos_otorgados: 0 })
-      .eq('mision_id', misionId)
-      .eq('bloque_id', bloqueId)
-      .not('campo_id', 'is', null)
-      .neq('estado', 'aprobada')
-  }
-
   // 3. Fotos sin misión (flujo legacy): acreditar directamente sin retención.
   //    Fotos con misión: actualizarEstadoMision acredita cuando se alcanza
   //    el mínimo de misiones para cobrar.
@@ -219,16 +206,6 @@ export async function rechazarFotoMarca(fotoId: string) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const foto = fotoRaw as any
-
-  // Cascade: rechazar fotos de campo del mismo bloque y misión.
-  if (foto?.mision_id && foto?.bloque_id) {
-    await admin.from('fotos')
-      .update({ estado: 'rechazada', puntos_otorgados: 0 })
-      .eq('mision_id', foto.mision_id)
-      .eq('bloque_id', foto.bloque_id)
-      .not('campo_id', 'is', null)
-      .neq('estado', 'rechazada')
-  }
 
   if (foto?.gondolero_id) {
     await admin.from('notificaciones').insert({

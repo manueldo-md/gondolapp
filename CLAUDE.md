@@ -1051,6 +1051,31 @@ La unificación es trabajo de refactor puro — sin cambios de producto.
 
 ---
 
+## Pendiente de diseño — Dashboard por campaña
+
+Hoy los reportes están diseñados alrededor de la foto: la pantalla se llama
+"Góndolas", muestra tarjetas con imagen, y las respuestas van como texto debajo.
+Con el modelo nuevo una campaña puede ser solo preguntas, sin fotos, y ahí no
+hay dónde ver los resultados.
+
+**Lo que se necesita:** un dashboard por campaña con métricas agregadas arriba y
+galería de fotos abajo cuando las haya. El tipo de visualización varía por campo:
+
+| Tipo | Visualización |
+|------|--------------|
+| Binaria (sí/no) | Porcentaje sobre total de comercios relevados |
+| Número | Promedio, mínimo, máximo, distribución |
+| Selección única / múltiple | Distribución por opción |
+| Texto libre | Lista (no se agrega) |
+| Foto | Galería |
+
+Requiere definición de producto antes de implementar: qué pregunta tiene que
+responder cada reporte, y para quién (distribuidora, marca, repositora).
+
+**No empezar sin definición.** Registrado el 9/9/2026.
+
+---
+
 ## Deuda conocida — scripts de seed
 
 Detectada al reconstruir producción el 7/9/2026 después de un
