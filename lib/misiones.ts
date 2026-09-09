@@ -114,15 +114,12 @@ export async function resolverMisionDirecta(params: {
 }
 
 /**
- * CASOS B y C — Después de aprobar O rechazar una foto:
+ * CASO B — Después de aprobar una foto:
  *
  * B. Si TODAS las fotos de la misión están aprobadas → aprueba la misión.
- * C. Si todas están resueltas (aprobada | rechazada) y hay ≥1 rechazada
- *    → rechaza la misión (bounty queda retenido; no se liberan puntos).
  * -  Si aún hay fotos pendientes o en revisión → no hace nada.
- *
- * minParaCobrar solo se usa en el Caso B (aprobación); en el Caso C es
- * irrelevante y puede omitirse (se asume 1).
+ * -  Si hay fotos rechazadas → la misión queda en pendiente hasta que se
+ *    implemente el flujo de recaptura (Caso C diferido).
  */
 export async function actualizarEstadoMision(params: {
   fotoId:        string
@@ -164,15 +161,9 @@ export async function actualizarEstadoMision(params: {
     if (aprobadas === total) {
       // Caso B: todas aprobadas → aprobar misión y liberar bounty
       await aprobarMisionCore({ misionId, gondoleroId, campanaId, minParaCobrar, admin })
-
-    } else if (pendientes === 0 && rechazadas > 0) {
-      // Caso C: ninguna pendiente, al menos una rechazada → rechazar misión
-      // El bounty_estado permanece 'retenido'; no se acreditan puntos.
-      await admin
-        .from('misiones')
-        .update({ estado: 'rechazada' })
-        .eq('id', misionId)
     }
+    // Caso C (diferido): fotos con rechazadas → misión queda en pendiente
+    // hasta implementar flujo de recaptura.
     // Si aún hay pendientes/en_revision → esperar; no hacer nada.
 
   } catch (err) {

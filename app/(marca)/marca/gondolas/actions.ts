@@ -216,8 +216,8 @@ export async function rechazarFotoMarca(fotoId: string) {
       campana_id:   foto.campana_id,
     })
 
-    // Resolver el estado de la misión (Caso C: si todas las fotos ya fueron
-    // resueltas y alguna fue rechazada → marcar misión como rechazada).
+    // Verificar si la misión queda completa (todas aprobadas).
+    // Si hay rechazadas, la misión permanece en pendiente hasta implementar recaptura.
     await actualizarEstadoMision({
       fotoId,
       gondoleroId: foto.gondolero_id,

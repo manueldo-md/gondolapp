@@ -217,7 +217,8 @@ export async function rechazarFoto(fotoId: string) {
       campana_id:   foto.campana_id,
     })
 
-    // Resolver el estado de la misión (Caso C)
+    // Verificar si la misión queda completa (todas aprobadas).
+    // Si hay rechazadas, la misión permanece en pendiente hasta implementar recaptura.
     await actualizarEstadoMision({
       fotoId,
       gondoleroId: foto.gondolero_id,
@@ -268,7 +269,8 @@ export async function accionMasivaDistri(
         campana_id:   f.campana_id,
       }))
     if (notifs.length) await adminClient.from('notificaciones').insert(notifs)
-    // Resolver estado de misión por cada foto rechazada (Caso C)
+    // Verificar por cada foto rechazada si la misión queda completa.
+    // Si hay rechazadas, permanece en pendiente hasta implementar recaptura.
     for (const f of fotos.filter((f: any) => f.gondolero_id && f.campana_id)) {
       await actualizarEstadoMision({
         fotoId:      f.id,
