@@ -1502,8 +1502,12 @@ No mergear hasta tener tiempo de probar producción inmediatamente después.
    `reemplazada_por` en `fotos`). **Sin ella la recaptura rompe en producción**:
    la app filtra por esa columna en el aviso de fotos rechazadas y en
    `actualizarEstadoMision`. Aplicada en dev el 9/9/2026.
-5. Cualquier otra migración pendiente entre ambos proyectos Supabase
-6. Correr el script de diagnóstico de misiones en limbo y decidir si repararlas
+5. Migración `20260909190000_misiones_estado_descartada.sql` (agrega
+   `'descartada'` al CHECK de `misiones.estado`). **Sin ella el descarte de
+   recaptura falla con error de constraint**, porque el UPDATE escribe un
+   estado que la base no acepta.
+6. Cualquier otra migración pendiente entre ambos proyectos Supabase
+7. Correr el script de diagnóstico de misiones en limbo y decidir si repararlas
    (script de conteo — solo lectura, ver pendientes)
 
 **Después del merge — verificar en producción:**
