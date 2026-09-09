@@ -554,6 +554,17 @@ export async function registrarRecaptura(params: RegistrarRecapturaParams) {
     .eq('id', mision.comercio_id)
     .maybeSingle()
 
+  // El control es BLANDO A PROPÓSITO, igual que la captura normal: se exige
+  // que haya un fix de GPS, no que esté dentro del radio. Decidido el 9/9/2026.
+  //
+  // Por qué no bloquear por distancia: la recaptura no puede ser más estricta
+  // que la captura original. Con un radio chico o un GPS de teléfono impreciso
+  // se bloquea a gondoleros honestos, que es un costo real; el fraude, en
+  // cambio, ya queda registrado, porque ahora la foto guarda lat/lng de verdad
+  // y la foto rechazada que reemplaza sigue en la base con las suyas. Las dos
+  // coordenadas y los dos timestamps se pueden comparar cuando haga falta.
+  //
+  // Si alguna vez se endurece, tiene que endurecerse el flujo normal primero.
   const sinFix = !Number.isFinite(params.lat) || !Number.isFinite(params.lng)
     || (params.lat === 0 && params.lng === 0)
   if (sinFix) {
