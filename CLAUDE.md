@@ -1091,6 +1091,28 @@ responder cada reporte, y para quién (distribuidora, marca, repositora).
 
 ---
 
+## Pendiente de UI — jerarquía de la lista de campañas (panel de marca)
+
+En el panel de marca las campañas cerradas caen al pie de la lista, con poco
+peso visual: apenas un texto. La campaña del piloto de Georgalos —que es la que
+tiene los datos reales, y la que una marca entra a ver— queda perdida abajo de
+todo.
+
+**Lo que hay que revisar:** el criterio de orden. Hoy la lista agrupa por estado
+y pone las cerradas últimas
+(`app/(marca)/marca/campanas/campanas-filtro.tsx`, donde se arman `activas`,
+`pendientes`, `borradores` y `cerradas`). El supuesto es que "activa" equivale a
+"importante", y no es cierto: **una campaña cerrada con resultados sigue siendo
+relevante, quizás más que una activa que todavía no tiene datos.**
+
+Posibles criterios a evaluar, ninguno decidido: ordenar por volumen de
+resultados en vez de por estado, separar "con datos" de "sin datos", o darle a
+la cerrada con resultados el mismo tratamiento visual que a una activa.
+
+No implementar sin definir el criterio. Registrado el 9/9/2026.
+
+---
+
 ## Deuda conocida — scripts de seed
 
 Detectada al reconstruir producción el 7/9/2026 después de un
