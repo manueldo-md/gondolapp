@@ -68,9 +68,11 @@ export default async function CampanasPage() {
     // Fotos rechazadas: saber si hay algo para rehacer por campaña (con mision_id para el link de retake).
     // reemplazada_por IS NULL deja afuera las que ya se rehicieron: si no, el
     // aviso de recaptura no se apagaba nunca y el retake se repetía infinito.
+    // El embed de misiones es left join a propósito (sin !inner): las fotos
+    // legacy sin mision_id tienen que seguir contando en el aviso.
     supabase
       .from('fotos')
-      .select('campana_id, mision_id')
+      .select('campana_id, mision_id, mision:misiones(estado)')
       .eq('gondolero_id', user.id)
       .eq('estado', 'rechazada')
       .is('reemplazada_por', null),
@@ -108,7 +110,15 @@ export default async function CampanasPage() {
   // así que el aviso tiene que decirlo cuando hay más de una. Sin esto el texto
   // prometía rehacer todas las fotos y el botón rehacía las de una sola.
   const misionesConRechazoPorCampana = new Map<string, Set<string>>()
-  for (const f of (fotosRechazadasRes.data ?? []) as { campana_id: string; mision_id: string }[]) {
+  type FotoRechazadaRow = {
+    campana_id: string
+    mision_id: string
+    mision: { estado: string } | { estado: string }[] | null
+  }
+  for (const f of (fotosRechazadasRes.data ?? []) as unknown as FotoRechazadaRow[]) {
+    // Una misión descartada ya no pide nada: el gondolero resignó esa misión.
+    const misionEstado = Array.isArray(f.mision) ? f.mision[0]?.estado : f.mision?.estado
+    if (misionEstado === 'descartada') continue
     fotosRechazadasPorCampana.set(f.campana_id, (fotosRechazadasPorCampana.get(f.campana_id) ?? 0) + 1)
     if (!misionRetakePorCampana.has(f.campana_id)) {
       misionRetakePorCampana.set(f.campana_id, f.mision_id)

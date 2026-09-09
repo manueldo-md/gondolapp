@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { getConfigCompresion, type ConfigCompresion } from '@/lib/config'
 import {
   crearNotificacionDistri,
@@ -200,13 +201,16 @@ export async function registrarMision(params: RegistrarMisionParams) {
     throw new Error('La campaña no está activa.')
   }
 
-  // Verificar que el gondolero no superó el máximo de comercios permitido
+  // Verificar que el gondolero no superó el máximo de comercios permitido.
+  // Las descartadas no cuentan: el gondolero no completó esa misión, así que
+  // le queda el cupo libre para hacer otra en su lugar.
   if (campana.max_comercios_por_gondolero) {
     const { count } = await db0
       .from('misiones')
       .select('id', { count: 'exact', head: true })
       .eq('campana_id', params.campanaId)
       .eq('gondolero_id', user.id)
+      .neq('estado', 'descartada')
 
     if ((count ?? 0) >= campana.max_comercios_por_gondolero) {
       throw new Error(`Ya completaste el máximo de ${campana.max_comercios_por_gondolero} comercios en esta campaña.`)
@@ -641,6 +645,89 @@ export async function registrarRecaptura(params: RegistrarRecapturaParams) {
   console.log('[registrarRecaptura] OK', { misionId: params.misionId, recapturadas })
 
   return { misionId: params.misionId, recapturadas }
+}
+
+/**
+ * Descarta la recaptura pendiente de una misión: la cierra sin acreditar.
+ *
+ * Por qué existe: el gondolero se entera del rechazo horas o días después,
+ * cuando ya se fue del comercio. Sin una salida, la foto rechazada queda para
+ * siempre y el aviso se vuelve ruido — y un gondolero que aprende a ignorar
+ * ese aviso va a ignorar el próximo que sí importa.
+ *
+ * Qué implica, según la regla definida:
+ *   - La misión queda 'descartada': cerrada, ni pendiente ni en limbo.
+ *   - No acredita puntos. bounty_estado='anulado' en la misión y en sus fotos.
+ *   - No cuenta para el mínimo para cobrar ni para el máximo por gondolero
+ *     (eso lo resuelven los filtros en las consultas, ver registrarMision).
+ *   - comercios_relevados baja en uno: una misión descartada no es un comercio
+ *     relevado.
+ *   - No se borra nada. Las fotos aprobadas y las respuestas del formulario
+ *     siguen visibles para la marca, y el check GPS del comercio se conserva:
+ *     es evidencia de que el gondolero estuvo ahí, y eso pasó igual.
+ */
+export async function descartarRecaptura(misionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
+  const { data: mision, error: misionErr } = await db
+    .from('misiones')
+    .select('id, campana_id, comercio_id, gondolero_id, estado')
+    .eq('id', misionId)
+    .single()
+
+  if (misionErr || !mision) throw new Error('No encontramos la misión.')
+  if (mision.gondolero_id !== user.id) throw new Error('Esta misión no es tuya.')
+  // Idempotente: descartar dos veces no vuelve a restar comercios_relevados.
+  if (mision.estado === 'descartada') return { ok: true, yaEstaba: true }
+  if (mision.estado === 'aprobada') throw new Error('La misión ya está aprobada.')
+
+  // 1. Cerrar sin acreditar.
+  //    El 'anulado' no es cosmético: aprobarMisionCore libera el bounty con un
+  //    UPDATE sobre TODAS las misiones del gondolero en la campaña que estén en
+  //    'retenido'. Si la descartada quedara retenida, se le pagaría igual al
+  //    alcanzar el mínimo con otras misiones.
+  const { error: updErr } = await db
+    .from('misiones')
+    .update({ estado: 'descartada', bounty_estado: 'anulado' })
+    .eq('id', misionId)
+
+  if (updErr) throw new Error('No pudimos descartar la misión: ' + updErr.message)
+
+  // 2. Anular el bounty de las fotos de la misión. Ninguna generó puntos.
+  await db
+    .from('fotos')
+    .update({ bounty_estado: 'anulado' })
+    .eq('mision_id', misionId)
+
+  // 3. Descontar el comercio relevado.
+  const { data: campana } = await db
+    .from('campanas')
+    .select('comercios_relevados')
+    .eq('id', mision.campana_id)
+    .maybeSingle()
+
+  if (campana) {
+    await db
+      .from('campanas')
+      .update({ comercios_relevados: Math.max(0, (campana.comercios_relevados ?? 0) - 1) })
+      .eq('id', mision.campana_id)
+  }
+
+  console.log('[descartarRecaptura] OK', { misionId, campanaId: mision.campana_id })
+
+  revalidatePath('/gondolero/campanas')
+  revalidatePath(`/gondolero/campanas/${mision.campana_id}`)
+  return { ok: true, yaEstaba: false }
 }
 
 // Devuelve el id de un bloque existente para la campaña, o crea uno genérico si no hay ninguno.

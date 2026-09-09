@@ -72,6 +72,8 @@ const ESTADO_MISION: Record<string, { label: string; color: string }> = {
   aprobada:  { label: 'Aprobada',    color: 'bg-green-50 text-green-600' },
   rechazada: { label: 'Rechazada',   color: 'bg-red-50 text-red-500'    },
   parcial:   { label: 'Parcial',     color: 'bg-blue-50 text-blue-600'  },
+  // El gondolero descartó la recaptura: cerrada sin acreditar.
+  descartada: { label: 'Descartada', color: 'bg-gray-100 text-gray-500' },
 }
 
 function ReqRow({ ok, text }: { ok: boolean; text: string }) {
@@ -222,7 +224,10 @@ export default async function CampanaDetallePage({
   const mostrarPanelAcceso = !yaUnido
   const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || sinAcceso || !!participacionAnteriorEstado
 
-  const alcanzeLimite = misiones.length >= c.max_comercios_por_gondolero
+  // Las descartadas se siguen listando abajo (con su etiqueta), pero no
+  // consumen cupo: descartar libera el lugar para hacer otra misión.
+  const misionesQueOcupanCupo = misiones.filter(m => m.estado !== 'descartada')
+  const alcanzeLimite = misionesQueOcupanCupo.length >= c.max_comercios_por_gondolero
 
   // Para mostrar info de retención de puntos en cada misión
   const misionesAprobadasCount = misiones.filter(m => m.estado === 'aprobada').length
@@ -386,9 +391,9 @@ export default async function CampanaDetallePage({
                 <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">comercios<br/>en la campaña</p>
               </div>
               <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
-                <p className="text-2xl font-bold text-gray-700">{misiones.length}</p>
+                <p className="text-2xl font-bold text-gray-700">{misionesQueOcupanCupo.length}</p>
                 <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">
-                  {misiones.length === 1 ? 'misión tuya' : 'misiones tuyas'}<br/>
+                  {misionesQueOcupanCupo.length === 1 ? 'misión tuya' : 'misiones tuyas'}<br/>
                   <span className="text-gray-300">(máx {c.max_comercios_por_gondolero})</span>
                 </p>
               </div>

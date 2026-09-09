@@ -143,6 +143,19 @@ export async function actualizarEstadoMision(params: {
     const misionId: string | null = (fotoData as any)?.mision_id ?? null
     if (!misionId) return  // foto sin misión (flujo legacy sin misiones)
 
+    // 1b. Una misión descartada no se reabre.
+    //     Si quedaron fotos en 'pendiente' y un revisor las aprueba después,
+    //     sin esta guarda aprobarMisionCore le pisa el estado con 'aprobada' y
+    //     le paga los puntos que el gondolero resignó al descartar.
+    const { data: misionData } = await admin
+      .from('misiones')
+      .select('estado')
+      .eq('id', misionId)
+      .maybeSingle()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((misionData as any)?.estado === 'descartada') return
+
     // 2. Leer estados de todas las fotos VIGENTES de la misión.
     //    Las reemplazadas por una recaptura no cuentan: quedan en 'rechazada'
     //    para conservar el rastro, pero si se las contara la misión no podría

@@ -19,7 +19,7 @@ import {
 } from '@/lib/utils'
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
 import {
-  registrarMision, registrarRecaptura, subirFoto,
+  registrarMision, registrarRecaptura, descartarRecaptura, subirFoto,
   asegurarBloqueGenerico, obtenerConfigCompresion,
   type FotoRecapturaInput,
 } from './actions'
@@ -724,6 +724,11 @@ function CapturaContent() {
   const [bloquesCompletados, setBloquesCompletados] = useState<BloqueCompletadoLocal[]>([])
   // Retake: fotos rechazadas de la misión a rehacer
   const [fotosRetake, setFotosRetake] = useState<FotoRechazadaRetake[]>([])
+  // Puntos de la misión que se está rehaciendo — se muestran en el modal de
+  // descarte para que quede claro qué está resignando.
+  const [puntosMisionRetake, setPuntosMisionRetake] = useState(0)
+  const [confirmandoDescarte, setConfirmandoDescarte] = useState(false)
+  const [descartando, setDescartando] = useState(false)
   // Paso 5b: preview URL del último campo foto capturado (para confirmacion cuando fotoPreview es null)
   const [ultimoCampoFotoPreviewUrl, setUltimoCampoFotoPreviewUrl] = useState<string | null>(null)
   // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
@@ -839,13 +844,31 @@ function CapturaContent() {
     if (!retakeMisionId || !campana || cargando) return
 
     supabase
-      .from('fotos')
-      .select('id, campo_id, bloque_id, motivo_rechazo, comercio_id')
-      .eq('mision_id', retakeMisionId)
-      .eq('estado', 'rechazada')
-      // Solo las que siguen vigentes: una foto ya rehecha no se vuelve a pedir
-      .is('reemplazada_por', null)
-      .then(async ({ data, error }) => {
+      .from('misiones')
+      .select('id, estado, puntos_total')
+      .eq('id', retakeMisionId)
+      .maybeSingle()
+      .then(async ({ data: misionRow }) => {
+        const mision = misionRow as { estado: string; puntos_total: number } | null
+        if (!mision) {
+          setErrorGlobal('No encontramos la misión.')
+          return
+        }
+        // Una misión descartada no vuelve a pedir fotos, ni entrando por URL.
+        if (mision.estado === 'descartada') {
+          setErrorGlobal('Descartaste esta misión. Podés arrancar una nueva en el comercio cuando quieras.')
+          return
+        }
+        setPuntosMisionRetake(mision.puntos_total ?? 0)
+
+        const { data, error } = await supabase
+          .from('fotos')
+          .select('id, campo_id, bloque_id, motivo_rechazo, comercio_id')
+          .eq('mision_id', retakeMisionId)
+          .eq('estado', 'rechazada')
+          // Solo las que siguen vigentes: una foto ya rehecha no se vuelve a pedir
+          .is('reemplazada_por', null)
+
         if (error || !data || data.length === 0) {
           setErrorGlobal('No encontramos fotos rechazadas para esta misión.')
           return
@@ -1980,7 +2003,71 @@ function CapturaContent() {
           >
             Empezar recaptura
           </button>
+
+          {/* Descartar — salida para el que ya no puede volver al comercio.
+              Secundario a propósito: la acción esperada es rehacer la foto. */}
+          <button
+            onClick={() => setConfirmandoDescarte(true)}
+            className="w-full py-3 text-gray-500 text-sm font-medium underline min-h-touch"
+          >
+            No puedo volver al comercio
+          </button>
+
+          {errorGlobal && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
+              {errorGlobal}
+            </div>
+          )}
         </div>
+
+        {/* Confirmación del descarte */}
+        {confirmandoDescarte && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-3">
+              <h2 className="text-base font-bold text-gray-900">¿Descartar esta misión?</h2>
+              <div className="text-sm text-gray-600 space-y-2">
+                <p>
+                  Vas a cerrar la misión en <strong>{comercio?.nombre ?? 'este comercio'}</strong> sin
+                  cobrar los <strong>{formatearPuntos(puntosMisionRetake)} puntos</strong>.
+                </p>
+                <p>Las fotos ya aprobadas y tus respuestas quedan para la marca.</p>
+                <p className="text-gondo-verde-600">
+                  El comercio queda disponible: podés volver otro día y hacer la misión de nuevo,
+                  completa. Te queda el cupo libre para otra misión en la campaña.
+                </p>
+                <p className="text-gray-400 text-xs">Esto no se puede deshacer.</p>
+              </div>
+              <div className="flex flex-col gap-2 pt-1">
+                <button
+                  disabled={descartando}
+                  onClick={async () => {
+                    setDescartando(true)
+                    setErrorGlobal(null)
+                    try {
+                      await descartarRecaptura(retakeMisionId)
+                      router.push('/gondolero/campanas')
+                    } catch (err) {
+                      setErrorGlobal(err instanceof Error ? err.message : 'No pudimos descartar la misión.')
+                      setDescartando(false)
+                      setConfirmandoDescarte(false)
+                    }
+                  }}
+                  className="w-full py-3 bg-red-600 text-white font-semibold rounded-xl disabled:opacity-60 min-h-touch flex items-center justify-center gap-2"
+                >
+                  {descartando && <Loader2 size={16} className="animate-spin" />}
+                  Descartar la misión
+                </button>
+                <button
+                  disabled={descartando}
+                  onClick={() => setConfirmandoDescarte(false)}
+                  className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl disabled:opacity-60 min-h-touch"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

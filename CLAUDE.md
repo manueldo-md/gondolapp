@@ -1580,6 +1580,53 @@ Web Push API) están en V2. Ver sección "EXCLUIDO DEL MVP" en §8.
 Antes de implementar: evaluar soporte en iOS Safari (requiere iOS 16.4+ y que
 el usuario haya instalado la PWA en el home screen).
 
+### comercios_checks: el check pisa el distri_id histórico
+
+`registrarChecksGPSInterno` hace `upsert` con `onConflict: 'comercio_id,gondolero_id'`
+y **sin** `ignoreDuplicates`, que en supabase-js por defecto es `false`. O sea
+que resuelve como `merge-duplicates` → `ON CONFLICT DO UPDATE`: el `distri_id`
+**sí se actualiza** en cada visita posterior (verificado en
+`node_modules/@supabase/postgrest-js`, `upsert(values, { ignoreDuplicates = false })`
+→ `Prefer: resolution=merge-duplicates`).
+
+El problema real es el opuesto al que parece: como el check se reescribe, deja
+de ser una foto del momento. Si un gondolero cambia de distribuidora, su check
+viejo pasa a figurar con la distri nueva. La validación automática cuenta
+`distri_id` distintos, así que eso puede **bajar** el conteo y bloquear una
+validación que antes se habría disparado (dos checks que eran de distris
+distintas quedan los dos con la misma).
+
+Aparte: un check de un gondolero con `distri_id` null no suma nunca, porque el
+conteo filtra los nulos.
+
+Ninguna de las dos cosas es del descarte de recaptura — son de la validación
+por doble GPS. No tocar sin decidir antes si el check tiene que ser un registro
+histórico (y entonces no pisarse) o el estado actual. Registrado el 9/9/2026.
+
+### Descarte de recaptura — la regla
+
+Implementado el 9/9/2026. El gondolero puede descartar la recaptura pendiente
+de una misión cuando ya no puede volver al comercio. Es una decisión de
+producto, no se deduce del código:
+
+- La misión queda `estado='descartada'` y `bounty_estado='anulado'`.
+- **No** acredita puntos, y **no** cuenta ni para el mínimo para cobrar ni
+  para el máximo de misiones por gondolero: le queda el cupo libre.
+- `comercios_relevados` de la campaña baja en uno.
+- El comercio queda disponible para hacerlo de nuevo. Nunca estuvo bloqueado:
+  no hay UNIQUE en `misiones(campana_id, comercio_id, gondolero_id)`.
+- **No se borra nada.** Las fotos aprobadas y las respuestas siguen visibles
+  para la marca, y el check GPS de `comercios_checks` se conserva: es
+  evidencia de que el gondolero estuvo físicamente ahí, y eso pasó igual.
+
+Por qué existe: el gondolero se entera del rechazo horas o días después, ya
+lejos del comercio. Sin salida, la foto rechazada queda para siempre y el aviso
+se vuelve ruido — y el que aprende a ignorar ese aviso ignora el próximo.
+
+Guarda a no romper: `actualizarEstadoMision` sale temprano si la misión está
+descartada. Sin eso, aprobar una foto que había quedado pendiente le pisa el
+estado con 'aprobada' y le paga los puntos que resignó.
+
 ### distri_id null en gondoleros de dev
 El seed no vincula automáticamente los gondoleros de dev a Biomega. Solución:
 correr el bloque SQL al final de `supabase/seed.sql` después de crear los usuarios
