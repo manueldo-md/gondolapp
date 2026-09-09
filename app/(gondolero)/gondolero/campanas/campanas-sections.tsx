@@ -67,12 +67,14 @@ function CampanaCard({
   gondoleroNivel,
   misDistriIds,
   gondoleroComerciosCompletados,
+  fotosRechazadas = 0,
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
   gondoleroNivel: string
   misDistriIds: string[]
   gondoleroComerciosCompletados?: number
+  fotosRechazadas?: number
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
@@ -242,19 +244,36 @@ function CampanaCard({
         </div>
       )}
 
+      {/* Aviso foto rechazada */}
+      {participando && fotosRechazadas > 0 && (
+        <div className="mx-4 mb-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+          <p className="text-xs font-semibold text-amber-700">
+            ⚠️ {fotosRechazadas === 1 ? 'Tenés una foto rechazada' : `Tenés ${fotosRechazadas} fotos rechazadas`}
+          </p>
+          <p className="text-xs text-amber-600 mt-0.5">
+            Entrá a la misión para rehacer {fotosRechazadas === 1 ? 'esa foto' : 'esas fotos'} y completarla.
+          </p>
+        </div>
+      )}
+
       {/* CTA */}
       <div className="px-4 pb-4">
         <Link
           href={`/gondolero/campanas/${campana.id}`}
           className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
             participando
-              ? 'bg-green-600 hover:bg-green-700'
+              ? fotosRechazadas > 0
+                ? 'bg-amber-500 hover:bg-amber-600'
+                : 'bg-green-600 hover:bg-green-700'
               : !nivelOk
                 ? 'bg-gray-300 cursor-not-allowed'
                 : 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
           }`}
         >
-          {participando ? 'Continuar →' : 'Ver campaña'}
+          {participando
+            ? fotosRechazadas > 0 ? 'Retomar misión →' : 'Continuar →'
+            : 'Ver campaña'
+          }
         </Link>
       </div>
     </div>
@@ -372,6 +391,7 @@ export function CampanasSections({
   gondoleroNivel,
   misDistriIds,
   comerciosCompletadosRecord,
+  fotosRechazadasRecord = {},
 }: {
   misCampanas: CampanaCardData[]
   disponibles: CampanaCardData[]
@@ -379,6 +399,7 @@ export function CampanasSections({
   gondoleroNivel: string
   misDistriIds: string[]
   comerciosCompletadosRecord: Record<string, number>
+  fotosRechazadasRecord?: Record<string, number>
 }) {
   const hayAlgo = misCampanas.length + disponibles.length + finalizadas.length > 0
 
@@ -417,6 +438,7 @@ export function CampanasSections({
               gondoleroNivel={gondoleroNivel}
               misDistriIds={misDistriIds}
               gondoleroComerciosCompletados={comerciosCompletadosRecord[c.id] ?? 0}
+              fotosRechazadas={fotosRechazadasRecord[c.id] ?? 0}
             />
           ))}
         </Seccion>

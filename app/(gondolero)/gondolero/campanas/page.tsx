@@ -38,7 +38,7 @@ export default async function CampanasPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misionesRes] = await Promise.all([
+  const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misionesRes, fotosRechazadasRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('participaciones')
@@ -65,6 +65,12 @@ export default async function CampanasPage() {
       .from('misiones')
       .select('campana_id')
       .eq('gondolero_id', user.id),
+    // Fotos rechazadas: saber si hay algo para rehacer por campaña
+    supabase
+      .from('fotos')
+      .select('campana_id')
+      .eq('gondolero_id', user.id)
+      .eq('estado', 'rechazada'),
   ])
 
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
@@ -90,6 +96,12 @@ export default async function CampanasPage() {
   for (const m of (misionesRes.data ?? []) as { campana_id: string }[]) {
     misionCampanaIds.add(m.campana_id)
     misionesCountMap.set(m.campana_id, (misionesCountMap.get(m.campana_id) ?? 0) + 1)
+  }
+
+  // Fotos rechazadas por campaña (para mostrar aviso de recaptura)
+  const fotosRechazadasPorCampana = new Map<string, number>()
+  for (const f of (fotosRechazadasRes.data ?? []) as { campana_id: string }[]) {
+    fotosRechazadasPorCampana.set(f.campana_id, (fotosRechazadasPorCampana.get(f.campana_id) ?? 0) + 1)
   }
 
   // Relaciones marca-distri activas
@@ -235,6 +247,7 @@ export default async function CampanasPage() {
 
   // Progreso por campaña: contar misiones directamente
   const comerciosCompletadosRecord: Record<string, number> = Object.fromEntries(misionesCountMap.entries())
+  const fotosRechazadasRecord: Record<string, number> = Object.fromEntries(fotosRechazadasPorCampana.entries())
 
   const totalActivas = misCampanas.length + disponibles.length
 
@@ -272,6 +285,7 @@ export default async function CampanasPage() {
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}
           comerciosCompletadosRecord={comerciosCompletadosRecord}
+          fotosRechazadasRecord={fotosRechazadasRecord}
         />
       </div>
     </div>

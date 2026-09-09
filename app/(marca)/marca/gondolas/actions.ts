@@ -184,7 +184,7 @@ export async function aprobarFotoMarca(fotoId: string) {
   revalidatePath('/marca/gondolas')
 }
 
-export async function rechazarFotoMarca(fotoId: string) {
+export async function rechazarFotoMarca(fotoId: string, motivoRechazo?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -199,7 +199,7 @@ export async function rechazarFotoMarca(fotoId: string) {
 
   const { error } = await admin
     .from('fotos')
-    .update({ estado: 'rechazada', puntos_otorgados: 0 })
+    .update({ estado: 'rechazada', puntos_otorgados: 0, motivo_rechazo: motivoRechazo ?? null })
     .eq('id', fotoId)
 
   if (error) throw new Error('No se pudo rechazar la foto: ' + error.message)
@@ -208,11 +208,15 @@ export async function rechazarFotoMarca(fotoId: string) {
   const foto = fotoRaw as any
 
   if (foto?.gondolero_id) {
+    const mensajeBase = `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada.`
+    const mensajeMotivo = motivoRechazo
+      ? ` Motivo: ${motivoRechazo}. Podés retomar la misión y rehacer esa foto.`
+      : ' Podés retomar la misión y rehacer esa foto.'
     await admin.from('notificaciones').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'foto_rechazada',
       titulo:       'Foto no aprobada ❌',
-      mensaje:      `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
+      mensaje:      mensajeBase + mensajeMotivo,
       campana_id:   foto.campana_id,
     })
 

@@ -185,7 +185,7 @@ export async function aprobarFoto(fotoId: string) {
   revalidatePath(`/distribuidora/campanas/${foto.campana_id}`)
 }
 
-export async function rechazarFoto(fotoId: string) {
+export async function rechazarFoto(fotoId: string, motivoRechazo?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -200,7 +200,7 @@ export async function rechazarFoto(fotoId: string) {
 
   const { error } = await adminClient
     .from('fotos')
-    .update({ estado: 'rechazada', puntos_otorgados: 0 })
+    .update({ estado: 'rechazada', puntos_otorgados: 0, motivo_rechazo: motivoRechazo ?? null })
     .eq('id', fotoId)
 
   if (error) throw new Error('No se pudo rechazar la foto: ' + error.message)
@@ -209,11 +209,15 @@ export async function rechazarFoto(fotoId: string) {
   const foto = fotoRaw as any
 
   if (foto?.gondolero_id) {
+    const mensajeBase = `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada.`
+    const mensajeMotivo = motivoRechazo
+      ? ` Motivo: ${motivoRechazo}. Podés retomar la misión y rehacer esa foto.`
+      : ' Podés retomar la misión y rehacer esa foto.'
     await adminClient.from('notificaciones').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'foto_rechazada',
       titulo:       'Foto no aprobada ❌',
-      mensaje:      `Tu foto en ${foto?.comercios?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
+      mensaje:      mensajeBase + mensajeMotivo,
       campana_id:   foto.campana_id,
     })
 
@@ -265,7 +269,7 @@ export async function accionMasivaDistri(
         gondolero_id: f.gondolero_id,
         tipo:         'foto_rechazada',
         titulo:       'Foto no aprobada ❌',
-        mensaje:      `Tu foto en ${f.comercios?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
+        mensaje:      `Tu foto en ${f.comercios?.nombre ?? 'el comercio'} no fue aprobada. Podés retomar la misión y rehacer esa foto.`,
         campana_id:   f.campana_id,
       }))
     if (notifs.length) await adminClient.from('notificaciones').insert(notifs)

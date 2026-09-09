@@ -11,7 +11,7 @@ export async function aprobarFoto(fotoId: string) {
   revalidatePath('/repositora/gondolas')
 }
 
-export async function rechazarFoto(fotoId: string) {
-  await rechazarFotoBase(fotoId)
+export async function rechazarFoto(fotoId: string, motivoRechazo?: string) {
+  await rechazarFotoBase(fotoId, motivoRechazo)
   revalidatePath('/repositora/gondolas')
 }

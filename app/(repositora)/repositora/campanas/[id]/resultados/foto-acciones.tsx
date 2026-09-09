@@ -1,14 +1,53 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { aprobarFoto, rechazarFoto } from './actions'
 
 export function FotoAccionesRepo({ fotoId }: { fotoId: string }) {
   const [pendingAprobar, startAprobar] = useTransition()
   const [pendingRechazar, startRechazar] = useTransition()
+  const [rechazando, setRechazando] = useState(false)
+  const [motivo, setMotivo] = useState('')
 
   const ocupado = pendingAprobar || pendingRechazar
+
+  const handleConfirmarRechazo = () => {
+    startRechazar(async () => {
+      await rechazarFoto(fotoId, motivo.trim() || undefined)
+    })
+  }
+
+  if (rechazando) {
+    return (
+      <div className="space-y-2">
+        <textarea
+          value={motivo}
+          onChange={e => setMotivo(e.target.value)}
+          placeholder="Motivo del rechazo (opcional)"
+          rows={2}
+          className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-red-300 placeholder:text-gray-400"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={handleConfirmarRechazo}
+            disabled={ocupado}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {pendingRechazar ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+            Confirmar rechazo
+          </button>
+          <button
+            onClick={() => { setRechazando(false); setMotivo('') }}
+            disabled={ocupado}
+            className="px-4 py-2.5 border border-gray-200 text-gray-500 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-2">
@@ -21,7 +60,7 @@ export function FotoAccionesRepo({ fotoId }: { fotoId: string }) {
         Aprobar
       </button>
       <button
-        onClick={() => startRechazar(() => rechazarFoto(fotoId))}
+        onClick={() => setRechazando(true)}
         disabled={ocupado}
         className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-red-300 text-red-600 text-sm font-semibold rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
       >

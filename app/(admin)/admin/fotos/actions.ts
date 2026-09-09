@@ -132,7 +132,7 @@ export async function aprobarFotoAdmin(fotoId: string) {
   revalidatePath('/admin/fotos')
 }
 
-export async function rechazarFotoAdmin(fotoId: string) {
+export async function rechazarFotoAdmin(fotoId: string, motivoRechazo?: string) {
   const admin = await getAdmin()
 
   const { data: fotoRaw } = await admin
@@ -141,17 +141,21 @@ export async function rechazarFotoAdmin(fotoId: string) {
     .eq('id', fotoId)
     .single()
 
-  await admin.from('fotos').update({ estado: 'rechazada', puntos_otorgados: 0 }).eq('id', fotoId)
+  await admin.from('fotos').update({ estado: 'rechazada', puntos_otorgados: 0, motivo_rechazo: motivoRechazo ?? null }).eq('id', fotoId)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const foto = fotoRaw as any
 
   if (foto?.gondolero_id) {
+    const mensajeBase = `Tu foto en ${foto?.comercio?.nombre ?? 'el comercio'} no fue aprobada.`
+    const mensajeMotivo = motivoRechazo
+      ? ` Motivo: ${motivoRechazo}. Podés retomar la misión y rehacer esa foto.`
+      : ' Podés retomar la misión y rehacer esa foto.'
     await admin.from('notificaciones').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'foto_rechazada',
       titulo:       'Foto no aprobada ❌',
-      mensaje:      `Tu foto en ${foto?.comercio?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
+      mensaje:      mensajeBase + mensajeMotivo,
       campana_id:   foto.campana_id,
     })
 
@@ -219,7 +223,7 @@ export async function accionMasiva(
           gondolero_id: f.gondolero_id,
           tipo:         'foto_rechazada',
           titulo:       'Foto no aprobada ❌',
-          mensaje:      `Tu foto en ${f.comercio?.nombre ?? 'el comercio'} no fue aprobada esta vez. Revisá los requisitos e intentá de nuevo.`,
+          mensaje:      `Tu foto en ${f.comercio?.nombre ?? 'el comercio'} no fue aprobada. Podés retomar la misión y rehacer esa foto.`,
           campana_id:   f.campana_id,
         }))
       if (notifs.length) await admin.from('notificaciones').insert(notifs)
@@ -312,13 +316,13 @@ export async function accionMasiva(
   return { procesadas, errores }
 }
 
-export async function cambiarEstadoFoto(fotoId: string, nuevoEstado: string) {
+export async function cambiarEstadoFoto(fotoId: string, nuevoEstado: string, motivoRechazo?: string) {
   if (nuevoEstado === 'aprobada') {
     await aprobarFotoAdmin(fotoId)
     return
   }
   if (nuevoEstado === 'rechazada') {
-    await rechazarFotoAdmin(fotoId)
+    await rechazarFotoAdmin(fotoId, motivoRechazo)
     return
   }
   // pendiente | en_revision | archivada → UPDATE directo sin tocar puntos
