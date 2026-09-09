@@ -12,6 +12,10 @@ import {
 } from '@/lib/notificaciones'
 import { registrarChecksGPSInterno } from './actions-checks'
 import { resolverMisionDirecta } from '@/lib/misiones'
+import { calcularDistanciaMetros } from '@/lib/utils'
+
+/** Mismo radio que usa el paso de GPS del flujo normal de captura. */
+const RADIO_GPS_METROS = Number(process.env.NEXT_PUBLIC_GPS_RADIO_METROS ?? 50) || 50
 
 export async function obtenerConfigCompresion(): Promise<ConfigCompresion> {
   return getConfigCompresion()
@@ -476,6 +480,156 @@ export async function registrarMision(params: RegistrarMisionParams) {
   }
 
   return { misionId: mision.id, puntos: params.puntosTotal }
+}
+
+// ── RECAPTURA DE FOTOS RECHAZADAS ─────────────────────────────────────────────
+
+export interface FotoRecapturaInput {
+  /** Foto rechazada que se está rehaciendo */
+  fotoOriginalId: string
+  storagePath: string
+  url: string
+  timestampDispositivo: string
+  blurScore: number | null
+}
+
+export interface RegistrarRecapturaParams {
+  misionId: string
+  deviceId: string
+  lat: number
+  lng: number
+  fotos: FotoRecapturaInput[]
+}
+
+/**
+ * Registra la recaptura de fotos rechazadas SOBRE LA MISIÓN EXISTENTE.
+ *
+ * Por qué no reusa registrarMision: esa función crea una misión nueva, suma al
+ * contador de comercios relevados de la campaña y consume una unidad del
+ * máximo de comercios por gondolero. Una recaptura no es una visita nueva —
+ * es la misma misión con una foto rehecha. Usando registrarMision, rehacer una
+ * foto inflaba comercios_relevados y dejaba la misión vieja intacta con su
+ * foto rechazada, así que el aviso de "tenés fotos para rehacer" nunca se
+ * apagaba y el retake se podía repetir sin límite.
+ *
+ * Qué hace: inserta la foto nueva en la misma misión y marca la vieja con
+ * reemplazada_por. La vieja conserva estado='rechazada' y su motivo — el
+ * rastro queda para auditar.
+ */
+export async function registrarRecaptura(params: RegistrarRecapturaParams) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  if (params.fotos.length === 0) throw new Error('No hay fotos para recapturar.')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
+  // 1. La misión tiene que ser del gondolero que está enviando
+  const { data: mision, error: misionErr } = await db
+    .from('misiones')
+    .select('id, campana_id, comercio_id, gondolero_id')
+    .eq('id', params.misionId)
+    .single()
+
+  if (misionErr || !mision) throw new Error('No encontramos la misión a rehacer.')
+  if (mision.gondolero_id !== user.id) throw new Error('Esta misión no es tuya.')
+
+  // 2. GPS contra el comercio de la misión.
+  //
+  // Sin esto la recaptura era el único camino de la app que guardaba una foto
+  // sin ubicación: el flujo de retake saltea el paso de GPS, así que las
+  // coordenadas llegaban en 0,0 y la foto quedaba sin evidencia de dónde se
+  // sacó. Es exactamente el agujero que permitiría forzar un rechazo para
+  // después rehacer la foto desde cualquier lado.
+  const { data: comercio } = await db
+    .from('comercios')
+    .select('lat, lng')
+    .eq('id', mision.comercio_id)
+    .maybeSingle()
+
+  const sinFix = !Number.isFinite(params.lat) || !Number.isFinite(params.lng)
+    || (params.lat === 0 && params.lng === 0)
+  if (sinFix) {
+    throw new Error('Necesitamos tu ubicación para rehacer la foto. Activá el GPS e intentá de nuevo.')
+  }
+
+  const distanciaMetros = comercio?.lat != null && comercio?.lng != null
+    ? Math.round(calcularDistanciaMetros(params.lat, params.lng, comercio.lat, comercio.lng))
+    : null
+
+  console.log('[registrarRecaptura] GPS', {
+    misionId: params.misionId,
+    comercioId: mision.comercio_id,
+    distanciaMetros,
+    radio: RADIO_GPS_METROS,
+    dentroDelRadio: distanciaMetros != null ? distanciaMetros <= RADIO_GPS_METROS : null,
+  })
+
+  // 3. Insertar cada foto nueva y marcar la vieja como reemplazada
+  let recapturadas = 0
+  for (const foto of params.fotos) {
+    const { data: original } = await db
+      .from('fotos')
+      .select('id, campana_id, bloque_id, campo_id, comercio_id, mision_id, estado, reemplazada_por, puntos_otorgados')
+      .eq('id', foto.fotoOriginalId)
+      .maybeSingle()
+
+    // Guardas: la foto tiene que ser de esta misión, estar rechazada y no
+    // haber sido reemplazada ya. Sin la última, tocar "Retomar" dos veces
+    // encadenaba recapturas sobre la misma foto.
+    if (!original) throw new Error('No encontramos la foto a rehacer.')
+    if (original.mision_id !== params.misionId) throw new Error('Esa foto no pertenece a la misión.')
+    if (original.estado !== 'rechazada') throw new Error('Esa foto no está rechazada.')
+    if (original.reemplazada_por) throw new Error('Esa foto ya fue rehecha.')
+
+    const { data: nueva, error: insErr } = await db
+      .from('fotos')
+      .insert({
+        campana_id:            original.campana_id,
+        bloque_id:             original.bloque_id,
+        campo_id:              original.campo_id,
+        comercio_id:           original.comercio_id,
+        mision_id:             original.mision_id,
+        gondolero_id:          user.id,
+        url:                   foto.url,
+        storage_path:          foto.storagePath,
+        lat:                   params.lat,
+        lng:                   params.lng,
+        timestamp_dispositivo: foto.timestampDispositivo,
+        device_id:             params.deviceId,
+        blur_score:            foto.blurScore,
+        estado:                'pendiente',
+        // Hereda los puntos de la foto que reemplaza: el bounty de la misión
+        // no cambia porque una foto se haya rehecho.
+        puntos_otorgados:      original.puntos_otorgados ?? 0,
+      })
+      .select('id')
+      .single()
+
+    if (insErr || !nueva) throw new Error('Error al guardar la foto rehecha: ' + (insErr?.message ?? ''))
+
+    const { error: updErr } = await db
+      .from('fotos')
+      .update({ reemplazada_por: nueva.id })
+      .eq('id', original.id)
+
+    if (updErr) throw new Error('Error al vincular la foto rehecha: ' + updErr.message)
+    recapturadas++
+  }
+
+  // 4. Puede pasar que la recaptura destrabe la misión: si las demás fotos ya
+  //    estaban aprobadas y esta era la única rechazada, la misión sigue
+  //    pendiente hasta que se apruebe la nueva. No hay nada que resolver acá.
+  console.log('[registrarRecaptura] OK', { misionId: params.misionId, recapturadas })
+
+  return { misionId: params.misionId, recapturadas }
 }
 
 // Devuelve el id de un bloque existente para la campaña, o crea uno genérico si no hay ninguno.

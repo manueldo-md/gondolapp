@@ -246,26 +246,33 @@ function CampanaCard({
         </div>
       )}
 
-      {/* Aviso foto rechazada */}
+      {/* Aviso foto rechazada.
+          La recaptura va acá adentro y no en el CTA principal: cuando ocupaba
+          el CTA, tener una foto rechazada tapaba la entrada a la campaña y el
+          gondolero no podía arrancar misiones nuevas hasta rehacerla. */}
       {participando && fotosRechazadas > 0 && (
         <div className="mx-4 mb-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
           <p className="text-xs font-semibold text-amber-700">
             ⚠️ {fotosRechazadas === 1 ? 'Tenés una foto rechazada' : `Tenés ${fotosRechazadas} fotos rechazadas`}
           </p>
           <p className="text-xs text-amber-600 mt-0.5">
-            Entrá a la misión para rehacer {fotosRechazadas === 1 ? 'esa foto' : 'esas fotos'} y completarla.
+            Rehacé {fotosRechazadas === 1 ? 'esa foto' : 'esas fotos'} para completar la misión.
           </p>
+          {misionRetakeId && (
+            <Link
+              href={`/gondolero/captura?campana=${campana.id}&retake=${misionRetakeId}`}
+              className="mt-2 block w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-center text-xs font-semibold rounded-lg min-h-touch flex items-center justify-center"
+            >
+              Retomar misión →
+            </Link>
+          )}
         </div>
       )}
 
       {/* CTA */}
       <div className="px-4 pb-4">
         <Link
-          href={
-            participando && fotosRechazadas > 0 && misionRetakeId
-              ? `/gondolero/captura?campana=${campana.id}&retake=${misionRetakeId}`
-              : `/gondolero/campanas/${campana.id}`
-          }
+          href={`/gondolero/campanas/${campana.id}`}
           className={`block w-full py-3 text-white text-center font-semibold rounded-xl transition-all duration-100 active:scale-[0.97] min-h-touch ${
             participando
               ? fotosRechazadas > 0
@@ -276,10 +283,7 @@ function CampanaCard({
                 : 'bg-gondo-verde-400 hover:bg-gondo-verde-600'
           }`}
         >
-          {participando
-            ? fotosRechazadas > 0 ? 'Retomar misión →' : 'Continuar →'
-            : 'Ver campaña'
-          }
+          {participando ? 'Continuar →' : 'Ver campaña'}
         </Link>
       </div>
     </div>

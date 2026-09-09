@@ -52,32 +52,38 @@ export type Database = {
       bloque_campos: {
         Row: {
           bloque_id: string
+          blur_requerido: boolean
           created_at: string | null
           id: string
           obligatorio: boolean | null
           opciones: string[] | null
           orden: number | null
           pregunta: string
+          solicitar_precio: boolean
           tipo: string
         }
         Insert: {
           bloque_id: string
+          blur_requerido?: boolean
           created_at?: string | null
           id?: string
           obligatorio?: boolean | null
           opciones?: string[] | null
           orden?: number | null
           pregunta: string
+          solicitar_precio?: boolean
           tipo: string
         }
         Update: {
           bloque_id?: string
+          blur_requerido?: boolean
           created_at?: string | null
           id?: string
           obligatorio?: boolean | null
           opciones?: string[] | null
           orden?: number | null
           pregunta?: string
+          solicitar_precio?: boolean
           tipo?: string
         }
         Relationships: [
@@ -976,6 +982,7 @@ export type Database = {
           precio_confirmado: number | null
           precio_detectado: number | null
           puntos_otorgados: number | null
+          reemplazada_por: string | null
           storage_path: string
           timestamp_dispositivo: string | null
           updated_at: string | null
@@ -1005,6 +1012,7 @@ export type Database = {
           precio_confirmado?: number | null
           precio_detectado?: number | null
           puntos_otorgados?: number | null
+          reemplazada_por?: string | null
           storage_path: string
           timestamp_dispositivo?: string | null
           updated_at?: string | null
@@ -1034,6 +1042,7 @@ export type Database = {
           precio_confirmado?: number | null
           precio_detectado?: number | null
           puntos_otorgados?: number | null
+          reemplazada_por?: string | null
           storage_path?: string
           timestamp_dispositivo?: string | null
           updated_at?: string | null
@@ -1085,6 +1094,13 @@ export type Database = {
           {
             foreignKeyName: "fotos_par_foto_id_fkey"
             columns: ["par_foto_id"]
+            isOneToOne: false
+            referencedRelation: "fotos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fotos_reemplazada_por_fkey"
+            columns: ["reemplazada_por"]
             isOneToOne: false
             referencedRelation: "fotos"
             referencedColumns: ["id"]

@@ -143,11 +143,15 @@ export async function actualizarEstadoMision(params: {
     const misionId: string | null = (fotoData as any)?.mision_id ?? null
     if (!misionId) return  // foto sin misión (flujo legacy sin misiones)
 
-    // 2. Leer estados de todas las fotos de la misión
+    // 2. Leer estados de todas las fotos VIGENTES de la misión.
+    //    Las reemplazadas por una recaptura no cuentan: quedan en 'rechazada'
+    //    para conservar el rastro, pero si se las contara la misión no podría
+    //    aprobarse nunca — aprobadas nunca llegaría a igualar el total.
     const { data: fotosData } = await admin
       .from('fotos')
       .select('estado')
       .eq('mision_id', misionId)
+      .is('reemplazada_por', null)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const estados = (fotosData ?? []).map((f: any) => f.estado as string)

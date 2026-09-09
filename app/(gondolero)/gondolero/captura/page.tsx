@@ -18,7 +18,11 @@ import {
   formatearPuntos,
 } from '@/lib/utils'
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
-import { registrarMision, subirFoto, asegurarBloqueGenerico, obtenerConfigCompresion } from './actions'
+import {
+  registrarMision, registrarRecaptura, subirFoto,
+  asegurarBloqueGenerico, obtenerConfigCompresion,
+  type FotoRecapturaInput,
+} from './actions'
 import { crearComercioNuevo, crearComercioParaCaptura, subirFotoFachada } from './actions-comercios'
 import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
@@ -643,6 +647,7 @@ function CapturaContent() {
 
   const campanaId    = searchParams.get('campana') ?? ''
   const retakeMisionId = searchParams.get('retake')  ?? ''
+  const esRetake = retakeMisionId !== ''
 
   const [paso, setPaso] = useState<Paso>('comercios-gps')
   const [campana, setCampana] = useState<CampanaData | null>(null)
@@ -706,6 +711,11 @@ function CapturaContent() {
   const [respuestas, setRespuestas] = useState<Record<string, unknown>>({})
   const [enviando, setEnviando] = useState(false)
   const [puntosGanados, setPuntosGanados] = useState(0)
+  // Cuántas fotos se enviaron realmente. La pantalla de éxito mostraba
+  // campana.bloques.length, que son BLOQUES: con dos campos tipo='foto' en un
+  // mismo bloque decía "1 foto" habiendo enviado dos. Es el mismo error que
+  // tenía el resumen previo, en la otra pantalla.
+  const [fotosEnviadas, setFotosEnviadas] = useState(0)
   const [blurScore, setBlurScore] = useState<number | null>(null)
   const [comprConfig, setComprConfig] = useState<ConfigCompresion>({ maxSizeMB: 0.25, maxWidth: 1024, calidad: 0.70 })
   const [bloqueActualIdx, setBloqueActualIdx] = useState(0)
@@ -833,6 +843,8 @@ function CapturaContent() {
       .select('id, campo_id, bloque_id, motivo_rechazo, comercio_id')
       .eq('mision_id', retakeMisionId)
       .eq('estado', 'rechazada')
+      // Solo las que siguen vigentes: una foto ya rehecha no se vuelve a pedir
+      .is('reemplazada_por', null)
       .then(async ({ data, error }) => {
         if (error || !data || data.length === 0) {
           setErrorGlobal('No encontramos fotos rechazadas para esta misión.')
@@ -1199,22 +1211,39 @@ function CapturaContent() {
     setBloqueActualIdx(0)
     setCampoActualIdx(0)
 
-    const primerBloque = bloquesRetake[0]
-    const primerosCampos = primerBloque.campos
+    // Paso de GPS, igual que una captura normal.
+    //
+    // Antes se iba derecho a la cámara: la recaptura era el único camino que
+    // no validaba ubicación, y como gps.posicion quedaba en null la foto se
+    // guardaba con lat/lng en 0,0. O sea que rehacer una foto no dejaba
+    // ninguna evidencia de dónde se había sacado.
+    setPaso('gps')
+  }
 
+  // Arranca la captura del retake una vez pasado el GPS.
+  // Vive aparte de irAlCampo porque contempla el bloque legacy (sin campos),
+  // que en el flujo nuevo ya no existe pero sí puede estar en misiones viejas.
+  const comenzarCapturaRetake = async () => {
+    if (!campana) return
+    const primerBloque = campana.bloques[0]
+    if (!primerBloque) return
+
+    const primerosCampos = primerBloque.campos
     if (primerosCampos.length === 0) {
-      // Bloque legacy: ir directo a la cámara de bloque
-      abrirMisionStream()
+      // Bloque legacy: cámara de bloque
+      await abrirMisionStream()
       setPaso('camara')
+      return
+    }
+
+    const primerCampo = primerosCampos[0]
+    setCampoActualIdx(0)
+    if (primerCampo.tipo === 'foto') {
+      await abrirMisionStream()
+      setCampoFotoActualId(primerCampo.id)
+      setPaso('formulario-camara')
     } else {
-      const primerCampo = primerosCampos[0]
-      if (primerCampo.tipo === 'foto') {
-        abrirMisionStream()
-        setCampoFotoActualId(primerCampo.id)
-        setPaso('formulario-camara')
-      } else {
-        setPaso('formulario')
-      }
+      setPaso('formulario')
     }
   }
 
@@ -1234,6 +1263,75 @@ function CapturaContent() {
     const deviceId = getDeviceId()
 
     try {
+      // ── MODO RETAKE ─────────────────────────────────────────────────────────
+      // La recaptura NO crea una misión nueva: reemplaza las fotos rechazadas
+      // dentro de la misión existente. Con registrarMision se creaba una misión
+      // paralela, se sumaba de más a comercios_relevados y la foto vieja
+      // quedaba en 'rechazada' para siempre — por eso el aviso no se apagaba y
+      // el retake se podía repetir sin fin.
+      if (esRetake) {
+        const recaptura: FotoRecapturaInput[] = []
+
+        for (const b of bloquesCompletados) {
+          const bloque = campana.bloques[b.bloqueIdx]
+
+          // Foto de bloque (flujo legacy, campo_id = null)
+          if (b.blob) {
+            const original = fotosRetake.find(
+              f => !f.campo_id && f.bloque_id === (b.bloqueId ?? bloque?.id)
+            )
+            if (!original) throw new Error('No pudimos identificar qué foto estás rehaciendo.')
+            const compressed = await comprimirImagen(b.blob, comprConfig.maxSizeMB, comprConfig.maxWidth, comprConfig.calidad)
+            const storagePath = generarPathFoto(campana.id, deviceId)
+            const fd = new FormData()
+            fd.append('foto', new File([compressed], 'foto.jpg', { type: 'image/jpeg' }))
+            fd.append('storagePath', storagePath)
+            const { url } = await subirFoto(fd)
+            recaptura.push({
+              fotoOriginalId:       original.id,
+              storagePath,
+              url,
+              timestampDispositivo: b.timestampDispositivo,
+              blurScore:            b.blurScore,
+            })
+          }
+
+          // Fotos de campo tipo='foto'
+          for (const [campoId, valor] of Object.entries(b.respuestas)) {
+            if (!(valor instanceof Blob)) continue
+            const original = fotosRetake.find(f => f.campo_id === campoId)
+            if (!original) throw new Error('No pudimos identificar qué foto estás rehaciendo.')
+            const storagePath = generarPathFoto(campana.id, deviceId)
+            const fd = new FormData()
+            fd.append('foto', valor instanceof File ? valor : new File([valor], 'foto-campo.jpg', { type: 'image/jpeg' }))
+            fd.append('storagePath', storagePath)
+            const { url } = await subirFoto(fd)
+            recaptura.push({
+              fotoOriginalId:       original.id,
+              storagePath,
+              url,
+              timestampDispositivo: b.timestampDispositivo,
+              blurScore:            null,
+            })
+          }
+        }
+
+        if (recaptura.length === 0) throw new Error('No hay fotos para reenviar.')
+
+        await registrarRecaptura({
+          misionId: retakeMisionId,
+          deviceId,
+          lat, lng,
+          fotos: recaptura,
+        })
+
+        bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
+        setFotosEnviadas(recaptura.length)
+        setPuntosGanados(0)
+        setPaso('exito')
+        return
+      }
+
       // 1. Subir foto de bloque si existe (flujo viejo, blob != null).
       //    En el flujo nuevo (5b+) blob es null — todas las fotos van como campoFotosInput.
       const uploadResults = await Promise.all(
@@ -1347,6 +1445,7 @@ function CapturaContent() {
       bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
 
       setPuntosGanados(result.puntos)
+      setFotosEnviadas(fotosDeBloque.length + campoFotosInput.length)
       setPaso('exito')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -1627,33 +1726,55 @@ function CapturaContent() {
           <CheckCircle2 size={40} className="text-gondo-verde-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">¡Misión completada!</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">
+            {esRetake ? '¡Foto rehecha!' : '¡Misión completada!'}
+          </h1>
           <p className="text-gray-500 text-sm">
-            {puntosGanados > 0
-              ? `${campana?.bloques?.length ?? 1} foto${(campana?.bloques?.length ?? 1) !== 1 ? 's' : ''} enviada${(campana?.bloques?.length ?? 1) !== 1 ? 's' : ''} a revisión`
+            {fotosEnviadas > 0
+              ? `${fotosEnviadas} foto${fotosEnviadas !== 1 ? 's' : ''} enviada${fotosEnviadas !== 1 ? 's' : ''} a revisión`
               : 'Las fotos están en revisión'}
           </p>
+          {esRetake && (
+            <p className="text-gray-400 text-xs mt-2 max-w-xs">
+              Los puntos de la misión se acreditan cuando se aprueben todas sus fotos.
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-2 bg-gondo-verde-50 px-6 py-3 rounded-2xl">
-          <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400" />
-          <span className="text-lg font-bold text-gondo-verde-400">
-            +{formatearPuntos(puntosGanados)} puntos
-          </span>
-        </div>
+        {!esRetake && (
+          <div className="flex items-center gap-2 bg-gondo-verde-50 px-6 py-3 rounded-2xl">
+            <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400" />
+            <span className="text-lg font-bold text-gondo-verde-400">
+              +{formatearPuntos(puntosGanados)} puntos
+            </span>
+          </div>
+        )}
         <div className="flex flex-col gap-3 w-full max-w-xs">
-          <button
-            onClick={() => {
-              setFotoBlob(null); setFotoPreview(null)
-              setPrecio('')
-              setRespuestas({}); setPuntosGanados(0)
-              setFotosCapturadas([]); setBloqueActualIdx(0)
-              setComercio(null); setBusqueda('')
-              setPaso('comercios-gps')
-            }}
-            className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
-          >
-            Iniciar otra misión
-          </button>
+          {/* En modo retake no se ofrece "otra misión": campana.bloques quedó
+              filtrado a los campos que se rehicieron, así que arrancar otra
+              misión desde acá pediría solo esos. Se vuelve a campañas. */}
+          {esRetake ? (
+            <button
+              onClick={() => router.push('/gondolero/campanas')}
+              className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
+            >
+              Volver a mis campañas
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setFotoBlob(null); setFotoPreview(null)
+                setPrecio('')
+                setRespuestas({}); setPuntosGanados(0)
+                setFotosCapturadas([]); setBloqueActualIdx(0)
+                setFotosEnviadas(0)
+                setComercio(null); setBusqueda('')
+                setPaso('comercios-gps')
+              }}
+              className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
+            >
+              Iniciar otra misión
+            </button>
+          )}
           <button
             onClick={() => router.push('/gondolero/misiones')}
             className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl min-h-touch"
@@ -2258,6 +2379,11 @@ function CapturaContent() {
   const tieneBloqueFoto = (bloqueActual?.campos?.filter(c => c.tipo === 'foto').length ?? 0) > 0
   const esCampanaComercio = campana?.tipo === 'comercios'
   const totalBloques = campana?.bloques?.length ?? 1
+  // Fotos que pide la misión, contadas por CAMPO tipo='foto' — no por bloque.
+  // Un bloque sin campos es del flujo viejo y vale una foto de bloque.
+  const totalFotosMision = (campana?.bloques ?? []).reduce((n, b) => (
+    n + (b.campos.length === 0 ? 1 : b.campos.filter(c => c.tipo === 'foto').length)
+  ), 0)
   // La barra de progreso usa pasos fijos; formulario-camara y formulario-camara-blur
   // se mapean al mismo slot que 'formulario' para no duplicar la barra.
   const tieneCamposOFotos = (bloqueActual?.campos?.length ?? 0) > 0
@@ -2286,6 +2412,11 @@ function CapturaContent() {
             onClick={() => {
               if (paso === 'comercio') {
                 router.back()
+              } else if (esRetake && paso === 'gps') {
+                // En retake el comercio viene fijado por la misión: atrás vuelve
+                // a la pantalla de fotos rechazadas, no al selector de comercios.
+                cerrarMisionStream()
+                setPaso('retake-intro')
               } else if (paso === 'mision-resumen') {
                 // Restaurar el último bloque para que el usuario pueda re-revisar
                 const lastBloque = bloquesCompletados[bloquesCompletados.length - 1]
@@ -2532,16 +2663,22 @@ function CapturaContent() {
 
             {gps.estado === 'activo' && campana && (
               <>
-                {campana.bloques.length > 1 && (
+                {totalFotosMision > 1 && (
                   <div className="flex items-center gap-2.5 bg-gondo-verde-50 border border-gondo-verde-200 rounded-xl px-3.5 py-3">
                     <span className="text-gondo-verde-400 text-lg shrink-0">📋</span>
                     <p className="text-sm text-gondo-verde-700">
-                      Esta misión requiere <strong>{campana.bloques.length} fotos</strong> en este comercio
+                      {esRetake
+                        ? <>Tenés que rehacer <strong>{totalFotosMision} fotos</strong> en este comercio</>
+                        : <>Esta misión requiere <strong>{totalFotosMision} fotos</strong> en este comercio</>}
                     </p>
                   </div>
                 )}
                 <button
                   onClick={async () => {
+                    if (esRetake) {
+                      await comenzarCapturaRetake()
+                      return
+                    }
                     // Abrir el stream ANTES de montar PasoCamara: evita el ciclo
                     // getUserMedia→stop→getUserMedia entre bloques (bug Android abril).
                     await abrirMisionStream()
@@ -2551,11 +2688,13 @@ function CapturaContent() {
                   }}
                   className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
                 >
-                  {campana.bloques.length > 1
-                    ? `Comenzar misión · ${campana.bloques.length} bloques`
-                    : tieneBloqueFoto
-                      ? 'Continuar — Abrir cámara'
-                      : 'Continuar'}
+                  {esRetake
+                    ? 'Continuar — Rehacer la foto'
+                    : campana.bloques.length > 1
+                      ? `Comenzar misión · ${campana.bloques.length} bloques`
+                      : tieneBloqueFoto
+                        ? 'Continuar — Abrir cámara'
+                        : 'Continuar'}
                 </button>
               </>
             )}
@@ -2907,20 +3046,31 @@ function CapturaContent() {
                     </div>
                   )}
 
-                  {/* Puntos */}
-                  <div className="bg-gondo-verde-50 rounded-2xl p-4 flex items-center gap-3">
-                    <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
-                    <div>
-                      <p className="text-xs text-gray-500">Puntos por esta misión</p>
-                      <p className="text-lg font-bold text-gondo-verde-400">
-                        +{formatearPuntos(
-                          campana.puntos_por_mision > 0
-                            ? campana.puntos_por_mision
-                            : campana.puntos_por_foto * cantFotos
-                        )} pts
+                  {/* Puntos — en retake no hay puntos nuevos: es la misma misión */}
+                  {esRetake ? (
+                    <div className="bg-amber-50 rounded-2xl p-4 flex items-start gap-3">
+                      <RefreshCw size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-700 leading-relaxed">
+                        Esto reemplaza {cantFotos === 1 ? 'la foto rechazada' : 'las fotos rechazadas'} de
+                        una misión que ya enviaste. No suma puntos aparte: se acreditan los de esa misión
+                        cuando se aprueben todas sus fotos.
                       </p>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-gondo-verde-50 rounded-2xl p-4 flex items-center gap-3">
+                      <Star size={18} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-500">Puntos por esta misión</p>
+                        <p className="text-lg font-bold text-gondo-verde-400">
+                          +{formatearPuntos(
+                            campana.puntos_por_mision > 0
+                              ? campana.puntos_por_mision
+                              : campana.puntos_por_foto * cantFotos
+                          )} pts
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {errorGlobal && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm space-y-1">
@@ -2935,10 +3085,12 @@ function CapturaContent() {
                     className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl disabled:opacity-60 min-h-touch text-base shadow-lg"
                   >
                     {enviando
-                      ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />Enviando misión...</span>
-                      : cantFotos > 0
-                        ? `Enviar misión completa · ${cantFotos} foto${cantFotos !== 1 ? 's' : ''}`
-                        : 'Enviar misión completa'}
+                      ? <span className="flex items-center justify-center gap-2"><Loader2 size={18} className="animate-spin" />{esRetake ? 'Enviando...' : 'Enviando misión...'}</span>
+                      : esRetake
+                        ? `Enviar ${cantFotos === 1 ? 'la foto rehecha' : `las ${cantFotos} fotos rehechas`}`
+                        : cantFotos > 0
+                          ? `Enviar misión completa · ${cantFotos} foto${cantFotos !== 1 ? 's' : ''}`
+                          : 'Enviar misión completa'}
                   </button>
                 </>
               )

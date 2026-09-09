@@ -65,12 +65,15 @@ export default async function CampanasPage() {
       .from('misiones')
       .select('campana_id')
       .eq('gondolero_id', user.id),
-    // Fotos rechazadas: saber si hay algo para rehacer por campaña (con mision_id para el link de retake)
+    // Fotos rechazadas: saber si hay algo para rehacer por campaña (con mision_id para el link de retake).
+    // reemplazada_por IS NULL deja afuera las que ya se rehicieron: si no, el
+    // aviso de recaptura no se apagaba nunca y el retake se repetía infinito.
     supabase
       .from('fotos')
       .select('campana_id, mision_id')
       .eq('gondolero_id', user.id)
-      .eq('estado', 'rechazada'),
+      .eq('estado', 'rechazada')
+      .is('reemplazada_por', null),
   ])
 
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
