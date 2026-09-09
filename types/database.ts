@@ -577,30 +577,30 @@ export type Database = {
       configuracion: {
         Row: {
           clave: string
-          descripcion: string
+          descripcion: string | null
           id: string
-          seccion: string
-          tipo: string
+          seccion: string | null
+          tipo: string | null
           updated_at: string | null
           updated_by: string | null
           valor: string
         }
         Insert: {
           clave: string
-          descripcion: string
+          descripcion?: string | null
           id?: string
-          seccion: string
-          tipo: string
+          seccion?: string | null
+          tipo?: string | null
           updated_at?: string | null
           updated_by?: string | null
           valor: string
         }
         Update: {
           clave?: string
-          descripcion?: string
+          descripcion?: string | null
           id?: string
-          seccion?: string
-          tipo?: string
+          seccion?: string | null
+          tipo?: string | null
           updated_at?: string | null
           updated_by?: string | null
           valor?: string
@@ -617,19 +617,22 @@ export type Database = {
       }
       departamentos: {
         Row: {
+          created_at: string | null
           id: number
           nombre: string
-          provincia_id: number | null
+          provincia_id: number
         }
         Insert: {
+          created_at?: string | null
           id?: number
           nombre: string
-          provincia_id?: number | null
+          provincia_id: number
         }
         Update: {
+          created_at?: string | null
           id?: number
           nombre?: string
-          provincia_id?: number | null
+          provincia_id?: number
         }
         Relationships: [
           {
@@ -954,6 +957,7 @@ export type Database = {
           blur_score: number | null
           bounty_estado: string | null
           campana_id: string
+          campo_id: string | null
           comercio_id: string
           created_at: string | null
           declaracion: string | null
@@ -982,6 +986,7 @@ export type Database = {
           blur_score?: number | null
           bounty_estado?: string | null
           campana_id: string
+          campo_id?: string | null
           comercio_id: string
           created_at?: string | null
           declaracion?: string | null
@@ -1010,6 +1015,7 @@ export type Database = {
           blur_score?: number | null
           bounty_estado?: string | null
           campana_id?: string
+          campo_id?: string | null
           comercio_id?: string
           created_at?: string | null
           declaracion?: string | null
@@ -1046,6 +1052,13 @@ export type Database = {
             columns: ["campana_id"]
             isOneToOne: false
             referencedRelation: "campanas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fotos_campo_id_fkey"
+            columns: ["campo_id"]
+            isOneToOne: false
+            referencedRelation: "bloque_campos"
             referencedColumns: ["id"]
           },
           {
@@ -1230,22 +1243,22 @@ export type Database = {
       }
       localidades: {
         Row: {
-          departamento_id: number | null
+          created_at: string | null
+          departamento_id: number
           id: number
           nombre: string
-          provincia_id: number | null
         }
         Insert: {
-          departamento_id?: number | null
+          created_at?: string | null
+          departamento_id: number
           id?: number
           nombre: string
-          provincia_id?: number | null
         }
         Update: {
-          departamento_id?: number | null
+          created_at?: string | null
+          departamento_id?: number
           id?: number
           nombre?: string
-          provincia_id?: number | null
         }
         Relationships: [
           {
@@ -1253,13 +1266,6 @@ export type Database = {
             columns: ["departamento_id"]
             isOneToOne: false
             referencedRelation: "departamentos"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "localidades_provincia_id_fkey"
-            columns: ["provincia_id"]
-            isOneToOne: false
-            referencedRelation: "provincias"
             referencedColumns: ["id"]
           },
         ]
@@ -1357,7 +1363,7 @@ export type Database = {
           distri_id: string | null
           expira_at: string
           id: string
-          iniciado_por: string | null
+          iniciado_por: string
           marca_id: string | null
           token: string
           usado: boolean | null
@@ -1367,7 +1373,7 @@ export type Database = {
           distri_id?: string | null
           expira_at: string
           id?: string
-          iniciado_por?: string | null
+          iniciado_por: string
           marca_id?: string | null
           token: string
           usado?: boolean | null
@@ -1377,7 +1383,7 @@ export type Database = {
           distri_id?: string | null
           expira_at?: string
           id?: string
-          iniciado_por?: string | null
+          iniciado_por?: string
           marca_id?: string | null
           token?: string
           usado?: boolean | null
@@ -1761,13 +1767,12 @@ export type Database = {
           actor_id: string | null
           actor_tipo: string | null
           campana_id: string | null
-          created_at: string | null
-          foto_id: string | null
+          created_at: string
           gondolero_id: string | null
           id: string
-          leida: boolean | null
+          leida: boolean
           link_destino: string | null
-          mensaje: string
+          mensaje: string | null
           tipo: string
           titulo: string
         }
@@ -1775,13 +1780,12 @@ export type Database = {
           actor_id?: string | null
           actor_tipo?: string | null
           campana_id?: string | null
-          created_at?: string | null
-          foto_id?: string | null
+          created_at?: string
           gondolero_id?: string | null
           id?: string
-          leida?: boolean | null
+          leida?: boolean
           link_destino?: string | null
-          mensaje: string
+          mensaje?: string | null
           tipo: string
           titulo: string
         }
@@ -1789,13 +1793,12 @@ export type Database = {
           actor_id?: string | null
           actor_tipo?: string | null
           campana_id?: string | null
-          created_at?: string | null
-          foto_id?: string | null
+          created_at?: string
           gondolero_id?: string | null
           id?: string
-          leida?: boolean | null
+          leida?: boolean
           link_destino?: string | null
-          mensaje?: string
+          mensaje?: string | null
           tipo?: string
           titulo?: string
         }
@@ -1805,13 +1808,6 @@ export type Database = {
             columns: ["campana_id"]
             isOneToOne: false
             referencedRelation: "campanas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notificaciones_foto_id_fkey"
-            columns: ["foto_id"]
-            isOneToOne: false
-            referencedRelation: "fotos"
             referencedColumns: ["id"]
           },
           {
@@ -1958,14 +1954,17 @@ export type Database = {
       }
       provincias: {
         Row: {
+          created_at: string | null
           id: number
           nombre: string
         }
         Insert: {
+          created_at?: string | null
           id?: number
           nombre: string
         }
         Update: {
+          created_at?: string | null
           id?: number
           nombre?: string
         }
@@ -2308,10 +2307,6 @@ export type Database = {
             }
             Returns: string
           }
-      avg_precio_confirmado: {
-        Args: { campana_ids: string[] }
-        Returns: number
-      }
       disablelongtransactions: { Args: never; Returns: string }
       dropgeometrycolumn:
         | {
@@ -2447,14 +2442,6 @@ export type Database = {
       get_marca_id: { Args: never; Returns: string }
       get_tipo_actor: { Args: never; Returns: string }
       gettransactionid: { Args: never; Returns: unknown }
-      incrementar_fotos_aprobadas: {
-        Args: { p_gondolero_id: string }
-        Returns: undefined
-      }
-      incrementar_puntos: {
-        Args: { p_gondolero_id: string; p_monto: number }
-        Returns: undefined
-      }
       longtransactionsenabled: { Args: never; Returns: boolean }
       populate_geometry_columns:
         | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
