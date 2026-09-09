@@ -62,13 +62,15 @@ export default async function MarcaCampanaResultadosPage({
   if (tab) fotosQuery = (fotosQuery as any).eq('estado', tab)
 
   // Parallel queries
-  const [fotosData, fotosCuenta, precioData, partData, bloquesData] = await Promise.all([
+  const [fotosData, fotosCuenta, precioData, partData, bloquesData, misionesData] = await Promise.all([
     fotosQuery,
     admin.from('fotos').select('id, estado').eq('campana_id', params.id),
     admin.from('fotos').select('precio_detectado, precio_confirmado, created_at, gondolero:profiles(alias), comercio:comercios(nombre, direccion)').eq('campana_id', params.id).eq('estado', 'aprobada'),
     admin.from('participaciones').select('gondolero_id', { count: 'exact', head: true }).eq('campana_id', params.id),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any).from('bloques_foto').select('id, orden, instruccion, bloque_campos(id, tipo, pregunta, opciones, orden)').eq('campana_id', params.id).order('orden'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any).from('misiones').select('id, estado').eq('campana_id', params.id),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,6 +127,30 @@ export default async function MarcaCampanaResultadosPage({
     if (!campoValoresMap.has(r.campo_id)) campoValoresMap.set(r.campo_id, [])
     campoValoresMap.get(r.campo_id)!.push(r.valor)
   }
+
+  // ── Respuestas de campañas nuevas (mision_respuestas) ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allMisionIds = ((misionesData.data ?? []) as any[]).map((m: any) => m.id as string)
+  if (allMisionIds.length > 0) {
+    const { data: misionResps } = await (admin as any)
+      .from('mision_respuestas')
+      .select('mision_id, campo_id, valor')
+      .in('mision_id', allMisionIds)
+      .limit(20000)
+    for (const r of (misionResps ?? []) as any[]) {
+      if (!camposMap.has(r.campo_id)) continue
+      if (!campoValoresMap.has(r.campo_id)) campoValoresMap.set(r.campo_id, [])
+      campoValoresMap.get(r.campo_id)!.push(r.valor)
+    }
+  }
+
+  // ── Contadores reales de misiones ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const misionCounts = ((misionesData.data ?? []) as any[]).reduce((acc: Record<string,number>, m: any) => {
+    acc[m.estado] = (acc[m.estado] ?? 0) + 1; return acc
+  }, {} as Record<string,number>)
+  const misionesAprobadas = misionCounts['aprobada'] ?? 0
+  const misionesTotales   = Object.values(misionCounts).reduce((a,b) => a+b, 0)
 
   interface CampoStats { id: string; tipo: string; pregunta: string; opciones: string[] | null; orden: number; total: number; siCount?: number; noCount?: number; opcionCounts?: Record<string, number>; numAvg?: number; numMin?: number; numMax?: number; textUltimas?: string[] }
   const campoStats: CampoStats[] = []
@@ -239,7 +265,7 @@ export default async function MarcaCampanaResultadosPage({
         <div className="grid grid-cols-3 gap-3 mb-5">
           {[
             { label: 'Comercios relevados', value: c.comercios_relevados ?? 0, color: 'text-gray-900' },
-            { label: 'Misiones completadas', value: fotosAprobadas,             color: 'text-green-600' },
+            { label: 'Misiones completadas', value: misionesAprobadas,           color: 'text-green-600' },
             { label: 'Gondoleros activos',  value: gondoleroCount,              color: 'text-gondo-indigo-600' },
           ].map(m => (
             <div key={m.label} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
