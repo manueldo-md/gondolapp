@@ -71,7 +71,10 @@ export default async function CampanasPage() {
     // aviso de recaptura no se apagaba nunca y el retake se repetía infinito.
     // El embed de misiones es left join a propósito (sin !inner): las fotos
     // legacy sin mision_id tienen que seguir contando en el aviso.
-    supabase
+    // Admin client necesario: el embed a misiones devuelve null con el server
+    // client de usuario porque RLS sobre misiones ya está cerrado.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
       .from('fotos')
       .select('campana_id, mision_id, mision:misiones(estado)')
       .eq('gondolero_id', user.id)
@@ -125,7 +128,7 @@ export default async function CampanasPage() {
   // 'descartada', 'rechazada' y 'parcial' tampoco admiten retake.
   // DEBUG — borrar antes del merge a main
   console.log('[retake-debug] fotos rechazadas raw:', JSON.stringify(fotosRechazadasRes.data))
-  const fotosRetomables = (fotosRechazadasRes.data ?? [] as unknown[]).filter((f) => {
+  const fotosRetomables = (fotosRechazadasRes.data ?? [] as unknown[]).filter((f: unknown) => {
     const row = f as FotoRechazadaRow
     const estado = Array.isArray(row.mision) ? row.mision[0]?.estado : row.mision?.estado
     console.log('[retake-debug] mision_id:', row.mision_id, '| mision raw:', JSON.stringify(row.mision), '| estado extraído:', estado, '| pasa filtro:', estado === 'pendiente')
