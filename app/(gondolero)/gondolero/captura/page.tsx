@@ -1519,9 +1519,9 @@ function CapturaContent() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen px-6 gap-4">
         <p className="text-gray-600 text-center">No se especificó ninguna campaña.</p>
-        <button onClick={() => router.push('/gondolero/misiones')}
+        <button onClick={() => { window.location.href = '/gondolero/campanas' }}
           className="px-6 py-3 bg-gondo-verde-400 text-white rounded-xl font-semibold">
-          Ir a mis misiones
+          Ver campañas
         </button>
       </div>
     )

@@ -90,7 +90,7 @@ function NavItem({
                   Seguir capturando
                 </button>
                 <button
-                  onClick={() => { setShowDialog(false); router.push(href) }}
+                  onClick={() => { setShowDialog(false); window.location.href = href }}
                   className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl"
                 >
                   Salir igual
