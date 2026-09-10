@@ -116,10 +116,19 @@ export default async function CampanasPage() {
     mision_id: string
     mision: { estado: string } | { estado: string }[] | null
   }
-  for (const f of (fotosRechazadasRes.data ?? []) as unknown as FotoRechazadaRow[]) {
-    // Una misión descartada ya no pide nada: el gondolero resignó esa misión.
-    const misionEstado = Array.isArray(f.mision) ? f.mision[0]?.estado : f.mision?.estado
-    if (misionEstado === 'descartada') continue
+  // Solo las fotos cuya misión está en 'pendiente' admiten retake.
+  // 'aprobada' queda fuera a propósito: si una foto fue rechazada dentro de
+  // una misión ya aprobada, esa foto queda sin resolución posible (el gondolero
+  // cobró los puntos y la misión cerró). Agregarla acá crearía un CTA que manda
+  // a retomar una misión aprobada — flujo incoherente. Si aparece ese escenario,
+  // resolverlo desde el panel de admin, no desde el retake del gondolero.
+  // 'descartada', 'rechazada' y 'parcial' tampoco admiten retake.
+  const fotosRetomables = (fotosRechazadasRes.data ?? [] as unknown[]).filter((f) => {
+    const row = f as FotoRechazadaRow
+    const estado = Array.isArray(row.mision) ? row.mision[0]?.estado : row.mision?.estado
+    return estado === 'pendiente'
+  }) as FotoRechazadaRow[]
+  for (const f of fotosRetomables) {
     fotosRechazadasPorCampana.set(f.campana_id, (fotosRechazadasPorCampana.get(f.campana_id) ?? 0) + 1)
     if (!misionRetakePorCampana.has(f.campana_id)) {
       misionRetakePorCampana.set(f.campana_id, f.mision_id)
