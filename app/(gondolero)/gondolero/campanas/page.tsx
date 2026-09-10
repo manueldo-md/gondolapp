@@ -64,7 +64,7 @@ export default async function CampanasPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('misiones')
-      .select('campana_id')
+      .select('campana_id, estado')
       .eq('gondolero_id', user.id),
     // Fotos rechazadas: saber si hay algo para rehacer por campaña (con mision_id para el link de retake).
     // reemplazada_por IS NULL deja afuera las que ya se rehicieron: si no, el
@@ -99,12 +99,19 @@ export default async function CampanasPage() {
     ? (misDistrisFixerRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
     : (misDistrisGondoleroRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
 
-  // Misiones: qué campañas tiene el gondolero y cuántas misiones por campaña
+  // Misiones: qué campañas tiene el gondolero y cuántas misiones por campaña.
+  // misionCampanaIds se llena con TODAS las misiones (incluidas 'descartada')
+  // para que una campaña donde solo hay misiones descartadas no desaparezca
+  // de la lista — el gondolero tiene que poder volver a entrar.
+  // misionesCountMap excluye 'descartada', igual que misionesQueOcupanCupo en
+  // campanas/[id]/page.tsx: muestra las misiones que ocupan cupo real.
   const misionCampanaIds = new Set<string>()
   const misionesCountMap = new Map<string, number>()
-  for (const m of (misionesRes.data ?? []) as { campana_id: string }[]) {
+  for (const m of (misionesRes.data ?? []) as { campana_id: string; estado: string }[]) {
     misionCampanaIds.add(m.campana_id)
-    misionesCountMap.set(m.campana_id, (misionesCountMap.get(m.campana_id) ?? 0) + 1)
+    if (m.estado !== 'descartada') {
+      misionesCountMap.set(m.campana_id, (misionesCountMap.get(m.campana_id) ?? 0) + 1)
+    }
   }
 
   // Fotos rechazadas por campaña (para mostrar aviso de recaptura)
