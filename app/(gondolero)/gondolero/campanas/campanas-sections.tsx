@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
-  Star, Clock, Camera, CheckCircle2, ChevronDown, ChevronRight, DollarSign,
+  Star, Clock, Camera, CheckCircle2, ChevronDown, ChevronRight, DollarSign, WifiOff,
 } from 'lucide-react'
+import { get, set } from 'idb-keyval'
+import { createClient } from '@/lib/supabase/client'
 import {
   labelTipoCampana,
   diasRestantes,
@@ -12,6 +14,12 @@ import {
   formatearPuntos,
 } from '@/lib/utils'
 import type { TipoCampana } from '@/types'
+import {
+  CAMPANA_CACHE_PREFIX,
+  COMERCIOS_CACHE_KEY,
+  CAMPANA_CACHE_SELECT,
+  toCampanaData,
+} from '@/lib/campana-cache'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -70,6 +78,7 @@ function CampanaCard({
   fotosRechazadas = 0,
   misionRetakeId,
   misionesConRechazo = 0,
+  esCacheada = false,
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
@@ -79,6 +88,8 @@ function CampanaCard({
   fotosRechazadas?: number
   misionRetakeId?: string
   misionesConRechazo?: number
+  /** Si los datos de captura de esta campaña están listos en IndexedDB para uso offline */
+  esCacheada?: boolean
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
@@ -165,6 +176,12 @@ function CampanaCard({
           {inscripcionProntoCierra && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">
               Inscripción cierra en {diasInscripcion === 0 ? 'hoy' : `${diasInscripcion}d`}
+            </span>
+          )}
+          {esCacheada && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">
+              <WifiOff size={10} />
+              Campo
             </span>
           )}
         </div>
@@ -406,6 +423,7 @@ export function CampanasSections({
   finalizadas,
   gondoleroNivel,
   misDistriIds,
+  gondoleroLocalidadIds = [],
   comerciosCompletadosRecord,
   fotosRechazadasRecord = {},
   misionRetakeRecord = {},
@@ -416,11 +434,91 @@ export function CampanasSections({
   finalizadas: CampanaCardData[]
   gondoleroNivel: string
   misDistriIds: string[]
+  /** IDs de localidades del gondolero — para filtrar la query de comercios al precargar */
+  gondoleroLocalidadIds?: number[]
   comerciosCompletadosRecord: Record<string, number>
   fotosRechazadasRecord?: Record<string, number>
   misionRetakeRecord?: Record<string, string>
   misionesConRechazoRecord?: Record<string, number>
 }) {
+  // ── Estado: qué campañas de "Mis campañas" están listas para uso offline ──────
+  const [campanasCacheadas, setCampanasCacheadas] = useState<Set<string>>(new Set())
+
+  // useEffect 1: leer IDB en background para mostrar el chip "Campo" sin bloquear el render
+  useEffect(() => {
+    const ids = misCampanas.map(c => c.id)
+    if (ids.length === 0) return
+
+    Promise.all(
+      ids.map(async (id) => {
+        try {
+          const cached = await get(CAMPANA_CACHE_PREFIX + id)
+          return cached ? id : null
+        } catch {
+          return null
+        }
+      })
+    ).then(results => {
+      const found = new Set(results.filter((id): id is string => id !== null))
+      if (found.size > 0) setCampanasCacheadas(found)
+    })
+  }, [misCampanas])
+
+  // useEffect 2: precargar datos de cada campaña + comercios + URLs de detalle (background, sin bloquear render)
+  useEffect(() => {
+    if (misCampanas.length === 0) return
+
+    const prefetch = async () => {
+      const supabase = createClient()
+
+      // 1. IndexedDB: datos de captura de cada campaña activa
+      for (const c of misCampanas) {
+        try {
+          const already = await get(CAMPANA_CACHE_PREFIX + c.id)
+          if (already) continue
+          const { data } = await supabase
+            .from('campanas')
+            .select(CAMPANA_CACHE_SELECT)
+            .eq('id', c.id)
+            .single()
+          if (data) {
+            await set(CAMPANA_CACHE_PREFIX + c.id, toCampanaData(data))
+            setCampanasCacheadas(prev => new Set(prev).add(c.id))
+          }
+        } catch { /* sin red — se reintentará la próxima vez */ }
+      }
+
+      // 2. IndexedDB: comercios filtrados por localidad (o todos si no hay localidades)
+      try {
+        const alreadyComercio = await get(COMERCIOS_CACHE_KEY)
+        if (!alreadyComercio) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let query: any = supabase
+            .from('comercios')
+            .select('id, nombre, lat, lng, tipo, localidad_id')
+          if (gondoleroLocalidadIds.length > 0) {
+            query = query.in('localidad_id', gondoleroLocalidadIds)
+          } else {
+            query = query.limit(1500)
+          }
+          const { data } = await query
+          if (data) await set(COMERCIOS_CACHE_KEY, data)
+        }
+      } catch { /* sin red */ }
+
+      // 3. SW: precachear las URLs de detalle de cada campaña activa
+      try {
+        const urls = misCampanas.map(c => `/gondolero/campanas/${c.id}`)
+        if (navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE_URLS', urls })
+        }
+      } catch { /* SW no disponible */ }
+    }
+
+    prefetch()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [misCampanas, gondoleroLocalidadIds])
+
   const hayAlgo = misCampanas.length + disponibles.length + finalizadas.length > 0
 
   if (!hayAlgo) {
@@ -461,6 +559,7 @@ export function CampanasSections({
               fotosRechazadas={fotosRechazadasRecord[c.id] ?? 0}
               misionRetakeId={misionRetakeRecord[c.id]}
               misionesConRechazo={misionesConRechazoRecord[c.id] ?? 0}
+              esCacheada={campanasCacheadas.has(c.id)}
             />
           ))}
         </Seccion>
