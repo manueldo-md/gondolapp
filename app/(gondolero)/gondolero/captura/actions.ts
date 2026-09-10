@@ -58,8 +58,12 @@ export async function registrarFoto(params: RegistrarFotoParams) {
     throw new Error('No tenés una participación activa en esta campaña.')
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any
+  // Admin client para tablas con RLS restringida a service_role.
+  const db = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  ) as any
 
   // Crear registro de foto
   const { data: foto, error: fotoError } = await db
@@ -201,11 +205,20 @@ export async function registrarMision(params: RegistrarMisionParams) {
     throw new Error('La campaña no está activa.')
   }
 
+  // Admin client para tablas con RLS restringida a service_role.
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
   // Verificar que el gondolero no superó el máximo de comercios permitido.
   // Las descartadas no cuentan: el gondolero no completó esa misión, así que
   // le queda el cupo libre para hacer otra en su lugar.
   if (campana.max_comercios_por_gondolero) {
-    const { count } = await db0
+    const { count } = await db
       .from('misiones')
       .select('id', { count: 'exact', head: true })
       .eq('campana_id', params.campanaId)
@@ -216,14 +229,6 @@ export async function registrarMision(params: RegistrarMisionParams) {
       throw new Error(`Ya completaste el máximo de ${campana.max_comercios_por_gondolero} comercios en esta campaña.`)
     }
   }
-
-  const admin = createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = admin as any
 
   // 1. Crear la misión
   const { data: mision, error: misionError } = await db
@@ -768,4 +773,36 @@ export async function asegurarBloqueGenerico(campanaId: string): Promise<string>
 
   if (error) throw new Error('No se pudo configurar el bloque: ' + error.message)
   return nuevo.id
+}
+
+/**
+ * Devuelve los campos mínimos de una misión para el flujo de retake.
+ * Usa adminClient y valida que la misión pertenezca al usuario antes de
+ * devolver cualquier dato — si no es suya, retorna null.
+ * Esta server action reemplaza la query directa al browser client en captura/page.tsx.
+ */
+export async function getMisionParaRetake(
+  misionId: string
+): Promise<{ id: string; estado: string; puntos_total: number } | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  const { data } = await (admin as any)
+    .from('misiones')
+    .select('id, estado, puntos_total, gondolero_id')
+    .eq('id', misionId)
+    .maybeSingle()
+
+  if (!data) return null
+  // Validar propiedad: no devolver nada si la misión no es del usuario.
+  if (data.gondolero_id !== user.id) return null
+
+  return { id: data.id, estado: data.estado, puntos_total: data.puntos_total }
 }

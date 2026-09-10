@@ -61,7 +61,8 @@ export default async function CampanasPage() {
       .select('distri_id')
       .eq('fixer_id', user.id)
       .eq('estado', 'aprobada'),
-    supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
       .from('misiones')
       .select('campana_id')
       .eq('gondolero_id', user.id),

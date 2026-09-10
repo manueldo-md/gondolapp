@@ -152,7 +152,8 @@ export default async function CampanaDetallePage({
       .select('distri_id')
       .eq('fixer_id', user.id)
       .eq('estado', 'aprobada'),
-    supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
       .from('misiones')
       .select('id, estado, bounty_estado, puntos_total, created_at, comercio:comercios ( nombre, direccion )')
       .eq('campana_id', params.id)

@@ -20,7 +20,7 @@ import {
 import { useGPS, useOfflineQueue } from '@/lib/hooks'
 import {
   registrarMision, registrarRecaptura, descartarRecaptura, subirFoto,
-  asegurarBloqueGenerico, obtenerConfigCompresion,
+  asegurarBloqueGenerico, obtenerConfigCompresion, getMisionParaRetake,
   type FotoRecapturaInput,
 } from './actions'
 import { crearComercioNuevo, crearComercioParaCaptura, subirFotoFachada } from './actions-comercios'
@@ -843,13 +843,9 @@ function CapturaContent() {
   useEffect(() => {
     if (!retakeMisionId || !campana || cargando) return
 
-    supabase
-      .from('misiones')
-      .select('id, estado, puntos_total')
-      .eq('id', retakeMisionId)
-      .maybeSingle()
-      .then(async ({ data: misionRow }) => {
-        const mision = misionRow as { estado: string; puntos_total: number } | null
+    getMisionParaRetake(retakeMisionId)
+      .then(async (misionRow) => {
+        const mision = misionRow
         if (!mision) {
           setErrorGlobal('No encontramos la misión.')
           return
