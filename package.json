@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node scripts/generate-sw-manifest.js",
     "start": "next start",
     "lint": "next lint",
     "db:types": "supabase gen types typescript --linked > types/database.ts",

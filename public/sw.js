@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gondolapp-v8'
+const CACHE_NAME = 'gondolapp-v9'
 const STATIC_URLS = [
   // '/' eliminada: siempre redirige según sesión (→ /auth o → /gondolero/campanas
   // según el middleware). Cachear una respuesta 302 envenena el cache y rompe la
@@ -12,7 +12,7 @@ const STATIC_URLS = [
   '/offline',          // fallback siempre disponible
 ]
 
-// Instalar y cachear páginas principales
+// Instalar y cachear páginas principales + chunks JS de rutas offline-críticas
 //
 // IMPORTANTE: NO usar cache.addAll() — sigue los redirects de forma transparente
 // y guarda el HTML del destino (ej. /auth) bajo la URL original (ej. /gondolero/campanas).
@@ -25,6 +25,8 @@ const STATIC_URLS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
+
+      // 1. Páginas principales (HTML de navegación)
       for (const url of STATIC_URLS) {
         try {
           const response = await fetch(url)
@@ -33,6 +35,36 @@ self.addEventListener('install', (event) => {
           }
         } catch { /* sin red al instalar — se cachea en la primera visita con señal */ }
       }
+
+      // 2. Chunks JS de rutas offline-críticas desde sw-manifest.json
+      //    generado en build time por scripts/generate-sw-manifest.js.
+      //
+      //    Si falla (archivo no existe, sin red, formato inesperado): loguear y
+      //    continuar. La instalación del SW no se cancela. Peor caso: sin chunks
+      //    precacheados, pero el fetch handler los cacheará en la primera visita.
+      try {
+        const manifestRes = await fetch('/sw-manifest.json')
+        if (!manifestRes.ok) throw new Error(`HTTP ${manifestRes.status}`)
+        const manifest = await manifestRes.json()
+        if (!Array.isArray(manifest?.chunks)) throw new Error('formato inesperado — chunks no es array')
+
+        let cacheados = 0
+        for (const url of manifest.chunks) {
+          try {
+            const already = await cache.match(url)
+            if (already) { cacheados++; continue }
+            const res = await fetch(url)
+            if (res.ok && !res.redirected) {
+              await cache.put(url, res.clone())
+              cacheados++
+            }
+          } catch { /* chunk individual sin red — continuar con los demás */ }
+        }
+        console.log(`[SW v9] Precacheados ${cacheados}/${manifest.chunks.length} chunks de /sw-manifest.json`)
+      } catch (err) {
+        console.warn('[SW v9] /sw-manifest.json no disponible — instalación continúa sin precache de chunks:', err.message)
+      }
+
     })
   )
   self.skipWaiting()
@@ -40,7 +72,7 @@ self.addEventListener('install', (event) => {
 
 // Activar y limpiar caches viejos
 //
-// Al cambiar CACHE_NAME (v6 → v8, etc.) este handler borra el cache anterior,
+// Al cambiar CACHE_NAME (v8 → v9, etc.) este handler borra el cache anterior,
 // incluyendo cualquier cache envenenado con redirects. Con clients.claim() el
 // nuevo SW toma control de todas las pestañas abiertas sin esperar recarga.
 self.addEventListener('activate', (event) => {
@@ -57,6 +89,8 @@ self.addEventListener('activate', (event) => {
 
 // Interceptar requests
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url)
+
   // ── Solo el propio origen ───────────────────────────────────────────────
   // Sin esto, el SW interceptaba TODOS los requests y los re-emitía con
   // fetch(event.request), incluidos los <img> cross-origin. Eso convierte una
@@ -71,7 +105,29 @@ self.addEventListener('fetch', (event) => {
   //
   // Además de arreglar el síntoma, esto evita que cada dominio de imágenes
   // nuevo (Storage de Supabase, un CDN, lo que venga) obligue a tocar la CSP.
-  if (new URL(event.request.url).origin !== self.location.origin) return
+  if (url.origin !== self.location.origin) return
+
+  // ── Chunks de Next.js: cache-first con escritura automática ─────────────
+  // Los archivos en /_next/static/ tienen hash en el nombre → son inmutables.
+  // Los cacheamos agresivamente: una vez descargados, están disponibles offline
+  // para siempre (hasta que cambie CACHE_NAME en el próximo deploy y activate
+  // limpie este cache).
+  //
+  // Esto complementa el precache del install: cualquier chunk que el browser
+  // descargue en-session queda también en cache, sin depender de sw-manifest.json.
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(cache =>
+        cache.match(event.request).then(cached =>
+          cached || fetch(event.request).then(res => {
+            if (res.ok) cache.put(event.request, res.clone())
+            return res
+          })
+        )
+      )
+    )
+    return
+  }
 
   // ── Navegación: stale-while-revalidate ──────────────────────────────────
   // Sirve desde cache inmediatamente (si existe) y en paralelo hace el fetch
@@ -86,11 +142,10 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // ── Assets estáticos: cache-first ────────────────────────────────────────
+  // ── Otros assets del mismo origen: cache-first sin escritura ─────────────
+  // (favicon, imágenes de /public, íconos, etc.)
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      return cached || fetch(event.request)
-    })
+    caches.match(event.request).then(cached => cached || fetch(event.request))
   )
 })
 

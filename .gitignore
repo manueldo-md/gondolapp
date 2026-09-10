@@ -39,6 +39,9 @@ yarn-error.log*
 # supabase temp files
 supabase/.temp/
 
+# generado en build por scripts/generate-sw-manifest.js — no commitear versiones viejas
+/public/sw-manifest.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
