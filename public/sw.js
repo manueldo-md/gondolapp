@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gondolapp-v4'
+const CACHE_NAME = 'gondolapp-v5'
 const STATIC_URLS = [
   '/',
   '/gondolero/campanas',
@@ -6,6 +6,7 @@ const STATIC_URLS = [
   '/gondolero/actividad',
   '/gondolero/perfil',
   '/gondolero/captura',
+  '/offline',          // fallback siempre disponible
 ]
 
 // Instalar y cachear páginas principales
@@ -49,35 +50,66 @@ self.addEventListener('fetch', (event) => {
   // nuevo (Storage de Supabase, un CDN, lo que venga) obligue a tocar la CSP.
   if (new URL(event.request.url).origin !== self.location.origin) return
 
-  // Solo para navegación (páginas)
+  // ── Navegación: stale-while-revalidate ──────────────────────────────────
+  // Sirve desde cache inmediatamente (si existe) y en paralelo hace el fetch
+  // para actualizar el cache para la próxima visita.
+  //
+  // ignoreSearch: true — /gondolero/captura?campana=X matchea el cache de
+  // /gondolero/captura. Seguro porque esa página es un Client Component puro:
+  // el HTML que sirve el servidor es idéntico sin importar los query params.
+  // Los datos de la campaña los carga el cliente desde IndexedDB o Supabase.
   if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          // Cachear la respuesta fresca
-          const clone = response.clone()
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, clone)
-          })
-          return response
-        })
-        .catch(() => {
-          // Sin conexión → usar cache
-          return caches.match(event.request)
-            .then(cached => {
-              if (cached) return cached
-              // Si no hay cache, mostrar página offline
-              return caches.match('/offline')
-            })
-        })
-    )
+    event.respondWith(navegacionSWR(event.request))
     return
   }
 
-  // Para assets estáticos: cache first
+  // ── Assets estáticos: cache-first ────────────────────────────────────────
   event.respondWith(
     caches.match(event.request).then(cached => {
       return cached || fetch(event.request)
     })
   )
 })
+
+async function navegacionSWR(request) {
+  const cache = await caches.open(CACHE_NAME)
+
+  // Buscar en cache ignorando query params (seguro solo para navegación —
+  // ver comentario en el handler de fetch arriba).
+  const cached = await cache.match(request, { ignoreSearch: true })
+
+  // Revalidación en background: fetch + actualizar cache + notificar clientes
+  const revalidacion = fetch(request)
+    .then(async (response) => {
+      if (response.ok) {
+        await cache.put(request, response.clone())
+
+        // Avisar a todas las pestañas abiertas para que actualicen sus datos.
+        // Cada pestaña decide si hace router.refresh() según su propia ruta
+        // (ver SwUpdater en components/shared/sw-updater.tsx).
+        const clientes = await self.clients.matchAll({ type: 'window' })
+        const { pathname } = new URL(request.url)
+        for (const cliente of clientes) {
+          cliente.postMessage({ type: 'SW_UPDATED', pathname })
+        }
+      }
+      return response
+    })
+    .catch(() => null)
+
+  if (cached) {
+    // Cache hit → servir inmediatamente, revalidar en background (fire-and-forget)
+    return cached
+  }
+
+  // Sin cache → esperar al network
+  const networkResponse = await revalidacion
+  if (networkResponse) return networkResponse
+
+  // Sin cache y sin red → fallback a /offline
+  const offline = await cache.match('/offline')
+  return offline ?? new Response(
+    'Sin conexión. Abrí la app con señal para continuar.',
+    { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+  )
+}
