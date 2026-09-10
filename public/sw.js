@@ -1,6 +1,8 @@
-const CACHE_NAME = 'gondolapp-v6'
+const CACHE_NAME = 'gondolapp-v8'
 const STATIC_URLS = [
-  '/',
+  // '/' eliminada: siempre redirige según sesión (→ /auth o → /gondolero/campanas
+  // según el middleware). Cachear una respuesta 302 envenena el cache y rompe la
+  // navegación para todos los usuarios. No tiene sentido cachearla nunca.
   '/gondolero/campanas',
   '/gondolero/misiones',
   '/gondolero/actividad',
@@ -11,16 +13,36 @@ const STATIC_URLS = [
 ]
 
 // Instalar y cachear páginas principales
+//
+// IMPORTANTE: NO usar cache.addAll() — sigue los redirects de forma transparente
+// y guarda el HTML del destino (ej. /auth) bajo la URL original (ej. /gondolero/campanas).
+// El browser no puede usar esa respuesta como navegación y la app queda rota
+// para todos los usuarios después del primer load sin sesión.
+//
+// El loop manual con !response.redirected lo previene: si el middleware redirige
+// la URL (sesión vencida o inexistente durante el install), simplemente no la
+// cacheamos. Se cacheará en la primera visita real con sesión activa.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_URLS)
+    caches.open(CACHE_NAME).then(async (cache) => {
+      for (const url of STATIC_URLS) {
+        try {
+          const response = await fetch(url)
+          if (response.ok && !response.redirected) {
+            await cache.put(url, response)
+          }
+        } catch { /* sin red al instalar — se cachea en la primera visita con señal */ }
+      }
     })
   )
   self.skipWaiting()
 })
 
 // Activar y limpiar caches viejos
+//
+// Al cambiar CACHE_NAME (v6 → v8, etc.) este handler borra el cache anterior,
+// incluyendo cualquier cache envenenado con redirects. Con clients.claim() el
+// nuevo SW toma control de todas las pestañas abiertas sin esperar recarga.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -82,7 +104,12 @@ async function navegacionSWR(request) {
   // Revalidación en background: fetch + actualizar cache + notificar clientes
   const revalidacion = fetch(request)
     .then(async (response) => {
-      if (response.ok) {
+      // NUNCA cachear una respuesta que llegó vía redirect.
+      // response.redirected=true cuando fetch siguió un 302/301 (ej: el middleware
+      // redirigió /gondolero/campanas → /auth por sesión vencida). Guardarlo bajo
+      // la URL original haría que el SW sirva el HTML de /auth cuando el usuario
+      // pide /gondolero/campanas — la app queda rota hasta que se borre el cache.
+      if (response.ok && !response.redirected) {
         await cache.put(request, response.clone())
 
         // Avisar a todas las pestañas abiertas para que actualicen sus datos.
