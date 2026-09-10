@@ -94,6 +94,25 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
+// ── Precache bajo demanda (postMessage desde la app) ─────────────────────────
+// La app manda { type: 'PRECACHE_URLS', urls: ['/gondolero/campanas/123', ...] }
+// cuando el gondolero abre la lista de campañas con señal. El SW descarga cada
+// URL en cache para que esté disponible offline sin que el usuario la haya
+// visitado antes. El guard !response.redirected previene cachear el HTML de
+// /auth bajo una URL protegida (mismo bug que en install y navegacionSWR).
+self.addEventListener('message', async (event) => {
+  if (event.data?.type !== 'PRECACHE_URLS') return
+  const cache = await caches.open(CACHE_NAME)
+  for (const url of (event.data.urls ?? [])) {
+    try {
+      const already = await cache.match(url)
+      if (already) continue   // ya está en cache — no volver a bajar
+      const response = await fetch(url)
+      if (response.ok && !response.redirected) await cache.put(url, response.clone())
+    } catch { /* sin red — se reintentará la próxima vez */ }
+  }
+})
+
 async function navegacionSWR(request) {
   const cache = await caches.open(CACHE_NAME)
 

@@ -332,6 +332,7 @@ export default async function CampanasPage() {
           finalizadas={finalizadas}
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}
+          gondoleroLocalidadIds={localidadIds}
           comerciosCompletadosRecord={comerciosCompletadosRecord}
           fotosRechazadasRecord={fotosRechazadasRecord}
           misionRetakeRecord={misionRetakeRecord}
