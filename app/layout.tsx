@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { SwRegistrar } from '@/components/sw-registrar'
+import { SwUpdater } from '@/components/shared/sw-updater'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
@@ -55,6 +56,7 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased bg-gray-50">
         <SwRegistrar />
+        <SwUpdater />
         {children}
       </body>
     </html>

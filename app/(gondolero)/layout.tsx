@@ -3,7 +3,6 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { GondoleroNav } from './gondolero-nav'
 import { InstalarAppBanner } from '@/components/mobile/instalar-app-banner'
 import { NavigationProgress } from '@/components/mobile/navigation-progress'
-import { SwUpdater } from '@/components/shared/sw-updater'
 
 export default async function GondoleroLayout({
   children,
@@ -54,7 +53,6 @@ export default async function GondoleroLayout({
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      <SwUpdater />
       <NavigationProgress />
       <InstalarAppBanner />
       <main className="flex-1 overflow-y-auto pb-20">

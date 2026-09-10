@@ -5,55 +5,77 @@
  *
  * 1. Auto-reload cuando el SW se actualiza (controllerchange)
  *    Al montar, llama registration.update() para forzar el chequeo de nueva
- *    versión de sw.js sin depender del throttle de 24h del browser. Si hay un
- *    SW nuevo, skipWaiting()+clients.claim() lo activan; el evento
- *    controllerchange dispara window.location.reload() exactamente una vez.
- *    El gondolero ve el reload como la app cargando — no necesita hacer nada.
+ *    versión de sw.js. Si hay un SW nuevo, skipWaiting()+clients.claim() lo
+ *    activan; controllerchange dispara window.location.reload() exactamente
+ *    una vez — salvo que el gondolero esté en captura, donde el reload se
+ *    difiere hasta que salga de esa ruta para no perderle la foto.
  *
  * 2. router.refresh() cuando el SW revalida el cache en background (SW_UPDATED)
  *    El SW envía { type: 'SW_UPDATED', pathname } después de cachear una
- *    respuesta fresca (estrategia stale-while-revalidate). Si la pestaña está
- *    en esa misma ruta, router.refresh() re-renderiza los Server Components
- *    sin desmontar los Client Components ni perder estado de React.
+ *    respuesta fresca (stale-while-revalidate). Si la pestaña está en esa
+ *    ruta, router.refresh() re-renderiza los Server Components sin perder
+ *    estado de React.
  */
 
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { useEffect, useRef } from 'react'
+
+// Rutas donde NO se hace router.refresh() (Client Components puros sin datos server-rendered)
+// y donde NO se hace auto-reload inmediato (estado frágil — foto en progreso).
+const RUTAS_CAPTURA = '/gondolero/captura'
 
 // Rutas que son Client Components puros — router.refresh() no aporta nada
-// (y en captura específicamente el gondolero puede estar con foto y formulario
-// a medio llenar, aunque refresh() sería inocuo porque el estado sobrevive).
-const PAGINAS_CLIENTE = ['/gondolero/captura']
+const PAGINAS_CLIENTE = [RUTAS_CAPTURA]
 
 export function SwUpdater() {
-  const router = useRouter()
+  const router   = useRouter()
+  const pathname = usePathname()
+
+  // pathname de usePathname() nunca incluye query string:
+  // /gondolero/captura?campana=X&retake=Y → '/gondolero/captura'
+  // Así que startsWith cubre tanto la ruta base como el retake con params.
+  const enCaptura = pathname.startsWith(RUTAS_CAPTURA)
+
+  // Refs para acceso sin closure stale dentro del handler del evento.
+  // enCapturaRef: valor actual de enCaptura que el handler puede leer en cualquier momento.
+  // reloadPendienteRef: true si controllerchange se disparó mientras estábamos en captura.
+  const enCapturaRef       = useRef(enCaptura)
+  const reloadPendienteRef = useRef(false)
+
+  // Mantener enCapturaRef sincronizado después de cada render (sin array de deps
+  // para que se actualice siempre, no solo cuando enCaptura cambia).
+  useEffect(() => {
+    enCapturaRef.current = enCaptura
+  })
+
+  // Cuando el usuario sale de captura: ejecutar el reload pendiente si lo había.
+  // El gondolero termina la captura → navega a /gondolero/campanas → enCaptura
+  // pasa a false → este effect se dispara → reload.
+  useEffect(() => {
+    if (!enCaptura && reloadPendienteRef.current) {
+      reloadPendienteRef.current = false
+      window.location.reload()
+    }
+  }, [enCaptura])
 
   // ── Auto-reload al recibir un SW nuevo ──────────────────────────────────────
-  // registration.update() fuerza el chequeo de sw.js al montar, ignorando el
-  // throttle de 24h. Si hay una versión nueva, el SW la instala y activa sola
-  // (skipWaiting+clients.claim están en el SW). El evento controllerchange se
-  // dispara exactamente cuando el nuevo SW toma control — en ese momento el
-  // cache viejo ya está borrado y un reload sirve la versión nueva.
-  //
-  // Sin esto: el gondolero abre la app, la app sigue con el SW viejo hasta la
-  // próxima navegación que el browser decida hacer el chequeo. Con esto: el
-  // chequeo ocurre siempre en cada apertura de la app, y si hay SW nuevo el
-  // reload es automático e imperceptible.
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
 
-    // Forzar chequeo de nueva versión al montar
-    navigator.serviceWorker.getRegistration().then(reg => {
-      reg?.update()
-    })
+    // Forzar chequeo de nueva versión al montar (ignora throttle de 24h).
+    navigator.serviceWorker.getRegistration().then(reg => { reg?.update() })
 
-    // Recargar una sola vez cuando el nuevo SW toma control.
-    // El guard 'reloading' previene loops: aunque reload() pudiera disparar
-    // otro controllerchange (no debería — el nuevo SW ya es el controller),
-    // el flag lo detiene.
     let reloading = false
     const handleControllerChange = () => {
       if (reloading) return
+
+      if (enCapturaRef.current) {
+        // Estamos en captura — diferir el reload para no interrumpir la foto.
+        // El useEffect([enCaptura]) lo ejecutará cuando el usuario salga.
+        reloadPendienteRef.current = true
+        return
+      }
+
       reloading = true
       window.location.reload()
     }
@@ -69,16 +91,14 @@ export function SwUpdater() {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type !== 'SW_UPDATED') return
 
-      const { pathname } = event.data as { type: string; pathname: string }
+      const { pathname: updatedPath } = event.data as { type: string; pathname: string }
 
       // Solo actuar si estamos en la página que se actualizó
-      if (window.location.pathname !== pathname) return
+      if (window.location.pathname !== updatedPath) return
 
       // Omitir páginas Client Component (no tienen datos server-rendered)
-      if (PAGINAS_CLIENTE.some(p => pathname.startsWith(p))) return
+      if (PAGINAS_CLIENTE.some(p => updatedPath.startsWith(p))) return
 
-      // Re-renderizar los Server Components de la ruta actual.
-      // No desmonta Client Components ni pierde estado de React.
       router.refresh()
     }
 
