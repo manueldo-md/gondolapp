@@ -517,9 +517,22 @@ export function CampanasSections({
         }
       } catch { /* sin red */ }
 
-      // 3. SW: precachear las URLs de detalle de cada campaña activa
+      // 3. SW: precachear rutas protegidas que el usuario necesita offline.
+      //
+      // Las rutas /gondolero/* son protegidas por el middleware y no se pueden
+      // precachear en el install del SW (sin garantía de sesión activa).
+      // Este postMessage corre con sesión garantizada → el SW las descarga y
+      // guarda el HTML correcto, no el HTML de /auth.
+      //
+      // Orden de prioridad: primero captura y perfil (rutas que el gondolero
+      // puede necesitar offline sin haber visitado antes), luego los detalles
+      // de cada campaña activa.
       try {
-        const urls = misCampanas.map(c => `/gondolero/campanas/${c.id}`)
+        const urls = [
+          '/gondolero/captura',   // ruta offline-crítica, nunca visitada directamente
+          '/gondolero/perfil',    // enlazada desde /offline, también protegida
+          ...misCampanas.map(c => `/gondolero/campanas/${c.id}`),
+        ]
         if (navigator.serviceWorker?.controller) {
           navigator.serviceWorker.controller.postMessage({ type: 'PRECACHE_URLS', urls })
         }

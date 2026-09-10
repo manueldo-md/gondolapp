@@ -1,15 +1,26 @@
-const CACHE_NAME = 'gondolapp-v9'
+const CACHE_NAME = 'gondolapp-v10'
+
+// ── Rutas a precachear en install ─────────────────────────────────────────────
+//
+// SOLO rutas públicas son confiables aquí.
+//
+// El install puede correr en cualquier momento — primera apertura de la app,
+// actualización del SW — y NO hay garantía de que el usuario esté autenticado.
+// Si el middleware redirige una ruta protegida a /auth, el guard !response.redirected
+// la descarta silenciosamente y NUNCA queda en cache desde install.
+//
+// Las rutas /gondolero/* son TODAS protegidas por el middleware. Agregarlas aquí
+// da una falsa sensación de seguridad: funcionan si el SW instala con sesión
+// activa (casualidad), y fallan si instala sin sesión (muy común en primera carga).
+//
+// Las rutas protegidas que necesiten estar offline se precachean por dos vías:
+//   1. navegacionSWR: las cachea la primera vez que el usuario las visita con señal.
+//   2. PRECACHE_URLS postMessage desde campanas-sections: las descarga con sesión
+//      garantizada cuando el gondolero abre la lista de campañas.
+//
+// Regla: solo agregar a STATIC_URLS rutas que el middleware deja pasar sin sesión.
 const STATIC_URLS = [
-  // '/' eliminada: siempre redirige según sesión (→ /auth o → /gondolero/campanas
-  // según el middleware). Cachear una respuesta 302 envenena el cache y rompe la
-  // navegación para todos los usuarios. No tiene sentido cachearla nunca.
-  '/gondolero/campanas',
-  '/gondolero/misiones',
-  '/gondolero/actividad',
-  '/gondolero/logros',
-  '/gondolero/perfil',
-  '/gondolero/captura',
-  '/offline',          // fallback siempre disponible
+  '/offline',   // única ruta pública — siempre disponible como fallback
 ]
 
 // Instalar y cachear páginas principales + chunks JS de rutas offline-críticas
