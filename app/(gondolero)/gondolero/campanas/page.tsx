@@ -123,9 +123,12 @@ export default async function CampanasPage() {
   // a retomar una misión aprobada — flujo incoherente. Si aparece ese escenario,
   // resolverlo desde el panel de admin, no desde el retake del gondolero.
   // 'descartada', 'rechazada' y 'parcial' tampoco admiten retake.
+  // DEBUG — borrar antes del merge a main
+  console.log('[retake-debug] fotos rechazadas raw:', JSON.stringify(fotosRechazadasRes.data))
   const fotosRetomables = (fotosRechazadasRes.data ?? [] as unknown[]).filter((f) => {
     const row = f as FotoRechazadaRow
     const estado = Array.isArray(row.mision) ? row.mision[0]?.estado : row.mision?.estado
+    console.log('[retake-debug] mision_id:', row.mision_id, '| mision raw:', JSON.stringify(row.mision), '| estado extraído:', estado, '| pasa filtro:', estado === 'pendiente')
     return estado === 'pendiente'
   }) as FotoRechazadaRow[]
   for (const f of fotosRetomables) {
