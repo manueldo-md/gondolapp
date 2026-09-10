@@ -501,7 +501,39 @@ export async function registrarRecaptura(params: RegistrarRecapturaParams) {
     dentroDelRadio: distanciaMetros != null ? distanciaMetros <= RADIO_GPS_METROS : null,
   })
 
-  // 3. Insertar cada foto nueva y marcar la vieja como reemplazada
+  // 3. Insertar respuestas nuevas ANTES de tocar las fotos.
+  //    Orden crítico para la recuperabilidad del reintento:
+  //    - Si falla AQUÍ → fotos siguen rechazadas, retake disponible, reintento OK.
+  //    - Si falla en el paso 4 (fotos) → respuestas nuevas existen pero fotos
+  //      siguen rechazadas: retake disponible, reintento inserta más respuestas
+  //      (múltiples vigentes temporales) y completa las fotos; el paso 5 las
+  //      colapsa a una sola vigente.
+  //    - Si falla en el paso 5 (marcar viejas) → quedan dos vigentes por campo,
+  //      recuperable con otro reintento.
+  //    Nunca borramos — misma política que con las fotos.
+  let nuevasIdsPorCampo = new Map<string, string>()
+  if (params.respuestasDirectas.length > 0) {
+    const { data: nuevasResps, error: errInsertResp } = await db
+      .from('mision_respuestas')
+      .insert(
+        params.respuestasDirectas.map(r => ({
+          mision_id: params.misionId,
+          campo_id:  r.campo_id,
+          valor:     r.valor,
+        }))
+      )
+      .select('id, campo_id')
+
+    if (errInsertResp || !nuevasResps) {
+      console.error('[registrarRecaptura] Error insertando respuestas nuevas:', errInsertResp?.message)
+    } else {
+      for (const nr of nuevasResps as { id: string; campo_id: string }[]) {
+        nuevasIdsPorCampo.set(nr.campo_id, nr.id)
+      }
+    }
+  }
+
+  // 4. Insertar cada foto nueva y marcar la vieja como reemplazada
   let recapturadas = 0
   for (const foto of params.fotos) {
     const { data: original } = await db
@@ -553,45 +585,22 @@ export async function registrarRecaptura(params: RegistrarRecapturaParams) {
     recapturadas++
   }
 
-  // 4. Versionar respuestas de campos no-foto.
-  //    Orden crítico: insertar primero las nuevas, después marcar las viejas.
-  //    Si falla a mitad quedan dos versiones vigentes (recuperable) en vez de
-  //    ninguna (irrecuperable). Nunca borramos — misma política que con las fotos.
-  if (params.respuestasDirectas.length > 0) {
-    const { data: nuevasResps, error: errInsertResp } = await db
+  // 5. Marcar las respuestas viejas como reemplazadas, DESPUÉS de que todas las
+  //    fotos quedaron OK. El marcado usa neq(id, nuevaId) + is(reemplazada_por, null)
+  //    así que colapsa cualquier vigente extra que haya quedado de reintentos
+  //    previos, no solo la original.
+  for (const [campoId, nuevaId] of nuevasIdsPorCampo) {
+    const { error: errMark } = await db
       .from('mision_respuestas')
-      .insert(
-        params.respuestasDirectas.map(r => ({
-          mision_id: params.misionId,
-          campo_id:  r.campo_id,
-          valor:     r.valor,
-        }))
-      )
-      .select('id, campo_id')
-
-    if (errInsertResp || !nuevasResps) {
-      console.error('[registrarRecaptura] Error insertando respuestas nuevas:', errInsertResp?.message)
-    } else {
-      // Para cada campo nuevo, marcar las filas viejas (reemplazada_por IS NULL
-      // y distinto de la que acabamos de insertar) como reemplazadas.
-      const nuevasIdsPorCampo = new Map<string, string>()
-      for (const nr of nuevasResps as { id: string; campo_id: string }[]) {
-        nuevasIdsPorCampo.set(nr.campo_id, nr.id)
-      }
-      for (const [campoId, nuevaId] of nuevasIdsPorCampo) {
-        const { error: errMark } = await db
-          .from('mision_respuestas')
-          .update({ reemplazada_por: nuevaId })
-          .eq('mision_id', params.misionId)
-          .eq('campo_id', campoId)
-          .is('reemplazada_por', null)
-          .neq('id', nuevaId)
-        if (errMark) console.error('[registrarRecaptura] Error marcando respuesta vieja:', errMark.message)
-      }
-    }
+      .update({ reemplazada_por: nuevaId })
+      .eq('mision_id', params.misionId)
+      .eq('campo_id', campoId)
+      .is('reemplazada_por', null)
+      .neq('id', nuevaId)
+    if (errMark) console.error('[registrarRecaptura] Error marcando respuesta vieja:', errMark.message)
   }
 
-  // 5. Puede pasar que la recaptura destrabe la misión: si las demás fotos ya
+  // 6. Puede pasar que la recaptura destrabe la misión: si las demás fotos ya
   //    estaban aprobadas y esta era la única rechazada, la misión sigue
   //    pendiente hasta que se apruebe la nueva. No hay nada que resolver acá.
   console.log('[registrarRecaptura] OK', { misionId: params.misionId, recapturadas })
