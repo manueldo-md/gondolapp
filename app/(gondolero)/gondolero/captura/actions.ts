@@ -415,6 +415,8 @@ export interface RegistrarRecapturaParams {
   lat: number
   lng: number
   fotos: FotoRecapturaInput[]
+  /** Respuestas de campos no-foto del formulario rehecho (puede ser vacío). */
+  respuestasDirectas: { campo_id: string; valor: unknown }[]
 }
 
 /**
@@ -551,7 +553,45 @@ export async function registrarRecaptura(params: RegistrarRecapturaParams) {
     recapturadas++
   }
 
-  // 4. Puede pasar que la recaptura destrabe la misión: si las demás fotos ya
+  // 4. Versionar respuestas de campos no-foto.
+  //    Orden crítico: insertar primero las nuevas, después marcar las viejas.
+  //    Si falla a mitad quedan dos versiones vigentes (recuperable) en vez de
+  //    ninguna (irrecuperable). Nunca borramos — misma política que con las fotos.
+  if (params.respuestasDirectas.length > 0) {
+    const { data: nuevasResps, error: errInsertResp } = await db
+      .from('mision_respuestas')
+      .insert(
+        params.respuestasDirectas.map(r => ({
+          mision_id: params.misionId,
+          campo_id:  r.campo_id,
+          valor:     r.valor,
+        }))
+      )
+      .select('id, campo_id')
+
+    if (errInsertResp || !nuevasResps) {
+      console.error('[registrarRecaptura] Error insertando respuestas nuevas:', errInsertResp?.message)
+    } else {
+      // Para cada campo nuevo, marcar las filas viejas (reemplazada_por IS NULL
+      // y distinto de la que acabamos de insertar) como reemplazadas.
+      const nuevasIdsPorCampo = new Map<string, string>()
+      for (const nr of nuevasResps as { id: string; campo_id: string }[]) {
+        nuevasIdsPorCampo.set(nr.campo_id, nr.id)
+      }
+      for (const [campoId, nuevaId] of nuevasIdsPorCampo) {
+        const { error: errMark } = await db
+          .from('mision_respuestas')
+          .update({ reemplazada_por: nuevaId })
+          .eq('mision_id', params.misionId)
+          .eq('campo_id', campoId)
+          .is('reemplazada_por', null)
+          .neq('id', nuevaId)
+        if (errMark) console.error('[registrarRecaptura] Error marcando respuesta vieja:', errMark.message)
+      }
+    }
+  }
+
+  // 5. Puede pasar que la recaptura destrabe la misión: si las demás fotos ya
   //    estaban aprobadas y esta era la única rechazada, la misión sigue
   //    pendiente hasta que se apruebe la nueva. No hay nada que resolver acá.
   console.log('[registrarRecaptura] OK', { misionId: params.misionId, recapturadas })

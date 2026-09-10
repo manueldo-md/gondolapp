@@ -213,6 +213,7 @@ export async function loadResultadosCampanaData(
       .from('mision_respuestas')
       .select('mision_id, campo_id, valor')
       .in('mision_id', allMisionIds)
+      .is('reemplazada_por', null)   // solo la versión vigente de cada respuesta
       .limit(20000)
     for (const r of (misionResps ?? []) as any[]) {
       if (!camposMap.has(r.campo_id)) continue

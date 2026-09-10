@@ -1167,47 +1167,16 @@ function CapturaContent() {
   }
 
   // ── Iniciar recaptura (modo retake) ───────────────────────────────────────────
-  // Filtra campana.bloques para dejar solo los campos rechazados y arranca el flujo.
+  // La misión entera vuelve a cero: el gondolero rehace foto Y respuestas como
+  // una visita nueva. La campana se usa completa, sin filtrar por campos
+  // rechazados — el formulario es el mismo que en la captura original.
   // El comercio ya está cargado desde useEffect arriba; se saltea el paso de selección.
 
   const iniciarRetake = () => {
     if (!campana || fotosRetake.length === 0) return
-
-    const rechazadasCampoIds = new Set(
-      fotosRetake.filter(f => f.campo_id).map(f => f.campo_id!)
-    )
-    const bloqueIdsLegacy = new Set(
-      fotosRetake.filter(f => !f.campo_id).map(f => f.bloque_id)
-    )
-
-    // Construir un campana virtual con solo los campos/bloques a rehacer
-    const bloquesRetake = campana.bloques
-      .map(bloque => {
-        // Foto de bloque sin campo específico (flujo legacy): rehacer el bloque entero
-        if (bloqueIdsLegacy.has(bloque.id)) return bloque
-        // Foto de campo específico: filtrar solo los campos rechazados
-        const campos = bloque.campos.filter(c => rechazadasCampoIds.has(c.id))
-        if (campos.length === 0) return null
-        return { ...bloque, campos }
-      })
-      .filter((b): b is BloqueData => b !== null)
-
-    if (bloquesRetake.length === 0) {
-      setErrorGlobal('No se encontraron campos para rehacer.')
-      return
-    }
-
-    // Reemplazar campana con la versión filtrada para que el flujo normal funcione
-    setCampana({ ...campana, bloques: bloquesRetake })
     setBloqueActualIdx(0)
     setCampoActualIdx(0)
-
     // Paso de GPS, igual que una captura normal.
-    //
-    // Antes se iba derecho a la cámara: la recaptura era el único camino que
-    // no validaba ubicación, y como gps.posicion quedaba en null la foto se
-    // guardaba con lat/lng en 0,0. O sea que rehacer una foto no dejaba
-    // ninguna evidencia de dónde se había sacado.
     setPaso('gps')
   }
 
@@ -1309,11 +1278,23 @@ function CapturaContent() {
 
         if (recaptura.length === 0) throw new Error('No hay fotos para reenviar.')
 
+        // Respuestas de campos no-foto: extraídas del formulario rehecho.
+        // Se pasan a registrarRecaptura para que las versione en mision_respuestas.
+        const respuestasRetake: { campo_id: string; valor: unknown }[] = []
+        for (const b of bloquesCompletados) {
+          for (const [campo_id, valor] of Object.entries(b.respuestas)) {
+            if (valor instanceof Blob || valor instanceof File) continue
+            if (valor === undefined || valor === null || valor === '') continue
+            respuestasRetake.push({ campo_id, valor })
+          }
+        }
+
         await registrarRecaptura({
           misionId: retakeMisionId,
           deviceId,
           lat, lng,
-          fotos: recaptura,
+          fotos:             recaptura,
+          respuestasDirectas: respuestasRetake,
         })
 
         bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))

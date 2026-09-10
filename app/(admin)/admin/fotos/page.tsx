@@ -87,6 +87,7 @@ export default async function FotosAdminPage({
       .from('mision_respuestas' as any)
       .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
       .in('mision_id', misionIds)
+      .is('reemplazada_por', null)   // solo la versión vigente de cada respuesta
     if (misionRespsData) {
       const misionToFotoIds = new Map<string, string[]>()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

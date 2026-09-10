@@ -173,6 +173,7 @@ export default async function GondolasPage({
       .from('mision_respuestas')
       .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
       .in('mision_id', misionIds)
+      .is('reemplazada_por', null)   // solo la versión vigente de cada respuesta
     if (misionRespsData) {
       // Mapa mision_id → foto ids (puede haber varias fotos por misión)
       const misionToFotoIds = new Map<string, string[]>()
