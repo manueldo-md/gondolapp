@@ -6,12 +6,17 @@
  *   - app/(gondolero)/gondolero/captura/page.tsx  (online: guarda al cargar captura)
  *   - app/(gondolero)/gondolero/campanas/campanas-sections.tsx
  *                                                  (precarga al abrir la lista con señal)
+ *
+ * IMPORTANTE: guardarComercios / leerComercios son el único punto de acceso a
+ * COMERCIOS_CACHE_KEY. No usar get/set de idb-keyval directamente con esa clave.
  */
+
+import { get, set } from 'idb-keyval'
 
 // ── Claves de IndexedDB ────────────────────────────────────────────────────────
 
 export const CAMPANA_CACHE_PREFIX = 'campana_cache_'
-export const COMERCIOS_CACHE_KEY  = 'comercios_cache'
+const COMERCIOS_CACHE_KEY  = 'comercios_cache'  // privada — acceder solo via helpers
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -53,6 +58,31 @@ export const CAMPANA_CACHE_SELECT =
   'id, nombre, tipo, puntos_por_foto, puntos_por_mision, ' +
   'bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, orden, ' +
   'bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido, solicitar_precio ) )'
+
+// ── Helpers de comercios (único acceso a COMERCIOS_CACHE_KEY) ─────────────────
+//
+// Formato canónico en IDB: { data: array, timestamp: number }
+// leerComercios acepta también el formato antiguo (array crudo) por compatibilidad
+// con dispositivos que tengan datos de versiones anteriores.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function guardarComercios(data: any[]): Promise<void> {
+  await set(COMERCIOS_CACHE_KEY, { data, timestamp: Date.now() })
+}
+
+/**
+ * Lee el cache de comercios desde IndexedDB.
+ * Retorna el array de comercios o null si no hay cache válida.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function leerComercios(): Promise<any[] | null> {
+  const entry = await get(COMERCIOS_CACHE_KEY)
+  if (!entry) return null
+  // Backward compat: versiones anteriores guardaban el array crudo
+  if (Array.isArray(entry)) return entry
+  if (entry && Array.isArray(entry.data)) return entry.data
+  return null
+}
 
 // ── Transformación ─────────────────────────────────────────────────────────────
 

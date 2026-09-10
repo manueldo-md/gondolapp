@@ -28,7 +28,8 @@ import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 import type { TipoComercio } from '@/types'
 import {
-  CAMPANA_CACHE_PREFIX, COMERCIOS_CACHE_KEY, CAMPANA_CACHE_SELECT, toCampanaData,
+  CAMPANA_CACHE_PREFIX, CAMPANA_CACHE_SELECT, toCampanaData,
+  guardarComercios, leerComercios,
   type CampoBloque, type BloqueData, type CampanaData,
 } from '@/lib/campana-cache'
 
@@ -723,10 +724,17 @@ function CapturaContent() {
     const cargarCampana = async () => {
       // Sin conexión: cargar desde IndexedDB
       if (!navigator.onLine) {
-        const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
-        if (cached) {
-          setCampana(cached)
-        } else {
+        try {
+          const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
+          if (cached && Array.isArray(cached.bloques) && cached.primerBloqueId !== undefined) {
+            setCampana(cached)
+          } else if (cached) {
+            // Dato existe pero estructura incompleta — mejor error legible que pantalla en blanco
+            setErrorGlobal('Los datos guardados de esta campaña están incompletos. Abrila con conexión para actualizarlos.')
+          } else {
+            setErrorGlobal('Sin conexión y sin datos guardados para esta campaña.')
+          }
+        } catch {
           setErrorGlobal('Sin conexión y sin datos guardados para esta campaña.')
         }
         setCargando(false)
@@ -742,10 +750,14 @@ function CapturaContent() {
         .then(async ({ data, error }) => {
           if (error || !data) {
             // Intentar desde caché como fallback
-            const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
-            if (cached) {
-              setCampana(cached)
-            } else {
+            try {
+              const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
+              if (cached && Array.isArray(cached.bloques) && cached.primerBloqueId !== undefined) {
+                setCampana(cached)
+              } else {
+                setErrorGlobal('No encontramos la campaña o ya no está activa.')
+              }
+            } catch {
               setErrorGlobal('No encontramos la campaña o ya no está activa.')
             }
           } else {
@@ -832,8 +844,10 @@ function CapturaContent() {
       setModoOffline(isOffline)
 
       if (isOffline) {
-        const cache = await get(COMERCIOS_CACHE_KEY)
-        if (cache?.data) comerciosCacheRef.current = cache.data
+        try {
+          const data = await leerComercios()
+          if (data) comerciosCacheRef.current = data as ComercioRow[]
+        } catch { /* sin cache disponible */ }
       } else {
         // Cachear todos los comercios para uso offline futuro
         supabase
@@ -844,7 +858,7 @@ function CapturaContent() {
           .then(({ data }) => {
             if (data) {
               comerciosCacheRef.current = data as ComercioRow[]
-              set(COMERCIOS_CACHE_KEY, { data, timestamp: Date.now() })
+              guardarComercios(data)
             }
           })
       }
@@ -1380,6 +1394,10 @@ function CapturaContent() {
   // Handler para enviar el nuevo comercio
   const handleEnviarComercio = async () => {
     if (!campana || !cmNombre.trim()) return
+    if (!navigator.onLine) {
+      setCmErrorMsg('Sin conexión: no podés crear comercios nuevos sin internet.')
+      return
+    }
     if (!gps.posicion) { setCmErrorMsg('Necesitamos tu ubicación GPS.'); return }
 
     setCmSubiendo(true)

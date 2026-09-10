@@ -16,9 +16,10 @@ import {
 import type { TipoCampana } from '@/types'
 import {
   CAMPANA_CACHE_PREFIX,
-  COMERCIOS_CACHE_KEY,
   CAMPANA_CACHE_SELECT,
   toCampanaData,
+  guardarComercios,
+  leerComercios,
 } from '@/lib/campana-cache'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -443,24 +444,31 @@ export function CampanasSections({
 }) {
   // ── Estado: qué campañas de "Mis campañas" están listas para uso offline ──────
   const [campanasCacheadas, setCampanasCacheadas] = useState<Set<string>>(new Set())
+  // El chip "Campo" requiere TANTO la campaña como los comercios en IDB
+  const [comerciosCacheados, setComerciosCacheados] = useState(false)
 
-  // useEffect 1: leer IDB en background para mostrar el chip "Campo" sin bloquear el render
+  // useEffect 1: leer IDB en background para mostrar el chip "Campo" sin bloquear el render.
+  // El chip requiere campana Y comercios en cache para ser honesto sobre la disponibilidad offline.
   useEffect(() => {
     const ids = misCampanas.map(c => c.id)
     if (ids.length === 0) return
 
-    Promise.all(
-      ids.map(async (id) => {
-        try {
-          const cached = await get(CAMPANA_CACHE_PREFIX + id)
-          return cached ? id : null
-        } catch {
-          return null
-        }
-      })
-    ).then(results => {
-      const found = new Set(results.filter((id): id is string => id !== null))
+    Promise.all([
+      Promise.all(
+        ids.map(async (id) => {
+          try {
+            const cached = await get(CAMPANA_CACHE_PREFIX + id)
+            return cached ? id : null
+          } catch {
+            return null
+          }
+        })
+      ),
+      leerComercios().catch(() => null),
+    ]).then(([campanaResults, comerciosData]) => {
+      const found = new Set(campanaResults.filter((id): id is string => id !== null))
       if (found.size > 0) setCampanasCacheadas(found)
+      setComerciosCacheados(Array.isArray(comerciosData) && comerciosData.length > 0)
     })
   }, [misCampanas])
 
@@ -490,7 +498,7 @@ export function CampanasSections({
 
       // 2. IndexedDB: comercios filtrados por localidad (o todos si no hay localidades)
       try {
-        const alreadyComercio = await get(COMERCIOS_CACHE_KEY)
+        const alreadyComercio = await leerComercios()
         if (!alreadyComercio) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let query: any = supabase
@@ -502,7 +510,10 @@ export function CampanasSections({
             query = query.limit(1500)
           }
           const { data } = await query
-          if (data) await set(COMERCIOS_CACHE_KEY, data)
+          if (data) {
+            await guardarComercios(data)
+            setComerciosCacheados(true)
+          }
         }
       } catch { /* sin red */ }
 
@@ -559,7 +570,7 @@ export function CampanasSections({
               fotosRechazadas={fotosRechazadasRecord[c.id] ?? 0}
               misionRetakeId={misionRetakeRecord[c.id]}
               misionesConRechazo={misionesConRechazoRecord[c.id] ?? 0}
-              esCacheada={campanasCacheadas.has(c.id)}
+              esCacheada={campanasCacheadas.has(c.id) && comerciosCacheados}
             />
           ))}
         </Seccion>
