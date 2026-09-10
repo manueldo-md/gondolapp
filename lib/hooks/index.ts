@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { get, set } from 'idb-keyval'
 
 // ── useGPS ────────────────────────────────────────────────────────────────────
 
@@ -68,48 +67,3 @@ export function useGPS() {
   return { estado, posicion, error, solicitar, detener }
 }
 
-// ── useOfflineQueue ───────────────────────────────────────────────────────────
-
-export interface UploadPendiente {
-  id: string
-  campanaId: string
-  bloqueId: string
-  comercioId: string
-  storagePath: string
-  fotoBase64: string
-  lat: number
-  lng: number
-  declaracion: string
-  precio: number | null
-  deviceId: string
-  timestamp: string
-  puntosAcreditar: number
-  comercioPendiente?: {
-    nombre: string
-    tipo: string
-    direccion: string | null
-    lat: number
-    lng: number
-  }
-}
-
-const QUEUE_KEY = 'gondolapp_upload_queue'
-
-export function useOfflineQueue() {
-  const encolar = useCallback(async (item: Omit<UploadPendiente, 'id'>) => {
-    const queue: UploadPendiente[] = (await get(QUEUE_KEY)) ?? []
-    queue.push({ ...item, id: `${Date.now()}_${Math.random().toString(36).slice(2)}` })
-    await set(QUEUE_KEY, queue)
-  }, [])
-
-  const obtenerPendientes = useCallback(async (): Promise<UploadPendiente[]> => {
-    return (await get(QUEUE_KEY)) ?? []
-  }, [])
-
-  const eliminar = useCallback(async (id: string) => {
-    const queue: UploadPendiente[] = (await get(QUEUE_KEY)) ?? []
-    await set(QUEUE_KEY, queue.filter(i => i.id !== id))
-  }, [])
-
-  return { encolar, obtenerPendientes, eliminar }
-}

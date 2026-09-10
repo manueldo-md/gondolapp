@@ -7,7 +7,7 @@ import {
   ArrowLeft, MapPin, Camera, CheckCircle2, XCircle,
   RefreshCw, Navigation, Loader2, Star, AlertTriangle, WifiOff,
 } from 'lucide-react'
-import { get, set } from 'idb-keyval'
+import { del, get, set } from 'idb-keyval'
 import { createClient } from '@/lib/supabase/client'
 import {
   calcularDistanciaMetros,
@@ -17,7 +17,7 @@ import {
   getDeviceId,
   formatearPuntos,
 } from '@/lib/utils'
-import { useGPS, useOfflineQueue } from '@/lib/hooks'
+import { useGPS } from '@/lib/hooks'
 import {
   registrarMision, registrarRecaptura, descartarRecaptura, subirFoto,
   asegurarBloqueGenerico, obtenerConfigCompresion, getMisionParaRetake,
@@ -28,18 +28,7 @@ import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 import type { TipoComercio } from '@/types'
 
-interface ComercioTempItem {
-  tempId: string
-  nombre: string
-  tipo: string
-  direccion: string | null
-  lat: number
-  lng: number
-  timestamp: number
-}
-
 const COMERCIOS_CACHE_KEY = 'comercios_cache'
-const COMERCIOS_PENDIENTES_KEY = 'comercios_pendientes'
 const CAMPANA_CACHE_PREFIX = 'campana_cache_'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
@@ -96,7 +85,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'formulario-camara-blur' | 'confirmacion' | 'mision-resumen' | 'exito' | 'exito-offline'
+type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'formulario-camara-blur' | 'confirmacion' | 'mision-resumen' | 'exito'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
   | 'retake-intro'
 
@@ -642,7 +631,6 @@ function CapturaContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const supabase = createClient()
-  const { encolar } = useOfflineQueue()
   const gps = useGPS()
 
   const campanaId    = searchParams.get('campana') ?? ''
@@ -698,8 +686,6 @@ function CapturaContent() {
     misionStreamRef.current?.getTracks().forEach(t => t.stop())
     misionStreamRef.current = null
   }, [])
-  const [comerciosPendientes, setComerciosPendientes] = useState<ComercioTempItem[]>([])
-
   // Datos del flujo
   const [busqueda, setBusqueda] = useState('')
   const [comercios, setComercios] = useState<ComercioRow[]>([])
@@ -888,8 +874,14 @@ function CapturaContent() {
   // Inicializar caché de comercios y manejar comercio_nuevo param
   useEffect(() => {
     const initOffline = async () => {
-      const pendientes: ComercioTempItem[] = (await get(COMERCIOS_PENDIENTES_KEY)) ?? []
-      setComerciosPendientes(pendientes)
+      // CLEANUP TEMPORAL — borra keys de IndexedDB del flujo offline eliminado.
+      // Los gondoleros que usaron la app antes de este cambio pueden tener
+      // 'comercios_pendientes' y 'gondolapp_upload_queue' en su dispositivo.
+      // Se puede sacar en unos meses cuando todos los dispositivos hayan pasado por la app.
+      try {
+        await del('comercios_pendientes')
+        await del('gondolapp_upload_queue')
+      } catch { /* silencioso */ }
 
       const isOffline = !navigator.onLine
       setModoOffline(isOffline)
@@ -915,33 +907,17 @@ function CapturaContent() {
       // Manejar param comercio_nuevo (redirigido desde /comercios/nuevo)
       const nuevoId = searchParams.get('comercio_nuevo')
       if (nuevoId) {
-        if (nuevoId.startsWith('temp_')) {
-          const found = pendientes.find(p => p.tempId === nuevoId)
-          if (found) {
-            setComercio({
-              id: found.tempId,
-              nombre: found.nombre,
-              direccion: found.direccion,
-              lat: found.lat,
-              lng: found.lng,
-              tipo: found.tipo,
-              validado: false,
-            })
-            setPaso('gps')
-          }
-        } else {
-          supabase
-            .from('comercios')
-            .select('id, nombre, direccion, lat, lng, tipo, validado')
-            .eq('id', nuevoId)
-            .single()
-            .then(({ data }) => {
-              if (data) {
-                setComercio(data as ComercioRow)
-                setPaso('gps')
-              }
-            })
-        }
+        supabase
+          .from('comercios')
+          .select('id, nombre, direccion, lat, lng, tipo, validado')
+          .eq('id', nuevoId)
+          .single()
+          .then(({ data }) => {
+            if (data) {
+              setComercio(data as ComercioRow)
+              setPaso('gps')
+            }
+          })
       }
     }
 
@@ -955,15 +931,11 @@ function CapturaContent() {
 
     const query = busqueda.toLowerCase()
 
-    const tempMatches: ComercioRow[] = comerciosPendientes
-      .filter(p => p.nombre.toLowerCase().includes(query))
-      .map(p => ({ id: p.tempId, nombre: p.nombre, direccion: p.direccion, lat: p.lat, lng: p.lng, tipo: p.tipo, validado: false }))
-
     if (modoOffline || !navigator.onLine) {
       const cacheResults = comerciosCacheRef.current
         .filter(c => c.nombre.toLowerCase().includes(query))
         .slice(0, 10)
-      setComercios([...tempMatches, ...cacheResults])
+      setComercios(cacheResults)
       return
     }
 
@@ -975,14 +947,14 @@ function CapturaContent() {
         .ilike('nombre', `%${busqueda}%`)
         .limit(10)
         .then(({ data }) => {
-          setComercios([...tempMatches, ...(data as ComercioRow[] ?? [])])
+          setComercios(data as ComercioRow[] ?? [])
           setBuscando(false)
         })
     }, 300)
 
     return () => { clearTimeout(timer); setBuscando(false) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busqueda, modoOffline, comerciosPendientes])
+  }, [busqueda, modoOffline])
 
   // Iniciar GPS al llegar al paso GPS
   useEffect(() => {
@@ -1044,7 +1016,7 @@ function CapturaContent() {
   // Advertir antes de cerrar la pestaña si hay captura en progreso
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      const pasosFinal: Paso[] = ['comercio', 'exito', 'exito-offline', 'comercios-exito', 'comercios-gps']
+      const pasosFinal: Paso[] = ['comercio', 'exito', 'comercios-exito', 'comercios-gps']
       if (!pasosFinal.includes(paso)) {
         e.preventDefault()
         e.returnValue = ''
@@ -1805,44 +1777,6 @@ function CapturaContent() {
     )
   }
 
-  // ── ÉXITO OFFLINE ────────────────────────────────────────────────────────────
-  if (paso === 'exito-offline') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-6 bg-white gap-6 text-center">
-        <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center text-4xl">
-          ✈️
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Foto guardada</h1>
-          <p className="text-gray-500 text-sm max-w-xs">
-            No hay conexión. La foto se va a subir automáticamente cuando vuelva el internet.
-          </p>
-        </div>
-        <div className="flex flex-col gap-3 w-full max-w-xs">
-          <button
-            onClick={() => {
-              setFotoBlob(null); setFotoPreview(null)
-              setPrecio('')
-              setRespuestas({}); setPuntosGanados(0)
-              setFotosCapturadas([]); setBloqueActualIdx(0)
-              setComercio(null); setBusqueda('')
-              setPaso('comercios-gps')
-            }}
-            className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl min-h-touch"
-          >
-            Iniciar otra misión
-          </button>
-          <button
-            onClick={() => router.push('/gondolero/misiones')}
-            className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl min-h-touch"
-          >
-            Ir a mis misiones
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   // ── FLUJO ESPECIAL COMERCIOS ─────────────────────────────────────────────────
 
   // Éxito COMERCIOS
@@ -2540,7 +2474,6 @@ function CapturaContent() {
                   confirmacion:                'formulario',    // fallback (normalmente manejado arriba)
                   'mision-resumen':            'confirmacion',
                   exito:                       'mision-resumen',
-                  'exito-offline':             'mision-resumen',
                   'comercios-gps':             'comercios-gps',
                   'comercios-existente':       'comercios-gps',
                   'comercios-formulario':      'comercios-gps',

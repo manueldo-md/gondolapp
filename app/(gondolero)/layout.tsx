@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { GondoleroNav } from './gondolero-nav'
 import { InstalarAppBanner } from '@/components/mobile/instalar-app-banner'
-import { OfflineSyncBanner } from '@/components/mobile/offline-sync'
 import { OfflineDetector } from '@/components/mobile/offline-detector'
 import { NavigationProgress } from '@/components/mobile/navigation-progress'
 
@@ -57,7 +56,6 @@ export default async function GondoleroLayout({
     <div className="flex flex-col min-h-screen bg-gray-50">
       <NavigationProgress />
       <InstalarAppBanner />
-      <OfflineSyncBanner />
       <OfflineDetector>
         <main className="flex-1 overflow-y-auto pb-20">
           {children}
