@@ -27,15 +27,9 @@ import { crearComercioNuevo, crearComercioParaCaptura, subirFotoFachada } from '
 import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 import type { TipoComercio } from '@/types'
-import {
-  CAMPANA_CACHE_PREFIX,
-  COMERCIOS_CACHE_KEY,
-  CAMPANA_CACHE_SELECT,
-  toCampanaData,
-  type CampoBloque,
-  type BloqueData,
-  type CampanaData,
-} from '@/lib/campana-cache'
+
+const COMERCIOS_CACHE_KEY = 'comercios_cache'
+const CAMPANA_CACHE_PREFIX = 'campana_cache_'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
 const BLUR_THRESHOLD = typeof window !== 'undefined' &&
@@ -105,7 +99,36 @@ interface ComercioRow {
   validado: boolean
 }
 
-// CampoBloque, BloqueData, CampanaData → importados desde @/lib/campana-cache
+interface CampoBloque {
+  id: string
+  tipo: 'seleccion_multiple' | 'seleccion_unica' | 'binaria' | 'numero' | 'texto' | 'foto'
+  pregunta: string
+  opciones: string[] | null
+  obligatorio: boolean
+  orden: number
+  /** Solo aplica cuando tipo='foto'. Default DB: true. */
+  blur_requerido?: boolean
+  /** Solo aplica cuando tipo='foto'. Default DB: false. */
+  solicitar_precio?: boolean
+}
+
+interface BloqueData {
+  id: string
+  tipoContenido: string
+  instruccion: string
+  solicitarPrecio: boolean
+  campos: CampoBloque[]
+}
+
+interface CampanaData {
+  id: string
+  nombre: string
+  tipo: string
+  puntos_por_foto: number
+  puntos_por_mision: number
+  bloques: BloqueData[]
+  primerBloqueId: string | null  // Usado como fallback para asegurarBloqueGenerico
+}
 
 interface FotoCapturadaLocal {
   bloqueIdx: number
@@ -741,7 +764,7 @@ function CapturaContent() {
 
       supabase
         .from('campanas')
-        .select(CAMPANA_CACHE_SELECT)
+        .select('id, nombre, tipo, puntos_por_foto, puntos_por_mision, bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido, solicitar_precio ) )')
         .eq('id', campanaId)
         .eq('estado', 'activa')
         .single()
@@ -755,10 +778,34 @@ function CapturaContent() {
               setErrorGlobal('No encontramos la campaña o ya no está activa.')
             }
           } else {
-            const campanaData = toCampanaData(data)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const d = data as any
+            const bloques = d.bloques_foto as {
+              id: string; tipo_contenido: string; instruccion: string | null
+              solicitar_precio: boolean | null
+              bloque_campos: CampoBloque[] | null
+              orden?: number
+            }[]
+            const bloquesOrdenados = [...(bloques ?? [])].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+            const bloquesData: BloqueData[] = bloquesOrdenados.map(b => ({
+              id: b.id,
+              tipoContenido: b.tipo_contenido ?? 'propios',
+              instruccion: b.instruccion ?? 'el producto',
+              solicitarPrecio: b.solicitar_precio ?? false,
+              campos: [...(b.bloque_campos ?? [])].sort((a, b) => a.orden - b.orden),
+            }))
+            const campanaData: CampanaData = {
+              id: d.id,
+              nombre: d.nombre,
+              tipo: d.tipo ?? 'relevamiento',
+              puntos_por_foto:    d.puntos_por_foto,
+              puntos_por_mision:  d.puntos_por_mision ?? 0,
+              bloques: bloquesData,
+              primerBloqueId: bloquesData[0]?.id ?? null,
+            }
             setCampana(campanaData)
             // Log para verificar que blur_requerido y solicitar_precio lleguen desde DB
-            console.log('[Paso 2] Campos por bloque:', campanaData.bloques.map(b => ({
+            console.log('[Paso 2] Campos por bloque:', bloquesData.map(b => ({
               bloque: b.id,
               campos: b.campos.map(c => ({
                 id: c.id, tipo: c.tipo, pregunta: c.pregunta,

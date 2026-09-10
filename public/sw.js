@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gondolapp-v7'
+const CACHE_NAME = 'gondolapp-v6'
 const STATIC_URLS = [
   '/',
   '/gondolero/campanas',
@@ -70,24 +70,6 @@ self.addEventListener('fetch', (event) => {
       return cached || fetch(event.request)
     })
   )
-})
-
-// ── Precache bajo demanda (postMessage desde la app) ─────────────────────────
-// La app manda { type: 'PRECACHE_URLS', urls: ['/gondolero/campanas/123', ...] }
-// cuando el gondolero abre la lista de campañas con señal. El SW descarga cada
-// URL en cache para que esté disponible offline sin que el usuario tenga que
-// haberla visitado antes.
-self.addEventListener('message', async (event) => {
-  if (event.data?.type !== 'PRECACHE_URLS') return
-  const cache = await caches.open(CACHE_NAME)
-  for (const url of (event.data.urls ?? [])) {
-    try {
-      const already = await cache.match(url)
-      if (already) continue   // ya está en cache — no volver a bajar
-      const response = await fetch(url)
-      if (response.ok) await cache.put(url, response.clone())
-    } catch { /* sin red — se reintentará la próxima vez */ }
-  }
 })
 
 async function navegacionSWR(request) {

@@ -1658,13 +1658,3 @@ estado con 'aprobada' y le paga los puntos que resignó.
 El seed no vincula automáticamente los gondoleros de dev a Biomega. Solución:
 correr el bloque SQL al final de `supabase/seed.sql` después de crear los usuarios
 en Supabase Auth. Ver comentario "VINCULAR GONDOLEROS DE DEV A BIOMEGA" en el seed.
-
-### Agujero de onboarding: localidades nunca se configuran en el registro
-El registro de gondolero no pide ni configura localidades en ningún momento, y
-nadie empuja al gondolero a hacerlo. La tabla `gondolero_localidades` queda vacía
-indefinidamente (todos los gondoleros de dev tienen cero filas, verificado 10/9/2026).
-El filtro de campañas es fail-open cuando no hay localidades —el gondolero ve todo—
-pero la segmentación por zona no funciona y la precarga de comercios cae al fallback
-de `limit(1500)` sin filtro. Es un agujero de onboarding que hay que resolver: definir
-cuándo y cómo se completa este paso (¿en el onboarding inicial? ¿al entrar a la
-lista de campañas con un banner? ¿obligatorio antes de poder unirse a una campaña?).
