@@ -656,10 +656,15 @@ base. El detalle está en "Los dos ambientes".
 
 - Auto-ejecutar todos los comandos bash y npm sin confirmación
 - Auto-crear y editar archivos sin confirmación
-- **Commitear y pushear a `dev`, nunca a `main`.** `main` solo avanza por
-  fast-forward desde `dev`, y ese merge lo pide el usuario explícitamente. Ver
-  "Regla de ramas". (Hasta el 8/9/2026 acá decía "commit y push automático a
-  main"; con dos ambientes eso deploya a producción sin pasar por dev.)
+- **Todo cambio termina con push a `dev`. Siempre.** "No pushees a `main`"
+  significa exactamente eso: no a `main`. A `dev` sí, sin preguntar, al final
+  de cada tarea. Un commit local que no viajó a `origin/dev` no existe: Vercel
+  deploya desde el remoto, no desde el local.
+- **Después de cada push, confirmar con `git log origin/dev --oneline -1`** que
+  el commit llegó. Si el último commit local no aparece ahí, hacer el push antes
+  de dar la tarea por terminada.
+- `main` solo avanza por fast-forward desde `dev`, y ese merge lo pide el
+  usuario explícitamente. Ver "Regla de ramas".
 - Solo pausar ante: borrado de archivos, cambios en `.env.local` o
   `.env.dev.local`, y cualquier escritura sobre producción
 - Nunca pedir permiso para leer archivos del proyecto
