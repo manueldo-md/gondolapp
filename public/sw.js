@@ -1,9 +1,10 @@
-const CACHE_NAME = 'gondolapp-v5'
+const CACHE_NAME = 'gondolapp-v6'
 const STATIC_URLS = [
   '/',
   '/gondolero/campanas',
   '/gondolero/misiones',
   '/gondolero/actividad',
+  '/gondolero/logros',
   '/gondolero/perfil',
   '/gondolero/captura',
   '/offline',          // fallback siempre disponible

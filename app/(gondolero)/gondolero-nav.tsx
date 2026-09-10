@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { LayoutGrid, BarChart2, Trophy, User } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -34,71 +35,82 @@ function NavItem({
   const router = useRouter()
   const [showDialog, setShowDialog] = useState(false)
 
-  const handleClick = () => {
-    if (enCaptura) {
-      setShowDialog(true)
-      return
-    }
-    router.push(href)
-  }
+  const contenido = (
+    <span className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 min-h-touch transition-all duration-150 active:opacity-60 active:scale-95 ${
+      activo ? 'text-gondo-verde-400' : 'text-gray-400 hover:text-gray-600'
+    }`}>
+      <span className="relative">
+        <Icon size={22} strokeWidth={activo ? 2.5 : 1.8} />
+        {esActividad && unreadCount > 0 && (
+          <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+        {esLogros && unreadLogrosCount > 0 && (
+          <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+            {unreadLogrosCount > 9 ? '9+' : unreadLogrosCount}
+          </span>
+        )}
+        {esPerfil && invitacionesPendientesCount > 0 && (
+          <span className="absolute -top-1.5 -right-2 w-3 h-3 bg-red-500 rounded-full border border-white" />
+        )}
+      </span>
+      <span className={`text-[11px] leading-none ${activo ? 'font-semibold' : 'font-normal'}`}>
+        {label}
+      </span>
+    </span>
+  )
 
-  return (
-    <>
-      <button
-        onClick={handleClick}
-        className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 min-h-touch transition-all duration-150 active:opacity-60 active:scale-95 ${
-          activo ? 'text-gondo-verde-400' : 'text-gray-400 hover:text-gray-600'
-        }`}
-      >
-        <div className="relative">
-          <Icon size={22} strokeWidth={activo ? 2.5 : 1.8} />
-          {esActividad && unreadCount > 0 && (
-            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
-          {esLogros && unreadLogrosCount > 0 && (
-            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-              {unreadLogrosCount > 9 ? '9+' : unreadLogrosCount}
-            </span>
-          )}
-          {esPerfil && invitacionesPendientesCount > 0 && (
-            <span className="absolute -top-1.5 -right-2 w-3 h-3 bg-red-500 rounded-full border border-white" />
-          )}
-        </div>
-        <span className={`text-[11px] leading-none ${activo ? 'font-semibold' : 'font-normal'}`}>
-          {label}
-        </span>
-      </button>
+  // Dentro del flujo de captura: interceptar y pedir confirmación antes de salir
+  if (enCaptura) {
+    return (
+      <>
+        <button
+          onClick={() => setShowDialog(true)}
+          className="flex flex-1 flex-col items-center justify-center"
+        >
+          {contenido}
+        </button>
 
-      {showDialog && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center pb-24 px-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDialog(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
-            <div>
-              <p className="font-bold text-gray-900 text-base">¿Salir de la captura?</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Perdés el progreso de esta foto. Los datos del comercio y la campaña se mantienen — podés volver a empezar.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2.5">
-              <button
-                onClick={() => setShowDialog(false)}
-                className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl"
-              >
-                Seguir capturando
-              </button>
-              <button
-                onClick={() => { setShowDialog(false); router.push(href) }}
-                className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl"
-              >
-                Salir igual
-              </button>
+        {showDialog && (
+          <div className="fixed inset-0 z-[100] flex items-end justify-center pb-24 px-4">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowDialog(false)} />
+            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+              <div>
+                <p className="font-bold text-gray-900 text-base">¿Salir de la captura?</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  Perdés el progreso de esta foto. Los datos del comercio y la campaña se mantienen — podés volver a empezar.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={() => setShowDialog(false)}
+                  className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl"
+                >
+                  Seguir capturando
+                </button>
+                <button
+                  onClick={() => { setShowDialog(false); router.push(href) }}
+                  className="w-full py-3 border border-gray-200 text-gray-600 font-semibold rounded-xl"
+                >
+                  Salir igual
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </>
+        )}
+      </>
+    )
+  }
+
+  // Fuera de captura: Link de next/link.
+  // Con señal: RSC client-side navigation (rápida, sin recarga).
+  // Sin señal: el fetch RSC falla → Next.js cae a window.location.assign()
+  //            → navegación completa → el SW la intercepta y sirve desde cache.
+  return (
+    <Link href={href} className="flex flex-1 flex-col items-center justify-center">
+      {contenido}
+    </Link>
   )
 }
 
