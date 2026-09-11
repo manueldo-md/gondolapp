@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gondolapp-v10'
+const CACHE_NAME = 'gondolapp-v11'
 
 // ── Rutas a precachear en install ─────────────────────────────────────────────
 //
@@ -182,9 +182,17 @@ self.addEventListener('message', async (event) => {
 async function navegacionSWR(request) {
   const cache = await caches.open(CACHE_NAME)
 
-  // Buscar en cache ignorando query params (seguro solo para navegación —
-  // ver comentario en el handler de fetch arriba).
-  const cached = await cache.match(request, { ignoreSearch: true })
+  // Normalizar la URL: guardar y buscar SIEMPRE bajo pathname sin query string.
+  // Razón: si guardamos bajo la URL completa (con ?campana=X), cada combinación
+  // de query params genera una entrada distinta. El primer hit de cache.match
+  // con ignoreSearch devuelve la primera entrada en orden de inserción —
+  // no necesariamente la más reciente — y el HTML nuevo nunca llega al usuario.
+  // Guardando bajo pathname exacto hay una sola entrada por ruta, siempre fresca.
+  const urlSinQuery = new URL(request.url)
+  urlSinQuery.search = ''
+  const claveCache = urlSinQuery.toString()
+
+  const cached = await cache.match(claveCache)
 
   // Revalidación en background: fetch + actualizar cache + notificar clientes
   const revalidacion = fetch(request)
@@ -195,7 +203,7 @@ async function navegacionSWR(request) {
       // la URL original haría que el SW sirva el HTML de /auth cuando el usuario
       // pide /gondolero/campanas — la app queda rota hasta que se borre el cache.
       if (response.ok && !response.redirected) {
-        await cache.put(request, response.clone())
+        await cache.put(claveCache, response.clone())
 
         // Avisar a todas las pestañas abiertas para que actualicen sus datos.
         // Cada pestaña decide si hace router.refresh() según su propia ruta
