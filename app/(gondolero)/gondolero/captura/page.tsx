@@ -32,6 +32,7 @@ import {
   guardarComercios, leerComercios,
   type CampoBloque, type BloqueData, type CampanaData,
 } from '@/lib/campana-cache'
+import { guardarMisionEnCola, borrarMisionDeCola } from '@/lib/mision-queue'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
 const BLUR_THRESHOLD = typeof window !== 'undefined' &&
@@ -89,7 +90,7 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'formulario-camara-blur' | 'confirmacion' | 'mision-resumen' | 'exito'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
-  | 'retake-intro'
+  | 'retake-intro' | 'guardada-offline'
 
 interface ComercioRow {
   id: string
@@ -1013,7 +1014,7 @@ function CapturaContent() {
   // Advertir antes de cerrar la pestaña si hay captura en progreso
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      const pasosFinal: Paso[] = ['comercio', 'exito', 'comercios-exito', 'comercios-gps']
+      const pasosFinal: Paso[] = ['comercio', 'exito', 'guardada-offline', 'comercios-exito', 'comercios-gps']
       if (!pasosFinal.includes(paso)) {
         e.preventDefault()
         e.returnValue = ''
@@ -1208,16 +1209,16 @@ function CapturaContent() {
 
   const handleEnviarMision = async () => {
     if (!comercio || !campana || bloquesCompletados.length === 0) return
-    if (!navigator.onLine) {
-      setErrorGlobal('Necesitás conexión a internet para enviar la misión.')
-      return
-    }
     setEnviando(true)
     setErrorGlobal(null)
 
     const lat = gps.posicion?.lat ?? 0
     const lng = gps.posicion?.lng ?? 0
     const deviceId = getDeviceId()
+
+    // Estado de la cola offline — declarado antes del try para ser accesible en catch
+    let guardadoEnIDB = false
+    let idempotenciaKey = ''
 
     try {
       // ── MODO RETAKE ─────────────────────────────────────────────────────────
@@ -1298,6 +1299,69 @@ function CapturaContent() {
         setFotosEnviadas(recaptura.length)
         setPuntosGanados(0)
         setPaso('exito')
+        return
+      }
+
+      // ── GUARDAR EN IDB ANTES DEL ENVÍO ─────────────────────────────────────
+      // Pre-calcular datos deterministas (sin red) para la entry de IDB.
+      // puntosTotalPrev y respuestasDirectasPrev se calculan aquí para no
+      // duplicar la lógica de la red — la versión definitiva se recalcula
+      // abajo con los uploadResults, y esa es la que va al servidor.
+      {
+        const fotosDeBloquePrev = bloquesCompletados.filter(b => !!b.blob)
+        const puntosTotalPrev = campana.puntos_por_mision > 0
+          ? campana.puntos_por_mision
+          : campana.puntos_por_foto * (fotosDeBloquePrev.length || 1)
+
+        const respuestasDirectasPrev = bloquesCompletados.flatMap(b => {
+          if (b.blob) return []
+          return Object.entries(b.respuestas)
+            .filter(([, v]) => v !== undefined && v !== null && v !== ''
+              && !(v instanceof Blob) && !(v instanceof File))
+            .map(([campo_id, valor]) => ({ campo_id, valor }))
+        })
+
+        idempotenciaKey = crypto.randomUUID()
+        try {
+          await guardarMisionEnCola({
+            version:           1,
+            idempotenciaKey,
+            guardadaAt:        Date.now(),
+            estado:            'pendiente',
+            motivoRechazo:     null,
+            campanaId:         campana.id,
+            campanaNombre:     campana.nombre,
+            comercioId:        comercio.id,
+            comercioNombre:    comercio.nombre,
+            lat, lng,
+            deviceId,
+            puntosTotal:       puntosTotalPrev,
+            bloquesCompletados: bloquesCompletados.map(b => ({
+              bloqueIdx:            b.bloqueIdx,
+              bloqueId:             b.bloqueId,
+              blob:                 b.blob,
+              precio:               b.precio,
+              respuestas:           b.respuestas,
+              blurScore:            b.blurScore,
+              timestampDispositivo: b.timestampDispositivo,
+            })),
+            respuestasDirectas: respuestasDirectasPrev,
+          })
+          guardadoEnIDB = true
+        } catch (idbErr) {
+          // QuotaExceededError u otro fallo de IDB — continuar sin backup
+          console.warn('[handleEnviarMision] No se pudo guardar en IDB:', idbErr)
+        }
+      }
+
+      // Sin red: evitar llamadas destinadas a fallar
+      if (!navigator.onLine) {
+        if (guardadoEnIDB) {
+          bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
+          setPaso('guardada-offline')
+        } else {
+          setErrorGlobal('Sin conexión y no se pudo guardar la misión en tu dispositivo. Recuperá señal e intentá de nuevo.')
+        }
         return
       }
 
@@ -1408,7 +1472,15 @@ function CapturaContent() {
           })),
         ],
         respuestasDirectas: respuestasDirectasCombinadas,
+        idempotenciaKey: idempotenciaKey || undefined,
       })
+
+      // Misión registrada — borrar de IDB (best-effort: si falla, el reintento será idempotente)
+      if (guardadoEnIDB) {
+        borrarMisionDeCola(idempotenciaKey).catch(e =>
+          console.warn('[handleEnviarMision] No se pudo borrar de IDB:', e)
+        )
+      }
 
       // Liberar object URLs
       bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
@@ -1417,6 +1489,13 @@ function CapturaContent() {
       setFotosEnviadas(fotosDeBloque.length + campoFotosInput.length)
       setPaso('exito')
     } catch (err) {
+      if (guardadoEnIDB) {
+        // Red o servidor fallaron, pero la misión está guardada en IDB — no mostrar error
+        bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
+        setPaso('guardada-offline')
+        return
+      }
+      // Sin backup en IDB (QuotaExceededError + fallo de red): error como antes
       const msg = err instanceof Error ? err.message : String(err)
       // Si el mensaje parece JSON de infraestructura (Vercel/Next.js), mostrar mensaje amigable
       const esJsonInfra = msg.startsWith('{') || msg.startsWith('[')
@@ -1688,6 +1767,33 @@ function CapturaContent() {
           setPaso('gps')
         }}
       />
+    )
+  }
+
+  // ── GUARDADA OFFLINE ──────────────────────────────────────────────────────
+  // La misión llegó al último paso pero no había señal (o falló la red).
+  // Se guardó en IDB y se enviará automáticamente al recuperar conexión (3.2).
+  if (paso === 'guardada-offline') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen px-6 bg-white gap-6 text-center">
+        <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center">
+          <WifiOff size={40} className="text-amber-500" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">
+            Misión guardada
+          </h1>
+          <p className="text-gray-500 text-sm max-w-xs">
+            No hay conexión, pero tu trabajo está seguro en el dispositivo. Se enviará automáticamente cuando recuperes señal.
+          </p>
+        </div>
+        <button
+          onClick={() => router.push('/gondolero/campanas')}
+          className="w-full max-w-xs py-3 bg-amber-500 text-white font-semibold rounded-xl min-h-touch"
+        >
+          Ir a mis campañas
+        </button>
+      </div>
     )
   }
 
@@ -2467,6 +2573,8 @@ function CapturaContent() {
                   // a sí mismo por la misma razón que 'comercios-gps': el tipo
                   // Record<Paso, Paso> exige la clave.
                   'retake-intro':              'retake-intro',
+                  // Inalcanzable: guardada-offline retorna a campañas con router.push
+                  'guardada-offline':          'guardada-offline',
                 }
                 setPaso(prev[paso])
               }

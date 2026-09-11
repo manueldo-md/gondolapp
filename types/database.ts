@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -1598,6 +1598,7 @@ export type Database = {
           created_at: string | null
           id: string
           mision_id: string
+          reemplazada_por: string | null
           valor: Json | null
         }
         Insert: {
@@ -1605,6 +1606,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           mision_id: string
+          reemplazada_por?: string | null
           valor?: Json | null
         }
         Update: {
@@ -1612,6 +1614,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           mision_id?: string
+          reemplazada_por?: string | null
           valor?: Json | null
         }
         Relationships: [
@@ -1620,6 +1623,13 @@ export type Database = {
             columns: ["mision_id"]
             isOneToOne: false
             referencedRelation: "misiones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mision_respuestas_reemplazada_por_fkey"
+            columns: ["reemplazada_por"]
+            isOneToOne: false
+            referencedRelation: "mision_respuestas"
             referencedColumns: ["id"]
           },
         ]
@@ -1633,6 +1643,7 @@ export type Database = {
           estado: string | null
           gondolero_id: string | null
           id: string
+          idempotencia_key: string | null
           puntos_total: number | null
           updated_at: string | null
         }
@@ -1644,6 +1655,7 @@ export type Database = {
           estado?: string | null
           gondolero_id?: string | null
           id?: string
+          idempotencia_key?: string | null
           puntos_total?: number | null
           updated_at?: string | null
         }
@@ -1655,6 +1667,7 @@ export type Database = {
           estado?: string | null
           gondolero_id?: string | null
           id?: string
+          idempotencia_key?: string | null
           puntos_total?: number | null
           updated_at?: string | null
         }

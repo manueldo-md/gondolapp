@@ -79,6 +79,13 @@ export interface RegistrarMisionParams {
   fotos: FotoMisionInput[]
   /** Respuestas de campos no-foto (para misiones GPS-only o bloques sin foto) */
   respuestasDirectas?: { campo_id: string; valor: unknown }[]
+  /**
+   * UUID generado en el cliente al guardar la misión en IDB offline.
+   * Garantiza idempotencia: si el envío se reintenta (fallo de red + app reabierta),
+   * el servidor devuelve la misión ya registrada sin crear un duplicado.
+   * undefined para misiones enviadas sin pasar por la cola offline.
+   */
+  idempotenciaKey?: string
 }
 
 export async function registrarMision(params: RegistrarMisionParams) {
@@ -121,6 +128,24 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = admin as any
 
+  // ── IDEMPOTENCIA OFFLINE ────────────────────────────────────────────────────
+  // Si la misión viajó con una clave de idempotencia (guardada en IDB offline),
+  // verificar si ya fue registrada antes de crear una nueva.
+  // Escenario: el envío llegó al servidor pero la app murió antes de borrar de IDB
+  // → al reintentar, esta guarda evita crear una misión duplicada.
+  if (params.idempotenciaKey) {
+    const { data: existente } = await db
+      .from('misiones')
+      .select('id, puntos_total')
+      .eq('idempotencia_key', params.idempotenciaKey)
+      .maybeSingle()
+
+    if (existente) {
+      console.log('[registrarMision] reintento idempotente — devolviendo misión existente:', existente.id)
+      return { misionId: existente.id, puntos: existente.puntos_total ?? params.puntosTotal }
+    }
+  }
+
   // Verificar que el gondolero no superó el máximo de comercios permitido.
   // Las descartadas no cuentan: el gondolero no completó esa misión, así que
   // le queda el cupo libre para hacer otra en su lugar.
@@ -141,12 +166,13 @@ export async function registrarMision(params: RegistrarMisionParams) {
   const { data: mision, error: misionError } = await db
     .from('misiones')
     .insert({
-      campana_id:   params.campanaId,
-      comercio_id:  params.comercioId,
-      gondolero_id: user.id,
-      estado:       'pendiente',
-      puntos_total: params.puntosTotal,
-      bounty_estado: 'retenido',
+      campana_id:       params.campanaId,
+      comercio_id:      params.comercioId,
+      gondolero_id:     user.id,
+      estado:           'pendiente',
+      puntos_total:     params.puntosTotal,
+      bounty_estado:    'retenido',
+      idempotencia_key: params.idempotenciaKey ?? null,
     })
     .select('id')
     .single()
