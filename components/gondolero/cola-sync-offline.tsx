@@ -54,15 +54,11 @@ function dispatch() {
  */
 function programarReintento() {
   if (intentosRestantes <= 0) {
-    // TODO: eliminar antes de prod
-    console.log('[cola-offline] reintentos agotados — esperando próximo evento online')
     return
   }
   const delayIdx = DELAYS_REINTENTO.length - intentosRestantes
   const delay = DELAYS_REINTENTO[delayIdx] ?? DELAYS_REINTENTO[DELAYS_REINTENTO.length - 1]
   intentosRestantes--
-  // TODO: eliminar antes de prod
-  console.log(`[cola-offline] reintento #${DELAYS_REINTENTO.length - intentosRestantes} programado en ${delay / 1000}s`)
   reintentoProgramado = setTimeout(() => {
     reintentoProgramado = null
     procesarColaOffline(true) // fromBackoff = true: no resetear el contador
@@ -95,21 +91,11 @@ export async function procesarColaOffline(fromBackoff = false) {
     // Saltear las ya rechazadas — el gondolero las gestiona manualmente
     const paraEnviar = pendientes.filter(m => m.estado !== 'rechazada')
 
-    // TODO: eliminar antes de prod
-    console.log('[cola-offline] drene iniciado —', paraEnviar.length, 'para enviar,',
-      pendientes.length - paraEnviar.length, 'rechazadas (skip)')
-
     if (paraEnviar.length === 0) return
 
     const comprConfig = await obtenerConfigCompresion()
 
     for (const mision of paraEnviar) {
-      // TODO: eliminar antes de prod
-      console.log('[cola-offline] procesando misión', mision.idempotenciaKey, {
-        campana:  mision.campanaNombre,
-        comercio: mision.comercioNombre,
-      })
-
       misionesEnviando.add(mision.idempotenciaKey)
       dispatch()
 
@@ -166,8 +152,6 @@ export async function procesarColaOffline(fromBackoff = false) {
         misionesEnviando.delete(mision.idempotenciaKey)
         await borrarMisionDeCola(mision.idempotenciaKey)
         dispatch()
-        // TODO: eliminar antes de prod
-        console.log('[cola-offline] ✓ misión enviada y borrada de IDB:', mision.idempotenciaKey)
 
       } catch (err) {
         misionesEnviando.delete(mision.idempotenciaKey)
@@ -181,7 +165,6 @@ export async function procesarColaOffline(fromBackoff = false) {
             ultimoError: mensajeError,
           }).catch(() => {})
           dispatch()
-          // TODO: eliminar antes de prod
           console.warn('[cola-offline] error de red — programando reintento:', err)
           programarReintento()
           break // Detener la cola: las demás también fallarían
@@ -197,7 +180,6 @@ export async function procesarColaOffline(fromBackoff = false) {
             motivoRechazo: mensajeError,
           }).catch(() => {})
           dispatch()
-          // TODO: eliminar antes de prod
           console.error('[cola-offline] rechazo del servidor para misión',
             mision.idempotenciaKey, '—', mensajeError)
           // Continuar con las demás misiones
@@ -207,8 +189,6 @@ export async function procesarColaOffline(fromBackoff = false) {
 
   } finally {
     procesando = false
-    // TODO: eliminar antes de prod
-    console.log('[cola-offline] drene finalizado')
   }
 }
 
@@ -230,9 +210,6 @@ async function limpiarMisionesVencidas() {
 
   const vencidas = pendientes.filter(m => ahora - m.guardadaAt > SIETE_DIAS_MS)
   if (vencidas.length === 0) return
-
-  // TODO: eliminar antes de prod
-  console.log('[cola-offline] limpieza TTL:', vencidas.length, 'misiones vencidas')
 
   for (const mision of vencidas) {
     try {
