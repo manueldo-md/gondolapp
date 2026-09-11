@@ -1575,6 +1575,33 @@ ORDER BY m.created_at;
 
 ---
 
+## 20. Decisiones de arquitectura — offline y Background Sync
+
+### registrarMision debe vivir en un único lugar
+
+Cuando se implemente Background Sync (el SW envía misiones offline con la app
+cerrada), el SW no puede llamar Server Actions — son POST a `/_next/action` con
+headers que Next.js valida y que no funcionan desde un contexto de SW.
+
+El SW necesitará un Route Handler convencional (`app/api/gondolero/sync-mision/route.ts`)
+que acepte el payload y registre la misión. El problema que esto introduce: si
+la lógica de registrar una misión vive duplicada en el Server Action (`actions.ts`)
+y en el Route Handler, cada fix o cambio de regla tiene que aplicarse en dos
+lugares — que es exactamente el patrón que nos mordió tres veces esta semana
+(comercios_cache, respuestas de retake, búsqueda de comercios).
+
+**La regla para cuando llegue ese momento:** extraer la lógica de registro a una
+función pura en `lib/misiones/registrar.ts` (o similar) que recibe el payload
+tipado y devuelve el resultado. Tanto el Server Action como el Route Handler la
+llaman — no la duplican. El Route Handler solo maneja auth y parsing del request;
+el Action solo adapta el input del formulario. La lógica de negocio (crear filas
+en misiones, fotos, mision_respuestas, acreditar puntos) va en la función compartida.
+
+Este patrón aplica a cualquier operación que deba ser accesible tanto desde la
+UI como desde el SW.
+
+---
+
 ## 19. Bugs conocidos / pendientes de pulido
 
 ### motivo_rechazo se guarda pero no se muestra en notificación
