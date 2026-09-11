@@ -71,9 +71,9 @@ self.addEventListener('install', (event) => {
             }
           } catch { /* chunk individual sin red — continuar con los demás */ }
         }
-        console.log(`[SW v10] Precacheados ${cacheados}/${manifest.chunks.length} chunks de /sw-manifest.json`)
+        console.log(`[SW v11] Precacheados ${cacheados}/${manifest.chunks.length} chunks de /sw-manifest.json`)
       } catch (err) {
-        console.warn('[SW v10] /sw-manifest.json no disponible — instalación continúa sin precache de chunks:', err.message)
+        console.warn('[SW v11] /sw-manifest.json no disponible — instalación continúa sin precache de chunks:', err.message)
       }
 
     })
