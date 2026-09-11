@@ -713,6 +713,11 @@ function CapturaContent() {
   const cmBusquedaHechaRef   = useRef(false)
 
   // ── DEBUG PANEL TEMPORAL — remover antes de producción ──────────────────────
+  //
+  // Implementado vía manipulación DOM (no JSX) para que sea visible en CUALQUIER
+  // paso, incluyendo todos los early returns del componente. Los hooks siempre
+  // corren antes de cualquier return (reglas de hooks), así que estos useEffect
+  // se ejecutan independientemente de en qué paso esté el componente.
   const debugMode = searchParams.get('debug') === '1'
   const [debugIDB, setDebugIDB] = useState<{
     count: number | null
@@ -720,6 +725,7 @@ function CapturaContent() {
     error: string | null
   }>({ count: null, timestamp: null, error: null })
 
+  // Leer IDB al activar modo debug
   useEffect(() => {
     if (!debugMode) return
     ;(async () => {
@@ -728,7 +734,6 @@ function CapturaContent() {
         if (!entry) {
           setDebugIDB({ count: null, timestamp: null, error: null })
         } else if (Array.isArray(entry)) {
-          // Formato viejo: array crudo sin timestamp
           setDebugIDB({ count: entry.length, timestamp: null, error: null })
         } else if (entry && Array.isArray(entry.data)) {
           setDebugIDB({ count: entry.data.length, timestamp: entry.timestamp ?? null, error: null })
@@ -740,6 +745,58 @@ function CapturaContent() {
       }
     })()
   }, [debugMode])
+
+  // Panel DOM — se actualiza en cada render relevante, visible en cualquier paso
+  useEffect(() => {
+    const PANEL_ID = '__gondol_debug__'
+    if (!debugMode) {
+      document.getElementById(PANEL_ID)?.remove()
+      return
+    }
+
+    let el = document.getElementById(PANEL_ID) as HTMLDivElement | null
+    if (!el) {
+      el = document.createElement('div')
+      el.id = PANEL_ID
+      Object.assign(el.style, {
+        position: 'fixed', bottom: '0', left: '0', right: '0',
+        background: 'rgba(0,0,0,0.87)', color: '#00ff00',
+        fontFamily: 'monospace', fontSize: '11px', padding: '8px 10px',
+        zIndex: '99999', lineHeight: '1.7', maxHeight: '40vh', overflowY: 'auto',
+        borderTop: '2px solid #00ff00',
+      })
+      document.body.appendChild(el)
+    }
+
+    const cacheText = debugIDB.error
+      ? `ERROR: ${debugIDB.error}`
+      : debugIDB.count === null ? 'no existe'
+      : `${debugIDB.count} comercios`
+    const tsText = debugIDB.timestamp !== null
+      ? ` · ts: ${new Date(debugIDB.timestamp).toLocaleTimeString('es-AR')}` : ''
+    const gpsPos = gps.posicion
+    const gpsText = gpsPos
+      ? `lat=${gpsPos.lat.toFixed(6)} lng=${gpsPos.lng.toFixed(6)} prec=±${Math.round(gpsPos.precision)}m`
+      : gps.error ? `err: ${gps.error}` : 'sin posición'
+
+    el.innerHTML = [
+      '<b style="color:#ffff00">⚠ DEBUG — NO PROD</b>',
+      `online: ${navigator.onLine}`,
+      `cache: ${cacheText}${tsText}`,
+      `GPS [${gps.estado}] ${gpsText}`,
+      `ref.length: ${comerciosCacheRef.current.length}`,
+      `cercanos 20m: ${cmComerciosCercanos.length}`,
+    ].map(l => `<div>${l}</div>`).join('')
+  }, [
+    debugMode, debugIDB,
+    gps.estado, gps.posicion, gps.error,
+    cmComerciosCercanos.length,
+  ])
+
+  // Limpiar el panel DOM al desmontar el componente
+  useEffect(() => {
+    return () => { document.getElementById('__gondol_debug__')?.remove() }
+  }, [])
   // ── FIN DEBUG PANEL ──────────────────────────────────────────────────────────
 
   // Cargar config de compresión al montar
@@ -3093,49 +3150,6 @@ function CapturaContent() {
         )}
 
       </div>
-
-      {/* ── DEBUG PANEL TEMPORAL — visible solo con ?debug=1 — remover antes de producción ── */}
-      {debugMode && (
-        <div style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          background: 'rgba(0,0,0,0.85)', color: '#0f0', fontFamily: 'monospace',
-          fontSize: '11px', padding: '8px', zIndex: 9999, lineHeight: '1.5',
-          maxHeight: '45vh', overflowY: 'auto',
-        }}>
-          <div style={{ color: '#ff0', fontWeight: 'bold', marginBottom: 4 }}>
-            ⚠ DEBUG — NO PRODUCCIÓN
-          </div>
-          <div>
-            <b>online:</b> {typeof navigator !== 'undefined' ? String(navigator.onLine) : '?'}
-          </div>
-          <div>
-            <b>comercios_cache:</b>{' '}
-            {debugIDB.error
-              ? `ERROR: ${debugIDB.error}`
-              : debugIDB.count === null
-                ? 'no existe'
-                : `${debugIDB.count} comercios`}
-            {debugIDB.timestamp !== null && (
-              <span> · ts: {new Date(debugIDB.timestamp).toLocaleTimeString('es-AR')}</span>
-            )}
-          </div>
-          <div>
-            <b>GPS estado:</b> {gps.estado}
-            {gps.posicion
-              ? ` · lat=${gps.posicion.lat.toFixed(6)} lng=${gps.posicion.lng.toFixed(6)} prec=±${Math.round(gps.posicion.precision)}m`
-              : gps.error
-                ? ` · error: ${gps.error}`
-                : ' · sin posición'}
-          </div>
-          <div>
-            <b>comercios en ref (cargados offline):</b> {comerciosCacheRef.current.length}
-          </div>
-          <div>
-            <b>comercios cercanos (radio 20m):</b> {cmComerciosCercanos.length}
-          </div>
-        </div>
-      )}
-      {/* ── FIN DEBUG PANEL ── */}
 
     </div>
   )
