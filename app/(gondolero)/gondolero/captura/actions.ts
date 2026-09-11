@@ -424,6 +424,68 @@ export async function registrarMision(params: RegistrarMisionParams) {
   return { misionId: mision.id, puntos: params.puntosTotal }
 }
 
+// ── DESCARTE DE MISIÓN OFFLINE RECHAZADA ──────────────────────────────────────
+
+export interface RegistrarDescarteParams {
+  campanaId: string
+  comercioId: string
+  puntosTotal: number
+  idempotenciaKey: string
+  /** Motivo del rechazo o error que llevó al descarte. */
+  motivoFallo: string
+  /** epoch ms en que el gondolero descartó (client-side). */
+  descartadaAt: number
+}
+
+/**
+ * Registra un registro liviano (sin fotos ni respuestas) de una misión
+ * offline que fue rechazada por el servidor y luego descartada por el gondolero,
+ * o que alcanzó el TTL de 7 días.
+ *
+ * Solo metadata: el admin puede ver que la misión existió, por qué falló y
+ * cuándo se descartó, sin los blobs de fotos.
+ *
+ * Idempotente vía idempotencia_key: si la llamada se reintenta (el primer envío
+ * llegó pero la respuesta no), devuelve la fila existente sin duplicar.
+ */
+export async function registrarDescarte(params: RegistrarDescarteParams): Promise<{ ok: boolean }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
+  // Idempotencia: si ya existe un registro con esta key, no crear otro.
+  const { data: existente } = await db
+    .from('misiones')
+    .select('id')
+    .eq('idempotencia_key', params.idempotenciaKey)
+    .maybeSingle()
+
+  if (existente) return { ok: true }
+
+  const { error } = await db.from('misiones').insert({
+    campana_id:            params.campanaId,
+    comercio_id:           params.comercioId,
+    gondolero_id:          user.id,
+    estado:                'descartada',
+    puntos_total:          params.puntosTotal,
+    bounty_estado:         'anulado',
+    idempotencia_key:      params.idempotenciaKey,
+    offline_descartada_at: new Date(params.descartadaAt).toISOString(),
+    offline_motivo_fallo:  params.motivoFallo,
+  })
+
+  if (error) throw new Error('No se pudo registrar el descarte: ' + error.message)
+  return { ok: true }
+}
+
 // ── RECAPTURA DE FOTOS RECHAZADAS ─────────────────────────────────────────────
 
 export interface FotoRecapturaInput {

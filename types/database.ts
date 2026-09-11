@@ -1644,6 +1644,8 @@ export type Database = {
           gondolero_id: string | null
           id: string
           idempotencia_key: string | null
+          offline_descartada_at: string | null
+          offline_motivo_fallo: string | null
           puntos_total: number | null
           updated_at: string | null
         }
@@ -1656,6 +1658,8 @@ export type Database = {
           gondolero_id?: string | null
           id?: string
           idempotencia_key?: string | null
+          offline_descartada_at?: string | null
+          offline_motivo_fallo?: string | null
           puntos_total?: number | null
           updated_at?: string | null
         }
@@ -1668,6 +1672,8 @@ export type Database = {
           gondolero_id?: string | null
           id?: string
           idempotencia_key?: string | null
+          offline_descartada_at?: string | null
+          offline_motivo_fallo?: string | null
           puntos_total?: number | null
           updated_at?: string | null
         }

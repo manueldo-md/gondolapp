@@ -4,25 +4,30 @@
  * MisionesPendientes
  *
  * Widget informativo que aparece arriba de la lista de campañas cuando hay
- * misiones guardadas offline en IDB. Sin botón de enviar — la subida es
- * automática (ColaSyncOffline en el layout). Este módulo solo muestra estado.
+ * misiones guardadas offline en IDB. Sin botón de enviar manual — la subida es
+ * automática (ColaSyncOffline en el layout). Este módulo muestra estado y,
+ * cuando hay un rechazo del servidor, permite Reintentar o Descartar.
  *
  * Estados por misión:
- *   - 'esperando'  → en IDB, sin error reciente, no se está enviando ahora
+ *   - 'esperando'  → en IDB, sin error, no se está enviando ahora
  *   - 'enviando'   → en misionesEnviando (transitorio, en vuelo)
- *   - 'error'      → ultimoError en IDB (persiste al cerrar la app)
+ *   - 'sin_señal'  → ultimoError en IDB + err de red: reintentos automáticos en curso o agotados
+ *   - 'rechazada'  → estado='rechazada' en IDB: el servidor rechazó la misión (rojo)
  *
  * Se actualiza sin recarga escuchando el evento 'gondolapp:cola-update'
  * disparado por ColaSyncOffline al cambiar el estado de la cola.
  */
 
 import { useEffect, useState } from 'react'
-import { WifiOff, Loader2, AlertCircle, Clock } from 'lucide-react'
+import { WifiOff, Loader2, AlertTriangle, AlertCircle, Clock, RefreshCw, Trash2 } from 'lucide-react'
 import {
   listarMisionesPendientes,
+  borrarMisionDeCola,
+  actualizarMisionEnCola,
   misionesEnviando,
   type MisionPendienteIDB,
 } from '@/lib/mision-queue'
+import { registrarDescarte } from '@/app/(gondolero)/gondolero/captura/actions'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,18 +54,21 @@ function formatearFecha(ts: number): string {
   return `hace ${dias} días`
 }
 
-type EstadoUI = 'esperando' | 'enviando' | 'error'
+type EstadoUI = 'esperando' | 'enviando' | 'sin_señal' | 'rechazada'
 
 function getEstadoUI(mision: MisionPendienteIDB): EstadoUI {
   if (misionesEnviando.has(mision.idempotenciaKey)) return 'enviando'
-  if (mision.ultimoError)                           return 'error'
+  if (mision.estado === 'rechazada')                return 'rechazada'
+  if (mision.ultimoError)                           return 'sin_señal'
   return 'esperando'
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function MisionesPendientes() {
-  const [pendientes, setPendientes] = useState<MisionPendienteIDB[]>([])
+  const [pendientes, setPendientes]   = useState<MisionPendienteIDB[]>([])
+  // IDs de misiones con acción en curso (Reintentar / Descartar)
+  const [accionando, setAccionando]   = useState<Set<string>>(new Set())
 
   async function actualizar() {
     try {
@@ -93,6 +101,62 @@ export function MisionesPendientes() {
     }
   }, [])
 
+  /**
+   * Reintentar: limpia el error en IDB y dispara 'gondolapp:trigger-cola'
+   * para que ColaSyncOffline intente enviar de inmediato.
+   */
+  async function handleReintentar(mision: MisionPendienteIDB) {
+    setAccionando(prev => new Set(prev).add(mision.idempotenciaKey))
+    try {
+      await actualizarMisionEnCola(mision.idempotenciaKey, {
+        ultimoError: null,
+        estado: 'pendiente',
+        motivoRechazo: null,
+      })
+      await actualizar()
+      window.dispatchEvent(new CustomEvent('gondolapp:trigger-cola'))
+    } catch {
+      // best-effort
+    } finally {
+      setAccionando(prev => {
+        const next = new Set(prev)
+        next.delete(mision.idempotenciaKey)
+        return next
+      })
+    }
+  }
+
+  /**
+   * Descartar: registra un registro liviano en el servidor (best-effort)
+   * y borra de IDB. Sin señal, borra igualmente.
+   */
+  async function handleDescartar(mision: MisionPendienteIDB) {
+    setAccionando(prev => new Set(prev).add(mision.idempotenciaKey))
+    try {
+      try {
+        await registrarDescarte({
+          campanaId:       mision.campanaId,
+          comercioId:      mision.comercioId,
+          puntosTotal:     mision.puntosTotal,
+          idempotenciaKey: mision.idempotenciaKey,
+          motivoFallo:     mision.motivoRechazo ?? mision.ultimoError ?? 'Descartada manualmente',
+          descartadaAt:    Date.now(),
+        })
+      } catch {
+        // Best-effort: sin señal, descartamos igual
+      }
+      await borrarMisionDeCola(mision.idempotenciaKey)
+      await actualizar()
+      window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
+    } finally {
+      setAccionando(prev => {
+        const next = new Set(prev)
+        next.delete(mision.idempotenciaKey)
+        return next
+      })
+    }
+  }
+
   if (pendientes.length === 0) return null
 
   return (
@@ -112,14 +176,19 @@ export function MisionesPendientes() {
         {pendientes.map(mision => {
           const estado = getEstadoUI(mision)
           const tsCaptura = calcularTimestampCaptura(mision)
+          const enAccion = accionando.has(mision.idempotenciaKey)
+          const esRechazada = estado === 'rechazada'
 
           return (
-            <li key={mision.idempotenciaKey} className="px-4 py-3">
+            <li
+              key={mision.idempotenciaKey}
+              className={`px-4 py-3 ${esRechazada ? 'bg-red-50' : ''}`}
+            >
               {/* Comercio + campaña */}
-              <p className="text-sm font-medium text-gray-900 leading-snug">
+              <p className={`text-sm font-medium leading-snug ${esRechazada ? 'text-red-900' : 'text-gray-900'}`}>
                 {mision.comercioNombre}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className={`text-xs mt-0.5 ${esRechazada ? 'text-red-500' : 'text-gray-500'}`}>
                 {mision.campanaNombre}
               </p>
 
@@ -145,17 +214,71 @@ export function MisionesPendientes() {
                     Esperando señal
                   </span>
                 )}
-                {estado === 'error' && (
+                {estado === 'sin_señal' && (
                   <div>
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600">
-                      <AlertCircle size={12} />
-                      Error al enviar — se reintentará automáticamente
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-orange-600">
+                      <AlertTriangle size={12} />
+                      Sin señal — se reintentará automáticamente
                     </span>
                     {mision.ultimoIntentoAt && (
-                      <p className="text-xs text-red-400 mt-0.5 pl-4">
+                      <p className="text-xs text-orange-400 mt-0.5 pl-4">
                         Último intento {formatearFecha(mision.ultimoIntentoAt)}
                       </p>
                     )}
+                  </div>
+                )}
+                {estado === 'rechazada' && (
+                  <div>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600">
+                      <AlertCircle size={12} />
+                      El servidor rechazó la misión
+                    </span>
+                    {mision.motivoRechazo && (
+                      <p className="text-xs text-red-400 mt-0.5 pl-4 break-words">
+                        {mision.motivoRechazo}
+                      </p>
+                    )}
+                    {mision.ultimoIntentoAt && (
+                      <p className="text-xs text-red-400 mt-0.5 pl-4">
+                        {formatearFecha(mision.ultimoIntentoAt)}
+                      </p>
+                    )}
+
+                    {/* Botones de acción */}
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => handleReintentar(mision)}
+                        disabled={enAccion}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium
+                          bg-white border border-red-200 text-red-700
+                          hover:bg-red-50 active:bg-red-100
+                          disabled:opacity-50 disabled:cursor-not-allowed
+                          transition-colors"
+                      >
+                        {enAccion ? (
+                          <Loader2 size={11} className="animate-spin" />
+                        ) : (
+                          <RefreshCw size={11} />
+                        )}
+                        Reintentar
+                      </button>
+                      <button
+                        onClick={() => handleDescartar(mision)}
+                        disabled={enAccion}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium
+                          bg-white border border-red-200 text-red-500
+                          hover:bg-red-50 active:bg-red-100
+                          disabled:opacity-50 disabled:cursor-not-allowed
+                          transition-colors"
+                      >
+                        {enAccion ? (
+                          <Loader2 size={11} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={11} />
+                        )}
+                        Descartar
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

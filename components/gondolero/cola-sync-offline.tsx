@@ -7,13 +7,14 @@
  * misiones guardadas en IDB. Vive en el layout del gondolero para que
  * corra en cualquier pantalla, no solo en captura.
  *
- * Disparadores:
- *   1. Mount del layout (cubre el caso "app abierta ya con señal").
- *   2. Evento 'online' del navegador (transición offline → online).
+ * Disparadores externos (resetean el backoff):
+ *   1. Mount del layout
+ *   2. Evento 'online' del navegador
+ *   3. Evento 'gondolapp:trigger-cola' (botón Reintentar en módulo de pendientes)
  *
- * Guard de módulo: `procesando` impide que dos ejecuciones corran en
- * paralelo si el evento online dispara dos veces seguidas o el layout
- * remonta durante la navegación.
+ * Backoff interno (solo para errores de red, no para rechazos del servidor):
+ *   3 reintentos a 30s / 2min / 5min. Al agotar, espera el próximo disparador
+ *   externo. Los timers mueren al cerrar la app — al reabrir, el mount reinicia.
  */
 
 import { useEffect } from 'react'
@@ -28,152 +29,179 @@ import {
   subirFoto,
   registrarMision,
   obtenerConfigCompresion,
+  registrarDescarte,
 } from '@/app/(gondolero)/gondolero/captura/actions'
 import { comprimirImagen, generarPathFoto } from '@/lib/utils'
 
 // ── Guard de concurrencia ─────────────────────────────────────────────────────
-// Vive a nivel de módulo — sobrevive remounts del componente dentro de la misma
-// sesión. Dos llamadas simultáneas a procesarColaOffline() retornan de inmediato.
 let procesando = false
 
-/** Notifica al módulo de misiones pendientes (MisionesPendientes en campañas). */
+// ── Backoff (solo errores de red) ─────────────────────────────────────────────
+let reintentoProgramado: ReturnType<typeof setTimeout> | null = null
+let intentosRestantes = 3
+const DELAYS_REINTENTO = [30_000, 2 * 60_000, 5 * 60_000] // 30s, 2min, 5min
+
+/** Notifica al módulo de misiones pendientes (campañas) de un cambio de estado. */
 function dispatch() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
   }
 }
 
-async function procesarColaOffline() {
+/**
+ * Programa el próximo reintento automático si quedan intentos disponibles.
+ * Solo se llama cuando el fallo fue de red (TypeError), no para rechazos del servidor.
+ */
+function programarReintento() {
+  if (intentosRestantes <= 0) {
+    // TODO: eliminar antes de prod
+    console.log('[cola-offline] reintentos agotados — esperando próximo evento online')
+    return
+  }
+  const delayIdx = DELAYS_REINTENTO.length - intentosRestantes
+  const delay = DELAYS_REINTENTO[delayIdx] ?? DELAYS_REINTENTO[DELAYS_REINTENTO.length - 1]
+  intentosRestantes--
+  // TODO: eliminar antes de prod
+  console.log(`[cola-offline] reintento #${DELAYS_REINTENTO.length - intentosRestantes} programado en ${delay / 1000}s`)
+  reintentoProgramado = setTimeout(() => {
+    reintentoProgramado = null
+    procesarColaOffline(true) // fromBackoff = true: no resetear el contador
+  }, delay)
+}
+
+// ── Cola principal ─────────────────────────────────────────────────────────────
+
+/**
+ * @param fromBackoff true cuando la llamada viene del timer de backoff.
+ *   Si es false (trigger externo: mount, online, trigger-cola), se resetea el
+ *   contador de intentos y se cancela cualquier timer pendiente.
+ */
+export async function procesarColaOffline(fromBackoff = false) {
   if (procesando) return
+
+  if (!fromBackoff) {
+    // Trigger externo: empezar limpio
+    if (reintentoProgramado !== null) {
+      clearTimeout(reintentoProgramado)
+      reintentoProgramado = null
+    }
+    intentosRestantes = 3
+  }
+
   procesando = true
 
   try {
     const pendientes = await listarMisionesPendientes()
+    // Saltear las ya rechazadas — el gondolero las gestiona manualmente
+    const paraEnviar = pendientes.filter(m => m.estado !== 'rechazada')
 
-    // TODO: eliminar estos console.log antes de prod (diagnóstico offline 3.2)
-    console.log('[cola-offline] drene iniciado —', pendientes.length, 'misiones pendientes')
+    // TODO: eliminar antes de prod
+    console.log('[cola-offline] drene iniciado —', paraEnviar.length, 'para enviar,',
+      pendientes.length - paraEnviar.length, 'rechazadas (skip)')
 
-    if (pendientes.length === 0) return
+    if (paraEnviar.length === 0) return
 
     const comprConfig = await obtenerConfigCompresion()
 
-    for (const mision of pendientes) {
+    for (const mision of paraEnviar) {
       // TODO: eliminar antes de prod
       console.log('[cola-offline] procesando misión', mision.idempotenciaKey, {
         campana:  mision.campanaNombre,
         comercio: mision.comercioNombre,
-        guardadaAt: new Date(mision.guardadaAt).toISOString(),
       })
 
-      // Marcar como "enviando" y notificar al módulo de campañas
       misionesEnviando.add(mision.idempotenciaKey)
       dispatch()
 
       try {
-        // ── Construir FotoMisionInput[] ───────────────────────────────────────
+        // ── Construir FotoMisionInput[] ─────────────────────────────────────
         const fotos: FotoMisionInput[] = []
 
         for (const bloque of mision.bloquesCompletados) {
-          // 1. Foto principal del bloque (campo_id = null en DB)
           if (bloque.blob) {
             const compressed = await comprimirImagen(
-              bloque.blob,
-              comprConfig.maxSizeMB,
-              comprConfig.maxWidth,
-              comprConfig.calidad,
+              bloque.blob, comprConfig.maxSizeMB, comprConfig.maxWidth, comprConfig.calidad,
             )
             const storagePath = generarPathFoto(mision.campanaId, mision.deviceId)
             const fd = new FormData()
             fd.append('foto', new File([compressed], 'foto.jpg', { type: 'image/jpeg' }))
             fd.append('storagePath', storagePath)
             const { url } = await subirFoto(fd)
-            // Respuestas del bloque: solo las no-Blob (las Blob van como foto de campo aparte)
             const respuestasBloque = Object.entries(bloque.respuestas)
               .filter(([, v]) => v !== undefined && v !== null && v !== '' && !(v instanceof Blob))
               .map(([campo_id, valor]) => ({ campo_id, valor }))
-
             fotos.push({
-              bloqueId:             bloque.bloqueId ?? '',
-              storagePath,
-              url,
-              precioConfirmado:     bloque.precio ? parseFloat(bloque.precio) : null,
+              bloqueId: bloque.bloqueId ?? '', storagePath, url,
+              precioConfirmado: bloque.precio ? parseFloat(bloque.precio) : null,
               timestampDispositivo: bloque.timestampDispositivo,
-              blurScore:            bloque.blurScore,
-              respuestas:           respuestasBloque,
+              blurScore: bloque.blurScore, respuestas: respuestasBloque,
             })
           }
 
-          // 2. Fotos de campo (campos tipo='foto' dentro del formulario del bloque)
           for (const [campo_id, valor] of Object.entries(bloque.respuestas)) {
-            if (!(valor instanceof Blob)) continue  // File extends Blob — atrapa ambos
+            if (!(valor instanceof Blob)) continue
             const campoPath = generarPathFoto(mision.campanaId, mision.deviceId)
             const fd = new FormData()
-            fd.append(
-              'foto',
-              valor instanceof File ? valor : new File([valor], 'foto-campo.jpg', { type: 'image/jpeg' }),
-            )
+            fd.append('foto', valor instanceof File ? valor : new File([valor], 'foto-campo.jpg', { type: 'image/jpeg' }))
             fd.append('storagePath', campoPath)
             const { url } = await subirFoto(fd)
             fotos.push({
-              bloqueId:             bloque.bloqueId ?? '',
-              storagePath:          campoPath,
-              url,
-              precioConfirmado:     null,
-              timestampDispositivo: bloque.timestampDispositivo,
-              blurScore:            null,
-              respuestas:           [],  // fotos de campo no tienen respuestas propias
-              campoId:              campo_id,
+              bloqueId: bloque.bloqueId ?? '', storagePath: campoPath, url,
+              precioConfirmado: null, timestampDispositivo: bloque.timestampDispositivo,
+              blurScore: null, respuestas: [], campoId: campo_id,
             })
           }
         }
 
-        // ── Enviar al servidor ────────────────────────────────────────────────
+        // ── Enviar ──────────────────────────────────────────────────────────
         await registrarMision({
-          campanaId:          mision.campanaId,
-          comercioId:         mision.comercioId,
-          deviceId:           mision.deviceId,
-          lat:                mision.lat,
-          lng:                mision.lng,
-          puntosTotal:        mision.puntosTotal,
-          fotos,
+          campanaId: mision.campanaId, comercioId: mision.comercioId,
+          deviceId: mision.deviceId, lat: mision.lat, lng: mision.lng,
+          puntosTotal: mision.puntosTotal, fotos,
           respuestasDirectas: mision.respuestasDirectas,
-          idempotenciaKey:    mision.idempotenciaKey,
+          idempotenciaKey: mision.idempotenciaKey,
         })
 
-        // ── Éxito: borrar de IDB y notificar ─────────────────────────────────
+        // ── Éxito ───────────────────────────────────────────────────────────
         misionesEnviando.delete(mision.idempotenciaKey)
         await borrarMisionDeCola(mision.idempotenciaKey)
         dispatch()
-
         // TODO: eliminar antes de prod
         console.log('[cola-offline] ✓ misión enviada y borrada de IDB:', mision.idempotenciaKey)
 
       } catch (err) {
         misionesEnviando.delete(mision.idempotenciaKey)
         const mensajeError = err instanceof Error ? err.message : String(err)
-
-        // TypeError = red cortada (fetch falló antes de llegar al servidor).
-        // No tiene sentido seguir: las demás misiones también van a fallar.
-        // Se reintenta todo en el próximo evento 'online'.
         const esErrorRed = err instanceof TypeError
 
-        // Persistir el error en IDB para que sobreviva un cierre de la app
-        await actualizarMisionEnCola(mision.idempotenciaKey, {
-          ultimoIntentoAt: Date.now(),
-          ultimoError: mensajeError,
-        }).catch(() => { /* best-effort */ })
-        dispatch()
-
         if (esErrorRed) {
+          // ── Error de red: backoff + dejar estado actual en IDB ────────────
+          await actualizarMisionEnCola(mision.idempotenciaKey, {
+            ultimoIntentoAt: Date.now(),
+            ultimoError: mensajeError,
+          }).catch(() => {})
+          dispatch()
           // TODO: eliminar antes de prod
-          console.warn('[cola-offline] error de red — deteniendo cola:', err)
-          break
+          console.warn('[cola-offline] error de red — programando reintento:', err)
+          programarReintento()
+          break // Detener la cola: las demás también fallarían
+        } else {
+          // ── Rechazo del servidor: marcar como rechazada ───────────────────
+          // El gondolero verá el motivo en el módulo y podrá Reintentar o Descartar.
+          // Nota: un 500 transitorio llega aquí también (known limitation, documentado
+          // en CLAUDE.md). El botón Reintentar permite probar de nuevo antes de descartar.
+          await actualizarMisionEnCola(mision.idempotenciaKey, {
+            ultimoIntentoAt: Date.now(),
+            ultimoError: mensajeError,
+            estado: 'rechazada',
+            motivoRechazo: mensajeError,
+          }).catch(() => {})
+          dispatch()
+          // TODO: eliminar antes de prod
+          console.error('[cola-offline] rechazo del servidor para misión',
+            mision.idempotenciaKey, '—', mensajeError)
+          // Continuar con las demás misiones
         }
-
-        // Error del servidor: saltear esta misión y continuar con las demás.
-        // En 3.4 se distinguirá el rechazo del servidor con estado='rechazada'.
-        // TODO: eliminar antes de prod
-        console.error('[cola-offline] error del servidor para misión', mision.idempotenciaKey, '— saltando:', err)
       }
     }
 
@@ -184,20 +212,65 @@ async function procesarColaOffline() {
   }
 }
 
+// ── TTL de 7 días ─────────────────────────────────────────────────────────────
+
+const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Elimina de IDB las misiones con más de 7 días de antigüedad (calculado desde
+ * guardadaAt). Intenta registrar un registro liviano best-effort antes de borrar.
+ * Se llama al montar el layout, una vez por sesión.
+ */
+async function limpiarMisionesVencidas() {
+  const ahora = Date.now()
+  let pendientes
+  try {
+    pendientes = await listarMisionesPendientes()
+  } catch { return }
+
+  const vencidas = pendientes.filter(m => ahora - m.guardadaAt > SIETE_DIAS_MS)
+  if (vencidas.length === 0) return
+
+  // TODO: eliminar antes de prod
+  console.log('[cola-offline] limpieza TTL:', vencidas.length, 'misiones vencidas')
+
+  for (const mision of vencidas) {
+    try {
+      await registrarDescarte({
+        campanaId:       mision.campanaId,
+        comercioId:      mision.comercioId,
+        puntosTotal:     mision.puntosTotal,
+        idempotenciaKey: mision.idempotenciaKey,
+        motivoFallo:     mision.motivoRechazo ?? mision.ultimoError ?? 'TTL de 7 días alcanzado',
+        descartadaAt:    ahora,
+      })
+    } catch {
+      // Best-effort: si falla (sin señal), borrar igual
+    }
+    await borrarMisionDeCola(mision.idempotenciaKey).catch(() => {})
+    dispatch()
+  }
+}
+
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function ColaSyncOffline() {
   useEffect(() => {
-    // Disparador 1: mount del layout.
-    // Cubre el caso "gondolero abre la app ya con señal" —
-    // el evento 'online' nunca dispara porque no hubo transición.
+    // Limpiar vencidas antes de intentar envíos
+    limpiarMisionesVencidas()
+    // Drene inicial: cubre "app abierta ya con señal"
     procesarColaOffline()
 
-    // Disparador 2: transición offline → online.
-    window.addEventListener('online', procesarColaOffline)
-    return () => window.removeEventListener('online', procesarColaOffline)
+    const triggerCola = () => procesarColaOffline()
+    window.addEventListener('online', triggerCola)
+    // Botón Reintentar en el módulo de pendientes
+    window.addEventListener('gondolapp:trigger-cola', triggerCola)
+
+    return () => {
+      window.removeEventListener('online', triggerCola)
+      window.removeEventListener('gondolapp:trigger-cola', triggerCola)
+    }
   }, [])
 
-  // Sin UI — este componente solo registra efectos de red.
   return null
 }

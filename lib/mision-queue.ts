@@ -104,7 +104,7 @@ export async function borrarMisionDeCola(idempotenciaKey: string): Promise<void>
  */
 export async function actualizarMisionEnCola(
   idempotenciaKey: string,
-  campos: Partial<Pick<MisionPendienteIDB, 'ultimoIntentoAt' | 'ultimoError'>>,
+  campos: Partial<Pick<MisionPendienteIDB, 'ultimoIntentoAt' | 'ultimoError' | 'estado' | 'motivoRechazo'>>,
 ): Promise<void> {
   const key = misionQueueKey(idempotenciaKey)
   const existente = await get<MisionPendienteIDB>(key)
