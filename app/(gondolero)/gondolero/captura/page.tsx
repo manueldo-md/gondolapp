@@ -101,6 +101,27 @@ interface ComercioRow {
   validado: boolean
 }
 
+// ── Constantes de búsqueda de comercios ───────────────────────────────────────
+//
+// RADIO_SUGERENCIA_M: radio para mostrar comercios cercanos en el paso
+//   comercios-gps ("¿estás en alguno de estos?"). Se puede agrandar sin riesgo.
+//
+// El radio de VALIDACIÓN de posición GPS (que habilita la captura) es distinto:
+//   está hardcodeado en el paso 'gps' como `distancia <= 50`. No tocar acá.
+//
+const RADIO_SUGERENCIA_M = 20
+
+/**
+ * Filtra una lista de comercios por distancia desde (lat, lng).
+ * Fuente única para el paso comercios-gps: evita que un fix en un camino
+ * no se aplique al otro.
+ */
+function filtrarCercanos(todos: ComercioRow[], lat: number, lng: number): ComercioRow[] {
+  return todos.filter(c =>
+    c.lat && c.lng && calcularDistanciaMetros(lat, lng, c.lat, c.lng) <= RADIO_SUGERENCIA_M
+  )
+}
+
 
 interface FotoCapturadaLocal {
   bloqueIdx: number
@@ -785,7 +806,7 @@ function CapturaContent() {
       `cache: ${cacheText}${tsText}`,
       `GPS [${gps.estado}] ${gpsText}`,
       `ref.length: ${comerciosCacheRef.current.length}`,
-      `cercanos 20m: ${cmComerciosCercanos.length}`,
+      `cercanos ${RADIO_SUGERENCIA_M}m: ${cmComerciosCercanos.length}`,
     ].map(l => `<div>${l}</div>`).join('')
   }, [
     debugMode, debugIDB,
@@ -1027,6 +1048,14 @@ function CapturaContent() {
   }, [paso])
 
   // Buscar comercios cercanos UNA SOLA VEZ cuando el GPS está listo en comercios-gps
+  //
+  // Camino B — usa filtrarCercanos() (misma función que el camino A offline).
+  // Dos fuentes de datos según conectividad:
+  //   · Online  → Supabase (todos los comercios, filtro client-side por distancia)
+  //   · Offline → comerciosCacheRef.current (ya cargado por initOffline al montar)
+  //
+  // El .catch() corta el spinner y aplica el caché como fallback si la red falla
+  // a mitad de camino (antes el spinner quedaba colgado para siempre).
   useEffect(() => {
     if (paso !== 'comercios-gps') return
     if (gps.estado !== 'activo' || !gps.posicion) return
@@ -1036,22 +1065,31 @@ function CapturaContent() {
     const lat = gps.posicion.lat
     const lng  = gps.posicion.lng
 
+    if (modoOffline || !navigator.onLine) {
+      // Offline: filtrar desde caché cargado en initOffline()
+      setCmComerciosCercanos(filtrarCercanos(comerciosCacheRef.current, lat, lng))
+      setCmBuscandoCercanos(false)
+      return
+    }
+
+    // Online: bajar todos y filtrar client-side (necesitamos coordenadas para filtrar)
     setCmBuscandoCercanos(true)
-    supabase
-      .from('comercios')
-      .select('id, nombre, direccion, lat, lng, tipo, validado')
-      .limit(500)
-      .then(({ data }) => {
-        if (data) {
-          const cercanos = (data as ComercioRow[]).filter(c =>
-            c.lat && c.lng && calcularDistanciaMetros(lat, lng, c.lat, c.lng) <= 20
-          )
-          setCmComerciosCercanos(cercanos)
-        }
+    ;(async () => {
+      try {
+        const { data } = await supabase
+          .from('comercios')
+          .select('id, nombre, direccion, lat, lng, tipo, validado')
+          .limit(500)
+        setCmComerciosCercanos(filtrarCercanos((data as ComercioRow[]) ?? [], lat, lng))
+      } catch {
+        // Red falló: usar caché como fallback y cortar el spinner
+        setCmComerciosCercanos(filtrarCercanos(comerciosCacheRef.current, lat, lng))
+      } finally {
         setCmBuscandoCercanos(false)
-      })
+      }
+    })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paso, gps.estado, gps.posicion?.lat, gps.posicion?.lng])
+  }, [paso, gps.estado, gps.posicion?.lat, gps.posicion?.lng, modoOffline])
 
   // Solicitar GPS al llegar al paso comercios-gps
   useEffect(() => {
@@ -2108,7 +2146,7 @@ function CapturaContent() {
                 <MapPin size={15} className="text-gondo-verde-400 mt-0.5 shrink-0" />
                 <p className="text-xs text-gondo-verde-700">
                   {esComercios
-                    ? `Hay ${cmComerciosCercanos.length} comercio${cmComerciosCercanos.length !== 1 ? 's' : ''} registrado${cmComerciosCercanos.length !== 1 ? 's' : ''} a menos de 20m. ¿Es alguno de estos?`
+                    ? `Hay ${cmComerciosCercanos.length} comercio${cmComerciosCercanos.length !== 1 ? 's' : ''} registrado${cmComerciosCercanos.length !== 1 ? 's' : ''} a menos de ${RADIO_SUGERENCIA_M}m. ¿Es alguno de estos?`
                     : `Encontramos ${cmComerciosCercanos.length} comercio${cmComerciosCercanos.length !== 1 ? 's' : ''} cerca. ¿Estás en alguno?`}
                 </p>
               </div>
