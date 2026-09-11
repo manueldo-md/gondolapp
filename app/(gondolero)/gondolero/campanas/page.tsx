@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { LayoutGrid } from 'lucide-react'
 import type { TipoCampana } from '@/types'
 import { CampanasSections, type CampanaCardData } from './campanas-sections'
+import { MisionesPendientes } from '@/components/gondolero/misiones-pendientes'
 
 type CampanaRow = CampanaCardData
 
@@ -313,6 +314,9 @@ export default async function CampanasPage() {
           </p>
         )}
       </div>
+
+      {/* Misiones guardadas offline — solo aparece si hay pendientes en IDB */}
+      <MisionesPendientes />
 
       {!tieneZonas && (
         <div className="mx-4 mt-4 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">

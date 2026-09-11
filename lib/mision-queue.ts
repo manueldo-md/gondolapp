@@ -46,6 +46,17 @@ export interface MisionPendienteIDB {
   /** Estado actual en IDB. 'rechazada' = el servidor la rechazó con un motivo. */
   estado: 'pendiente' | 'rechazada'
   motivoRechazo: string | null
+  /**
+   * epoch ms del último intento de envío. undefined en entradas que nunca
+   * se intentaron aún. Junto con ultimoError permite mostrar "cuándo falló" en UI.
+   */
+  ultimoIntentoAt?: number
+  /**
+   * Mensaje del último error de red o del servidor. null/undefined = sin error aún.
+   * Se limpia cuando el envío tiene éxito (la entry se borra de IDB en ese caso).
+   * Base para 3.4: el rechazo del servidor se guarda aquí también.
+   */
+  ultimoError?: string | null
   campanaId: string
   campanaNombre: string
   comercioId: string
@@ -64,6 +75,13 @@ export function misionQueueKey(idempotenciaKey: string): string {
 }
 
 /**
+ * Misiones que se están enviando ahora mismo (en memoria, transitorio).
+ * Se vacía al cerrar la app. No persiste entre sesiones — usar ultimoIntentoAt
+ * y ultimoError en la entry de IDB para estados que sobrevivan un cierre.
+ */
+export const misionesEnviando = new Set<string>()
+
+/**
  * Guarda la misión en IDB. Puede lanzar QuotaExceededError — el caller
  * debe atraparlo y continuar (intentar enviar igual sin backup).
  */
@@ -77,6 +95,21 @@ export async function guardarMisionEnCola(mision: MisionPendienteIDB): Promise<v
  */
 export async function borrarMisionDeCola(idempotenciaKey: string): Promise<void> {
   await del(misionQueueKey(idempotenciaKey))
+}
+
+/**
+ * Actualiza campos de una entry existente en IDB (merge parcial).
+ * Usado por la cola para escribir ultimoIntentoAt y ultimoError sin reemplazar
+ * los blobs ni el resto del estado. No hace nada si la key no existe.
+ */
+export async function actualizarMisionEnCola(
+  idempotenciaKey: string,
+  campos: Partial<Pick<MisionPendienteIDB, 'ultimoIntentoAt' | 'ultimoError'>>,
+): Promise<void> {
+  const key = misionQueueKey(idempotenciaKey)
+  const existente = await get<MisionPendienteIDB>(key)
+  if (!existente) return
+  await set(key, { ...existente, ...campos })
 }
 
 /**

@@ -20,6 +20,8 @@ import { useEffect } from 'react'
 import {
   listarMisionesPendientes,
   borrarMisionDeCola,
+  actualizarMisionEnCola,
+  misionesEnviando,
 } from '@/lib/mision-queue'
 import type { FotoMisionInput } from '@/app/(gondolero)/gondolero/captura/actions'
 import {
@@ -33,6 +35,13 @@ import { comprimirImagen, generarPathFoto } from '@/lib/utils'
 // Vive a nivel de módulo — sobrevive remounts del componente dentro de la misma
 // sesión. Dos llamadas simultáneas a procesarColaOffline() retornan de inmediato.
 let procesando = false
+
+/** Notifica al módulo de misiones pendientes (MisionesPendientes en campañas). */
+function dispatch() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
+  }
+}
 
 async function procesarColaOffline() {
   if (procesando) return
@@ -55,6 +64,10 @@ async function procesarColaOffline() {
         comercio: mision.comercioNombre,
         guardadaAt: new Date(mision.guardadaAt).toISOString(),
       })
+
+      // Marcar como "enviando" y notificar al módulo de campañas
+      misionesEnviando.add(mision.idempotenciaKey)
+      dispatch()
 
       try {
         // ── Construir FotoMisionInput[] ───────────────────────────────────────
@@ -127,17 +140,29 @@ async function procesarColaOffline() {
           idempotenciaKey:    mision.idempotenciaKey,
         })
 
-        // ── Éxito: borrar de IDB ──────────────────────────────────────────────
+        // ── Éxito: borrar de IDB y notificar ─────────────────────────────────
+        misionesEnviando.delete(mision.idempotenciaKey)
         await borrarMisionDeCola(mision.idempotenciaKey)
+        dispatch()
 
         // TODO: eliminar antes de prod
         console.log('[cola-offline] ✓ misión enviada y borrada de IDB:', mision.idempotenciaKey)
 
       } catch (err) {
+        misionesEnviando.delete(mision.idempotenciaKey)
+        const mensajeError = err instanceof Error ? err.message : String(err)
+
         // TypeError = red cortada (fetch falló antes de llegar al servidor).
         // No tiene sentido seguir: las demás misiones también van a fallar.
         // Se reintenta todo en el próximo evento 'online'.
         const esErrorRed = err instanceof TypeError
+
+        // Persistir el error en IDB para que sobreviva un cierre de la app
+        await actualizarMisionEnCola(mision.idempotenciaKey, {
+          ultimoIntentoAt: Date.now(),
+          ultimoError: mensajeError,
+        }).catch(() => { /* best-effort */ })
+        dispatch()
 
         if (esErrorRed) {
           // TODO: eliminar antes de prod
@@ -145,9 +170,8 @@ async function procesarColaOffline() {
           break
         }
 
-        // Error del servidor (rechazo, validación, etc.): el dispositivo llegó
-        // al servidor pero esta misión específica falló. Saltear y seguir con
-        // las demás. En 3.4 se marcará como 'rechazada' en IDB con el motivo.
+        // Error del servidor: saltear esta misión y continuar con las demás.
+        // En 3.4 se distinguirá el rechazo del servidor con estado='rechazada'.
         // TODO: eliminar antes de prod
         console.error('[cola-offline] error del servidor para misión', mision.idempotenciaKey, '— saltando:', err)
       }
