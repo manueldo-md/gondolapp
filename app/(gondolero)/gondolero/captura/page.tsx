@@ -712,6 +712,36 @@ function CapturaContent() {
   const cmFachadaInputRef    = useRef<HTMLInputElement>(null)
   const cmBusquedaHechaRef   = useRef(false)
 
+  // ── DEBUG PANEL TEMPORAL — remover antes de producción ──────────────────────
+  const debugMode = searchParams.get('debug') === '1'
+  const [debugIDB, setDebugIDB] = useState<{
+    count: number | null
+    timestamp: number | null
+    error: string | null
+  }>({ count: null, timestamp: null, error: null })
+
+  useEffect(() => {
+    if (!debugMode) return
+    ;(async () => {
+      try {
+        const entry = await get('comercios_cache')
+        if (!entry) {
+          setDebugIDB({ count: null, timestamp: null, error: null })
+        } else if (Array.isArray(entry)) {
+          // Formato viejo: array crudo sin timestamp
+          setDebugIDB({ count: entry.length, timestamp: null, error: null })
+        } else if (entry && Array.isArray(entry.data)) {
+          setDebugIDB({ count: entry.data.length, timestamp: entry.timestamp ?? null, error: null })
+        } else {
+          setDebugIDB({ count: null, timestamp: null, error: 'formato inesperado' })
+        }
+      } catch (e) {
+        setDebugIDB({ count: null, timestamp: null, error: String(e) })
+      }
+    })()
+  }, [debugMode])
+  // ── FIN DEBUG PANEL ──────────────────────────────────────────────────────────
+
   // Cargar config de compresión al montar
   useEffect(() => {
     obtenerConfigCompresion().then(cfg => setComprConfig(cfg))
@@ -3063,6 +3093,50 @@ function CapturaContent() {
         )}
 
       </div>
+
+      {/* ── DEBUG PANEL TEMPORAL — visible solo con ?debug=1 — remover antes de producción ── */}
+      {debugMode && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          background: 'rgba(0,0,0,0.85)', color: '#0f0', fontFamily: 'monospace',
+          fontSize: '11px', padding: '8px', zIndex: 9999, lineHeight: '1.5',
+          maxHeight: '45vh', overflowY: 'auto',
+        }}>
+          <div style={{ color: '#ff0', fontWeight: 'bold', marginBottom: 4 }}>
+            ⚠ DEBUG — NO PRODUCCIÓN
+          </div>
+          <div>
+            <b>online:</b> {typeof navigator !== 'undefined' ? String(navigator.onLine) : '?'}
+          </div>
+          <div>
+            <b>comercios_cache:</b>{' '}
+            {debugIDB.error
+              ? `ERROR: ${debugIDB.error}`
+              : debugIDB.count === null
+                ? 'no existe'
+                : `${debugIDB.count} comercios`}
+            {debugIDB.timestamp !== null && (
+              <span> · ts: {new Date(debugIDB.timestamp).toLocaleTimeString('es-AR')}</span>
+            )}
+          </div>
+          <div>
+            <b>GPS estado:</b> {gps.estado}
+            {gps.posicion
+              ? ` · lat=${gps.posicion.lat.toFixed(6)} lng=${gps.posicion.lng.toFixed(6)} prec=±${Math.round(gps.posicion.precision)}m`
+              : gps.error
+                ? ` · error: ${gps.error}`
+                : ' · sin posición'}
+          </div>
+          <div>
+            <b>comercios en ref (cargados offline):</b> {comerciosCacheRef.current.length}
+          </div>
+          <div>
+            <b>comercios cercanos (radio 20m):</b> {cmComerciosCercanos.length}
+          </div>
+        </div>
+      )}
+      {/* ── FIN DEBUG PANEL ── */}
+
     </div>
   )
 }
