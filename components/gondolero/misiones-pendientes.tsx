@@ -72,9 +72,25 @@ export function MisionesPendientes() {
   }
 
   useEffect(() => {
+    // Leer IDB al montar: cubre el caso "gondolero navega a campañas
+    // con misiones ya guardadas offline".
     actualizar()
+
+    // Evento de la cola: se dispara desde cola-sync-offline (al enviar)
+    // y desde captura (al guardar en IDB). Actualiza sin recarga.
     window.addEventListener('gondolapp:cola-update', actualizar)
-    return () => window.removeEventListener('gondolapp:cola-update', actualizar)
+
+    // Releer cuando la pestaña vuelve al frente: cubre el caso donde
+    // Next.js reutiliza el árbol de componentes desde el router cache
+    // sin remontar (useEffect con [] no vuelve a correr en ese caso).
+    window.addEventListener('focus', actualizar)
+    document.addEventListener('visibilitychange', actualizar)
+
+    return () => {
+      window.removeEventListener('gondolapp:cola-update', actualizar)
+      window.removeEventListener('focus', actualizar)
+      document.removeEventListener('visibilitychange', actualizar)
+    }
   }, [])
 
   if (pendientes.length === 0) return null

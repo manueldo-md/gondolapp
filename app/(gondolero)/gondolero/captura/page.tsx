@@ -1348,6 +1348,10 @@ function CapturaContent() {
             respuestasDirectas: respuestasDirectasPrev,
           })
           guardadoEnIDB = true
+          // Notificar al módulo de misiones pendientes en campañas.
+          // Si ya está montado (gondolero tiene campañas abierto), se actualiza.
+          // Si navega después, el mount del módulo lee IDB directamente.
+          window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
         } catch (idbErr) {
           // QuotaExceededError u otro fallo de IDB — continuar sin backup
           console.warn('[handleEnviarMision] No se pudo guardar en IDB:', idbErr)
