@@ -131,3 +131,28 @@ export async function marcarNotificacionesLeidas(gondoleroId: string) {
   revalidatePath('/gondolero/perfil')
   revalidatePath('/gondolero/actividad')
 }
+
+/**
+ * Marca una notificación individual como leída.
+ * Verifica que la notificación pertenezca al usuario autenticado.
+ */
+export async function marcarUnaNotificacionLeida(notificacionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+
+  await admin
+    .from('notificaciones')
+    .update({ leida: true })
+    .eq('id', notificacionId)
+    .eq('gondolero_id', user.id) // solo actualiza si pertenece al usuario
+
+  revalidatePath('/gondolero/actividad')
+  revalidatePath('/gondolero/actividad/notificaciones')
+}

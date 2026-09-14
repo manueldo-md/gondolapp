@@ -110,7 +110,7 @@ interface ComercioRow {
 // El radio de VALIDACIÓN de posición GPS (que habilita la captura) es distinto:
 //   está hardcodeado en el paso 'gps' como `distancia <= 50`. No tocar acá.
 //
-const RADIO_SUGERENCIA_M = 20
+const RADIO_SUGERENCIA_M = 100
 
 /**
  * Filtra una lista de comercios por distancia desde (lat, lng).

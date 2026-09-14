@@ -610,10 +610,10 @@ export function CampanasSections({
         </Seccion>
       )}
 
-      {/* ── Finalizadas ── */}
+      {/* ── Campañas finalizadas (últimos 90 días) ── */}
       {finalizadas.length > 0 && (
         <Seccion
-          titulo="Finalizadas"
+          titulo="Campañas finalizadas"
           badge={finalizadas.length}
           badgeColor="bg-rose-100 text-rose-600"
           bgColor="bg-rose-50"

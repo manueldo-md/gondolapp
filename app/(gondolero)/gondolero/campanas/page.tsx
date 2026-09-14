@@ -273,8 +273,13 @@ export default async function CampanasPage() {
   const todasMisIds = idsParaFinalizadas
   const finalizadasPotenciales = [...todasMisIds].filter(id => !activaIds.has(id))
 
-  console.log('[finalizadas] todasMisIds:', [...todasMisIds])
-  console.log('[finalizadas] finalizadasPotenciales:', finalizadasPotenciales)
+  // Sección "Campañas finalizadas": solo las que vencieron en los últimos 90 días.
+  // Las más antiguas se ocultan para no saturar la lista.
+  // Nota: fecha_fin es la fecha planificada de vencimiento, no cuándo se cerró
+  // efectivamente la campaña. Si una campaña se cierra antes o después de fecha_fin,
+  // puede aparecer en la sección incorrecta o desaparecer antes de tiempo.
+  // Ver CLAUDE.md § Campañas finalizadas.
+  const NOVENTA_DIAS_MS = 90 * 24 * 60 * 60 * 1000
 
   let finalizadas: CampanaRow[] = []
   if (finalizadasPotenciales.length > 0) {
@@ -285,10 +290,12 @@ export default async function CampanasPage() {
       .in('id', finalizadasPotenciales)
       .order('fecha_fin', { ascending: false })
     if (finalizadasError) console.error('[finalizadas] error query:', finalizadasError.message)
-    finalizadas = (finalizadasData as CampanaRow[] | null) ?? []
+    const ahora = Date.now()
+    finalizadas = ((finalizadasData as CampanaRow[] | null) ?? []).filter(c =>
+      // Sin fecha_fin: no hay cómo determinar cuándo cerró → mostrar siempre
+      !c.fecha_fin || ahora - new Date(c.fecha_fin).getTime() <= NOVENTA_DIAS_MS
+    )
   }
-
-  console.log('[finalizadas] finalizadas count:', finalizadas.length)
 
   // Progreso por campaña: contar misiones directamente
   const comerciosCompletadosRecord: Record<string, number> = Object.fromEntries(misionesCountMap.entries())

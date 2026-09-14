@@ -3,8 +3,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { tiempoRelativo } from '@/lib/utils'
-import { MarcarNotificacionesLeidas } from '../../perfil/marcar-leidas'
+import { NotificacionesLista } from './notificaciones-lista'
 
 const POR_PAGINA = 20
 
@@ -36,12 +35,9 @@ export default async function NotificacionesPage({
   const lista = notificaciones ?? []
   const total = count ?? 0
   const totalPaginas = Math.ceil(total / POR_PAGINA)
-  const hayNoLeidas = lista.some((n: { leida: boolean }) => !n.leida)
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
-      {hayNoLeidas && <MarcarNotificacionesLeidas gondoleroId={user.id} />}
-
       <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 sticky top-0 z-10">
         <Link
           href="/gondolero/actividad"
@@ -63,44 +59,13 @@ export default async function NotificacionesPage({
             <p className="text-base font-semibold text-gray-700">Sin notificaciones</p>
           </div>
         ) : (
-          <div className="rounded-2xl overflow-hidden divide-y divide-gray-100">
-            {lista.map((n: {
-              id: string
-              titulo: string
-              mensaje: string | null
-              leida: boolean
-              created_at: string
-            }) => (
-              <div
-                key={n.id}
-                className={`flex items-start gap-3 px-4 py-3 ${
-                  !n.leida ? 'bg-red-50 border-l-2 border-red-400' : 'bg-white'
-                }`}
-              >
-                <div className="shrink-0 mt-1.5">
-                  {!n.leida ? (
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-                    </span>
-                  ) : (
-                    <span className="inline-flex rounded-full h-2 w-2 bg-gray-300" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold leading-tight ${!n.leida ? 'text-red-800' : 'text-gray-700'}`}>
-                    {n.titulo}
-                  </p>
-                  {n.mensaje && (
-                    <p className={`text-xs mt-0.5 ${!n.leida ? 'text-red-700' : 'text-gray-400'}`}>
-                      {n.mensaje}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">{tiempoRelativo(n.created_at)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <NotificacionesLista notificaciones={lista.map((n: {
+            id: string
+            titulo: string
+            mensaje: string | null
+            leida: boolean
+            created_at: string
+          }) => n)} />
         )}
 
         {/* Paginación */}

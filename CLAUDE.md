@@ -1096,6 +1096,23 @@ responder cada reporte, y para quién (distribuidora, marca, repositora).
 
 ---
 
+## Limitación conocida — campañas finalizadas (panel gondolero)
+
+La sección "Campañas finalizadas" en `/gondolero/campanas` filtra usando `fecha_fin`
+(la fecha planificada de vencimiento de la campaña), no una columna `cerrada_at`
+que no existe en el esquema. Esto introduce dos casos imprecisos:
+
+- **Campaña cerrada antes de `fecha_fin`**: sigue apareciendo en "Campañas finalizadas"
+  hasta que `fecha_fin` sea mayor a 90 días, aunque ya cerró hace más tiempo.
+- **Campaña vencida sin cerrarse** (o cerrada mucho después de `fecha_fin`): puede
+  desaparecer de la lista antes de tiempo, o aparecer pasado el límite de 90 días.
+
+El filtro actual (`!fecha_fin || ahora - new Date(fecha_fin).getTime() <= 90 días`) es
+la mejor aproximación con los datos disponibles. Si se agrega una columna `cerrada_at`
+en el futuro, reemplazar el filtro en `app/(gondolero)/gondolero/campanas/page.tsx`.
+
+---
+
 ## Pendiente de UI — jerarquía de la lista de campañas (panel de marca)
 
 En el panel de marca las campañas cerradas caen al pie de la lista, con poco

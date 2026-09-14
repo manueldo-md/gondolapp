@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { BarChart2, ArrowUp, ArrowDown, ChevronRight } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
-import { MarcarNotificacionesLeidas } from '../perfil/marcar-leidas'
 
 export default async function ActividadPage() {
   const supabase = await createClient()
@@ -47,7 +46,6 @@ export default async function ActividadPage() {
   ])
 
   const notificaciones    = notificacionesRes.data ?? []
-  const hayNoLeidas       = notificaciones.some((n: { leida: boolean }) => !n.leida)
   const fotosPendientesTotal   = fotosPendientesRes.count ?? 0
   const fotosPendientesPreview = (fotosPendientesRes.data ?? []) as unknown as {
     id: string; created_at: string
@@ -79,8 +77,6 @@ export default async function ActividadPage() {
           <h1 className="text-lg font-bold text-gray-900">Actividad</h1>
         </div>
       </div>
-
-      {hayNoLeidas && <MarcarNotificacionesLeidas gondoleroId={user.id} />}
 
       <div className="px-4 space-y-4 pt-4">
 
