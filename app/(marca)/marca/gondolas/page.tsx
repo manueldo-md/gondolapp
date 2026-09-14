@@ -145,27 +145,14 @@ export default async function GondolasPage({
     })
   )
 
-  // Fetch respuestas — dos orígenes:
-  // 1. foto_respuestas: flujo viejo (respuesta colgaba de la foto del bloque)
-  // 2. mision_respuestas: flujo nuevo (respuesta de campo no-foto va a la misión)
-  const fotoIds = fotos.map(f => f.id)
+  // Respuestas — UNA sola fuente: mision_respuestas.
+  //
+  // Hasta el 14/9/2026 esto leía también foto_respuestas y apilaba las dos
+  // listas en el mismo mapa sin deduplicar, así que cada respuesta se mostraba
+  // repetida. Las 47 filas de la tabla legacy tienen equivalente en
+  // mision_respuestas con el valor idéntico, así que no aportaba nada propio.
   const respuestasMap: Record<string, RespuestaItem[]> = {}
-  if (fotoIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: respsData } = await (admin as any)
-      .from('foto_respuestas')
-      .select('foto_id, valor, campo:bloque_campos(pregunta, tipo)')
-      .in('foto_id', fotoIds)
-    if (respsData) {
-      for (const r of respsData as { foto_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
-        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
-        if (!campo) continue
-        if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
-        respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
-      }
-    }
-  }
-  // Respuestas del flujo nuevo: mision_respuestas agrupadas por misión → distribuidas a las fotos de esa misión
+  // Agrupadas por misión → distribuidas a las fotos de esa misión
   const misionIds = [...new Set(fotos.map(f => f.mision_id).filter(Boolean) as string[])]
   if (misionIds.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

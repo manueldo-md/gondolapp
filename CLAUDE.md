@@ -1730,16 +1730,50 @@ en el panel es **red de seguridad, no el arreglo**.
 > conversión a mano. `String(n)` y `JSON.stringify(arr)` sobre una columna
 > `jsonb` son siempre un error.
 
-### `foto_respuestas` está condenada
+### `foto_respuestas` está condenada — ya sin lectores
 
-Tabla legacy: **nadie la escribe**. Se lee en un solo lugar —el popup del
-lightbox en `lib/resultados.ts`— y solo tiene datos de campañas viejas. Se
-normalizó el 14/9/2026 junto con `mision_respuestas` porque hasta que se elimine
-el lightbox mostraría `["Arcor","Georgalos"]` como texto crudo.
+Tabla legacy: nadie la escribe y, **desde el 14/9/2026, nadie la lee**. Solo
+falta el `DROP TABLE`, que se hace cuando el cambio esté verificado en
+producción.
 
-**Cuando se elimine la tabla** (la "etapa D" del plan de dashboard), esa
-normalización queda sin objeto y hay que sacar también la lectura de
-`foto_respuestas` y `fotoRespuestasMap` de `lib/resultados.ts`.
+Se leía en **cuatro** lugares, no en uno —una corrección a lo que decía esta
+misma nota—, y los cuatro tenían el mismo bug: cargaban `foto_respuestas`,
+después `mision_respuestas`, y apilaban las dos listas en el mismo mapa **sin
+deduplicar**. Cada respuesta se mostraba repetida:
+
+- `lib/resultados.ts` — popup del lightbox
+- `app/(admin)/admin/fotos/page.tsx`
+- `app/(distribuidora)/distribuidora/gondolas/page.tsx`
+- `app/(marca)/marca/gondolas/page.tsx`
+
+**Por qué se sacó la fuente en vez de deduplicar con un `Set`:** con las dos
+lecturas vivas, el día que los valores difieran —porque alguien corrige uno
+solo— el `Set` elegiría en silencio el que llegó primero. Se verificó antes de
+sacarla que las 47 filas de `foto_respuestas` tienen equivalente en
+`mision_respuestas` **con el valor idéntico**, en dev y en producción: 0 filas
+sin equivalente, 0 valores distintos.
+
+### El backfill de la Etapa A duplicó filas en dev por no tener guarda
+
+Detectado el 14/9/2026 al diagnosticar el lightbox, que en dev mostraba la misma
+respuesta **tres** veces: dos por la doble lectura, y una tercera porque
+`mision_respuestas` tenía **48 pares `(foto_id, campo_id)` con dos filas
+propias**.
+
+Las dos filas de cada par son idénticas salvo el `created_at`: una del 7/9 (el
+seed) y otra del 9/9 (el backfill de la Etapa A, que copió `foto_respuestas` a
+`mision_respuestas`). El backfill **reinsertó sin verificar si la fila ya
+existía**.
+
+> Es el mismo error que la idempotencia de las misiones evita en el flujo
+> normal. **Un backfill que reinserta sin guarda de existencia es un backfill
+> roto**: se corre una vez y parece bien, se corre dos y duplica. Todo script
+> de migración de datos tiene que ser `ON CONFLICT DO NOTHING`, o un `INSERT ...
+> SELECT ... WHERE NOT EXISTS`, o chequear antes. No alcanza con "lo corro una
+> sola vez": la próxima persona no sabe que ya corrió.
+
+Producción no quedó afectada porque allá el backfill fue la única fuente.
+Limpiado en dev con un `DELETE` que conserva la fila más vieja de cada par.
 
 ### distri_id null en gondoleros de dev
 El seed no vincula automáticamente los gondoleros de dev a Biomega. Solución:

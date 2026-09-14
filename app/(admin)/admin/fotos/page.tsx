@@ -60,25 +60,13 @@ export default async function FotosAdminPage({
   const signedMap: Record<string, string | null> = {}
   signed.forEach(s => { signedMap[s.id] = s.signedUrl })
 
-  // Respuestas — flujo viejo (foto_respuestas) + flujo nuevo (mision_respuestas)
-  const fotoIds = fotos.map((f: { id: string }) => f.id)
+  // Respuestas — UNA sola fuente: mision_respuestas.
+  //
+  // Hasta el 14/9/2026 esto leía también foto_respuestas y apilaba las dos
+  // listas en el mismo mapa sin deduplicar, así que cada respuesta se mostraba
+  // repetida. Las 47 filas de la tabla legacy tienen equivalente en
+  // mision_respuestas con el valor idéntico, así que no aportaba nada propio.
   const respuestasMap: Record<string, { pregunta: string; tipo: string; valor: unknown }[]> = {}
-  if (fotoIds.length > 0) {
-    const { data: respsData } = await admin
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .from('foto_respuestas' as any)
-      .select('foto_id, valor, campo:bloque_campos(pregunta, tipo)')
-      .in('foto_id', fotoIds)
-    if (respsData) {
-      for (const r of respsData as { foto_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
-        const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
-        if (!campo) continue
-        if (!respuestasMap[r.foto_id]) respuestasMap[r.foto_id] = []
-        respuestasMap[r.foto_id].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
-      }
-    }
-  }
-  // Flujo nuevo: respuestas de campos no-foto en mision_respuestas
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const misionIds = [...new Set((fotos as any[]).map((f: { mision_id: string | null }) => f.mision_id).filter(Boolean) as string[])]
   if (misionIds.length > 0) {

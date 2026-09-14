@@ -4,10 +4,10 @@
  * campaña (marca / distribuidora / repositora / admin). Un solo cargador para
  * los cuatro: los cuatro ven los mismos resultados.
  *
- * FUENTE CANÓNICA DE RESPUESTAS: mision_respuestas.
- * `foto_respuestas` solo se lee para el popup del lightbox (legacy; vacío en
- * campañas nuevas). NO usarla para agregar: produce doble conteo. Esa tabla
- * está condenada — ver CLAUDE.md, "foto_respuestas está condenada".
+ * FUENTE ÚNICA DE RESPUESTAS: mision_respuestas.
+ * Desde el 14/9/2026 ya no se lee `foto_respuestas` en ningún lado — esa tabla
+ * quedó sin lectores ni escritores y solo falta borrarla. Ver CLAUDE.md,
+ * "foto_respuestas está condenada".
  *
  * La unidad de salida es el MÓDULO: un campo configurado de la campaña con sus
  * respuestas ya agregadas según su tipo. Se emiten TODOS los campos
@@ -236,17 +236,29 @@ export async function loadResultadosCampanaData(
     }
   }
 
-  // ── 7. Popup del lightbox (legacy + flujo nuevo con foto_id) ────────────────
+  // ── 7. Popup del lightbox ───────────────────────────────────────────────────
+  // UNA sola fuente: mision_respuestas.
+  //
+  // Hasta el 14/9/2026 esto leía también foto_respuestas y apilaba las dos
+  // listas sin deduplicar, así que cada respuesta aparecía repetida en el
+  // popup. Se verificó que las 47 filas de foto_respuestas tienen equivalente
+  // en mision_respuestas con el valor idéntico —en dev y en producción—, así
+  // que la fuente legacy no aportaba ningún dato propio.
+  //
+  // Se sacó la fuente en vez de deduplicar con un Set a propósito: con las dos
+  // lecturas vivas, el día que los valores difieran el Set elegiría en silencio
+  // el que llegó primero. Ver CLAUDE.md, "foto_respuestas está condenada".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allFotoIds = ((fotosCuenta.data ?? []) as any[]).map((f: any) => f.id as string)
   const fotoRespuestasMap = new Map<string, { campo_id: string; valor: unknown }[]>()
   if (allFotoIds.length > 0) {
-    const [{ data: legacy }, { data: mrByFoto }] = await Promise.all([
-      admin.from('foto_respuestas').select('foto_id, campo_id, valor').in('foto_id', allFotoIds).limit(20000),
-      admin.from('mision_respuestas').select('foto_id, campo_id, valor').in('foto_id', allFotoIds).is('reemplazada_por', null),
-    ])
+    const { data: mrByFoto } = await admin
+      .from('mision_respuestas')
+      .select('foto_id, campo_id, valor')
+      .in('foto_id', allFotoIds)
+      .is('reemplazada_por', null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const r of ([...(legacy ?? []), ...(mrByFoto ?? [])] as any[])) {
+    for (const r of ((mrByFoto ?? []) as any[])) {
       if (!r.foto_id) continue
       if (!fotoRespuestasMap.has(r.foto_id)) fotoRespuestasMap.set(r.foto_id, [])
       fotoRespuestasMap.get(r.foto_id)!.push({ campo_id: r.campo_id, valor: r.valor })
