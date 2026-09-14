@@ -77,8 +77,11 @@ export interface RegistrarMisionParams {
   lng: number
   puntosTotal: number
   fotos: FotoMisionInput[]
-  /** Respuestas de campos no-foto (para misiones GPS-only o bloques sin foto) */
-  respuestasDirectas?: { campo_id: string; valor: unknown }[]
+  /**
+   * Respuestas de campos no-foto (para misiones GPS-only o bloques sin foto).
+   * bloqueId permite anclar foto_id cuando el bloque tiene exactamente una foto.
+   */
+  respuestasDirectas?: { campo_id: string; valor: unknown; bloqueId?: string | null }[]
   /**
    * UUID generado en el cliente al guardar la misión en IDB offline.
    * Garantiza idempotencia: si el envío se reintenta (fallo de red + app reabierta),
@@ -189,6 +192,9 @@ export async function registrarMision(params: RegistrarMisionParams) {
     : 0
 
   // 2. Insertar fotos vinculadas a la misión
+  // Acumulamos bloqueId → fotoIds para poder anclar respuestasDirectas en el paso 3.
+  const fotoIdsPorBloque = new Map<string, string[]>()
+
   for (const foto of params.fotos) {
     const { data: fotoData, error: fotoError } = await db
       .from('fotos')
@@ -219,6 +225,12 @@ export async function registrarMision(params: RegistrarMisionParams) {
       throw new Error('Error al guardar foto en la misión: ' + fotoError.message)
     }
 
+    // Acumular foto_id por bloque para anclar respuestasDirectas.
+    if (foto.bloqueId) {
+      if (!fotoIdsPorBloque.has(foto.bloqueId)) fotoIdsPorBloque.set(foto.bloqueId, [])
+      fotoIdsPorBloque.get(foto.bloqueId)!.push(fotoData.id)
+    }
+
     // Respuestas de formulario: solo para fotos de bloque.
     // Las fotos de campo no generan respuestas de este tipo — son su propia fila en fotos.
     // foto_id se guarda para preservar el vínculo foto↔respuesta en el lightbox del panel.
@@ -234,15 +246,18 @@ export async function registrarMision(params: RegistrarMisionParams) {
     }
   }
 
-  // 3. Guardar respuestas directas (campos no-foto) en mision_respuestas
+  // 3. Guardar respuestas directas (campos no-foto) en mision_respuestas.
+  // Si el bloque tiene exactamente UNA foto, se ancla foto_id para que el
+  // lightbox de resultados pueda mostrar la respuesta junto a esa foto.
+  // Si tiene más de una (o ninguna), foto_id queda NULL — el lightbox no
+  // muestra la respuesta, pero el dato existe y los stats son correctos.
   if (params.respuestasDirectas && params.respuestasDirectas.length > 0) {
-    const { error: errResp } = await db.from('mision_respuestas').insert(
-      params.respuestasDirectas.map(r => ({
-        mision_id: mision.id,
-        campo_id:  r.campo_id,
-        valor:     r.valor,
-      }))
-    )
+    const rows = params.respuestasDirectas.map(r => {
+      const fotoIds = r.bloqueId ? (fotoIdsPorBloque.get(r.bloqueId) ?? []) : []
+      const foto_id = fotoIds.length === 1 ? fotoIds[0] : null
+      return { mision_id: mision.id, campo_id: r.campo_id, valor: r.valor, foto_id }
+    })
+    const { error: errResp } = await db.from('mision_respuestas').insert(rows)
     if (errResp) console.error('[registrarMision] Error insertando mision_respuestas:', errResp.message)
   }
 

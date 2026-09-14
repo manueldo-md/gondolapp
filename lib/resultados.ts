@@ -179,11 +179,25 @@ export async function loadResultadosCampanaData(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allRespuestas = ((respuestasData.data ?? []) as any[])
 
-  // fotoRespuestasMap — popup del lightbox por foto_id
+  // fotoRespuestasMap — popup del lightbox por foto_id.
+  // Fuente 1: foto_respuestas (legacy — campañas viejas).
+  // Fuente 2: mision_respuestas con foto_id seteado (flujo nuevo, foto única por bloque).
   const fotoRespuestasMap = new Map<string, { campo_id: string; valor: unknown }[]>()
   for (const r of allRespuestas) {
     if (!fotoRespuestasMap.has(r.foto_id)) fotoRespuestasMap.set(r.foto_id, [])
     fotoRespuestasMap.get(r.foto_id)!.push({ campo_id: r.campo_id, valor: r.valor })
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (allFotoIds.length > 0) {
+    const { data: mrByFoto } = await admin
+      .from('mision_respuestas' as any)
+      .select('foto_id, campo_id, valor')
+      .in('foto_id', allFotoIds)
+      .is('reemplazada_por', null)
+    for (const r of ((mrByFoto ?? []) as any[])) {
+      if (!fotoRespuestasMap.has(r.foto_id)) fotoRespuestasMap.set(r.foto_id, [])
+      fotoRespuestasMap.get(r.foto_id)!.push({ campo_id: r.campo_id, valor: r.valor })
+    }
   }
 
   // campoDetallesMap — tabla de detalle por campo (legacy; vacío en campañas nuevas)

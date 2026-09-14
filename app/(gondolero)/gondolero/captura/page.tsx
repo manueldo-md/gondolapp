@@ -1406,7 +1406,7 @@ function CapturaContent() {
       const fotosConRespuestas = await Promise.all(
         uploadResults.map(async r => {
           const respuestasProcesadas:   { campo_id: string; valor: unknown }[] = []
-          const respuestasDirectasBloque: { campo_id: string; valor: unknown }[] = []
+          const respuestasDirectasBloque: { campo_id: string; valor: unknown; bloqueId: string | null }[] = []
           for (const [campo_id, valor] of Object.entries(r.respuestas)) {
             if (valor === undefined || valor === null || valor === '') continue
             if (valor instanceof File || valor instanceof Blob) {
@@ -1428,7 +1428,7 @@ function CapturaContent() {
               respuestasProcesadas.push({ campo_id, valor })
             } else {
               // Flujo nuevo: respuesta de campo no-foto sin foto de bloque → mision_respuestas
-              respuestasDirectasBloque.push({ campo_id, valor })
+              respuestasDirectasBloque.push({ campo_id, valor, bloqueId: r.bloqueId ?? null })
             }
           }
           return { ...r, respuestasProcesadas, respuestasDirectasBloque }
