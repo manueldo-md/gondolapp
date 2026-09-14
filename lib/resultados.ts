@@ -1,14 +1,26 @@
 /**
  * lib/resultados.ts
- * Tipos compartidos y función de carga de datos para los paneles de
- * resultados por campaña (marca / distribuidora / repositora).
+ * Tipos compartidos y carga de datos para los paneles de resultados por
+ * campaña (marca / distribuidora / repositora / admin). Un solo cargador para
+ * los cuatro: los cuatro ven los mismos resultados.
  *
- * FUENTE CANÓNICA DE RESPUESTAS: mision_respuestas
- * Después de la migración (Etapa 1) todos los valores viven en
- * mision_respuestas. foto_respuestas sigue leyéndose SOLO para el popup
- * del lightbox y la tabla de detalle (legacy; vacío en campañas nuevas).
- * NO usar foto_respuestas para agregar stats — produciría doble conteo.
+ * FUENTE CANÓNICA DE RESPUESTAS: mision_respuestas.
+ * `foto_respuestas` solo se lee para el popup del lightbox (legacy; vacío en
+ * campañas nuevas). NO usarla para agregar: produce doble conteo. Esa tabla
+ * está condenada — ver CLAUDE.md, "foto_respuestas está condenada".
+ *
+ * La unidad de salida es el MÓDULO: un campo configurado de la campaña con sus
+ * respuestas ya agregadas según su tipo. Se emiten TODOS los campos
+ * configurados, en orden (bloque.orden, campo.orden), incluso los que nadie
+ * respondió — un campo sin respuestas es información, no una fila ausente.
  */
+
+import {
+  normalizarBinaria,
+  normalizarNumero,
+  normalizarSeleccionMultiple,
+  normalizarTexto,
+} from './resultados-normalizar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AdminClient = any
@@ -23,40 +35,14 @@ export interface CampoMeta {
   orden: number
 }
 
-export interface CampoStat extends CampoMeta {
-  total: number
-  siCount?: number
-  noCount?: number
-  opcionCounts?: Record<string, number>
-  numAvg?: number
-  numMin?: number
-  numMax?: number
-  textUltimas?: string[]
-}
-
-export interface RespuestaRow {
-  valor: unknown
-  alias: string | null
-  comercioNombre: string | null
-  comercioDireccion: string | null
-  createdAt: string
-}
-
-export interface PrecioRow {
-  alias: string | null
-  comercioNombre: string | null
-  comercioDireccion: string | null
-  precio: number
-  createdAt: string
-}
-
 export interface FotoConUrl {
   id: string
   url: string | null
   signedUrl: string | null
   storage_path: string | null
   estado: string
-  precio_detectado: number | null
+  campo_id: string | null
+  bloque_id: string | null
   created_at: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   gondolero: any
@@ -64,23 +50,55 @@ export interface FotoConUrl {
   comercio: any
 }
 
+/** Contexto de una respuesta: dónde y cuándo se relevó. */
+export interface ContextoRespuesta {
+  comercio: string | null
+  ciudad: string | null
+  fecha: string | null
+  alias: string | null
+}
+
+export interface ModuloBase {
+  bloqueId: string
+  bloqueOrden: number
+  bloqueInstruccion: string | null
+  campo: CampoMeta
+  /** Cuántas misiones respondieron este campo. 0 = módulo vacío. */
+  base: number
+}
+
+export type Modulo =
+  | (ModuloBase & { tipo: 'binaria'; si: number; no: number })
+  | (ModuloBase & { tipo: 'numero'; valores: number[]; avg: number | null; min: number | null; max: number | null })
+  | (ModuloBase & { tipo: 'seleccion'; opciones: { opcion: string; n: number }[] })
+  | (ModuloBase & { tipo: 'texto'; respuestas: { valor: string; contexto: ContextoRespuesta }[] })
+  | (ModuloBase & { tipo: 'foto'; fotos: FotoConUrl[] })
+  | (ModuloBase & { tipo: 'otro' })
+
 export interface ResultadosData {
   camposMap: Map<string, CampoMeta>
+  /** Módulos en orden (bloque.orden, campo.orden). Incluye los vacíos. */
+  modulos: Modulo[]
   tieneCamposFoto: boolean
-  campoStats: CampoStat[]
-  /** Solo tiene datos para campañas legacy (foto_respuestas). Vacío en campañas nuevas. */
-  campoDetallesMap: Map<string, RespuestaRow[]>
   /** Respuestas por foto_id — para el popup del lightbox. */
   fotoRespuestasMap: Map<string, { campo_id: string; valor: unknown }[]>
   misionesAprobadas: number
   misionesTotales: number
-  fotos: FotoConUrl[]
+  /** PDV distintos con al menos una misión. No usar campanas.comercios_relevados: está inflado. */
+  pdvRelevados: number
   counts: Record<string, number>
   gondoleroCount: number
-  preciosArr: number[]
-  precioRows: PrecioRow[]
   totalFotos: number
   fotosAprobadas: number
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** PostgREST devuelve los embeds como objeto o como array de uno según el caso. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function uno<T>(embed: any): T | null {
+  if (!embed) return null
+  return (Array.isArray(embed) ? embed[0] : embed) ?? null
 }
 
 // ── Carga de datos ────────────────────────────────────────────────────────────
@@ -96,7 +114,7 @@ export async function loadResultadosCampanaData(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let fotosQuery: any = admin
     .from('fotos')
-    .select('id, url, storage_path, estado, precio_detectado, created_at, gondolero:profiles(nombre,alias), comercio:comercios(nombre,direccion)')
+    .select('id, url, storage_path, estado, campo_id, bloque_id, created_at, gondolero:profiles(nombre,alias), comercio:comercios(nombre,direccion)')
     .eq('campana_id', campanaId)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -104,16 +122,12 @@ export async function loadResultadosCampanaData(
     // Repositora: agrupa fotos de la misma misión
     fotosQuery = fotosQuery.order('mision_id', { ascending: false, nullsFirst: false })
   }
+  // El filtro por estado es global: filtra todas las galerías a la vez.
   if (tab) fotosQuery = fotosQuery.eq('estado', tab)
 
-  const [fotosData, fotosCuenta, precioData, partData, bloquesData, misionesData] = await Promise.all([
+  const [fotosData, fotosCuenta, partData, bloquesData, misionesData] = await Promise.all([
     fotosQuery,
     admin.from('fotos').select('id, estado').eq('campana_id', campanaId),
-    admin
-      .from('fotos')
-      .select('precio_detectado, precio_confirmado, created_at, gondolero:profiles(alias), comercio:comercios(nombre, direccion)')
-      .eq('campana_id', campanaId)
-      .eq('estado', 'aprobada'),
     admin
       .from('participaciones')
       .select('gondolero_id', { count: 'exact', head: true })
@@ -125,11 +139,45 @@ export async function loadResultadosCampanaData(
       .order('orden'),
     admin
       .from('misiones')
-      .select('id, estado')
+      .select('id, estado, comercio_id, created_at, gondolero:profiles(alias)')
       .eq('campana_id', campanaId),
   ])
 
-  // ── 2. Signed URLs ──────────────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const misiones = (misionesData.data ?? []) as any[]
+  const allMisionIds = misiones.map(m => m.id as string)
+
+  // ── 2. Contexto por misión: comercio y ciudad ───────────────────────────────
+  // Se resuelve en dos pasos en vez de con un embed de tres niveles: los embeds
+  // anidados de PostgREST devuelven objeto o array según el caso y ya nos costó
+  // guardas repartidas por todo el archivo.
+  const comercioIds = [...new Set(misiones.map(m => m.comercio_id).filter(Boolean))] as string[]
+  const comercioCtx = new Map<string, { nombre: string | null; ciudad: string | null }>()
+  if (comercioIds.length > 0) {
+    const { data: comerciosData } = await admin
+      .from('comercios')
+      .select('id, nombre, localidad:localidades(nombre)')
+      .in('id', comercioIds)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const co of ((comerciosData ?? []) as any[])) {
+      const loc = uno<{ nombre: string }>(co.localidad)
+      comercioCtx.set(co.id, { nombre: co.nombre ?? null, ciudad: loc?.nombre ?? null })
+    }
+  }
+
+  const misionCtx = new Map<string, ContextoRespuesta>()
+  for (const m of misiones) {
+    const co = m.comercio_id ? comercioCtx.get(m.comercio_id) : undefined
+    const g = uno<{ alias: string | null }>(m.gondolero)
+    misionCtx.set(m.id, {
+      comercio: co?.nombre ?? null,
+      ciudad:   co?.ciudad ?? null,
+      fecha:    m.created_at ?? null,
+      alias:    g?.alias ?? null,
+    })
+  }
+
+  // ── 3. Signed URLs ──────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fotosRaw = (fotosData.data ?? []) as any[]
   const fotos: FotoConUrl[] = await Promise.all(
@@ -144,84 +192,27 @@ export async function loadResultadosCampanaData(
     })
   )
 
-  // ── 3. Contadores por estado ────────────────────────────────────────────────
+  // ── 4. Contadores por estado ────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const counts = ((fotosCuenta.data ?? []) as any[]).reduce((acc: Record<string, number>, f: any) => {
     acc[f.estado] = (acc[f.estado] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
 
-  // ── 4. Mapa de campos (desde bloques_foto) ──────────────────────────────────
+  // ── 5. Campos configurados ──────────────────────────────────────────────────
   const camposMap = new Map<string, CampoMeta>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const bloque of ((bloquesData.data ?? []) as any[])) {
+  const bloques = ((bloquesData.data ?? []) as any[])
+  for (const bloque of bloques) {
     for (const campo of (bloque.bloque_campos ?? [])) camposMap.set(campo.id, campo)
   }
-
-  const tieneCamposFoto = ((bloquesData.data ?? []) as any[]).some(
+  const tieneCamposFoto = bloques.some(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (b: any) => (b.bloque_campos ?? []).some((c: { tipo: string }) => c.tipo === 'foto')
   )
 
-  // ── 5. foto_respuestas — SOLO para lightbox popup y detalle legacy ──────────
-  // No se usa para agregar stats: después de la migración, los valores ya
-  // están en mision_respuestas. Usar foto_respuestas para stats causa doble conteo.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allFotoIds = ((fotosCuenta.data ?? []) as any[]).map((f: any) => f.id as string)
-  const respuestasData = allFotoIds.length > 0
-    ? await admin
-        .from('foto_respuestas')
-        .select('foto_id, campo_id, valor, foto:fotos(created_at, gondolero:profiles(alias), comercio:comercios(nombre, direccion))')
-        .in('foto_id', allFotoIds)
-        .limit(20000)
-    : { data: [] }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allRespuestas = ((respuestasData.data ?? []) as any[])
-
-  // fotoRespuestasMap — popup del lightbox por foto_id.
-  // Fuente 1: foto_respuestas (legacy — campañas viejas).
-  // Fuente 2: mision_respuestas con foto_id seteado (flujo nuevo, foto única por bloque).
-  const fotoRespuestasMap = new Map<string, { campo_id: string; valor: unknown }[]>()
-  for (const r of allRespuestas) {
-    if (!fotoRespuestasMap.has(r.foto_id)) fotoRespuestasMap.set(r.foto_id, [])
-    fotoRespuestasMap.get(r.foto_id)!.push({ campo_id: r.campo_id, valor: r.valor })
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (allFotoIds.length > 0) {
-    const { data: mrByFoto } = await admin
-      .from('mision_respuestas' as any)
-      .select('foto_id, campo_id, valor')
-      .in('foto_id', allFotoIds)
-      .is('reemplazada_por', null)
-    for (const r of ((mrByFoto ?? []) as any[])) {
-      if (!fotoRespuestasMap.has(r.foto_id)) fotoRespuestasMap.set(r.foto_id, [])
-      fotoRespuestasMap.get(r.foto_id)!.push({ campo_id: r.campo_id, valor: r.valor })
-    }
-  }
-
-  // campoDetallesMap — tabla de detalle por campo (legacy; vacío en campañas nuevas)
-  const campoDetallesMap = new Map<string, RespuestaRow[]>()
-  for (const r of allRespuestas) {
-    if (!camposMap.has(r.campo_id)) continue
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fotoData = r.foto as any
-    const alias = Array.isArray(fotoData?.gondolero) ? fotoData.gondolero[0]?.alias ?? null : fotoData?.gondolero?.alias ?? null
-    const cnom  = Array.isArray(fotoData?.comercio)  ? fotoData.comercio[0]?.nombre ?? null  : fotoData?.comercio?.nombre ?? null
-    const cdir  = Array.isArray(fotoData?.comercio)  ? fotoData.comercio[0]?.direccion ?? null : fotoData?.comercio?.direccion ?? null
-    const row: RespuestaRow = { valor: r.valor, alias, comercioNombre: cnom, comercioDireccion: cdir, createdAt: fotoData?.created_at ?? '' }
-    if (!campoDetallesMap.has(r.campo_id)) campoDetallesMap.set(r.campo_id, [])
-    campoDetallesMap.get(r.campo_id)!.push(row)
-  }
-  for (const [campoId, rows] of campoDetallesMap) {
-    rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    campoDetallesMap.set(campoId, rows)
-  }
-
-  // ── 6. campoValoresMap — SOLO mision_respuestas (fuente canónica) ───────────
-  const campoValoresMap = new Map<string, unknown[]>()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allMisionIds = ((misionesData.data ?? []) as any[]).map((m: any) => m.id as string)
+  // ── 6. Respuestas vigentes, agrupadas por campo ─────────────────────────────
+  const respuestasPorCampo = new Map<string, { valor: unknown; misionId: string }[]>()
   if (allMisionIds.length > 0) {
     const { data: misionResps } = await admin
       .from('mision_respuestas')
@@ -229,103 +220,137 @@ export async function loadResultadosCampanaData(
       .in('mision_id', allMisionIds)
       .is('reemplazada_por', null)   // solo la versión vigente de cada respuesta
       .limit(20000)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const r of (misionResps ?? []) as any[]) {
       if (!camposMap.has(r.campo_id)) continue
-      if (!campoValoresMap.has(r.campo_id)) campoValoresMap.set(r.campo_id, [])
-      campoValoresMap.get(r.campo_id)!.push(r.valor)
+      if (!respuestasPorCampo.has(r.campo_id)) respuestasPorCampo.set(r.campo_id, [])
+      respuestasPorCampo.get(r.campo_id)!.push({ valor: r.valor, misionId: r.mision_id })
     }
   }
 
-  // ── 7. Estadísticas por campo ───────────────────────────────────────────────
-  const campoStats: CampoStat[] = []
-  for (const [campoId, valores] of campoValoresMap) {
-    const campo = camposMap.get(campoId)!
-    const stat: CampoStat = { ...campo, total: valores.length }
-
-    if (campo.tipo === 'binaria') {
-      let si = 0, no = 0
-      for (const v of valores) { (v === true || v === 'true' || v === 'Sí') ? si++ : no++ }
-      stat.siCount = si; stat.noCount = no
-
-    } else if (campo.tipo === 'seleccion_unica') {
-      const cnts: Record<string, number> = {}
-      for (const v of valores) { const s = String(v); cnts[s] = (cnts[s] ?? 0) + 1 }
-      stat.opcionCounts = cnts
-
-    } else if (campo.tipo === 'seleccion_multiple') {
-      const cnts: Record<string, number> = {}
-      for (const v of valores) {
-        const arr = Array.isArray(v) ? v : []
-        for (const item of arr) { const s = String(item); cnts[s] = (cnts[s] ?? 0) + 1 }
-      }
-      stat.opcionCounts = cnts
-
-    } else if (campo.tipo === 'numero') {
-      const nums = valores.map(v => Number(v)).filter(n => !isNaN(n))
-      if (nums.length > 0) {
-        stat.numAvg = Math.round(nums.reduce((a, b) => a + b, 0) / nums.length * 10) / 10
-        stat.numMin = Math.min(...nums)
-        stat.numMax = Math.max(...nums)
-      }
-
-    } else if (campo.tipo === 'texto') {
-      stat.textUltimas = valores.slice(-50).map(v => String(v)).filter(s => s.trim())
-    }
-
-    campoStats.push(stat)
-  }
-  campoStats.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
-
-  // ── 8. Contadores de misiones ───────────────────────────────────────────────
+  // ── 7. Popup del lightbox (legacy + flujo nuevo con foto_id) ────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const misionCounts = ((misionesData.data ?? []) as any[]).reduce((acc: Record<string, number>, m: any) => {
+  const allFotoIds = ((fotosCuenta.data ?? []) as any[]).map((f: any) => f.id as string)
+  const fotoRespuestasMap = new Map<string, { campo_id: string; valor: unknown }[]>()
+  if (allFotoIds.length > 0) {
+    const [{ data: legacy }, { data: mrByFoto }] = await Promise.all([
+      admin.from('foto_respuestas').select('foto_id, campo_id, valor').in('foto_id', allFotoIds).limit(20000),
+      admin.from('mision_respuestas').select('foto_id, campo_id, valor').in('foto_id', allFotoIds).is('reemplazada_por', null),
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of ([...(legacy ?? []), ...(mrByFoto ?? [])] as any[])) {
+      if (!r.foto_id) continue
+      if (!fotoRespuestasMap.has(r.foto_id)) fotoRespuestasMap.set(r.foto_id, [])
+      fotoRespuestasMap.get(r.foto_id)!.push({ campo_id: r.campo_id, valor: r.valor })
+    }
+  }
+
+  // ── 8. Módulos ──────────────────────────────────────────────────────────────
+  // Se itera sobre los campos CONFIGURADOS, no sobre las respuestas: un campo
+  // que nadie respondió tiene que aparecer vacío, no desaparecer.
+  const modulos: Modulo[] = []
+  const bloquesOrdenados = [...bloques].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+
+  for (const bloque of bloquesOrdenados) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const campos = [...((bloque.bloque_campos ?? []) as any[])].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+    const primerCampoFotoId: string | null = campos.find(c => c.tipo === 'foto')?.id ?? null
+
+    for (const campo of campos) {
+      const respuestas = respuestasPorCampo.get(campo.id) ?? []
+      const comun: ModuloBase = {
+        bloqueId:          bloque.id,
+        bloqueOrden:       bloque.orden ?? 0,
+        bloqueInstruccion: bloque.instruccion ?? null,
+        campo:             campo as CampoMeta,
+        base:              respuestas.length,
+      }
+
+      if (campo.tipo === 'binaria') {
+        let si = 0
+        for (const r of respuestas) if (normalizarBinaria(r.valor)) si++
+        modulos.push({ ...comun, tipo: 'binaria', si, no: respuestas.length - si })
+
+      } else if (campo.tipo === 'numero') {
+        const valores = respuestas
+          .map(r => normalizarNumero(r.valor))
+          .filter((n): n is number => n !== null)
+        const avg = valores.length
+          ? Math.round((valores.reduce((a, b) => a + b, 0) / valores.length) * 10) / 10
+          : null
+        modulos.push({
+          ...comun, tipo: 'numero', valores, avg,
+          min: valores.length ? Math.min(...valores) : null,
+          max: valores.length ? Math.max(...valores) : null,
+        })
+
+      } else if (campo.tipo === 'seleccion_unica' || campo.tipo === 'seleccion_multiple') {
+        const cuenta = new Map<string, number>()
+        // Se siembra con las opciones configuradas para que una opción que
+        // nadie eligió se muestre en cero, y no se caiga del listado.
+        for (const op of (campo.opciones ?? [])) cuenta.set(String(op), 0)
+        for (const r of respuestas) {
+          const elegidas = campo.tipo === 'seleccion_multiple'
+            ? normalizarSeleccionMultiple(r.valor)
+            : [normalizarTexto(r.valor)].filter(s => s !== '')
+          for (const op of elegidas) cuenta.set(op, (cuenta.get(op) ?? 0) + 1)
+        }
+        modulos.push({
+          ...comun, tipo: 'seleccion',
+          opciones: [...cuenta.entries()].map(([opcion, n]) => ({ opcion, n })).sort((a, b) => b.n - a.n),
+        })
+
+      } else if (campo.tipo === 'texto') {
+        modulos.push({
+          ...comun, tipo: 'texto',
+          respuestas: respuestas
+            .map(r => ({
+              valor: normalizarTexto(r.valor),
+              contexto: misionCtx.get(r.misionId) ?? { comercio: null, ciudad: null, fecha: null, alias: null },
+            }))
+            .filter(r => r.valor.trim() !== '')
+            .sort((a, b) => (b.contexto.fecha ?? '').localeCompare(a.contexto.fecha ?? '')),
+        })
+
+      } else if (campo.tipo === 'foto') {
+        // Fotos de este campo. Las históricas con campo_id null se adjuntan al
+        // PRIMER campo foto del bloque: son del flujo viejo, donde la foto era
+        // del bloque y no de un campo. Sin esto desaparecerían del panel.
+        const suyas = fotos.filter(f =>
+          f.campo_id === campo.id ||
+          (f.campo_id === null && f.bloque_id === bloque.id && campo.id === primerCampoFotoId)
+        )
+        modulos.push({ ...comun, tipo: 'foto', base: suyas.length, fotos: suyas })
+
+      } else {
+        modulos.push({ ...comun, tipo: 'otro' })
+      }
+    }
+  }
+
+  // ── 9. Contadores ───────────────────────────────────────────────────────────
+  const misionCounts = misiones.reduce((acc: Record<string, number>, m) => {
     acc[m.estado] = (acc[m.estado] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
   const misionesAprobadas = misionCounts['aprobada'] ?? 0
-  const misionesTotales   = Object.values(misionCounts).reduce((a, b) => a + b, 0)
+  const misionesTotales   = Object.values(misionCounts).reduce((a: number, b) => a + (b as number), 0)
+  const pdvRelevados      = comercioIds.length
 
-  // ── 9. Precios ──────────────────────────────────────────────────────────────
-  const preciosArr: number[] = []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const f of (precioData.data ?? []) as any[]) {
-    const p = f.precio_confirmado ?? f.precio_detectado
-    if (p != null && p > 0) preciosArr.push(p)
-  }
-
-  const precioRows: PrecioRow[] = (precioData.data ?? [])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .reduce((acc: PrecioRow[], f: any) => {
-      const p = f.precio_confirmado ?? f.precio_detectado
-      if (p != null && p > 0) {
-        const alias = Array.isArray(f.gondolero) ? f.gondolero[0]?.alias ?? null : f.gondolero?.alias ?? null
-        const cnom  = Array.isArray(f.comercio)  ? f.comercio[0]?.nombre ?? null  : f.comercio?.nombre ?? null
-        const cdir  = Array.isArray(f.comercio)  ? f.comercio[0]?.direccion ?? null : f.comercio?.direccion ?? null
-        acc.push({ alias, comercioNombre: cnom, comercioDireccion: cdir, precio: p, createdAt: f.created_at ?? '' })
-      }
-      return acc
-    }, [])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .sort((a: any, b: any) => b.createdAt.localeCompare(a.createdAt))
-
-  // ── 10. Totales de fotos ────────────────────────────────────────────────────
   const totalFotos     = Object.values(counts).reduce((a, b) => a + b, 0)
   const fotosAprobadas = counts['aprobada'] ?? 0
   const gondoleroCount = partData.count ?? 0
 
   return {
     camposMap,
+    modulos,
     tieneCamposFoto,
-    campoStats,
-    campoDetallesMap,
     fotoRespuestasMap,
     misionesAprobadas,
     misionesTotales,
-    fotos,
+    pdvRelevados,
     counts,
     gondoleroCount,
-    preciosArr,
-    precioRows,
     totalFotos,
     fotosAprobadas,
   }

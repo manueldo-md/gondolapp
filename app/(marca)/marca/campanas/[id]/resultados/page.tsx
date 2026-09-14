@@ -32,7 +32,7 @@ export default async function MarcaCampanaResultadosPage({
 
   const { data: campana, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, marca_id')
+    .select('id, nombre, tipo, estado, fecha_fin, objetivo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, marca_id')
     .eq('id', params.id)
     .single()
 
@@ -62,18 +62,10 @@ export default async function MarcaCampanaResultadosPage({
           nombre: c.nombre,
           tipo: c.tipo,
           fecha_fin: c.fecha_fin ?? null,
-          comercios_relevados: c.comercios_relevados ?? null,
+          tope_total_comercios: c.tope_total_comercios ?? null,
         }}
         tab={tab}
-        config={{
-          accentColor:       'text-gondo-indigo-600',
-          progressBarColor:  'bg-gondo-indigo-600',
-          seleccionBarColor: 'bg-gondo-indigo-600',
-          agentLabel:        'Gondoleros',
-          agentHeaderLabel:  'Gondolero',
-          showAgent:         false,
-          limiteComercio:    c.objetivo_comercios ?? null,
-        }}
+        panel="marca"
         renderFotoAcciones={(fotoId, estado) =>
           estado === 'pendiente' ? (
             <div className="px-4 pb-4 shrink-0">

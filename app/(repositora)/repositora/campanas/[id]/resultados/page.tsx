@@ -67,9 +67,6 @@ export default async function RepoCampanaResultadosPage({
   const tab = searchParams.tab ?? ''
   const data = await loadResultadosCampanaData(admin, params.id, tab, { ordenarPorMision: true })
 
-  // Repositora usa tope_total_comercios si está definido, si no objetivo_comercios
-  const limiteComercio: number | null = c.tope_total_comercios ?? c.objetivo_comercios ?? null
-
   return (
     <div>
       <CampanaPageNav
@@ -86,18 +83,10 @@ export default async function RepoCampanaResultadosPage({
           nombre: c.nombre,
           tipo: c.tipo,
           fecha_fin: c.fecha_fin ?? null,
-          comercios_relevados: c.comercios_relevados ?? null,
+          tope_total_comercios: c.tope_total_comercios ?? null,
         }}
         tab={tab}
-        config={{
-          accentColor:       'text-blue-600',
-          progressBarColor:  'bg-blue-500',
-          seleccionBarColor: 'bg-blue-400',
-          agentLabel:        'Fixers',
-          agentHeaderLabel:  'Fixer',
-          showAgent:         true,
-          limiteComercio,
-        }}
+        panel="repositora"
         renderFotoAcciones={(fotoId, estado) =>
           estado === 'pendiente' ? (
             <div className="px-4 pb-4 shrink-0">

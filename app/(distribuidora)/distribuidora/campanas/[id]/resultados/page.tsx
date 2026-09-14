@@ -32,7 +32,7 @@ export default async function DistriCampanaResultadosPage({
 
   const { data: campana, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_fin, objetivo_comercios, comercios_relevados, puntos_por_foto, distri_id')
+    .select('id, nombre, tipo, estado, fecha_fin, objetivo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, distri_id')
     .eq('id', params.id)
     .single()
 
@@ -62,18 +62,10 @@ export default async function DistriCampanaResultadosPage({
           nombre: c.nombre,
           tipo: c.tipo,
           fecha_fin: c.fecha_fin ?? null,
-          comercios_relevados: c.comercios_relevados ?? null,
+          tope_total_comercios: c.tope_total_comercios ?? null,
         }}
         tab={tab}
-        config={{
-          accentColor:       'text-gondo-amber-400',
-          progressBarColor:  'bg-gondo-amber-400',
-          seleccionBarColor: 'bg-blue-400',
-          agentLabel:        'Gondoleros',
-          agentHeaderLabel:  'Gondolero',
-          showAgent:         true,
-          limiteComercio:    c.objetivo_comercios ?? null,
-        }}
+        panel="distri"
         renderFotoAcciones={(fotoId, estado) =>
           estado === 'pendiente' ? (
             <div className="px-4 pb-4 shrink-0">

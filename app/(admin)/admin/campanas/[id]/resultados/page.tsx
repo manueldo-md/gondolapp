@@ -24,7 +24,7 @@ export default async function AdminCampanaResultadosPage({
 
   const { data: campanaRaw, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_fin, objetivo_comercios, comercios_relevados')
+    .select('id, nombre, tipo, estado, fecha_fin, objetivo_comercios, tope_total_comercios, comercios_relevados')
     .eq('id', params.id)
     .single()
 
@@ -52,18 +52,10 @@ export default async function AdminCampanaResultadosPage({
           nombre:              c.nombre,
           tipo:                c.tipo,
           fecha_fin:           c.fecha_fin ?? null,
-          comercios_relevados: c.comercios_relevados ?? null,
+          tope_total_comercios: c.tope_total_comercios ?? null,
         }}
         tab={tab}
-        config={{
-          accentColor:       'text-gray-700',
-          progressBarColor:  'bg-gray-600',
-          seleccionBarColor: 'bg-gray-500',
-          agentLabel:        'Gondoleros',
-          agentHeaderLabel:  'Gondolero',
-          showAgent:         true,
-          limiteComercio:    c.objetivo_comercios ?? null,
-        }}
+        panel="admin"
         renderFotoAcciones={(fotoId, estado) =>
           (estado === 'pendiente' || estado === 'en_revision') ? (
             <div className="px-4 pb-4 shrink-0">
