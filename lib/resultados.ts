@@ -96,8 +96,21 @@ export interface ResultadosData {
   misionesTotales: number
   /** PDV distintos con al menos una misión. No usar campanas.comercios_relevados: está inflado. */
   pdvRelevados: number
+  /** Ciudades distintas donde se relevó, vía comercios.localidad_id. */
+  ciudades: number
+  /**
+   * Gondoleros que efectivamente relevaron, no los inscriptos.
+   *
+   * Todo lo demás en la cabecera cuenta trabajo hecho; un contador de
+   * inscriptos entre ellos sería el único que cuenta intención, y el lector
+   * asume que todos los números hablan de lo mismo. Los inscriptos son gestión
+   * de campaña y van en el bloque de ejecución de la distri, donde el contraste
+   * "9 inscriptos, 3 relevaron" es justamente el dato útil.
+   */
+  gondolerosRelevaron: number
+  /** Primera y última misión: cuándo se relevó. */
+  ventana: { desde: string | null; hasta: string | null }
   counts: Record<string, number>
-  gondoleroCount: number
   totalFotos: number
   fotosAprobadas: number
 }
@@ -135,13 +148,12 @@ export async function loadResultadosCampanaData(
   // El filtro por estado es global: filtra todas las galerías a la vez.
   if (tab) fotosQuery = fotosQuery.eq('estado', tab)
 
-  const [fotosData, fotosCuenta, partData, bloquesData, misionesData] = await Promise.all([
+  // La cuenta de participaciones (inscriptos) ya no se pide acá: la cabecera
+  // muestra los gondoleros que relevaron. Los inscriptos vuelven cuando se haga
+  // el bloque de ejecución de la distri, que es donde el contraste sirve.
+  const [fotosData, fotosCuenta, bloquesData, misionesData] = await Promise.all([
     fotosQuery,
     admin.from('fotos').select('id, estado').eq('campana_id', campanaId),
-    admin
-      .from('participaciones')
-      .select('gondolero_id', { count: 'exact', head: true })
-      .eq('campana_id', campanaId),
     admin
       .from('bloques_foto')
       .select('id, orden, instruccion, bloque_campos(id, tipo, pregunta, opciones, orden)')
@@ -149,7 +161,7 @@ export async function loadResultadosCampanaData(
       .order('orden'),
     admin
       .from('misiones')
-      .select('id, estado, comercio_id, created_at, gondolero:profiles(alias)')
+      .select('id, estado, comercio_id, gondolero_id, created_at, gondolero:profiles(alias)')
       .eq('campana_id', campanaId),
   ])
 
@@ -396,7 +408,19 @@ export async function loadResultadosCampanaData(
 
   const totalFotos     = Object.values(counts).reduce((a, b) => a + b, 0)
   const fotosAprobadas = counts['aprobada'] ?? 0
-  const gondoleroCount = partData.count ?? 0
+
+  // Gondoleros que relevaron, no los inscriptos.
+  const gondolerosRelevaron = new Set(misiones.map(m => m.gondolero_id).filter(Boolean)).size
+
+  // Ciudades distintas: se derivan del comercio de cada misión. Un comercio sin
+  // localidad_id no suma (hay 8 de 99 en dev), así que es un piso, no un exacto.
+  const ciudades = new Set(
+    comercioIds.map(id => comercioCtx.get(id)?.ciudad).filter(Boolean)
+  ).size
+
+  // Ventana temporal: primera y última misión.
+  const fechas = misiones.map(m => m.created_at as string).filter(Boolean).sort()
+  const ventana = { desde: fechas[0] ?? null, hasta: fechas[fechas.length - 1] ?? null }
 
   return {
     camposMap,
@@ -406,8 +430,10 @@ export async function loadResultadosCampanaData(
     misionesAprobadas,
     misionesTotales,
     pdvRelevados,
+    ciudades,
+    gondolerosRelevaron,
+    ventana,
     counts,
-    gondoleroCount,
     totalFotos,
     fotosAprobadas,
   }
