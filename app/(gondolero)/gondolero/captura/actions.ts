@@ -220,13 +220,15 @@ export async function registrarMision(params: RegistrarMisionParams) {
     }
 
     // Respuestas de formulario: solo para fotos de bloque.
-    // Las fotos de campo no generan foto_respuestas — son su propia fila en fotos.
+    // Las fotos de campo no generan respuestas de este tipo — son su propia fila en fotos.
+    // foto_id se guarda para preservar el vínculo foto↔respuesta en el lightbox del panel.
     if (!foto.campoId && foto.respuestas.length > 0) {
-      await db.from('foto_respuestas').insert(
+      await db.from('mision_respuestas').insert(
         foto.respuestas.map(r => ({
-          foto_id:  fotoData.id,
-          campo_id: r.campo_id,
-          valor:    r.valor,
+          mision_id: mision.id,
+          foto_id:   fotoData.id,
+          campo_id:  r.campo_id,
+          valor:     r.valor,
         }))
       )
     }

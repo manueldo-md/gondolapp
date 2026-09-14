@@ -983,8 +983,9 @@ async function crearCampanaConMisiones({
       for (const cp of campoIds) {
         const respuestas = respuestasFn(cp.id, cp.orden)
         for (const r of respuestas) {
-          if (f?.id) { try { await (db as any).from('foto_respuestas').insert({ foto_id: f.id, campo_id: r.campo_id, valor: r.valor }) } catch {} }
-          try { await (db as any).from('mision_respuestas').insert({ mision_id: m.id, campo_id: r.campo_id, valor: r.valor }) } catch {}
+          // foto_respuestas eliminada (Etapa A de la migración a mision_respuestas).
+          // El writer canónico es mision_respuestas con foto_id para el lightbox.
+          try { await (db as any).from('mision_respuestas').insert({ mision_id: m.id, foto_id: f?.id ?? null, campo_id: r.campo_id, valor: r.valor }) } catch {}
         }
       }
     }
