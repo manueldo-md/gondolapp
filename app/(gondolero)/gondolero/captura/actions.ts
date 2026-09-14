@@ -252,9 +252,14 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // Si tiene más de una (o ninguna), foto_id queda NULL — el lightbox no
   // muestra la respuesta, pero el dato existe y los stats son correctos.
   if (params.respuestasDirectas && params.respuestasDirectas.length > 0) {
+    // LOG DIAGNÓSTICO — borrar una vez confirmado que foto_id se setea bien
+    console.log('[registrarMision] respuestasDirectas payload:', JSON.stringify(params.respuestasDirectas))
+    console.log('[registrarMision] fotoIdsPorBloque:', JSON.stringify([...fotoIdsPorBloque.entries()]))
+    console.log('[registrarMision] fotos recibidas:', JSON.stringify(params.fotos.map(f => ({ bloqueId: f.bloqueId, campoId: f.campoId ?? null }))))
     const rows = params.respuestasDirectas.map(r => {
       const fotoIds = r.bloqueId ? (fotoIdsPorBloque.get(r.bloqueId) ?? []) : []
       const foto_id = fotoIds.length === 1 ? fotoIds[0] : null
+      console.log('[registrarMision] campo', r.campo_id, '→ bloqueId=', r.bloqueId, 'fotoIds=', fotoIds, '→ foto_id=', foto_id)
       return { mision_id: mision.id, campo_id: r.campo_id, valor: r.valor, foto_id }
     })
     const { error: errResp } = await db.from('mision_respuestas').insert(rows)
