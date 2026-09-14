@@ -63,13 +63,16 @@ export function ModuloFoto({
           <p className="text-xs text-gray-400">No hay fotos para este módulo con el filtro actual.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+        // Thumbs a la mitad (h-52 → h-[104px]) y más columnas: una galería con
+        // el thumb grande empujaba fuera de pantalla todo lo que venía después.
+        // El click para ampliar sigue igual — FotoLightbox no cambia.
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
           {modulo.fotos.map(f => (
             <div key={f.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
               <FotoLightbox
                 src={f.signedUrl}
                 alt={`Foto de ${f.comercio?.nombre ?? 'comercio'}`}
-                containerClassName="relative w-full h-52 shrink-0"
+                containerClassName="relative w-full h-[104px] shrink-0"
                 modalFooter={
                   fotoRespuestasMap.has(f.id) && camposMap.size > 0
                     ? (
@@ -99,29 +102,29 @@ export function ModuloFoto({
                 </span>
               </FotoLightbox>
 
-              <div className="p-4 flex-1 flex flex-col gap-2.5">
-                <div className="flex items-start gap-2">
-                  <MapPin size={13} className="text-gray-400 mt-0.5 shrink-0" />
+              <div className="p-2.5 flex-1 flex flex-col gap-1">
+                <div className="flex items-start gap-1.5">
+                  <MapPin size={11} className="text-gray-400 mt-0.5 shrink-0" />
                   <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 text-sm truncate">
+                    <p className="font-semibold text-gray-900 text-xs truncate">
                       {f.comercio?.nombre ?? 'Comercio'}
                     </p>
                     {f.comercio?.direccion && (
-                      <p className="text-xs text-gray-400 truncate">{f.comercio.direccion}</p>
+                      <p className="text-[10px] text-gray-400 truncate">{f.comercio.direccion}</p>
                     )}
                   </div>
                 </div>
                 {tema.verAgente && (
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <User size={13} className="text-gray-400 shrink-0" />
-                    <span className="text-xs text-gray-600 truncate">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <User size={11} className="text-gray-400 shrink-0" />
+                    <span className="text-[10px] text-gray-600 truncate">
                       {f.gondolero?.alias ?? f.gondolero?.nombre ?? '—'}
                     </span>
                   </div>
                 )}
-                <div className="flex items-center justify-end text-xs text-gray-400 mt-auto">
+                <div className="flex items-center justify-end text-[10px] text-gray-400 mt-auto">
                   <div className="flex items-center gap-1">
-                    <Clock size={11} />
+                    <Clock size={10} />
                     <span>{formatearFechaHora(f.created_at)}</span>
                   </div>
                 </div>

@@ -69,7 +69,15 @@ export interface ModuloBase {
 
 export type Modulo =
   | (ModuloBase & { tipo: 'binaria'; si: number; no: number })
-  | (ModuloBase & { tipo: 'numero'; valores: number[]; avg: number | null; min: number | null; max: number | null })
+  | (ModuloBase & {
+      tipo: 'numero'
+      valores: number[]
+      avg: number | null
+      min: number | null
+      max: number | null
+      /** Valor por valor con su contexto, para el detalle bajo los tres tiles. */
+      respuestas: { valor: number; contexto: ContextoRespuesta }[]
+    })
   | (ModuloBase & { tipo: 'seleccion'; opciones: { opcion: string; n: number }[] })
   | (ModuloBase & { tipo: 'texto'; respuestas: { valor: string; contexto: ContextoRespuesta }[] })
   | (ModuloBase & { tipo: 'foto'; fotos: FotoConUrl[] })
@@ -272,9 +280,19 @@ export async function loadResultadosCampanaData(
         modulos.push({ ...comun, tipo: 'binaria', si, no: respuestas.length - si })
 
       } else if (campo.tipo === 'numero') {
-        const valores = respuestas
-          .map(r => normalizarNumero(r.valor))
-          .filter((n): n is number => n !== null)
+        // Ordenado por valor descendente: los tres tiles de arriba dicen cuánto
+        // es el máximo y el mínimo, pero no DÓNDE. El detalle ordenado por
+        // valor pone los extremos en los bordes de la lista, pegados a los
+        // tiles que generaron la pregunta.
+        const conContexto = respuestas
+          .map(r => ({
+            valor: normalizarNumero(r.valor),
+            contexto: misionCtx.get(r.misionId) ?? { comercio: null, ciudad: null, fecha: null, alias: null },
+          }))
+          .filter((r): r is { valor: number; contexto: ContextoRespuesta } => r.valor !== null)
+          .sort((a, b) => b.valor - a.valor)
+
+        const valores = conContexto.map(r => r.valor)
         const avg = valores.length
           ? Math.round((valores.reduce((a, b) => a + b, 0) / valores.length) * 10) / 10
           : null
@@ -282,6 +300,7 @@ export async function loadResultadosCampanaData(
           ...comun, tipo: 'numero', valores, avg,
           min: valores.length ? Math.min(...valores) : null,
           max: valores.length ? Math.max(...valores) : null,
+          respuestas: conContexto,
         })
 
       } else if (campo.tipo === 'seleccion_unica' || campo.tipo === 'seleccion_multiple') {
@@ -328,6 +347,18 @@ export async function loadResultadosCampanaData(
     }
   }
 
+  // Lectura de resultados: el dato primero, la evidencia después.
+  //
+  // El orden configurado de la campaña —(bloque.orden, campo.orden)— sigue
+  // mandando DENTRO de cada grupo, y sigue siendo el orden en el que el
+  // gondolero captura. Lo único que cambia es cómo se leen los resultados: una
+  // galería intercalada empuja fuera de pantalla los módulos que vienen
+  // después, y quien abre el panel quiere el número antes que la foto.
+  const modulosOrdenados = [
+    ...modulos.filter(m => m.tipo !== 'foto'),
+    ...modulos.filter(m => m.tipo === 'foto'),
+  ]
+
   // ── 9. Contadores ───────────────────────────────────────────────────────────
   const misionCounts = misiones.reduce((acc: Record<string, number>, m) => {
     acc[m.estado] = (acc[m.estado] ?? 0) + 1
@@ -343,7 +374,7 @@ export async function loadResultadosCampanaData(
 
   return {
     camposMap,
-    modulos,
+    modulos: modulosOrdenados,
     tieneCamposFoto,
     fotoRespuestasMap,
     misionesAprobadas,

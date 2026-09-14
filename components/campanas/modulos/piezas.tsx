@@ -9,6 +9,50 @@
  */
 
 import React from 'react'
+import { MapPin, Clock, User } from 'lucide-react'
+import type { ContextoRespuesta } from '@/lib/resultados'
+
+/**
+ * Dónde y cuándo se relevó una respuesta.
+ *
+ * La usan el módulo de texto y el de número: son la misma lista con distinto
+ * contenido a la izquierda, así que el contexto se dibuja en un solo lugar. Si
+ * mañana se agrega la provincia o el link al comercio, se agrega acá y los dos
+ * lo heredan.
+ */
+export function ContextoLinea({
+  contexto,
+  verAgente,
+}: {
+  contexto: ContextoRespuesta
+  verAgente: boolean
+}) {
+  return (
+    <div className="flex items-center gap-3 flex-wrap text-[11px] text-gray-400">
+      {contexto.comercio && (
+        <span className="flex items-center gap-1 min-w-0">
+          <MapPin size={11} className="shrink-0" />
+          <span className="truncate">
+            {contexto.comercio}
+            {contexto.ciudad ? ` · ${contexto.ciudad}` : ''}
+          </span>
+        </span>
+      )}
+      {verAgente && contexto.alias && (
+        <span className="flex items-center gap-1">
+          <User size={11} className="shrink-0" />
+          {contexto.alias}
+        </span>
+      )}
+      {contexto.fecha && (
+        <span className="flex items-center gap-1">
+          <Clock size={11} className="shrink-0" />
+          {new Date(contexto.fecha).toLocaleDateString('es-AR')}
+        </span>
+      )}
+    </div>
+  )
+}
 
 export function ModuloHeader({
   pregunta,

@@ -33,7 +33,7 @@ export function ModuloDispatcher({
     case 'binaria':
       return <ModuloBinaria modulo={modulo} tema={tema} />
     case 'numero':
-      return <ModuloNumero modulo={modulo} />
+      return <ModuloNumero modulo={modulo} tema={tema} />
     case 'seleccion':
       return <ModuloSeleccion modulo={modulo} tema={tema} />
     case 'texto':
