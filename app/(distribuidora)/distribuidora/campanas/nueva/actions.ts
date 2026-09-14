@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { validarMinimoComercios } from '@/lib/campana-minimo'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -25,6 +26,15 @@ export async function crearCampanaInterna(formData: FormData) {
   const distriId = profile?.distri_id
   if (!distriId) return { error: 'No tenés una distribuidora asociada.' }
 
+  // El mínimo es obligatorio y no puede superar el tope. Se valida también acá
+  // y no solo en el editor: el formulario puede eludirse, y una campaña sin
+  // mínimo no tiene con qué decidir si sus resultados son representativos.
+  const chequeoMinimo = validarMinimoComercios(
+    formData.get('minimo_comercios') as string,
+    formData.get('tope_total_comercios') as string
+  )
+  if (!chequeoMinimo.ok) return { error: chequeoMinimo.error! }
+
   const { data: campana, error: errCampana } = await admin
     .from('campanas')
     .insert({
@@ -34,6 +44,7 @@ export async function crearCampanaInterna(formData: FormData) {
       puntos_por_mision:           parseInt(formData.get('puntos_por_mision') as string) || 0,
       fecha_inicio:                (formData.get('fecha_inicio') as string) || null,
       fecha_fin:                   (formData.get('fecha_fin') as string) || null,
+      minimo_comercios:            parseInt(formData.get('minimo_comercios') as string) || null,
       tope_total_comercios:        parseInt(formData.get('tope_total_comercios') as string) || null,
       max_comercios_por_gondolero: parseInt(formData.get('max_comercios_por_gondolero') as string) || 20,
       min_comercios_para_cobrar:   parseInt(formData.get('min_comercios_para_cobrar') as string) || 3,

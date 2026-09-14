@@ -21,7 +21,7 @@ interface CampanaRow {
   estado: EstadoCampana
   fecha_inicio: string | null
   fecha_fin: string | null
-  objetivo_comercios: number | null
+  minimo_comercios: number | null
   tope_total_comercios: number | null
   comercios_relevados: number
   puntos_por_foto: number
@@ -94,7 +94,7 @@ export default async function RepoCampanasPage() {
     // Query base: campañas de fixer activas o pausadas
     let query = admin
       .from('campanas')
-      .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, objetivo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, puntos_por_mision, financiada_por, instruccion, created_at, distri_id, marca_id')
+      .select('id, nombre, tipo, estado, fecha_inicio, fecha_fin, minimo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, puntos_por_mision, financiada_por, instruccion, created_at, distri_id, marca_id')
       .eq('actor_campana', 'fixer')
       .in('estado', ['activa', 'pausada'])
       .order('created_at', { ascending: false })
@@ -145,7 +145,7 @@ export default async function RepoCampanasPage() {
         <div className="space-y-4">
           {lista.map(c => {
             const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-            const limiteRepos = c.tope_total_comercios ?? c.objetivo_comercios
+            const limiteRepos = c.tope_total_comercios ?? c.minimo_comercios
             const progreso = limiteRepos
               ? calcularPorcentaje(c.comercios_relevados, limiteRepos)
               : null

@@ -119,7 +119,7 @@ export const schemaCampanaPaso2 = z
     fecha_limite_inscripcion: z
       .string()
       .min(1, 'La fecha límite de inscripción es obligatoria'),
-    objetivo_comercios: z
+    minimo_comercios: z
       .number()
       .int()
       .positive('El objetivo debe ser mayor a 0')

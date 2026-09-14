@@ -16,7 +16,7 @@
  */
 
 import React from 'react'
-import { TrendingUp, MapPin, Calendar, Clock } from 'lucide-react'
+import { TrendingUp, MapPin, Calendar, Clock, Hourglass } from 'lucide-react'
 import { TabFilter } from '@/components/campanas/tab-filter'
 import { calcularPorcentaje, diasRestantes } from '@/lib/utils'
 import type { ResultadosData } from '@/lib/resultados'
@@ -70,10 +70,13 @@ function ContextoRelevamiento({
   ciudades,
   ventana,
   dias,
+  enRevision,
 }: {
   ciudades: number
   ventana: { desde: string | null; hasta: string | null }
   dias: number | null
+  /** PDV que todavía no tienen ninguna misión aprobada. */
+  enRevision: number
 }) {
   const rango = formatearVentana(ventana.desde, ventana.hasta)
   const partes: React.ReactNode[] = []
@@ -99,6 +102,18 @@ function ContextoRelevamiento({
       <span key="dias" className={`flex items-center gap-1 ${dias <= 3 ? 'text-red-500 font-medium' : ''}`}>
         <Clock size={12} className="shrink-0" />
         {dias < 0 ? 'Finalizada' : `${dias} día${dias !== 1 ? 's' : ''} restante${dias !== 1 ? 's' : ''}`}
+      </span>
+    )
+  }
+
+  // Los PDV sin ninguna misión aprobada no entran al KPI —la representatividad
+  // se mide sobre lo validado— pero tampoco pueden desaparecer: sin esta línea,
+  // una campaña con todo en revisión mostraría 0 y parecería rota.
+  if (enRevision > 0) {
+    partes.push(
+      <span key="revision" className="flex items-center gap-1">
+        <Hourglass size={12} className="shrink-0" />
+        {enRevision} en revisión
       </span>
     )
   }
@@ -131,7 +146,7 @@ export function ResultadosView({
 }: ResultadosViewProps) {
   const {
     modulos, tieneCamposFoto, fotoRespuestasMap, camposMap,
-    misionesAprobadas, pdvRelevados, ciudades, gondolerosRelevaron, ventana,
+    misionesAprobadas, pdvRelevados, pdvEnRevision, ciudades, gondolerosRelevaron, ventana,
     counts, totalFotos, fotosAprobadas,
   } = data
 
@@ -195,6 +210,7 @@ export function ResultadosView({
         ciudades={ciudades}
         ventana={ventana}
         dias={dias}
+        enRevision={pdvEnRevision}
       />
 
       {/* ── Filtro de estado: aplica a todas las galerías ────────────────── */}

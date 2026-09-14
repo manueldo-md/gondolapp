@@ -42,7 +42,7 @@ type CampanaAdmin = {
   estado: EstadoCampana
   financiada_por: FinanciadaPor
   fecha_fin: string | null
-  objetivo_comercios: number | null
+  minimo_comercios: number | null
   comercios_relevados: number
   puntos_por_foto: number
   created_at: string
@@ -67,8 +67,8 @@ function CampanaTable({ campanas }: { campanas: CampanaAdmin[] }) {
           <tbody className="divide-y divide-gray-50">
             {campanas.map(c => {
               const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-              const progreso = c.objetivo_comercios
-                ? Math.round((c.comercios_relevados / c.objetivo_comercios) * 100)
+              const progreso = c.minimo_comercios
+                ? Math.round((c.comercios_relevados / c.minimo_comercios) * 100)
                 : null
               const fp = (c.financiada_por ?? 'gondolapp') as FinanciadaPor
               const badge = FINANCIADO_BADGE[fp] ?? FINANCIADO_BADGE.gondolapp
@@ -108,7 +108,7 @@ function CampanaTable({ campanas }: { campanas: CampanaAdmin[] }) {
                     {c.marca_nombre ?? c.distri_nombre ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">
-                    {progreso !== null ? `${c.comercios_relevados}/${c.objetivo_comercios} (${progreso}%)` : '—'}
+                    {progreso !== null ? `${c.comercios_relevados}/${c.minimo_comercios} (${progreso}%)` : '—'}
                   </td>
                   <td className="px-4 py-3 text-xs">
                     {dias !== null
@@ -140,7 +140,7 @@ export default async function CampanasAdminPage() {
     .from('campanas')
     .select(`
       id, nombre, tipo, estado, financiada_por,
-      fecha_inicio, fecha_fin, objetivo_comercios, comercios_relevados,
+      fecha_inicio, fecha_fin, minimo_comercios, comercios_relevados,
       puntos_por_foto, created_at,
       marca:marcas(razon_social),
       distri:distribuidoras(razon_social)

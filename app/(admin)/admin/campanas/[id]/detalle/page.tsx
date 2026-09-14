@@ -59,7 +59,7 @@ export default async function AdminCampanaDetallePage({
       id, nombre, tipo, estado, financiada_por, via_ejecucion, motivo_rechazo,
       marca_id, distri_id,
       fecha_inicio, fecha_fin, fecha_limite_inscripcion,
-      objetivo_comercios, tope_total_comercios, comercios_relevados,
+      minimo_comercios, tope_total_comercios, comercios_relevados,
       max_comercios_por_gondolero, min_comercios_para_cobrar,
       puntos_por_foto, instruccion, nivel_minimo, es_abierta, created_at,
       marca:marcas ( razon_social ),
@@ -97,7 +97,7 @@ export default async function AdminCampanaDetallePage({
   const fp = (campana.financiada_por ?? 'gondolapp') as FinanciadaPor
   const badge = FINANCIADO_BADGE[fp] ?? FINANCIADO_BADGE.gondolapp
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
-  const limiteComerciosAdmin = campana.tope_total_comercios ?? campana.objetivo_comercios
+  const limiteComerciosAdmin = campana.tope_total_comercios ?? campana.minimo_comercios
   const progreso = limiteComerciosAdmin
     ? Math.round((campana.comercios_relevados / limiteComerciosAdmin) * 100)
     : null

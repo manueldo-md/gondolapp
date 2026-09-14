@@ -29,7 +29,7 @@ export interface ParticipacionCardData {
     puntos_por_foto: number
     puntos_por_mision: number
     fecha_fin: string | null
-    objetivo_comercios: number | null
+    minimo_comercios: number | null
   }
 }
 
@@ -56,7 +56,7 @@ function MisionCard({
 }) {
   const c = p.campana
   const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-  const progreso = calcularPorcentaje(p.comercios_completados, c.objetivo_comercios ?? 0)
+  const progreso = calcularPorcentaje(p.comercios_completados, c.minimo_comercios ?? 0)
   const esActiva = p.estado === 'activa'
 
   return (
@@ -119,12 +119,12 @@ function MisionCard({
       </div>
 
       {/* Barra de progreso */}
-      {c.objetivo_comercios !== null && c.objetivo_comercios > 0 && (
+      {c.minimo_comercios !== null && c.minimo_comercios > 0 && (
         <div className="px-4 pb-3">
           <div className="flex justify-between items-center mb-1.5">
             <span className="text-xs text-gray-400">Progreso</span>
             <span className="text-xs font-medium text-gray-600">
-              {p.comercios_completados} / {c.objetivo_comercios} comercios
+              {p.comercios_completados} / {c.minimo_comercios} comercios
             </span>
           </div>
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">

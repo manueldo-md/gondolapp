@@ -34,7 +34,7 @@ type CampanaDetalle = {
   fecha_inicio: string | null
   fecha_fin: string | null
   fecha_limite_inscripcion: string | null
-  objetivo_comercios: number | null
+  minimo_comercios: number | null
   tope_total_comercios: number | null
   max_comercios_por_gondolero: number
   min_comercios_para_cobrar: number
@@ -111,7 +111,7 @@ export default async function CampanaDetallePage({
     .select(`
       id, nombre, tipo, financiada_por, distri_id, marca_id, estado, actor_campana,
       puntos_por_foto, puntos_por_mision, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
-      objetivo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
+      minimo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
       marca:marcas ( razon_social ),
       bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( tipo, pregunta ) )
@@ -181,7 +181,7 @@ export default async function CampanaDetallePage({
   ) ? participacion.estado as 'completada' | 'abandonada' : null
 
   const dias         = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-  const progreso     = calcularPorcentaje(c.comercios_relevados, c.objetivo_comercios ?? 0)
+  const progreso     = calcularPorcentaje(c.comercios_relevados, c.minimo_comercios ?? 0)
   const bloques      = [...(c.bloques_foto ?? [])].sort((a, b) => a.orden - b.orden)
 
   // Badge de creador
@@ -546,12 +546,12 @@ export default async function CampanaDetallePage({
         )}
 
         {/* Progreso general — solo para no participantes */}
-        {!yaUnido && c.objetivo_comercios !== null && c.objetivo_comercios > 0 && (
+        {!yaUnido && c.minimo_comercios !== null && c.minimo_comercios > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-sm font-semibold text-gray-700">Progreso general</h2>
               <span className="text-sm font-medium text-gray-600">
-                {c.comercios_relevados} / {c.objetivo_comercios}
+                {c.comercios_relevados} / {c.minimo_comercios}
               </span>
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">

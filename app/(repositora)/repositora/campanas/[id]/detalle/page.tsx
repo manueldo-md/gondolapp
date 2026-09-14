@@ -47,7 +47,7 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
     .select(`
       id, nombre, tipo, estado, financiada_por,
       fecha_inicio, fecha_fin,
-      objetivo_comercios, tope_total_comercios, comercios_relevados,
+      minimo_comercios, tope_total_comercios, comercios_relevados,
       max_comercios_por_gondolero, min_comercios_para_cobrar,
       puntos_por_foto, puntos_por_mision, instruccion,
       distri_id, marca_id, repositora_id, created_at, updated_at,
@@ -100,7 +100,7 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
   const marcaNombre = Array.isArray(c.marca) ? c.marca[0]?.razon_social : c.marca?.razon_social
   const creadorLabel = c.financiada_por === 'distri' ? 'Distribuidora' : (marcaNombre ?? 'Marca')
   const puntosEfectivos = (c.puntos_por_mision ?? 0) > 0 ? c.puntos_por_mision : c.puntos_por_foto
-  const limiteComercio = c.tope_total_comercios ?? c.objetivo_comercios
+  const limiteComercio = c.tope_total_comercios ?? c.minimo_comercios
 
   const fechaCreacion = new Date(c.created_at).toLocaleString('es-AR', {
     day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',

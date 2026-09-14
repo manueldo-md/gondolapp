@@ -14,7 +14,7 @@ export interface CampanaFiltroRow {
   estado: EstadoCampana
   fecha_inicio: string | null
   fecha_fin: string | null
-  objetivo_comercios: number | null
+  minimo_comercios: number | null
   comercios_relevados: number
   puntos_por_foto: number
   financiada_por: string
@@ -47,7 +47,7 @@ const TIPOS_CAMPANA: { value: string; label: string }[] = [
 
 function CampanaCard({ c }: { c: CampanaFiltroRow }) {
   const dias     = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-  const progreso = calcularPorcentaje(c.comercios_relevados, c.objetivo_comercios ?? 0)
+  const progreso = calcularPorcentaje(c.comercios_relevados, c.minimo_comercios ?? 0)
   const estadoLabel = c.estado === 'borrador' && c.motivo_rechazo ? 'Rechazada' : labelEstadoCampana(c.estado)
   const estadoColor = c.estado === 'borrador' && c.motivo_rechazo ? 'bg-red-50 text-red-700 border-red-200' : colorEstadoCampana(c.estado)
 
@@ -86,10 +86,10 @@ function CampanaCard({ c }: { c: CampanaFiltroRow }) {
                 </span>
               </div>
             )}
-            {c.objetivo_comercios && (
+            {c.minimo_comercios && (
               <div className="flex items-center gap-1">
                 <Target size={12} />
-                <span>{c.comercios_relevados} / {c.objetivo_comercios} comercios</span>
+                <span>{c.comercios_relevados} / {c.minimo_comercios} comercios</span>
               </div>
             )}
             <div className="flex items-center gap-1">
@@ -97,7 +97,7 @@ function CampanaCard({ c }: { c: CampanaFiltroRow }) {
               <span>{c.gondoleroCount} participante{c.gondoleroCount !== 1 ? 's' : ''}</span>
             </div>
           </div>
-          {c.objetivo_comercios && c.objetivo_comercios > 0 && (
+          {c.minimo_comercios && c.minimo_comercios > 0 && (
             <div className="mt-3">
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-full max-w-xs">
                 <div className="h-full bg-gondo-indigo-600 rounded-full transition-all" style={{ width: `${progreso}%` }} />

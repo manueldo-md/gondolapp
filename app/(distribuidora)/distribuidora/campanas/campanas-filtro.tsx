@@ -15,7 +15,7 @@ export interface CampanaFiltroRow {
   estado: EstadoCampana
   fecha_inicio: string | null
   fecha_fin: string | null
-  objetivo_comercios: number | null
+  minimo_comercios: number | null
   comercios_relevados: number
   puntos_por_foto: number
   financiada_por: string
@@ -83,10 +83,10 @@ function PendienteCard({ campana }: { campana: CampanaFiltroRow }) {
                 <span>Hasta {new Date(campana.fecha_fin).toLocaleDateString('es-AR')}</span>
               </div>
             )}
-            {campana.objetivo_comercios && (
+            {campana.minimo_comercios && (
               <div className="flex items-center gap-1">
                 <Target size={11} />
-                <span>{campana.objetivo_comercios} comercios</span>
+                <span>{campana.minimo_comercios} comercios</span>
               </div>
             )}
           </div>
@@ -103,7 +103,7 @@ function PendienteCard({ campana }: { campana: CampanaFiltroRow }) {
 
 function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; distriNombre?: string }) {
   const dias     = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
-  const progreso = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
+  const progreso = calcularPorcentaje(campana.comercios_relevados, campana.minimo_comercios ?? 0)
   const esPropia = campana.financiada_por === 'distri'
 
   return (
@@ -141,10 +141,10 @@ function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; dis
                 </span>
               </div>
             )}
-            {campana.objetivo_comercios && (
+            {campana.minimo_comercios && (
               <div className="flex items-center gap-1">
                 <Target size={12} />
-                <span>{campana.comercios_relevados} / {campana.objetivo_comercios} comercios</span>
+                <span>{campana.comercios_relevados} / {campana.minimo_comercios} comercios</span>
               </div>
             )}
             <div className="flex items-center gap-1">
@@ -152,7 +152,7 @@ function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; dis
               <span>{campana.gondoleroCount} participante{campana.gondoleroCount !== 1 ? 's' : ''}</span>
             </div>
           </div>
-          {campana.objetivo_comercios && campana.objetivo_comercios > 0 && (
+          {campana.minimo_comercios && campana.minimo_comercios > 0 && (
             <div className="mt-3">
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-full max-w-xs">
                 <div

@@ -94,8 +94,19 @@ export interface ResultadosData {
   fotoRespuestasMap: Map<string, { campo_id: string; valor: unknown }[]>
   misionesAprobadas: number
   misionesTotales: number
-  /** PDV distintos con al menos una misión. No usar campanas.comercios_relevados: está inflado. */
+  /**
+   * PDV distintos con al menos una misión APROBADA.
+   *
+   * Aprobada y no "cualquier misión": el mínimo de representatividad se mide
+   * sobre lo validado, y si el KPI contara todo habría dos números distintos en
+   * la misma pantalla diciendo cosas parecidas. Un PDV con la misión todavía en
+   * revisión no aporta dato todavía — aparece aparte, en `pdvEnRevision`.
+   *
+   * No usar `campanas.comercios_relevados`: está inflado por doble incremento.
+   */
   pdvRelevados: number
+  /** PDV cuyas misiones están todas pendientes de revisión. Va en el contexto, no en el KPI. */
+  pdvEnRevision: number
   /** Ciudades distintas donde se relevó, vía comercios.localidad_id. */
   ciudades: number
   /**
@@ -404,7 +415,19 @@ export async function loadResultadosCampanaData(
   }, {} as Record<string, number>)
   const misionesAprobadas = misionCounts['aprobada'] ?? 0
   const misionesTotales   = Object.values(misionCounts).reduce((a: number, b) => a + (b as number), 0)
-  const pdvRelevados      = comercioIds.length
+
+  // PDV relevados = con al menos una misión aprobada. En revisión = los que
+  // todavía no tienen ninguna aprobada pero sí alguna pendiente.
+  const pdvConAprobada = new Set(
+    misiones.filter(m => m.estado === 'aprobada' && m.comercio_id).map(m => m.comercio_id as string)
+  )
+  const pdvConPendiente = new Set(
+    misiones
+      .filter(m => (m.estado === 'pendiente' || m.estado === 'en_revision') && m.comercio_id)
+      .map(m => m.comercio_id as string)
+  )
+  const pdvRelevados  = pdvConAprobada.size
+  const pdvEnRevision = [...pdvConPendiente].filter(id => !pdvConAprobada.has(id)).length
 
   const totalFotos     = Object.values(counts).reduce((a, b) => a + b, 0)
   const fotosAprobadas = counts['aprobada'] ?? 0
@@ -430,6 +453,7 @@ export async function loadResultadosCampanaData(
     misionesAprobadas,
     misionesTotales,
     pdvRelevados,
+    pdvEnRevision,
     ciudades,
     gondolerosRelevaron,
     ventana,

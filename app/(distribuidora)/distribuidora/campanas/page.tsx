@@ -41,7 +41,7 @@ export default async function CampanasPage() {
     .from('campanas')
     .select(`
       id, nombre, tipo, estado, fecha_inicio, fecha_fin,
-      objetivo_comercios, comercios_relevados, puntos_por_foto,
+      minimo_comercios, comercios_relevados, puntos_por_foto,
       financiada_por, instruccion, actor_campana, created_at,
       marca:marcas ( razon_social )
     `)

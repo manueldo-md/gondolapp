@@ -6,6 +6,7 @@ import { ArrowLeft, Check, Loader2 } from 'lucide-react'
 import { crearCampanaInterna } from './actions'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
 import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
+import { validarMinimoComercios } from '@/lib/campana-minimo'
 
 export default function NuevaCampanaPage() {
   const router = useRouter()
@@ -23,6 +24,7 @@ export default function NuevaCampanaPage() {
     puntos_por_mision:           '50',
     fecha_inicio:                '',
     fecha_fin:                   '',
+    minimo_comercios:            '',
     tope_total_comercios:        '',
     max_comercios_por_gondolero: '20',
     min_comercios_para_cobrar:   '3',
@@ -32,6 +34,11 @@ export default function NuevaCampanaPage() {
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }))
+
+  // El minimo es obligatorio y no puede superar el tope. La regla vive en
+  // lib/campana-minimo.ts porque los tres editores estan duplicados.
+  const minimoCheck = validarMinimoComercios(form.minimo_comercios, form.tope_total_comercios)
+  const minimoError = form.minimo_comercios.trim() !== '' && !minimoCheck.ok ? minimoCheck.error : null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -176,6 +183,26 @@ export default function NuevaCampanaPage() {
             </div>
           </div>
 
+          {/* Mínimo de comercios — el piso de representatividad */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Mínimo de comercios <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={form.minimo_comercios}
+              onChange={set('minimo_comercios')}
+              placeholder="Ej: 30"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Cuántos comercios hacen falta para que el relevamiento sea representativo.
+              Por debajo de ese número los resultados no se presentan como conclusión.
+            </p>
+            {minimoError && <p className="text-xs text-red-600 mt-1">{minimoError}</p>}
+          </div>
+
           {/* Tope global de comercios */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -281,7 +308,7 @@ export default function NuevaCampanaPage() {
           </button>
           <button
             type="submit"
-            disabled={isPending}
+            disabled={isPending || !minimoCheck.ok}
             className="flex items-center gap-2 px-5 py-2.5 bg-gondo-amber-400 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {isPending ? <><Loader2 size={15} className="animate-spin" /> Creando...</> : <><Check size={15} /> Crear campaña</>}

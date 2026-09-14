@@ -57,7 +57,7 @@ export default async function InvitacionCampanaPage({
     .from('campanas')
     .select(`
       id, nombre, tipo, fecha_inicio, fecha_fin,
-      objetivo_comercios, puntos_por_foto, instruccion,
+      minimo_comercios, puntos_por_foto, instruccion,
       marca:marcas(razon_social)
     `)
     .eq('id', tokenRow.campana_id)
@@ -128,12 +128,12 @@ export default async function InvitacionCampanaPage({
               <p className="text-lg font-bold text-gray-900">{campana.puntos_por_foto}</p>
               <p className="text-[11px] text-gray-400">pts/foto</p>
             </div>
-            {campana.objetivo_comercios && (
+            {campana.minimo_comercios && (
               <div className="bg-gray-50 rounded-lg p-3 text-center">
                 <div className="flex items-center justify-center gap-1 mb-1">
                   <Target size={13} className="text-gray-400" />
                 </div>
-                <p className="text-lg font-bold text-gray-900">{campana.objetivo_comercios}</p>
+                <p className="text-lg font-bold text-gray-900">{campana.minimo_comercios}</p>
                 <p className="text-[11px] text-gray-400">comercios</p>
               </div>
             )}

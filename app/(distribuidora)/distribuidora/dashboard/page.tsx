@@ -136,7 +136,7 @@ export default async function DashboardPage() {
 
     // Campañas activas propias
     admin.from('campanas')
-      .select('id, nombre, tipo, objetivo_comercios, comercios_relevados, fecha_fin')
+      .select('id, nombre, tipo, minimo_comercios, comercios_relevados, fecha_fin')
       .eq('distri_id', distriId)
       .eq('estado', 'activa')
       .order('fecha_fin', { ascending: true }),
@@ -472,10 +472,10 @@ export default async function DashboardPage() {
           <Vacio texto="No hay campañas activas" />
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
-            {campanasActivas.map((c: { id: string; nombre: string; objetivo_comercios: number | null; comercios_relevados: number | null; fecha_fin: string | null }) => {
+            {campanasActivas.map((c: { id: string; nombre: string; minimo_comercios: number | null; comercios_relevados: number | null; fecha_fin: string | null }) => {
               const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
-              const progreso = c.objetivo_comercios
-                ? Math.min(100, Math.round(((c.comercios_relevados ?? 0) / c.objetivo_comercios) * 100))
+              const progreso = c.minimo_comercios
+                ? Math.min(100, Math.round(((c.comercios_relevados ?? 0) / c.minimo_comercios) * 100))
                 : null
               return (
                 <Link key={c.id} href={`/distribuidora/campanas/${c.id}`} className="block px-4 py-3.5 hover:bg-gray-50 transition-colors">
@@ -499,7 +499,7 @@ export default async function DashboardPage() {
                         />
                       </div>
                       <p className="text-[11px] text-gray-400 mt-1">
-                        {c.comercios_relevados ?? 0} / {c.objetivo_comercios} comercios ({progreso}%)
+                        {c.comercios_relevados ?? 0} / {c.minimo_comercios} comercios ({progreso}%)
                       </p>
                     </>
                   ) : (

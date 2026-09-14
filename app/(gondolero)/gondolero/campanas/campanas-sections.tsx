@@ -35,7 +35,7 @@ export interface CampanaCardData {
   puntos_por_mision: number
   fecha_fin: string | null
   fecha_limite_inscripcion: string | null
-  objetivo_comercios: number | null
+  minimo_comercios: number | null
   tope_total_comercios: number | null
   comercios_relevados: number
   instruccion: string | null
@@ -94,7 +94,7 @@ function CampanaCard({
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
-  const progreso = calcularPorcentaje(campana.comercios_relevados, campana.objetivo_comercios ?? 0)
+  const progreso = calcularPorcentaje(campana.comercios_relevados, campana.minimo_comercios ?? 0)
   const cantFotos = campana.bloques_foto.reduce(
     (acc, b) => acc + b.bloque_campos.filter(c => c.tipo === 'foto').length,
     0
@@ -219,12 +219,12 @@ function CampanaCard({
       </div>
 
       {/* Barra progreso campaña global */}
-      {campana.objetivo_comercios !== null && campana.objetivo_comercios > 0 && (
+      {campana.minimo_comercios !== null && campana.minimo_comercios > 0 && (
         <div className="px-4 pb-2">
           <div className="flex justify-between items-center mb-1.5">
             <span className="text-xs text-gray-400">Comercios relevados</span>
             <span className="text-xs font-medium text-gray-600">
-              {campana.comercios_relevados} / {campana.objetivo_comercios}
+              {campana.comercios_relevados} / {campana.minimo_comercios}
             </span>
           </div>
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">

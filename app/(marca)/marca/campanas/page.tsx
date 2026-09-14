@@ -30,7 +30,7 @@ export default async function CampanasPage() {
     .from('campanas')
     .select(`
       id, nombre, tipo, estado, financiada_por, fecha_inicio, fecha_fin,
-      objetivo_comercios, comercios_relevados, puntos_por_foto, created_at,
+      minimo_comercios, comercios_relevados, puntos_por_foto, created_at,
       actor_campana, motivo_rechazo
     `)
     .eq('marca_id', marcaId ?? '')

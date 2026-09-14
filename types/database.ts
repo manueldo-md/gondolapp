@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -275,6 +275,7 @@ export type Database = {
           marca_id: string | null
           max_comercios_por_gondolero: number | null
           min_comercios_para_cobrar: number | null
+          minimo_comercios: number | null
           motivo_rechazo: string | null
           nivel_minimo: string | null
           nombre: string
@@ -312,6 +313,7 @@ export type Database = {
           marca_id?: string | null
           max_comercios_por_gondolero?: number | null
           min_comercios_para_cobrar?: number | null
+          minimo_comercios?: number | null
           motivo_rechazo?: string | null
           nivel_minimo?: string | null
           nombre: string
@@ -349,6 +351,7 @@ export type Database = {
           marca_id?: string | null
           max_comercios_por_gondolero?: number | null
           min_comercios_para_cobrar?: number | null
+          minimo_comercios?: number | null
           motivo_rechazo?: string | null
           nivel_minimo?: string | null
           nombre?: string
@@ -1596,6 +1599,7 @@ export type Database = {
         Row: {
           campo_id: string
           created_at: string | null
+          foto_id: string | null
           id: string
           mision_id: string
           reemplazada_por: string | null
@@ -1604,6 +1608,7 @@ export type Database = {
         Insert: {
           campo_id: string
           created_at?: string | null
+          foto_id?: string | null
           id?: string
           mision_id: string
           reemplazada_por?: string | null
@@ -1612,12 +1617,20 @@ export type Database = {
         Update: {
           campo_id?: string
           created_at?: string | null
+          foto_id?: string | null
           id?: string
           mision_id?: string
           reemplazada_por?: string | null
           valor?: Json | null
         }
         Relationships: [
+          {
+            foreignKeyName: "mision_respuestas_foto_id_fkey"
+            columns: ["foto_id"]
+            isOneToOne: false
+            referencedRelation: "fotos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "mision_respuestas_mision_id_fkey"
             columns: ["mision_id"]

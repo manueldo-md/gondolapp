@@ -180,16 +180,29 @@ export default async function AlertasPage() {
   // ── TIPO 3: Campañas en riesgo ────────────────────────────────────────────
   const { data: campanasRaw } = await admin
     .from('campanas')
-    .select('id, nombre, objetivo_comercios, comercios_relevados, fecha_fin')
+    .select('id, nombre, minimo_comercios, comercios_relevados, fecha_fin')
     .eq('distri_id', distriId)
     .eq('estado', 'activa')
     .not('fecha_fin', 'is', null)
-    .not('objetivo_comercios', 'is', null)
+    .not('minimo_comercios', 'is', null)
     .order('fecha_fin', { ascending: true })
 
+  // La alerta no se disparó nunca desde que existe. Tenía dos motivos, los dos
+  // sobre el denominador y ninguno sobre el numerador:
+  //   1. filtraba por `objetivo_comercios IS NOT NULL`, y esa columna estaba
+  //      vacía en las 23 campañas de las dos bases: la query devolvía siempre
+  //      cero filas;
+  //   2. comparaba contra ese mismo valor nulo, así que `x < 0` daba false.
+  // Ahora el denominador es `minimo_comercios`, que el editor exige. El filtro
+  // por NOT NULL se mantiene pero ya no es una trampa: solo deja afuera las
+  // campañas anteriores al cambio, que no tienen mínimo cargado.
+  //
+  // El umbral es la mitad del mínimo: a menos de tres días del cierre y sin
+  // haber llegado ni a la mitad del piso de representatividad, la campaña no
+  // va a servir.
   const campanasRiesgo = (campanasRaw ?? []).filter(c =>
     new Date(c.fecha_fin!) < tresDiasAdelante &&
-    (c.comercios_relevados ?? 0) < (c.objetivo_comercios ?? 0) * 0.5 &&
+    (c.comercios_relevados ?? 0) < (c.minimo_comercios ?? 0) * 0.5 &&
     !esIgnorada('campana_riesgo', c.id)
   )
 
@@ -328,7 +341,7 @@ export default async function AlertasPage() {
           <TodoOrden />
         ) : (
           campanasRiesgo.map(c => {
-            const progreso = calcularPorcentaje(c.comercios_relevados ?? 0, c.objetivo_comercios ?? 0)
+            const progreso = calcularPorcentaje(c.comercios_relevados ?? 0, c.minimo_comercios ?? 0)
             const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
             return (
               <div key={c.id} className="px-4 py-3">
@@ -356,7 +369,7 @@ export default async function AlertasPage() {
                   />
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1">
-                  {c.comercios_relevados ?? 0} / {c.objetivo_comercios} comercios ({Math.round(progreso)}%)
+                  {c.comercios_relevados ?? 0} / {c.minimo_comercios} comercios ({Math.round(progreso)}%)
                 </p>
               </div>
             )

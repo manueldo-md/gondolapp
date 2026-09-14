@@ -64,7 +64,7 @@ export default async function AdminRelacionDetailPage({
 
   const [campanasRes, reinicioRes] = await Promise.all([
     admin.from('campanas')
-      .select('id, nombre, estado, comercios_relevados, objetivo_comercios, created_at')
+      .select('id, nombre, estado, comercios_relevados, minimo_comercios, created_at')
       .eq('marca_id', rel.marca_id)
       .eq('distri_id', rel.distri_id)
       .order('created_at', { ascending: false }),
@@ -279,8 +279,8 @@ function AdminCampanasTable({ campanas }: { campanas: any[] }) {
       </thead>
       <tbody className="divide-y divide-gray-50">
         {campanas.map((c: any) => {
-          const progreso = c.objetivo_comercios
-            ? Math.round((c.comercios_relevados / c.objetivo_comercios) * 100)
+          const progreso = c.minimo_comercios
+            ? Math.round((c.comercios_relevados / c.minimo_comercios) * 100)
             : null
           return (
             <tr key={c.id} className="hover:bg-gray-50 transition-colors">

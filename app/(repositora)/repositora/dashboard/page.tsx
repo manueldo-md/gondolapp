@@ -77,7 +77,7 @@ export default async function RepoDashboardPage() {
       .gte('joined_at', mesInicio.toISOString()),
     // Campañas activas para fixers
     admin.from('campanas')
-      .select('id, nombre, tipo, estado, fecha_fin, comercios_relevados, objetivo_comercios')
+      .select('id, nombre, tipo, estado, fecha_fin, comercios_relevados, minimo_comercios')
       .eq('estado', 'activa')
       .eq('actor_campana', 'fixer')
       .order('created_at', { ascending: false })
@@ -99,7 +99,7 @@ export default async function RepoDashboardPage() {
   const misionesCompletadas = misionesEsteMesRes.count ?? 0
   const campanasActivas = (campanasActivasRes.data ?? []) as {
     id: string; nombre: string; tipo: string; estado: string
-    fecha_fin: string | null; comercios_relevados: number; objetivo_comercios: number | null
+    fecha_fin: string | null; comercios_relevados: number; minimo_comercios: number | null
   }[]
   const fotosRecientes = (fotosRecientesRes.data ?? []) as {
     id: string; url: string; estado: string; created_at: string; gondolero_id: string
@@ -209,9 +209,9 @@ export default async function RepoDashboardPage() {
                   <p className="text-sm font-medium text-gray-900">{c.nombre}</p>
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-xs text-gray-400">{c.tipo}</span>
-                    {c.objetivo_comercios && (
+                    {c.minimo_comercios && (
                       <span className="text-xs text-gray-400">
-                        {c.comercios_relevados}/{c.objetivo_comercios} comercios
+                        {c.comercios_relevados}/{c.minimo_comercios} comercios
                       </span>
                     )}
                     {c.fecha_fin && (

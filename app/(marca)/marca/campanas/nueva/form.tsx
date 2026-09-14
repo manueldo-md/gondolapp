@@ -7,6 +7,7 @@ import { crearCampana } from './actions'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
 import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
+import { validarMinimoComercios } from '@/lib/campana-minimo'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ interface Step1 {
 interface Step2 {
   fecha_inicio: string
   fecha_fin: string
+  minimo_comercios: string
   tope_total_comercios: string
   max_comercios_por_gondolero: string
   min_comercios_para_cobrar: string
@@ -84,6 +86,7 @@ export function NuevaCampanaForm({
   const [s2, setS2] = useState<Step2>({
     fecha_inicio:               '',
     fecha_fin:                  '',
+    minimo_comercios:           '',
     tope_total_comercios:       '',
     max_comercios_por_gondolero: '20',
     min_comercios_para_cobrar:  '3',
@@ -102,6 +105,12 @@ export function NuevaCampanaForm({
   })
 
   const paso1Valido = s1.nombre.trim().length >= 3 && s1.tipo && campos.length > 0
+
+  // El mínimo es obligatorio y no puede superar el tope. La regla vive en
+  // lib/campana-minimo.ts porque los tres editores están duplicados.
+  const minimoCheck = validarMinimoComercios(s2.minimo_comercios, s2.tope_total_comercios)
+  const minimoError = s2.minimo_comercios.trim() !== '' && !minimoCheck.ok ? minimoCheck.error : null
+  const paso2Valido = minimoCheck.ok
 
   const paso3Valido =
     s3.via_ejecucion === 'gondolapp' ||
@@ -312,6 +321,26 @@ export function NuevaCampanaForm({
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"
                 />
               </div>
+            </div>
+
+            {/* Mínimo de comercios — el piso de representatividad */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Mínimo de comercios <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={s2.minimo_comercios}
+                onChange={e => setS2(p => ({ ...p, minimo_comercios: e.target.value }))}
+                placeholder="Ej: 30"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Cuántos comercios hacen falta para que el relevamiento sea representativo.
+                Por debajo de ese número los resultados no se presentan como conclusión.
+              </p>
+              {minimoError && <p className="text-xs text-red-600 mt-1">{minimoError}</p>}
             </div>
 
             {/* Tope global de comercios */}
@@ -615,7 +644,7 @@ export function NuevaCampanaForm({
         {paso < 3 ? (
           <button
             onClick={() => setPaso((paso + 1) as 2 | 3)}
-            disabled={paso === 1 && !paso1Valido}
+            disabled={(paso === 1 && !paso1Valido) || (paso === 2 && !paso2Valido)}
             className="flex items-center gap-2 px-5 py-2.5 bg-gondo-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-gondo-indigo-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Continuar

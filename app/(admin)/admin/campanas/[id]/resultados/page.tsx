@@ -24,7 +24,7 @@ export default async function AdminCampanaResultadosPage({
 
   const { data: campanaRaw, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_fin, objetivo_comercios, tope_total_comercios, comercios_relevados')
+    .select('id, nombre, tipo, estado, fecha_fin, minimo_comercios, tope_total_comercios, comercios_relevados')
     .eq('id', params.id)
     .single()
 
