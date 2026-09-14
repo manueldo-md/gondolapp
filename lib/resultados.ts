@@ -73,6 +73,8 @@ export type Modulo =
       tipo: 'numero'
       valores: number[]
       avg: number | null
+      /** Mediana. Con outliers el promedio solo miente; juntos se nota. */
+      mediana: number | null
       min: number | null
       max: number | null
       /** Valor por valor con su contexto, para el detalle bajo los tres tiles. */
@@ -308,8 +310,20 @@ export async function loadResultadosCampanaData(
         const avg = valores.length
           ? Math.round((valores.reduce((a, b) => a + b, 0) / valores.length) * 10) / 10
           : null
+
+        // Mediana: con pocos valores y un outlier, el promedio solo engaña.
+        // En dev hay un campo con promedio 3.269 y mediana 2.550 porque alguien
+        // cargó un 7777. Mostradas juntas, la diferencia salta.
+        const asc = [...valores].sort((a, b) => a - b)
+        const medio = Math.floor(asc.length / 2)
+        const mediana = asc.length === 0
+          ? null
+          : asc.length % 2 === 1
+            ? asc[medio]
+            : Math.round(((asc[medio - 1] + asc[medio]) / 2) * 10) / 10
+
         modulos.push({
-          ...comun, tipo: 'numero', valores, avg,
+          ...comun, tipo: 'numero', valores, avg, mediana,
           min: valores.length ? Math.min(...valores) : null,
           max: valores.length ? Math.max(...valores) : null,
           respuestas: conContexto,

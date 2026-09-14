@@ -1113,6 +1113,48 @@ en el futuro, reemplazar el filtro en `app/(gondolero)/gondolero/campanas/page.t
 
 ---
 
+## Decisión — gráficos del dashboard: a mano, sin librería (14/9/2026)
+
+**Se evaluó Apache ECharts con `renderToSVGString()` en un Server Component, y
+se descartó.** No por fallar: funciona.
+
+Lo que dio el spike, medido y no supuesto:
+
+| | |
+|---|---|
+| ¿Corre en el runtime de Vercel? | **Sí.** `/spike-echarts/svg` devolvió 200, `image/svg+xml`, 2.482 bytes desde el deploy de dev |
+| ¿El SVG necesita JavaScript? | **No.** Sin `<script>`, sin handlers `on*`, ni en el archivo crudo ni inline en el HTML |
+| ¿Cuánto pesa en el cliente? | **Cero.** First Load JS compartido 87.5 kB antes y después, idéntico. Importado solo desde servidor, no viaja |
+| ¿Cuántas líneas costó una barra horizontal? | 28 (cuerpo de la función) |
+
+**Por qué se descartó igual.** El único gráfico que justificaba la dependencia
+era el histograma de distribución del módulo `numero`. Y el histograma no
+aporta sobre el listado ordenado con contexto que ese módulo ya tiene:
+
+- Un listado ordenado **ya es un gráfico de distribución** — es la función de
+  cuantiles escrita en vez de dibujada. Conserva *más* información que un
+  histograma, porque mantiene la identidad de cada comercio; pierde solo el eje
+  de densidad.
+- El caso donde el histograma sí gana es la distribución con dos grupos
+  (mayoristas y kioscos, por ejemplo), donde el promedio cae en el medio, en un
+  precio que no cobra nadie. Pero con pocos valores ese hueco se ve igual como
+  un salto entre dos renglones.
+- **Volúmenes reales al 14/9/2026: máximo 26 valores en producción, 29 en dev.**
+  El resto de los campos `numero`, 9 o menos. El umbral donde el listado deja de
+  leerse y empieza a ser scroll está en torno a los 100.
+
+Los otros tres gráficos —binaria, selección y avance— ya están dibujados con
+divs en `components/campanas/modulos/piezas.tsx` (`BarraProporcion`), y
+funcionan. Pasarlos a SVG tiene un solo beneficio real: el export autocontenido.
+Así que **eso se hace dentro de la etapa del export, cuando el export lo exija**,
+y no antes. La "etapa 2 de gráficos" se disolvió.
+
+**Cuándo reconsiderarlo:** si alguna campaña pasa de ~100 valores en un campo
+`numero`. El spike funcionó y está documentado acá; rehacerlo es instalar
+`echarts` y escribir 28 líneas.
+
+---
+
 ## Pendiente de UI — jerarquía de la lista de campañas (panel de marca)
 
 En el panel de marca las campañas cerradas caen al pie de la lista, con poco
