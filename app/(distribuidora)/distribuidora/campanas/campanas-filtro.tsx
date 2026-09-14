@@ -3,7 +3,9 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Clock, Target, Users, Camera, DollarSign, Filter } from 'lucide-react'
-import { labelEstadoCampana, colorEstadoCampana, diasRestantes, calcularPorcentaje } from '@/lib/utils'
+import { labelEstadoCampana, colorEstadoCampana, diasRestantes } from '@/lib/utils'
+import { derivarAvance } from '@/lib/campana-avance'
+import { BadgeAvance } from '@/components/campanas/BadgeAvance'
 import type { TipoCampana, EstadoCampana } from '@/types'
 import { SeccionColapsable } from '@/components/campanas/seccion-colapsable'
 import { AprobacionBtns } from './aprobacion-btns'
@@ -16,6 +18,9 @@ export interface CampanaFiltroRow {
   fecha_inicio: string | null
   fecha_fin: string | null
   minimo_comercios: number | null
+  tope_total_comercios: number | null
+  /** PDV con al menos una misión aprobada. Sale de una sola query agregada. */
+  pdvAprobados: number
   comercios_relevados: number
   puntos_por_foto: number
   financiada_por: string
@@ -103,8 +108,16 @@ function PendienteCard({ campana }: { campana: CampanaFiltroRow }) {
 
 function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; distriNombre?: string }) {
   const dias     = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
-  const progreso = calcularPorcentaje(campana.comercios_relevados, campana.minimo_comercios ?? 0)
   const esPropia = campana.financiada_por === 'distri'
+
+  // Estado de avance del relevamiento, derivado. Responde "¿sirve?", que es
+  // otra pregunta que el estado administrativo de al lado.
+  const avance = derivarAvance({
+    pdvAprobados:  campana.pdvAprobados,
+    minimo:        campana.minimo_comercios,
+    tope:          campana.tope_total_comercios,
+    estadoCampana: campana.estado,
+  })
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 hover:border-gondo-amber-400/30 transition-colors">
@@ -117,6 +130,7 @@ function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; dis
             <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${colorEstadoCampana(campana.estado)}`}>
               {labelEstadoCampana(campana.estado)}
             </span>
+            <BadgeAvance estado={avance.estado} />
             <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
               <Camera size={10} />
               Foto
@@ -141,23 +155,38 @@ function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; dis
                 </span>
               </div>
             )}
-            {campana.minimo_comercios && (
+            {/* El denominador es el tope, no el mínimo: "56 / 40" era un 140%
+                dibujado como 100%. Sin tope y por encima del mínimo no hay
+                contra qué medir, así que va el absoluto con el visto. */}
+            {avance.denominador !== null ? (
               <div className="flex items-center gap-1">
                 <Target size={12} />
-                <span>{campana.comercios_relevados} / {campana.minimo_comercios} comercios</span>
+                <span>{avance.pdv} / {avance.denominador} comercios</span>
               </div>
-            )}
+            ) : avance.minimoAlcanzado ? (
+              <div className="flex items-center gap-1">
+                <Target size={12} />
+                <span>{avance.pdv} comercios</span>
+                <span className="text-green-600">✓ mínimo {avance.minimo}</span>
+              </div>
+            ) : null}
             <div className="flex items-center gap-1">
               <Users size={12} />
               <span>{campana.gondoleroCount} participante{campana.gondoleroCount !== 1 ? 's' : ''}</span>
             </div>
           </div>
-          {campana.minimo_comercios && campana.minimo_comercios > 0 && (
+          {avance.porcentaje !== null && (
             <div className="mt-3">
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-full max-w-xs">
+              <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden w-full max-w-xs">
+                {avance.marcaMinimoPct !== null && (
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10"
+                    style={{ left: `${avance.marcaMinimoPct}%` }}
+                  />
+                )}
                 <div
                   className={`h-full rounded-full transition-all ${esPropia ? 'bg-gondo-amber-400' : 'bg-gondo-indigo-600'}`}
-                  style={{ width: `${progreso}%` }}
+                  style={{ width: `${avance.porcentaje}%` }}
                 />
               </div>
             </div>

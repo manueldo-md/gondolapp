@@ -62,6 +62,8 @@ export default async function DistriCampanaResultadosPage({
           nombre: c.nombre,
           tipo: c.tipo,
           fecha_fin: c.fecha_fin ?? null,
+          estado: c.estado ?? null,
+          minimo_comercios: c.minimo_comercios ?? null,
           tope_total_comercios: c.tope_total_comercios ?? null,
         }}
         tab={tab}

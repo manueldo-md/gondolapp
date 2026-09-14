@@ -16,24 +16,25 @@
  */
 
 import React from 'react'
-import { TrendingUp, MapPin, Calendar, Clock, Hourglass } from 'lucide-react'
+import { TrendingUp, MapPin, Calendar, Clock, Hourglass, AlertTriangle } from 'lucide-react'
 import { TabFilter } from '@/components/campanas/tab-filter'
 import { calcularPorcentaje, diasRestantes } from '@/lib/utils'
 import type { ResultadosData } from '@/lib/resultados'
 import { TEMAS, type Panel } from './modulos/tema'
 import { ModuloDispatcher } from './modulos/ModuloDispatcher'
+import { BadgeAvance } from './BadgeAvance'
+import { derivarAvance } from '@/lib/campana-avance'
 
 export interface ResultadosViewCampana {
   id: string
   nombre: string
   tipo: string
   fecha_fin: string | null
-  /**
-   * Denominador del avance. Se usa `tope_total_comercios`: `objetivo_comercios`
-   * está vacío en todas las campañas y hacía que la barra no se dibujara nunca
-   * en estos paneles mientras sí aparecía en el detalle de admin.
-   * Sin tope, se muestra el absoluto sin porcentaje.
-   */
+  /** El administrativo: activa, cerrada, pausada… Distinto del de avance. */
+  estado: string | null
+  /** Piso de representatividad. `null` en las campañas anteriores al cambio. */
+  minimo_comercios: number | null
+  /** Techo que cierra la campaña sola. Es el denominador de la barra. */
   tope_total_comercios: number | null
 }
 
@@ -151,9 +152,15 @@ export function ResultadosView({
   } = data
 
   const tema = TEMAS[panel]
-  const tope = campana.tope_total_comercios
-  const progreso = tope ? calcularPorcentaje(pdvRelevados, tope) : null
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
+
+  // Estado de avance derivado, no guardado. Ver lib/campana-avance.ts.
+  const avance = derivarAvance({
+    pdvAprobados:  pdvRelevados,
+    minimo:        campana.minimo_comercios,
+    tope:          campana.tope_total_comercios,
+    estadoCampana: campana.estado,
+  })
 
   // Tres tiles de apoyo, no siete. "Fotos aprobadas" desaparece en campañas
   // sin foto y quedan dos.
@@ -167,29 +174,91 @@ export function ResultadosView({
 
   return (
     <>
+      {/* ── Banda de advertencia ───────────────────────────────────────────
+          Solo cuando el relevamiento todavía no es representativo. Es el
+          producto del concepto del mínimo: sin esta banda, el mínimo sería una
+          etiqueta más; con ella, cambia cómo se lee el informe. */}
+      {(avance.estado === 'en_desarrollo' || avance.estado === 'incompleta') && (
+        <div className={`rounded-xl border p-4 mb-3 flex items-start gap-3 ${
+          avance.estado === 'en_desarrollo'
+            ? 'bg-amber-50 border-amber-200'
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <AlertTriangle size={16} className={`shrink-0 mt-0.5 ${
+            avance.estado === 'en_desarrollo' ? 'text-amber-500' : 'text-gray-400'
+          }`} />
+          <div>
+            <p className={`text-sm font-semibold ${
+              avance.estado === 'en_desarrollo' ? 'text-amber-800' : 'text-gray-700'
+            }`}>
+              {avance.estado === 'en_desarrollo'
+                ? `Relevamiento en desarrollo — ${avance.pdv} de ${avance.minimo} PDV mínimos`
+                : `Campaña cerrada sin alcanzar el mínimo — ${avance.pdv} de ${avance.minimo} PDV`}
+            </p>
+            <p className={`text-xs mt-0.5 ${
+              avance.estado === 'en_desarrollo' ? 'text-amber-700' : 'text-gray-500'
+            }`}>
+              Los resultados todavía no son representativos.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Nivel 1: la métrica principal, con su avance ──────────────────
           PDV relevados es la respuesta a "cuánto se hizo", que es la pregunta
           con la que se abre el panel. Absorbe la barra de avance, que antes era
           un bloque aparte. */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-3">
-        <p className="text-xs text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
-          <TrendingUp size={12} /> PDV relevados
-        </p>
-        <div className="flex items-baseline gap-2 mt-1">
-          <span className="text-4xl font-bold text-gray-900 tabular-nums">{pdvRelevados}</span>
-          {tope && <span className="text-sm text-gray-400">de {tope}</span>}
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+            <TrendingUp size={12} /> PDV relevados
+          </p>
+          <BadgeAvance estado={avance.estado} />
         </div>
-        {progreso !== null ? (
+        <div className="flex items-baseline gap-2 mt-1 flex-wrap">
+          <span className="text-4xl font-bold text-gray-900 tabular-nums">{avance.pdv}</span>
+          {avance.denominador !== null && (
+            <span className="text-sm text-gray-400">
+              de {avance.denominador}{avance.tope === null ? ' mínimos' : ''}
+            </span>
+          )}
+          {avance.minimoAlcanzado && avance.tope === null && (
+            <span className="text-sm text-green-600">✓ mínimo {avance.minimo}</span>
+          )}
+        </div>
+
+        {avance.porcentaje !== null ? (
           <div className="mt-3">
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div className={`h-full ${tema.barraAvance} rounded-full transition-all`} style={{ width: `${progreso}%` }} />
+            {/* La barra va de 0 al TOPE, y el mínimo es una marca encima. Mismo
+                patrón que ya usa el panel del gondolero para el mínimo para
+                cobrar. Usar el mínimo de denominador daba "56 de 40": un 140%
+                dibujado como 100%. */}
+            <div className="relative h-2 bg-gray-100 rounded-full overflow-hidden">
+              {avance.marcaMinimoPct !== null && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10"
+                  style={{ left: `${avance.marcaMinimoPct}%` }}
+                />
+              )}
+              <div
+                className={`h-full ${tema.barraAvance} rounded-full transition-all`}
+                style={{ width: `${avance.porcentaje}%` }}
+              />
             </div>
-            <p className="text-xs text-gray-400 text-right mt-1">{progreso}%</p>
+            <div className="flex justify-between text-xs mt-1">
+              <span className={avance.minimoAlcanzado ? 'text-green-600' : 'text-amber-500'}>
+                {avance.minimo !== null && (avance.minimoAlcanzado
+                  ? `✓ mínimo ${avance.minimo} alcanzado`
+                  : `mínimo ${avance.minimo}`)}
+              </span>
+              <span className="text-gray-400">{avance.porcentaje}%</span>
+            </div>
           </div>
-        ) : (
-          // Sin tope configurado no se inventa un denominador: el absoluto solo.
-          <p className="text-xs text-gray-300 mt-1">Sin objetivo definido</p>
-        )}
+        ) : avance.minimo === null ? (
+          // Las campañas anteriores al cambio no tienen mínimo. No se inventa:
+          // se dice, y acá sí, porque es desde donde se puede ir a cargarlo.
+          <p className="text-xs text-gray-300 mt-1">Sin mínimo definido</p>
+        ) : null}
       </div>
 
       {/* ── Nivel 2: ejecución ────────────────────────────────────────────── */}

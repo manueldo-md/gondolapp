@@ -30,14 +30,14 @@ export default async function CampanasPage() {
     .from('campanas')
     .select(`
       id, nombre, tipo, estado, financiada_por, fecha_inicio, fecha_fin,
-      minimo_comercios, comercios_relevados, puntos_por_foto, created_at,
+      minimo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, created_at,
       actor_campana, motivo_rechazo
     `)
     .eq('marca_id', marcaId ?? '')
     .order('created_at', { ascending: false })
 
   if (error) console.error('Error fetching campanas:', error.message)
-  const campanasSinCount = (data ?? []) as Omit<CampanaRow, 'gondoleroCount'>[]
+  const campanasSinCount = (data ?? []) as Omit<CampanaRow, 'gondoleroCount' | 'pdvAprobados'>[]
 
   const campanaIds = campanasSinCount.map(c => c.id)
   let partCounts: Record<string, number> = {}
@@ -52,9 +52,25 @@ export default async function CampanasPage() {
     )
   }
 
+  // PDV con al menos una misión aprobada, para el estado de avance.
+  // UNA query agregada para todas las campañas, no una por campaña.
+  const pdvPorCampana: Record<string, Set<string>> = {}
+  if (campanaIds.length > 0) {
+    const { data: misionesData } = await admin
+      .from('misiones')
+      .select('campana_id, comercio_id')
+      .in('campana_id', campanaIds)
+      .eq('estado', 'aprobada')
+    for (const m of ((misionesData ?? []) as { campana_id: string; comercio_id: string | null }[])) {
+      if (!m.comercio_id) continue
+      ;(pdvPorCampana[m.campana_id] ??= new Set()).add(m.comercio_id)
+    }
+  }
+
   const campanas: CampanaRow[] = campanasSinCount.map(c => ({
     ...c,
     gondoleroCount: partCounts[c.id] ?? 0,
+    pdvAprobados:   pdvPorCampana[c.id]?.size ?? 0,
   }))
 
   return (
