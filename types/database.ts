@@ -279,7 +279,6 @@ export type Database = {
           motivo_rechazo: string | null
           nivel_minimo: string | null
           nombre: string
-          objetivo_comercios: number | null
           presupuesto_tokens: number | null
           puntos_por_foto: number | null
           puntos_por_mision: number | null
@@ -317,7 +316,6 @@ export type Database = {
           motivo_rechazo?: string | null
           nivel_minimo?: string | null
           nombre: string
-          objetivo_comercios?: number | null
           presupuesto_tokens?: number | null
           puntos_por_foto?: number | null
           puntos_por_mision?: number | null
@@ -355,7 +353,6 @@ export type Database = {
           motivo_rechazo?: string | null
           nivel_minimo?: string | null
           nombre?: string
-          objetivo_comercios?: number | null
           presupuesto_tokens?: number | null
           puntos_por_foto?: number | null
           puntos_por_mision?: number | null
