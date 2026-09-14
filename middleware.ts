@@ -16,6 +16,11 @@ const RUTAS_PUBLICAS = [
   '/vinculacion-repo',         // Repositora acepta invitación de marca
   '/vinculacion-distri-repo',  // Repositora acepta invitación de distribuidora
   '/repo/invitacion-campana',  // Repositora acepta/rechaza campaña de marca
+  // TEMPORAL — spike de gráficos (etapa 2 del dashboard). Sin esto el
+  // middleware redirige la ruta tanto sin sesión como con ella, y no se puede
+  // abrir para evaluarla. No expone datos: son cuatro valores de ejemplo
+  // hardcodeados. SE BORRA JUNTO CON /app/spike-echarts al tomar la decisión.
+  '/spike-echarts',
 ]
 
 // Destino por tipo de actor después del login
