@@ -668,7 +668,10 @@ async function main() {
     comerciosPool:  csvComercioIds.filter(Boolean).slice(0, 40),
     fotoUrlFn: (n) => `https://picsum.photos/seed/precio${n}/800/600`,
     puntosXMision: 150,
-    respuestasFn: (campoId) => [{ campo_id: campoId, valor: String(Math.floor(rnd(1800, 5800))) }],
+    // valor va con el tipo nativo que corresponde al campo. El String() de antes
+    // guardaba "2500" en vez de 2500 y los agregados del panel lo veían distinto
+    // a lo que escribe la app.
+    respuestasFn: (campoId) => [{ campo_id: campoId, valor: Math.floor(rnd(1800, 5800)) }],
   })
   console.log('  ✓ Campaña 2 OK')
 
@@ -724,9 +727,16 @@ async function main() {
     fotoUrlFn: (n) => `https://picsum.photos/seed/suprante${n}/800/600`,
     puntosXMision: 80,
     respuestasFn: (campoId, orden) => {
-      if (orden === 1) return [{ campo_id: campoId, valor: Math.random() > 0.3 ? 'si' : 'no' }]
-      if (orden === 2) return [{ campo_id: campoId, valor: String(Math.floor(rnd(1, 6))) }]
-      if (orden === 3) return [{ campo_id: campoId, valor: JSON.stringify(['Arcor', 'Georgalos'].slice(0, Math.ceil(rnd(1, 3)))) }]
+      // Cada tipo con su tipo JSON nativo, igual que lo escribe la app:
+      // binaria → boolean, numero → number, seleccion_multiple → array.
+      //
+      // Antes escribía 'si'/'no', "3" y JSON.stringify(array). El último era
+      // doble serialización: stringify devuelve un string de JS que el driver
+      // vuelve a serializar, y en jsonb queda un string que CONTIENE un array,
+      // no un array. El panel lo descartaba entero (Array.isArray daba false).
+      if (orden === 1) return [{ campo_id: campoId, valor: Math.random() > 0.3 }]
+      if (orden === 2) return [{ campo_id: campoId, valor: Math.floor(rnd(1, 6)) }]
+      if (orden === 3) return [{ campo_id: campoId, valor: ['Arcor', 'Georgalos'].slice(0, Math.ceil(rnd(1, 3))) }]
       return []
     },
   })

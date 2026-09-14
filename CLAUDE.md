@@ -1698,6 +1698,49 @@ Guarda a no romper: `actualizarEstadoMision` sale temprano si la misión está
 descartada. Sin eso, aprobar una foto que había quedado pendiente le pisa el
 estado con 'aprobada' y le paga los puntos que resignó.
 
+### Formato de `mision_respuestas.valor` — normalizado el 14/9/2026
+
+`valor` es `jsonb` y **cada tipo de campo tiene un tipo JSON que le corresponde**:
+
+| Tipo de campo | Formato correcto | Ejemplo |
+|---|---|---|
+| `binaria` | boolean | `true` |
+| `numero` | number | `2500` |
+| `seleccion_multiple` | array | `["Arcor","Georgalos"]` |
+| `seleccion_unica` | string | `"Arcor"` |
+| `texto` | string | `"La góndola estaba..."` |
+
+Hasta el 14/9/2026 convivían dos formatos para los tres primeros. **La causa era
+el seed, no la app**: `seed-demo-completo.ts` escribía `'si'`/`'no'`, `String(n)`
+y `JSON.stringify(array)`. Ese último era doble serialización — `stringify`
+devuelve un string de JS que el driver vuelve a serializar, y en `jsonb` queda un
+string que *contiene* un array. El panel lo descartaba entero
+(`Array.isArray()` daba `false`), así que el 76% de las respuestas múltiples no
+se veía. Y `'si'` sin tilde caía en el `else` de la binaria y se contaba como
+"No".
+
+La app siempre escribió bien (`captura/page.tsx`: boolean, array, `Number()`).
+Hay exactamente **dos escritores** de la tabla: `captura/actions.ts` y el seed.
+
+Corregido en las dos puntas: el seed escribe tipos nativos, y lo histórico se
+normalizó con `UPDATE` (dev el 14/9). El normalizador de lectura que pueda haber
+en el panel es **red de seguridad, no el arreglo**.
+
+> Al escribir un seed o un fixture: el tipo lo pone el valor de JS, no una
+> conversión a mano. `String(n)` y `JSON.stringify(arr)` sobre una columna
+> `jsonb` son siempre un error.
+
+### `foto_respuestas` está condenada
+
+Tabla legacy: **nadie la escribe**. Se lee en un solo lugar —el popup del
+lightbox en `lib/resultados.ts`— y solo tiene datos de campañas viejas. Se
+normalizó el 14/9/2026 junto con `mision_respuestas` porque hasta que se elimine
+el lightbox mostraría `["Arcor","Georgalos"]` como texto crudo.
+
+**Cuando se elimine la tabla** (la "etapa D" del plan de dashboard), esa
+normalización queda sin objeto y hay que sacar también la lectura de
+`foto_respuestas` y `fotoRespuestasMap` de `lib/resultados.ts`.
+
 ### distri_id null en gondoleros de dev
 El seed no vincula automáticamente los gondoleros de dev a Biomega. Solución:
 correr el bloque SQL al final de `supabase/seed.sql` después de crear los usuarios
