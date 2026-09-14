@@ -142,9 +142,9 @@ export interface Campana {
   fecha_inicio: string | null
   fecha_fin: string | null
   fecha_limite_inscripcion: string | null
-  objetivo_comercios: number | null
   max_comercios_por_gondolero: number
   min_comercios_para_cobrar: number
+  minimo_comercios: number | null
   tope_total_comercios: number | null
   es_abierta: boolean
   puntos_por_foto: number

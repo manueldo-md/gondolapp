@@ -1,0 +1,20 @@
+-- Etapa E del cambio de concepto de `objetivo_comercios` a `minimo_comercios`.
+--
+-- `objetivo_comercios` existía en el schema desde V1, la leían siete pantallas
+-- como denominador del avance, y NADIE la cargaba nunca: las 23 campañas de
+-- dev y de producción la tenían en NULL. Consecuencias que dejó:
+--   - el avance se dibujaba sobre un denominador nulo en los tres paneles de
+--     resultados (admin usaba `tope ?? objetivo`, así que la misma campaña
+--     mostraba un número distinto según quién la mirara);
+--   - la alerta de bajo avance de la distribuidora filtraba por
+--     `objetivo_comercios IS NOT NULL` y por lo tanto no se disparó nunca.
+--
+-- El reemplazo es `minimo_comercios` (migración 20260914120000): el piso de
+-- comercios que hace que el estudio sea representativo, obligatorio en los tres
+-- editores. El denominador de la barra pasó a ser `tope_total_comercios`, con
+-- el mínimo dibujado como marca sobre la barra.
+--
+-- Expand/contract: el DROP va DESPUÉS de que el código dejó de usar el nombre
+-- viejo y de que el reemplazo se verificó en producción. Sin datos que migrar
+-- —la columna está vacía en las dos bases— este paso no pierde nada.
+ALTER TABLE campanas DROP COLUMN IF EXISTS objetivo_comercios;
