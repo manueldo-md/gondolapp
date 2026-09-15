@@ -147,6 +147,11 @@ export async function procesarColaOffline(fromBackoff = false) {
           puntosTotal: mision.puntosTotal, fotos,
           respuestasDirectas: mision.respuestasDirectas,
           idempotenciaKey: mision.idempotenciaKey,
+          // Explícito: el servidor no puede deducirlo (el envío en vivo también
+          // manda idempotenciaKey). Cambia el trato del bloqueo por distancia —
+          // desde la cola se marca en vez de rechazar, porque el gondolero
+          // validó contra las coordenadas cacheadas y pueden haber cambiado.
+          desdeCola: true,
         })
 
         // ── Éxito ───────────────────────────────────────────────────────────

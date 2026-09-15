@@ -9,6 +9,7 @@ import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { tiempoRelativo } from '@/lib/utils'
 import { accionMasiva, cambiarEstadoFoto } from './actions'
 import { FotoRespuestas } from '@/components/shared/foto-respuestas'
+import { FotoDistancia } from '@/components/shared/foto-distancia'
 import { SelectorMotivoRechazo } from '@/components/shared/selector-motivo-rechazo'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -23,6 +24,8 @@ export interface FotoItem {
   createdAt: string
   precioConfirmado: number | null
   precioDetectado: number | null
+  /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
+  distanciaMetros: number | null
   respuestas?: { pregunta: string; tipo: string; valor: unknown }[]
 }
 
@@ -488,6 +491,7 @@ function FotoCard({
           <Clock size={10} />
           <span>{tiempoRelativo(foto.createdAt)}</span>
         </div>
+        <FotoDistancia metros={foto.distanciaMetros} />
         {(foto.precioConfirmado != null || foto.precioDetectado != null) && (
           <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
             {foto.precioConfirmado != null && (

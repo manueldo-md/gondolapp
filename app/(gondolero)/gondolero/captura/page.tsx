@@ -139,6 +139,18 @@ interface ComercioRow {
 const RADIO_SUGERENCIA_M = 100
 
 /**
+ * Tope duro de captura. Debe coincidir con RADIO_BLOQUEO_METROS del servidor:
+ * este bloqueo es la cortesía de avisar antes, no el control. El control está
+ * en registrarMision, porque un chequeo que vive solo en el cliente no es un
+ * chequeo.
+ *
+ * Entre 50 y 200 el aviso sigue siendo blando: un GPS urbano impreciso se va
+ * decenas de metros y bloquear eso castiga a gondoleros honestos. Más allá de
+ * 200 no hay error de GPS que lo explique.
+ */
+const RADIO_BLOQUEO_M = 200
+
+/**
  * Filtra una lista de comercios por distancia desde (lat, lng).
  * Fuente única para el paso comercios-gps: evita que un fix en un camino
  * no se aplique al otro.
@@ -1751,6 +1763,14 @@ function CapturaContent() {
     )
   }
 
+  // Distancia al comercio elegido. Una sola fuente para el aviso del paso de
+  // GPS y para el bloqueo del botón: si se calcularan por separado, un cambio en
+  // uno dejaría el otro mostrando algo distinto de lo que decide.
+  const distanciaAlComercio = (gps.estado === 'activo' && gps.posicion && comercio)
+    ? calcularDistanciaMetros(gps.posicion.lat, gps.posicion.lng, comercio.lat, comercio.lng)
+    : null
+  const demasiadoLejos = distanciaAlComercio != null && distanciaAlComercio > RADIO_BLOQUEO_M
+
   // Avisos de la lista de comercios, compartidos por los dos caminos de
   // selección: el de cercanos por GPS y el de búsqueda por texto.
   const avisosRelevados = (
@@ -2930,10 +2950,7 @@ function CapturaContent() {
               )}
 
               {gps.estado === 'activo' && gps.posicion && (() => {
-                const distancia = calcularDistanciaMetros(
-                  gps.posicion.lat, gps.posicion.lng,
-                  comercio.lat, comercio.lng
-                )
+                const distancia = distanciaAlComercio ?? 0
                 const dentroDelRadio = distancia <= 50
                 return (
                   <>
@@ -2952,13 +2969,31 @@ function CapturaContent() {
                         <p className="font-semibold text-amber-600 mb-1">
                           Estás a {formatearDistancia(distancia)} del comercio
                         </p>
-                        <p className="text-xs text-gray-500">Acercate para capturar con mejor precisión</p>
-                        <div className="mt-3 flex items-start gap-2 bg-amber-50 rounded-xl p-3 text-left">
-                          <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
-                          <p className="text-xs text-amber-700">
-                            La foto puede ser rechazada si no estás en el comercio. En el piloto podés continuar igual.
-                          </p>
-                        </div>
+                        {distancia > RADIO_BLOQUEO_M ? (
+                          <>
+                            <p className="text-xs text-gray-500">
+                              Tenés que estar en el comercio para hacer la misión
+                            </p>
+                            <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-left">
+                              <AlertTriangle size={14} className="text-red-500 mt-0.5 shrink-0" />
+                              <p className="text-xs text-red-700">
+                                Estás demasiado lejos para capturar. Si el comercio está mal
+                                ubicado en el mapa, avisale a tu distribuidora para que corrija
+                                la dirección.
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs text-gray-500">Acercate para capturar con mejor precisión</p>
+                            <div className="mt-3 flex items-start gap-2 bg-amber-50 rounded-xl p-3 text-left">
+                              <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+                              <p className="text-xs text-amber-700">
+                                La foto puede ser rechazada si no estás en el comercio. En el piloto podés continuar igual.
+                              </p>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                   </>
@@ -2979,7 +3014,9 @@ function CapturaContent() {
                   </div>
                 )}
                 <button
+                  disabled={demasiadoLejos}
                   onClick={async () => {
+                    if (demasiadoLejos) return
                     if (esRetake) {
                       await comenzarCapturaRetake()
                       return
@@ -2991,9 +3028,15 @@ function CapturaContent() {
                     setCampoActualIdx(0)
                     irAlCampo(0)
                   }}
-                  className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
+                  className={`w-full py-4 font-bold rounded-2xl min-h-touch ${
+                    demasiadoLejos
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-gondo-verde-400 text-white'
+                  }`}
                 >
-                  {esRetake
+                  {demasiadoLejos
+                    ? 'Acercate al comercio para continuar'
+                    : esRetake
                     ? 'Continuar — Rehacer la foto'
                     : campana.bloques.length > 1
                       ? `Comenzar misión · ${campana.bloques.length} bloques`

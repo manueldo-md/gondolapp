@@ -140,6 +140,9 @@ export async function registrarChecksGPSInterno({
           comercio_id:  comercio.id,
           gondolero_id: userId,
           distri_id:    gondoleroDistriId,
+          // Desde el 15/9/2026 son la posición real del dispositivo. Antes
+          // llegaban acá las del comercio, con lo cual el filtro de 20m de arriba
+          // se autocumplía y la fila no probaba presencia de nadie.
           latitud:      lat,
           longitud:     lng,
         },

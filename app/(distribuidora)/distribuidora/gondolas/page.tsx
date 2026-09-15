@@ -12,6 +12,7 @@ import { FiltrosArchivo } from './filtros-archivo'
 import { GondolasPendientes } from './gondolas-pendientes'
 import { FotoAcciones } from './foto-acciones'
 import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
+import { FotoDistancia } from '@/components/shared/foto-distancia'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,8 @@ interface FotoPendienteRaw {
   declaracion: DeclaracionFoto
   precio_detectado: number | null
   precio_confirmado: number | null
+  /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
+  distancia_metros: number | null
   created_at: string
   campana_id: string
   gondolero: { nombre: string | null; alias: string | null } | null
@@ -117,6 +120,10 @@ function FotoCard({
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ml-2 ${DECL_COLOR[decl]}`}>
             {DECL_LABEL[decl]}
           </span>
+        </div>
+
+        <div className="mt-1">
+          <FotoDistancia metros={foto.distancia_metros} />
         </div>
 
         <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
@@ -252,7 +259,7 @@ export default async function GondolasPage({
   let query = admin
     .from('fotos')
     .select(`
-      id, mision_id, url, storage_path, declaracion, precio_detectado, precio_confirmado, created_at, campana_id,
+      id, mision_id, url, storage_path, declaracion, precio_detectado, precio_confirmado, distancia_metros, created_at, campana_id,
       gondolero:profiles ( nombre, alias ),
       comercio:comercios  ( nombre, direccion ),
       campana:campanas    ( nombre, tipo ),

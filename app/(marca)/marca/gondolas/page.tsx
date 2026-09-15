@@ -8,6 +8,7 @@ import type { EstadoFoto, DeclaracionFoto, TipoCampana } from '@/types'
 import { GondolasFilter } from './gondolas-filter'
 import { MarcaFotoAcciones } from './foto-acciones'
 import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
+import { FotoDistancia } from '@/components/shared/foto-distancia'
 
 interface FotoRow {
   id: string
@@ -18,6 +19,8 @@ interface FotoRow {
   estado: EstadoFoto
   created_at: string
   precio_confirmado: number | null
+  /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
+  distancia_metros: number | null
   comercio: { nombre: string } | null
   gondolero: { nombre: string | null; alias: string | null } | null
   bloque: { instruccion: string | null } | null
@@ -113,7 +116,7 @@ export default async function GondolasPage({
   // Query de fotos — sin filtro campo_id: el modelo nuevo asigna campo_id a toda foto
   let query = admin
     .from('fotos')
-    .select('id, mision_id, storage_path, url, declaracion, estado, created_at, precio_confirmado, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
+    .select('id, mision_id, storage_path, url, declaracion, estado, created_at, precio_confirmado, distancia_metros, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
     .order('mision_id', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(100)
@@ -248,6 +251,7 @@ export default async function GondolasPage({
                 <p className="text-[10px] text-gray-400">
                   {formatearFechaHora(f.created_at)}
                 </p>
+                <FotoDistancia metros={f.distancia_metros} />
                 {respuestasMap[f.id] && respuestasMap[f.id].length > 0 && (
                   <FotoRespuestas respuestas={respuestasMap[f.id]} />
                 )}

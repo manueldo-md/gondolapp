@@ -1,6 +1,7 @@
 import React from 'react'
 import { Camera, MapPin, User, Clock } from 'lucide-react'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
+import { FotoDistancia } from '@/components/shared/foto-distancia'
 import { formatearFechaHora } from '@/lib/utils'
 import type { EstadoFoto } from '@/types'
 import type { Modulo } from '@/lib/resultados'
@@ -122,6 +123,7 @@ export function ModuloFoto({
                     </span>
                   </div>
                 )}
+                <FotoDistancia metros={f.distancia_metros} />
                 <div className="flex items-center justify-end text-[10px] text-gray-400 mt-auto">
                   <div className="flex items-center gap-1">
                     <Clock size={10} />

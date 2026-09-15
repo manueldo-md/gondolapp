@@ -18,6 +18,18 @@ import { calcularDistanciaMetros } from '@/lib/utils'
 /** Mismo radio que usa el paso de GPS del flujo normal de captura. */
 const RADIO_GPS_METROS = Number(process.env.NEXT_PUBLIC_GPS_RADIO_METROS ?? 50) || 50
 
+/**
+ * Tope duro: más allá de esto la misión no se registra.
+ *
+ * No es el mismo número que el aviso de 50m, y es a propósito. Entre 50 y 200
+ * el control sigue BLANDO —el gondolero ve "acercate" y puede seguir— porque un
+ * GPS urbano impreciso, un edificio alto o una galería comercial mueven el fix
+ * decenas de metros y castigar eso bloquea a gente honesta. Pero 200 metros no
+ * los explica ningún error de GPS: es media cuadra larga, y a 1,5 km ya es otro
+ * barrio.
+ */
+const RADIO_BLOQUEO_METROS = Number(process.env.NEXT_PUBLIC_GPS_BLOQUEO_METROS ?? 200) || 200
+
 export async function obtenerConfigCompresion(): Promise<ConfigCompresion> {
   return getConfigCompresion()
 }
@@ -82,6 +94,17 @@ export interface RegistrarMisionParams {
    * bloqueId permite anclar foto_id cuando el bloque tiene exactamente una foto.
    */
   respuestasDirectas?: { campo_id: string; valor: unknown; bloqueId?: string | null }[]
+  /**
+   * true = la misión viene de la cola offline, no de un envío en vivo.
+   *
+   * EXPLÍCITO Y NO DEDUCIDO: el servidor no puede distinguirlo de otra forma
+   * —el camino online también guarda en IDB y también manda idempotenciaKey— y
+   * apoyar un control en el timestamp del dispositivo sería una heurística.
+   *
+   * Cambia el trato del bloqueo por distancia: en vivo se rechaza, desde la cola
+   * se registra y se marca. El motivo está en el chequeo, más abajo.
+   */
+  desdeCola?: boolean
   /**
    * UUID generado en el cliente al guardar la misión en IDB offline.
    * Garantiza idempotencia: si el envío se reintenta (fallo de red + app reabierta),
@@ -165,6 +188,54 @@ export async function registrarMision(params: RegistrarMisionParams) {
     }
   }
 
+  // ── Distancia al comercio ───────────────────────────────────────────────────
+  // Se calcula acá, en el servidor, y no se confía en nada que mande el cliente.
+  // Hasta el 15/9/2026 no se calculaba en ningún lado: el paso de GPS la mostraba
+  // en pantalla y la tiraba, así que una misión hecha a 1,5 km entraba idéntica a
+  // una hecha en la puerta y el que aprobaba no tenía ninguna señal.
+  const { data: comercioCoords } = await db
+    .from('comercios')
+    .select('lat, lng')
+    .eq('id', params.comercioId)
+    .maybeSingle() as { data: { lat: number | null; lng: number | null } | null }
+
+  const distanciaMetros: number | null =
+    comercioCoords?.lat != null && comercioCoords?.lng != null &&
+    Number.isFinite(params.lat) && Number.isFinite(params.lng) &&
+    !(params.lat === 0 && params.lng === 0)
+      ? Math.round(calcularDistanciaMetros(params.lat, params.lng, comercioCoords.lat, comercioCoords.lng))
+      : null
+
+  // El bloqueo trata distinto al envío en vivo y al que viene de la cola, y la
+  // razón no es de implementación sino de justicia con el gondolero.
+  //
+  // Los dos validan contra datos distintos: el cliente comparó contra las
+  // coordenadas que tenía CACHEADAS al capturar; el servidor compara contra las
+  // ACTUALES. Si entre una cosa y la otra alguien corrige el pin del comercio
+  // —que es exactamente lo que vamos a hacer con los comercios mal ubicados— una
+  // misión que el gondolero hizo bien, parado en la puerta, pasaría a dar 400
+  // metros y se rechazaría sola horas después.
+  //
+  // Eso es el mismo modo de falla que veníamos sacando del sistema: castigo
+  // tardío por algo que la persona no podía saber. Así que desde la cola no se
+  // rechaza: se registra la distancia y decide el que aprueba, que para eso
+  // ahora la ve en el panel.
+  if (distanciaMetros != null && distanciaMetros > RADIO_BLOQUEO_METROS) {
+    if (!params.desdeCola) {
+      throw new Error(
+        `Estás a ${(distanciaMetros / 1000).toFixed(1)} km del comercio. ` +
+        'Para registrar la misión tenés que estar en el comercio. ' +
+        'Si el comercio está mal ubicado en el mapa, avisale a tu distribuidora.'
+      )
+    }
+    console.warn('[registrarMision] misión de la cola fuera de radio — entra marcada', {
+      comercioId: params.comercioId,
+      gondoleroId: user.id,
+      distanciaMetros,
+      bloqueo: RADIO_BLOQUEO_METROS,
+    })
+  }
+
   // 1. Crear la misión
   const { data: mision, error: misionError } = await db
     .from('misiones')
@@ -225,6 +296,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
         storage_path:          foto.storagePath,
         lat:                   params.lat,
         lng:                   params.lng,
+        distancia_metros:      distanciaMetros,
         timestamp_dispositivo: foto.timestampDispositivo,
         device_id:             params.deviceId,
         precio_confirmado:     foto.precioConfirmado,
@@ -423,28 +495,34 @@ export async function registrarMision(params: RegistrarMisionParams) {
   }
 
   // 7. Registrar checks GPS silenciosos para validación de comercios pendientes.
-  // Se ejecuta con las coordenadas del comercio visitado (leídas de la DB),
-  // así los logs son visibles en Vercel en lugar de en el browser.
+  //
+  // VA LA POSICIÓN DEL DISPOSITIVO, no la del comercio. Hasta el 15/9/2026 iba
+  // `comercioCoords?.lat ?? params.lat`, y eso rompía las tres cosas que la
+  // tabla existe para hacer:
+  //
+  //   · El filtro de 20m de registrarChecksGPSInterno SE AUTOCUMPLÍA: la
+  //     distancia de un comercio a sí mismo es 0, así que el comercio destino
+  //     recibía su check siempre, estuviera el gondolero en la puerta o a 1,5 km.
+  //   · La fila guardaba las coordenadas del comercio, así que todos los checks
+  //     de un mismo comercio eran idénticos y no probaban presencia de nadie.
+  //   · Buscaba vecinos a 20m DEL COMERCIO en vez de del gondolero, así que
+  //     comercios vecinos recibían checks de alguien que pudo no haber estado
+  //     cerca de ninguno de los dos.
+  //
+  // comercios_checks es la evidencia de que el gondolero estuvo físicamente ahí.
+  // Con las coordenadas del comercio no era evidencia de nada.
   try {
-    const { data: comercioCoords } = await db
-      .from('comercios')
-      .select('lat, lng')
-      .eq('id', params.comercioId)
-      .maybeSingle() as { data: { lat: number; lng: number } | null }
-
-    const checkLat = comercioCoords?.lat ?? params.lat
-    const checkLng = comercioCoords?.lng ?? params.lng
-
     console.log('[registrarMision] iniciando checks GPS', {
       comercioId: params.comercioId,
-      lat: checkLat,
-      lng: checkLng,
+      lat: params.lat,
+      lng: params.lng,
+      distanciaMetros,
       gondoleroDistriId,
     })
 
     await registrarChecksGPSInterno({
-      lat:               checkLat,
-      lng:               checkLng,
+      lat:               params.lat,
+      lng:               params.lng,
       userId:            user.id,
       gondoleroDistriId: gondoleroDistriId,
       admin:             db,
@@ -685,6 +763,10 @@ export async function registrarRecaptura(params: RegistrarRecapturaParams) {
         storage_path:          foto.storagePath,
         lat:                   params.lat,
         lng:                   params.lng,
+        // La recaptura ya calculaba la distancia para loguearla; ahora también
+        // la guarda. El control acá sigue blando a propósito (ver arriba): no
+        // puede ser más estricto que la captura original.
+        distancia_metros:      distanciaMetros,
         timestamp_dispositivo: foto.timestampDispositivo,
         device_id:             params.deviceId,
         blur_score:            foto.blurScore,

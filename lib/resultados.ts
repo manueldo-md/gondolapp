@@ -43,6 +43,8 @@ export interface FotoConUrl {
   estado: string
   campo_id: string | null
   bloque_id: string | null
+  /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
+  distancia_metros: number | null
   created_at: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   gondolero: any
@@ -148,7 +150,7 @@ export async function loadResultadosCampanaData(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let fotosQuery: any = admin
     .from('fotos')
-    .select('id, url, storage_path, estado, campo_id, bloque_id, created_at, gondolero:profiles(nombre,alias), comercio:comercios(nombre,direccion)')
+    .select('id, url, storage_path, estado, campo_id, bloque_id, distancia_metros, created_at, gondolero:profiles(nombre,alias), comercio:comercios(nombre,direccion)')
     .eq('campana_id', campanaId)
     .order('created_at', { ascending: false })
     .limit(200)
