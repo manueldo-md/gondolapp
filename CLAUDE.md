@@ -820,6 +820,46 @@ Eliminar la sección "Economía" del panel de configuración cuando se implement
 
 ---
 
+### Catálogo de premios por marca y distribuidora
+
+**Estado: pendiente de producto. No empezar — hay un problema sin resolver que
+condiciona todo el modelo de datos.**
+
+**El concepto.** Hoy el catálogo de premios es único y es de GondolApp. La idea
+es que cada marca y cada distribuidora pueda cargar el suyo desde su panel, y
+armar paquetes de premios seleccionables por campaña. Cada premio con su
+descripción, su puntaje y sus datos propios.
+
+Es la evolución del "Catálogo de canjes configurable" de más arriba, que se
+queda en un catálogo único administrable; acá cada actor tiene el suyo.
+
+**El problema conocido, que hay que resolver ANTES de construirlo.** Si los
+premios son de cada marca o distri, los puntos quedan atados a quien los
+entrega, y eso **fragmenta el incentivo del gondolero**. Junta 300 puntos con
+una distribuidora y 150 con otra, y quizás con ninguno de los dos llega a nada.
+
+El daño no es contable sino de producto: el gondolero deja de ver un saldo que
+crece y pasa a ver varios montoncitos que no alcanzan. Eso toca directamente la
+razón por la que sigue usando la app.
+
+**Tres salidas a evaluar cuando se agarre.** Ninguna elegida, ninguna
+descartada:
+
+- **Una sola moneda, catálogos distintos.** GondolApp liquida entre las partes.
+- **Monedas separadas más un catálogo base de GondolApp** que acepte cualquier
+  punto.
+- **Cada uno paga lo suyo y listo**, asumiendo la fragmentación.
+
+**Y una pregunta previa que sigue sin respuesta: ¿los premios los paga la
+distribuidora o GondolApp?** Mientras no esté contestada, las tres salidas de
+arriba no se pueden comparar — cambia quién asume el costo en cada una.
+
+Tocá también, cuando llegue el momento, el "Panel de beneficios segmentados"
+de esta misma sección: los beneficios por distri se construyen sobre este
+catálogo y heredan el mismo problema.
+
+---
+
 ### Privacidad y anonimato en el ecosistema
 
 **1. ALIAS ÚNICO PARA GONDOLEROS**
