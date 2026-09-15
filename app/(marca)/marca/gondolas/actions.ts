@@ -154,15 +154,7 @@ export async function aprobarFotoMarca(fotoId: string) {
       .eq('gondolero_id', foto.gondolero_id)
   }
 
-  // 7. Incrementar comercios_relevados en la campaña
-  await admin
-    .from('campanas')
-    .update({
-      comercios_relevados: (campana.comercios_relevados || 0) + 1,
-    })
-    .eq('id', foto.campana_id)
-
-  // 8. Verificar y desbloquear logros
+  // 7. Verificar y desbloquear logros
   if (profileNivel) {
     await verificarLogros(
       foto.gondolero_id,

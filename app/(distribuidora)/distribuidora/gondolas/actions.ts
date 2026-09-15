@@ -154,15 +154,7 @@ export async function aprobarFoto(fotoId: string) {
       .eq('gondolero_id', foto.gondolero_id)
   }
 
-  // 8. Incrementar comercios_relevados
-  await adminClient
-    .from('campanas')
-    .update({
-      comercios_relevados: (campana.comercios_relevados || 0) + 1,
-    })
-    .eq('id', foto.campana_id)
-
-  // 9. Verificar y desbloquear logros
+  // 8. Verificar y desbloquear logros
   if (profileNivel) {
     await verificarLogros(
       foto.gondolero_id,
@@ -384,11 +376,6 @@ export async function accionMasivaDistri(
         .eq('campana_id', foto.campana_id)
         .eq('gondolero_id', foto.gondolero_id)
     }
-
-    await adminClient
-      .from('campanas')
-      .update({ comercios_relevados: (campana?.comercios_relevados || 0) + 1 })
-      .eq('id', foto.campana_id)
 
     // Actualizar estado de la misión y acreditar puntos si alcanzó el mínimo
     await actualizarEstadoMision({
