@@ -1948,6 +1948,44 @@ existía**.
 Producción no quedó afectada porque allá el backfill fue la única fuente.
 Limpiado en dev con un `DELETE` que conserva la fila más vieja de cada par.
 
+### Toda distribuidora ve todos los comercios del sistema
+
+Detectado el 15/9/2026 relevando la corrección de ubicación de comercios.
+
+`app/(distribuidora)/distribuidora/comercios/page.tsx` arma la lista así:
+
+```ts
+.from('comercios')
+.select('id, nombre, direccion, tipo, validado, registrado_por, created_at, foto_fachada_url')
+.order('nombre', { ascending: true })
+.limit(200)
+```
+
+**Sin un solo `.eq()`.** El `distriId` y los `gondoleroIds` se calculan más
+arriba pero no filtran nada: se usan en un único lugar, para decidir
+`puedeValidar` (solo se pueden validar los comercios registrados por gondoleros
+propios). O sea que la distribuidora **ve todo el padrón y solo actúa sobre lo
+suyo**.
+
+Puede ser deliberado —el mapa compartido es el activo del negocio— pero no está
+escrito en ningún lado, y choca con el "Walled Garden: cada actor ve solo sus
+propios datos" de la sección 6. Una de las dos cosas está mal: o el principio o
+la query.
+
+Aparte, el `limit(200)` alfabético es el mismo tope silencioso que ya
+documentamos en la búsqueda de comercios del gondolero: arriba de 200 comercios,
+los de nombres con letras tardías desaparecen de la lista sin ningún aviso.
+
+**Por qué importa más desde ahora:** con el bloqueo duro de 200m en producción,
+mover el pin de un comercio es una acción que puede **impedir el trabajo de
+gondoleros de otra distribuidora**. Antes de ese bloqueo, ver de más era un tema
+de privacidad; escribir de más pasa a ser un tema de integridad. La decisión
+tomada para la corrección de ubicación fue que cualquier distri pueda corregir
+cualquier comercio, con rastro visible como control — pero esa decisión es sobre
+la escritura, y **el scoping de la lectura sigue sin definirse**.
+
+No tocar sin decidir antes cuál de los dos es la regla.
+
 ### distri_id null en gondoleros de dev
 El seed no vincula automáticamente los gondoleros de dev a Biomega. Solución:
 correr el bloque SQL al final de `supabase/seed.sql` después de crear los usuarios
