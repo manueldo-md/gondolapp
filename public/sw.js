@@ -1,4 +1,12 @@
-const CACHE_NAME = 'gondolapp-v11'
+// OJO: este número es lo ÚNICO que hace que el browser reinstale el SW. El
+// archivo se compara byte a byte, así que un deploy que no lo toca deja el SW
+// —y su precache— congelado. Entre el 11/9 y el 15/9 entraron 39 commits sin
+// bumpearlo y ninguno reinstaló nada.
+//
+// Bumpear en CADA deploy que toque código del gondolero. Está anotado en
+// CLAUDE.md como pendiente automatizarlo desde generate-sw-manifest.js, que ya
+// corre en build time y ya escribe en public/.
+const CACHE_NAME = 'gondolapp-v12'
 
 // ── Rutas a precachear en install ─────────────────────────────────────────────
 //
@@ -71,9 +79,9 @@ self.addEventListener('install', (event) => {
             }
           } catch { /* chunk individual sin red — continuar con los demás */ }
         }
-        console.log(`[SW v11] Precacheados ${cacheados}/${manifest.chunks.length} chunks de /sw-manifest.json`)
+        console.log(`[SW v12] Precacheados ${cacheados}/${manifest.chunks.length} chunks de /sw-manifest.json`)
       } catch (err) {
-        console.warn('[SW v11] /sw-manifest.json no disponible — instalación continúa sin precache de chunks:', err.message)
+        console.warn('[SW v12] /sw-manifest.json no disponible — instalación continúa sin precache de chunks:', err.message)
       }
 
     })
