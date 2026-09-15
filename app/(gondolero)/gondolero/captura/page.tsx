@@ -1744,11 +1744,13 @@ function CapturaContent() {
         </div>
       )}
       {!relevadosFresco && (campana?.modalidad ?? 'puntual') !== 'seguimiento' && (
-        <div className="flex items-start gap-2 text-xs text-gray-500 px-1">
-          <WifiOff size={13} className="shrink-0 mt-0.5 text-gray-400" />
-          <span>
-            Sin señal: la marca de &quot;ya relevado&quot; puede estar desactualizada.
-          </span>
+        <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-3">
+          <WifiOff size={16} className="shrink-0 mt-0.5 text-amber-500" />
+          <p className="text-xs text-amber-800">
+            <span className="font-semibold">Lista sin actualizar.</span>{' '}
+            Estos datos son de la última vez que abriste la app con señal, así que
+            puede haber comercios ya relevados que todavía no figuren.
+          </p>
         </div>
       )}
     </>
@@ -2250,6 +2252,8 @@ function CapturaContent() {
           </div>
         </div>
         <div className="flex-1 px-4 py-5 space-y-5">
+          {avisosRelevados}
+
           {/* Estado GPS */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5 text-center">
             {gps.estado === 'idle' && (
@@ -2288,8 +2292,6 @@ function CapturaContent() {
               </div>
             )}
           </div>
-
-          {avisosRelevados}
 
           {/* Buscando comercios cercanos */}
           {cmBuscandoCercanos && (
@@ -2331,12 +2333,14 @@ function CapturaContent() {
                       : 'bg-white border-gray-200 hover:border-gondo-verde-400'
                   }`}
                 >
-                  <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-300' : 'text-gondo-verde-400'}`} />
+                  <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-400' : 'text-gondo-verde-400'}`} />
                   <div className="min-w-0">
-                    <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-400' : 'text-gray-900'}`}>{c.nombre}</p>
+                    <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-500' : 'text-gray-900'}`}>{c.nombre}</p>
                     {c.direccion && <p className="text-xs text-gray-400 truncate">{c.direccion}</p>}
                     {yaRelevado ? (
-                      <p className="text-[11px] font-semibold text-gray-500 mt-0.5">Ya relevado</p>
+                      <span className="inline-block mt-1.5 px-2 py-0.5 bg-gray-200 border border-gray-300 rounded-md text-[11px] font-bold text-gray-700 uppercase tracking-wide">
+                        Ya relevado en esta campaña
+                      </span>
                     ) : gps.posicion && (
                       <p className="text-[11px] text-gondo-verde-600 mt-0.5">
                         A {Math.round(calcularDistanciaMetros(gps.posicion.lat, gps.posicion.lng, c.lat, c.lng))}m
@@ -2814,14 +2818,16 @@ function CapturaContent() {
                         : 'bg-white border-gray-100 hover:border-gondo-verde-400'
                     }`}
                   >
-                    <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-300' : 'text-gondo-verde-400'}`} />
+                    <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-400' : 'text-gondo-verde-400'}`} />
                     <div className="min-w-0">
-                      <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-400' : 'text-gray-900'}`}>{c.nombre}</p>
+                      <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-500' : 'text-gray-900'}`}>{c.nombre}</p>
                       {c.direccion && (
                         <p className="text-gray-400 text-xs truncate">{c.direccion}</p>
                       )}
                       {yaRelevado && (
-                        <p className="text-[11px] font-semibold text-gray-500 mt-0.5">Ya relevado</p>
+                        <span className="inline-block mt-1.5 px-2 py-0.5 bg-gray-200 border border-gray-300 rounded-md text-[11px] font-bold text-gray-700 uppercase tracking-wide">
+                          Ya relevado en esta campaña
+                        </span>
                       )}
                     </div>
                   </button>
