@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { Store, MapPin, CheckCircle2, Clock, AlertCircle, Camera } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
@@ -203,7 +204,12 @@ export default async function ComerciosPage() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-900 truncate">{c.nombre}</p>
+                        <Link
+                          href={`/distribuidora/comercios/${c.id}`}
+                          className="font-medium text-gray-900 truncate hover:text-gondo-verde-400 transition-colors block"
+                        >
+                          {c.nombre}
+                        </Link>
                         {c.direccion && (
                           <div className="flex items-center gap-1 mt-0.5">
                             <MapPin size={11} className="text-gray-400 shrink-0" />
