@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import { calcularDistanciaMetros } from '@/lib/utils'
+import { crearNotificacionDistri, crearNotificacionAdmin } from '@/lib/notificaciones'
 
 /**
  * Comercios que ya tienen una misión viva en esta campaña.
@@ -68,6 +70,113 @@ export async function obtenerComerciosRelevados(campanaId: string): Promise<stri
     .filter(Boolean) as string[]
 
   return [...new Set(ids)]
+}
+
+/**
+ * Reporte de que un comercio está mal ubicado.
+ *
+ * Lo manda el gondolero desde el aviso de bloqueo por distancia. Es la única
+ * forma que existe de corregir un pin: hasta el 15/9/2026 la app no tenía
+ * ninguna, así que un comercio mal ubicado era un problema permanente y el
+ * único camino que le quedaba al gondolero era crear uno nuevo — justo lo que
+ * ensucia la tabla de comercios.
+ *
+ * La distancia se recalcula ACÁ contra el pin vigente y no se confía en la que
+ * manda el cliente: es el número que va a justificar una corrección más adelante.
+ */
+export async function reportarUbicacionComercio(params: {
+  comercioId: string
+  lat: number
+  lng: number
+}): Promise<{ ok: boolean }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
+  const { data: comercio } = await db
+    .from('comercios')
+    .select('id, nombre, lat, lng')
+    .eq('id', params.comercioId)
+    .maybeSingle()
+
+  if (!comercio) return { ok: false }
+
+  const distancia = comercio.lat != null && comercio.lng != null
+    ? Math.round(calcularDistanciaMetros(params.lat, params.lng, comercio.lat, comercio.lng))
+    : null
+
+  const { data: reporte, error } = await db
+    .from('comercios_reportes_ubicacion')
+    .insert({
+      comercio_id:      params.comercioId,
+      gondolero_id:     user.id,
+      lat:              params.lat,
+      lng:              params.lng,
+      distancia_metros: distancia,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error('[reportarUbicacionComercio] error:', error.message)
+    return { ok: false }
+  }
+
+  console.log('[reportarUbicacionComercio] OK', {
+    reporteId: reporte?.id, comercioId: params.comercioId, distancia,
+  })
+
+  // ── Aviso ───────────────────────────────────────────────────────────────────
+  // A la distribuidora del gondolero que reportó, y SIEMPRE también al admin.
+  //
+  // Por qué no a todas las distris con misiones en ese comercio: avisarle a
+  // todas suena más justo y produce el peor resultado — N destinatarios, cero
+  // responsables. Un solo dueño del aviso es lo que hace que alguien actúe.
+  //
+  // El admin va siempre por dos razones: cubre al gondolero sin distri_id (que
+  // CLAUDE.md documenta como frecuente, y que si no dejaría el reporte
+  // huérfano), y la calidad del mapa de comercios es el activo de GondolApp.
+  //
+  // Esto es sobre ATENCIÓN, no sobre permiso: cualquier distribuidora puede
+  // corregir cualquier comercio desde el panel, la reciba o no.
+  const { data: perfil } = await db
+    .from('profiles')
+    .select('distri_id, alias, nombre')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const quien = perfil?.alias ?? perfil?.nombre ?? 'Un gondolero'
+  const cuanto = distancia == null
+    ? 'sin coordenadas de referencia'
+    : distancia >= 1000 ? `a ${(distancia / 1000).toFixed(1)} km` : `a ${distancia} m`
+  const mensaje = `${quien} reportó que "${comercio.nombre}" está mal ubicado: lo encontró ${cuanto} del punto registrado.`
+  const link = `/distribuidora/comercios/${params.comercioId}`
+
+  if (perfil?.distri_id) {
+    await crearNotificacionDistri(perfil.distri_id, {
+      tipo:        'comercio_ubicacion_reportada',
+      titulo:      'Comercio mal ubicado',
+      mensaje,
+      linkDestino: link,
+    }).catch(() => { /* el reporte ya está guardado: el aviso no lo bloquea */ })
+  }
+
+  await crearNotificacionAdmin({
+    tipo:        'comercio_ubicacion_reportada',
+    titulo:      'Comercio mal ubicado',
+    mensaje,
+    linkDestino: link,
+  }).catch(() => { /* idem */ })
+
+  return { ok: true }
 }
 
 export interface CrearComercioParams {

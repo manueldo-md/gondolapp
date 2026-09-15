@@ -36,6 +36,10 @@ import {
   type CampoBloque, type BloqueData, type CampanaData,
 } from '@/lib/campana-cache'
 import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed } from '@/lib/mision-queue'
+import {
+  encolarReporte, marcarComercioReportado, leerComerciosReportados,
+  enviarReportesPendientes,
+} from '@/lib/reporte-ubicacion-queue'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
 const BLUR_THRESHOLD = typeof window !== 'undefined' &&
@@ -737,6 +741,12 @@ function CapturaContent() {
   // early-return a pantalla completa con un botón de volver, y acá el gondolero
   // tiene que quedarse en la lista para elegir otro comercio, no salir.
   const [relevadoAviso, setRelevadoAviso] = useState<string | null>(null)
+
+  // Reporte de comercio mal ubicado. `reportados` sale de IDB y sobrevive sin
+  // señal: sirve para avisarle que ya reportó, no para impedirle nada.
+  const [reportados, setReportados] = useState<Record<string, number>>({})
+  const [reportandoUbicacion, setReportandoUbicacion] = useState(false)
+  const [reporteEnviado, setReporteEnviado] = useState(false)
   const [buscando, setBuscando] = useState(false)
   const [comercio, setComercio] = useState<ComercioRow | null>(null)
   const [fotoBlob, setFotoBlob] = useState<Blob | null>(null)
@@ -903,6 +913,52 @@ function CapturaContent() {
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retakeMisionId, campana?.id, cargando])
+
+  // Comercios que este dispositivo ya reportó como mal ubicados.
+  useEffect(() => {
+    leerComerciosReportados().then(setReportados).catch(() => {})
+  }, [])
+
+  /**
+   * Reporta que el comercio está mal ubicado.
+   *
+   * Encola SIEMPRE en IDB antes de intentar el envío, y con la misma cara para
+   * el gondolero haya señal o no: el reporte es best-effort y prometerle otra
+   * cosa sería mentirle. Si el envío falla queda encolado; si se pierde, el
+   * próximo gondolero que llegue a ese comercio reporta igual.
+   */
+  const handleReportarUbicacion = async () => {
+    if (!comercio || !gps.posicion || reportandoUbicacion) return
+    setReportandoUbicacion(true)
+
+    const pendiente = {
+      comercioId:      comercio.id,
+      lat:             gps.posicion.lat,
+      lng:             gps.posicion.lng,
+      distanciaMetros: distanciaAlComercio != null ? Math.round(distanciaAlComercio) : null,
+      creadoAt:        Date.now(),
+    }
+
+    try {
+      await encolarReporte(pendiente)
+      await marcarComercioReportado(comercio.id)
+      setReportados(prev => ({ ...prev, [comercio.id]: pendiente.creadoAt }))
+    } catch (e) {
+      console.warn('[reporte-ubicacion] no se pudo encolar:', e)
+    }
+
+    // Un solo camino de envío, el de la cola: mandarlo acá Y vaciar la cola
+    // después duplicaría este mismo reporte. La cola borra la entry solo cuando
+    // el servidor confirma.
+    try {
+      await enviarReportesPendientes()
+    } catch (e) {
+      console.warn('[reporte-ubicacion] envío falló, queda encolado:', e)
+    }
+
+    setReporteEnviado(true)
+    setReportandoUbicacion(false)
+  }
 
   // ── Set de comercios ya relevados ───────────────────────────────────────────
   // Una consulta al entrar a captura, no por búsqueda: el input tiene debounce
@@ -2974,13 +3030,35 @@ function CapturaContent() {
                             <p className="text-xs text-gray-500">
                               Tenés que estar en el comercio para hacer la misión
                             </p>
-                            <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-left">
-                              <AlertTriangle size={14} className="text-red-500 mt-0.5 shrink-0" />
-                              <p className="text-xs text-red-700">
-                                Estás demasiado lejos para capturar. Si el comercio está mal
-                                ubicado en el mapa, avisale a tu distribuidora para que corrija
-                                la dirección.
-                              </p>
+                            <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-left space-y-3">
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle size={14} className="text-red-500 mt-0.5 shrink-0" />
+                                <p className="text-xs text-red-700">
+                                  Puede que la ubicación registrada esté mal. Reportalo y queda
+                                  arreglado para la próxima — hoy no vas a poder hacer la misión acá.
+                                </p>
+                              </div>
+
+                              {/* El botón va SOLO acá, en el bloqueo duro, y no en la franja
+                                  blanda de 50 a 200m. Ahí la causa más probable es imprecisión
+                                  del GPS, no un pin mal puesto — y esos reportes vendrían de
+                                  gente parada EN el comercio, así que arrastrarían el centroide
+                                  hacia el pin equivocado y empeorarían la corrección. */}
+                              {reporteEnviado || (comercio && reportados[comercio.id]) ? (
+                                <p className="text-xs font-semibold text-red-800">
+                                  {reporteEnviado
+                                    ? 'Reportado. Gracias — lo vamos a revisar.'
+                                    : 'Ya reportaste este comercio.'}
+                                </p>
+                              ) : (
+                                <button
+                                  onClick={handleReportarUbicacion}
+                                  disabled={reportandoUbicacion}
+                                  className="w-full py-2.5 bg-white border border-red-300 text-red-700 font-semibold rounded-xl text-sm disabled:opacity-60"
+                                >
+                                  {reportandoUbicacion ? 'Reportando...' : 'El comercio está mal ubicado'}
+                                </button>
+                              )}
                             </div>
                           </>
                         ) : (

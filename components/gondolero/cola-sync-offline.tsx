@@ -25,6 +25,7 @@ import {
   misionesEnviando,
   esErrorDeRed,
 } from '@/lib/mision-queue'
+import { enviarReportesPendientes } from '@/lib/reporte-ubicacion-queue'
 import type { FotoMisionInput } from '@/app/(gondolero)/gondolero/captura/actions'
 import {
   subirFoto,
@@ -243,8 +244,15 @@ export function ColaSyncOffline() {
     limpiarMisionesVencidas()
     // Drene inicial: cubre "app abierta ya con señal"
     procesarColaOffline()
+    // Los reportes de ubicación tienen su propia cola —son tres números, no
+    // justifican la maquinaria de esta— pero comparten el disparador: sin esto
+    // solo se enviarían si el gondolero vuelve a entrar a captura.
+    enviarReportesPendientes().catch(() => {})
 
-    const triggerCola = () => procesarColaOffline()
+    const triggerCola = () => {
+      procesarColaOffline()
+      enviarReportesPendientes().catch(() => {})
+    }
     window.addEventListener('online', triggerCola)
     // Botón Reintentar en el módulo de pendientes
     window.addEventListener('gondolapp:trigger-cola', triggerCola)
