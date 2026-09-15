@@ -974,6 +974,7 @@ export type Database = {
           created_at: string | null
           declaracion: string | null
           device_id: string | null
+          distancia_metros: number | null
           es_antes: boolean | null
           estado: string | null
           gondolero_id: string
@@ -1004,6 +1005,7 @@ export type Database = {
           created_at?: string | null
           declaracion?: string | null
           device_id?: string | null
+          distancia_metros?: number | null
           es_antes?: boolean | null
           estado?: string | null
           gondolero_id: string
@@ -1034,6 +1036,7 @@ export type Database = {
           created_at?: string | null
           declaracion?: string | null
           device_id?: string | null
+          distancia_metros?: number | null
           es_antes?: boolean | null
           estado?: string | null
           gondolero_id?: string
