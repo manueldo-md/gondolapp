@@ -276,6 +276,7 @@ export type Database = {
           max_comercios_por_gondolero: number | null
           min_comercios_para_cobrar: number | null
           minimo_comercios: number | null
+          modalidad: string
           motivo_rechazo: string | null
           nivel_minimo: string | null
           nombre: string
@@ -289,6 +290,7 @@ export type Database = {
           tope_total_comercios: number | null
           updated_at: string | null
           via_ejecucion: string | null
+          visitas_por_semana: number | null
         }
         Insert: {
           actor_campana?: string | null
@@ -313,6 +315,7 @@ export type Database = {
           max_comercios_por_gondolero?: number | null
           min_comercios_para_cobrar?: number | null
           minimo_comercios?: number | null
+          modalidad?: string
           motivo_rechazo?: string | null
           nivel_minimo?: string | null
           nombre: string
@@ -326,6 +329,7 @@ export type Database = {
           tope_total_comercios?: number | null
           updated_at?: string | null
           via_ejecucion?: string | null
+          visitas_por_semana?: number | null
         }
         Update: {
           actor_campana?: string | null
@@ -350,6 +354,7 @@ export type Database = {
           max_comercios_por_gondolero?: number | null
           min_comercios_para_cobrar?: number | null
           minimo_comercios?: number | null
+          modalidad?: string
           motivo_rechazo?: string | null
           nivel_minimo?: string | null
           nombre?: string
@@ -363,6 +368,7 @@ export type Database = {
           tope_total_comercios?: number | null
           updated_at?: string | null
           via_ejecucion?: string | null
+          visitas_por_semana?: number | null
         }
         Relationships: [
           {
