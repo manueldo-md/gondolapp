@@ -1765,6 +1765,40 @@ limpiar de una — pero como acción explícita, no como efecto de entrar.
 
 Registrado el 9/9/2026.
 
+### Actualizar la PWA sin que el usuario abra la app — no tiene solución hoy
+
+Pregunta planteada el 15/9/2026: ¿se puede precachear la versión nueva en
+background, sin que el gondolero abra la app con señal?
+
+**Respuesta corta: no de forma confiable, con la flota que tenemos.** Las tres
+APIs que parecen servir, y por qué ninguna alcanza:
+
+| API | Por qué no |
+|---|---|
+| **Periodic Background Sync** | Solo Chromium — **no existe en iOS/Safari**. Exige que la PWA esté *instalada* en el home screen, permiso `periodicsync`, y la frecuencia la decide el browser según el "site engagement score": el intervalo que uno pide es una sugerencia. Puede no dispararse en días |
+| **Background Sync (one-shot)** | Es un mecanismo de **reintento**, no un planificador. Dispara al recuperar conexión, pero solo para un `sync` registrado mientras había una pestaña abierta. No cubre "el dispositivo nunca abrió la app después del deploy" |
+| **Web Push** | Es el único realmente iniciado desde el servidor: un push despierta al SW y el SW podría cachear. Pero necesita servidor de push, suscripciones y VAPID; en iOS requiere 16.4+ **y** la PWA instalada. Push ya está en V2 (ver la nota de abajo) |
+
+O sea que la única vía técnicamente correcta es Web Push, que es un proyecto en
+sí mismo y arrastra el requisito de PWA instalada justamente en la plataforma
+donde menos control tenemos.
+
+**Lo que sí se puede hacer, en orden de costo:**
+
+1. **Arreglar el bump de `CACHE_NAME`** (ver la nota del Service Worker más
+   arriba). Hoy el problema no es que falte una vía automática: es que **la vía
+   manual tampoco corre**, porque el SW nunca se reinstala. Esto es lo primero y
+   es barato.
+2. **Mostrarle al gondolero cuándo se sincronizó por última vez**, antes de que
+   salga a la calle. No actualiza nada solo, pero convierte una falla silenciosa
+   en una decisión informada: "abrí la app con señal hoy" vs. "estoy saliendo con
+   la versión del martes".
+
+Lo segundo no está diseñado. No empezar sin definir dónde va y qué dice: un
+cartel permanente de estado de sincronización es ruido que se aprende a ignorar,
+que es exactamente el modo de falla que ya documentamos con el aviso de fotos
+rechazadas.
+
 ### Notificaciones push — pendiente V2
 La app es una PWA. Supabase Realtime + badge en navbar es el canal actual para
 avisar al gondolero. Las push notifications nativas del browser (Service Worker +
@@ -1947,6 +1981,57 @@ existía**.
 
 Producción no quedó afectada porque allá el backfill fue la única fuente.
 Limpiado en dev con un `DELETE` que conserva la fila más vieja de cada par.
+
+### El Service Worker no se actualiza solo: `CACHE_NAME` se bumpea a mano
+
+Detectado el 15/9/2026, después de que un cambio deployado no apareciera en modo
+avión.
+
+**El mecanismo de actualización está bien construido y no es el problema.**
+`public/sw.js` hace `skipWaiting()` en install y `clients.claim()` en activate;
+`components/shared/sw-updater.tsx` llama `registration.update()` al montar,
+escucha `controllerchange` y recarga sola —difiriendo el reload si el gondolero
+está en captura, para no perderle la foto—. Cuando se dispara, funciona.
+
+**El problema es que no se dispara.** El browser instala un SW nuevo solo si los
+**bytes de `sw.js` cambiaron**, y `CACHE_NAME = 'gondolapp-v11'` está escrito a
+mano en la línea 1. Un deploy que toca código de la app pero no `sw.js` deja el
+archivo byte a byte idéntico: no hay install, no hay activate, no se purga el
+cache viejo, no hay `controllerchange` y no hay reload.
+
+Al 15/9/2026: `public/sw.js` no se toca desde el **11/9** (`b28c2ee`), y desde
+ese commit entraron **39 commits a dev**. Ninguno de esos deploys reinstaló el
+SW en ningún dispositivo que ya lo tuviera.
+
+**Por qué igual parece funcionar con señal:** el fetch handler hace
+stale-while-revalidate para navegaciones, y los chunks JS tienen nombre con hash
+de contenido — un build nuevo produce URLs nuevas, que no están en cache, así
+que se piden a la red y se cachean. O sea que **online el código nuevo llega
+igual**, y por eso el bug es invisible en desarrollo.
+
+**Dónde muerde:** el precache de install, que es lo único que prepara al
+dispositivo para trabajar sin señal, **no corre desde el 11/9**. Y ahí está el
+detalle más engañoso: `scripts/generate-sw-manifest.js` escribe
+`public/sw-manifest.json` en **cada build** y lo imprime en el log
+(`[generate-sw-manifest] OK — 17 chunks escritos`). El archivo se genera bien.
+Pero **nadie lo lee**, porque el único que lo consume es el handler de install, y
+install no vuelve a correr. Un no-op que se reporta como éxito en todos los
+builds.
+
+Consecuencia práctica para el gondolero: si sale a la ruta sin haber abierto la
+app con señal **y navegado a las pantallas que va a usar** después del deploy,
+trabaja con la versión anterior. Con una feature nueva es molesto; con un fix de
+bug, sigue con el bug sin saberlo.
+
+**La solución no es agregar un aviso de "hay versión nueva":** la maquinaria para
+actualizar ya existe y es buena. Es **hacer que `sw.js` cambie en cada deploy**,
+inyectando un id de build en `CACHE_NAME` desde `generate-sw-manifest.js`, que ya
+corre en build time y ya escribe en `public/`. Con eso el resto de la cadena
+—update → skipWaiting → claim → controllerchange → reload— se encadena sola.
+
+**Lo que NO tiene solución hoy:** que el dispositivo se actualice sin que el
+gondolero abra la app. Ver "Actualizar la PWA sin que el usuario abra la app" más
+abajo.
 
 ### Toda distribuidora ve todos los comercios del sistema
 
