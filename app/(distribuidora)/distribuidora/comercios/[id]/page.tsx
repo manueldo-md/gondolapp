@@ -227,7 +227,11 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
                 <li key={h.id} className="border-l-2 border-gray-200 pl-3">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-sm font-medium text-gray-900">{quien}</span>
-                    {h.distri?.razon_social && (
+                    {/* La distribuidora solo se muestra si aporta algo. El
+                        usuario de una distri suele tener la razón social como
+                        nombre, así que sin esta guarda queda "Biomega S.A. ·
+                        Biomega S.A.". */}
+                    {h.distri?.razon_social && h.distri.razon_social !== quien && (
                       <span className="text-xs text-gray-400">· {h.distri.razon_social}</span>
                     )}
                     <span className="text-xs text-gray-400">

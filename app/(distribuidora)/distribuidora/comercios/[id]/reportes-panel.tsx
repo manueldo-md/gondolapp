@@ -33,16 +33,54 @@ export function ReportesPanel({ comercioId, lat, lng, reportes, anterior }: Prop
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
+  // Los handlers van ANTES del early return de "sin reportes": el caso de volver
+  // a la ubicación anterior es justamente cuando ya no quedan reportes —se
+  // resolvieron al corregir— así que si esa rama no puede llamar a corregir(),
+  // la distribuidora se queda sin ninguna acción sobre la ubicación.
+  const corregir = (nueva: { lat: number; lng: number }, reporteIds?: string[]) => {
+    setError(null)
+    startTransition(async () => {
+      const res = await corregirUbicacionComercio({
+        comercioId, lat: nueva.lat, lng: nueva.lng, reporteIds,
+      })
+      if (!res.ok) setError(res.error ?? 'No se pudo corregir.')
+    })
+  }
+
+  const descartar = (reporteId: string) => {
+    setError(null)
+    startTransition(async () => {
+      const res = await descartarReporteUbicacion(reporteId, comercioId)
+      if (!res.ok) setError(res.error ?? 'No se pudo descartar.')
+    })
+  }
+
+  const botonVolver = anterior ? (
+    <button
+      onClick={() => corregir(anterior)}
+      disabled={isPending}
+      className="w-full py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-60 inline-flex items-center justify-center gap-1.5"
+    >
+      {isPending ? <Loader2 size={12} className="animate-spin" /> : <Undo2 size={12} />}
+      Volver a la ubicación anterior
+    </button>
+  ) : null
+
   if (reportes.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-2">
+      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+        <div className="flex items-center gap-2">
           <MapPin size={15} className="text-gray-400" />
           <h3 className="text-sm font-semibold text-gray-900">Reportes de ubicación</h3>
         </div>
         <p className="text-xs text-gray-400">
           Ningún gondolero reportó que este comercio esté mal ubicado.
+          {anterior && ' Si la última corrección fue un error, podés volver atrás.'}
         </p>
+        {error && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</p>
+        )}
+        {botonVolver}
       </div>
     )
   }
@@ -74,24 +112,6 @@ export function ReportesPanel({ comercioId, lat, lng, reportes, anterior }: Prop
   const gondolerosDistintos = new Set(reportes.map(r => r.gondolero_id).filter(Boolean)).size
 
   const dispersionAlta = dispersion > RADIO_BLOQUEO_METROS
-
-  const corregir = (nueva: { lat: number; lng: number }, reporteIds?: string[]) => {
-    setError(null)
-    startTransition(async () => {
-      const res = await corregirUbicacionComercio({
-        comercioId, lat: nueva.lat, lng: nueva.lng, reporteIds,
-      })
-      if (!res.ok) setError(res.error ?? 'No se pudo corregir.')
-    })
-  }
-
-  const descartar = (reporteId: string) => {
-    setError(null)
-    startTransition(async () => {
-      const res = await descartarReporteUbicacion(reporteId, comercioId)
-      if (!res.ok) setError(res.error ?? 'No se pudo descartar.')
-    })
-  }
 
   return (
     <div className="bg-white rounded-xl border border-amber-200 p-4 space-y-4">
@@ -202,16 +222,7 @@ export function ReportesPanel({ comercioId, lat, lng, reportes, anterior }: Prop
           propia fila, así que el historial muestra la ida y la vuelta. Un undo
           que borra la fila destruiría el rastro, que es todo el control que
           tenemos sobre quién mueve pines. */}
-      {anterior && (
-        <button
-          onClick={() => corregir(anterior)}
-          disabled={isPending}
-          className="w-full py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-60 inline-flex items-center justify-center gap-1.5"
-        >
-          <Undo2 size={12} />
-          Volver a la ubicación anterior
-        </button>
-      )}
+      {botonVolver}
     </div>
   )
 }
