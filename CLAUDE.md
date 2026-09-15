@@ -673,6 +673,45 @@ base. El detalle está en "Los dos ambientes".
 
 ## 18. Features pendientes de diseño
 
+### Preguntas condicionales en el modelo de campaña
+
+**Es lo que separa un formulario de una herramienta de relevamiento.** Grande, y
+cambia el modelo de campaña — no es para ahora, pero es la dirección.
+
+**El problema:** hoy el gondolero contesta todas las preguntas del bloque,
+apliquen o no a lo que encontró. Si la marca no está en góndola, igual le
+preguntamos por su precio y le pedimos la foto del facing.
+
+**Lo que haría falta:** que una respuesta determine qué se pregunta después.
+
+> ¿Está mi marca en góndola?
+> → **Sí**: pedir foto del facing, preguntar precio
+> → **No**: saltear las dos, preguntar qué hay en su lugar (competencia)
+
+**Por qué importa más allá de la comodidad:** una pregunta que no aplica no se
+deja en blanco, se contesta cualquier cosa. Un precio inventado sobre un producto
+ausente entra a la base como un número igual de válido que el real, y contamina
+el promedio del panel. El costo no es UX, es calidad del dato.
+
+**Lo que hay que definir antes de tocar nada:**
+- Dónde vive la condición: ¿un campo `depende_de` + `valor_esperado` en
+  `bloque_campos`, o un árbol aparte? Lo primero cubre el caso de un nivel, que
+  es el 90%; lo segundo abre la puerta a anidar sin fin.
+- Qué pasa con los campos salteados en `mision_respuestas`: ¿no se insertan, o
+  se insertan con un marcador de "no aplica"? **No es lo mismo para el panel**:
+  sin marcador no se puede distinguir "no correspondía" de "no contestó", y los
+  porcentajes del dashboard cambian según cuál sea el denominador.
+- Cómo lo edita el que crea la campaña. Los cuatro formularios ya están
+  duplicados (ver "Deuda conocida"); meter un editor de condiciones en cuatro
+  lugares sin unificarlos antes es multiplicar el problema por cuatro.
+- El impacto en `lib/resultados.ts`: los módulos agregan sobre el total de
+  misiones. Con campos condicionales el denominador pasa a ser variable por
+  campo, y eso toca los cinco tipos de módulo.
+
+Registrado el 15/9/2026.
+
+---
+
 ### Misiones de venta desde alertas (Alta prioridad)
 
 **CONCEPTO:**
@@ -1739,6 +1778,58 @@ se vuelve ruido — y el que aprende a ignorar ese aviso ignora el próximo.
 Guarda a no romper: `actualizarEstadoMision` sale temprano si la misión está
 descartada. Sin eso, aprobar una foto que había quedado pendiente le pisa el
 estado con 'aprobada' y le paga los puntos que resignó.
+
+### Aprobación parcial de fotos — qué pasa hoy (relevado 15/9/2026)
+
+Campaña con dos campos foto. El revisor aprueba una y rechaza la otra. Qué
+pasa hoy, leído del código, **antes de que una distri lo haga en producción**:
+
+**La misión queda en `pendiente`.** `actualizarEstadoMision`
+(`lib/misiones.ts:174-184`) solo tiene una rama:
+
+```ts
+if (aprobadas === total) { await aprobarMisionCore(...) }
+// Caso C (diferido): fotos con rechazadas → misión queda en pendiente
+```
+
+Con 1 aprobada y 1 rechazada, `aprobadas !== total` y **no pasa nada**. No hay
+`else`. El comentario del archivo dice que el Caso C está cubierto ("se
+rechaza"); no lo está — es un `if` sin salida.
+
+**Los puntos: ninguno en el momento, y después TODOS por arrastre.** Este es el
+hallazgo que importa y no es el que parece.
+
+El pago es por misión, nunca por foto: la unidad es `misiones.puntos_total` y
+solo la libera `aprobarMisionCore`, al que no se llega. Hasta ahí, retenido.
+
+Pero el paso 3b de `aprobarMisionCore` libera así:
+
+```ts
+.eq('campana_id', campanaId).eq('gondolero_id', gondoleroId)
+.eq('bounty_estado', 'retenido')
+```
+
+**Filtra por `bounty_estado`, no por `estado`.** Así que el día que CUALQUIER
+otra misión de ese gondolero en esa campaña se apruebe y cruce el mínimo, la
+barrida alcanza también a la misión parcial —que sigue en `pendiente` y en
+`retenido`— y **le paga el 100% de `puntos_total`, incluida la parte de la foto
+rechazada**. El rechazo no tiene ningún efecto económico.
+
+Es el mismo mecanismo que ya está documentado para el descarte, donde se tapó
+con `bounty_estado='anulado'`. La aprobación parcial no tiene ese tapón.
+
+**¿Limbo?** Sí, pero distinto al de abril. Hay dos salidas, y las dos son del
+gondolero: rehacer la foto (`reemplazada_por` la saca del conteo y la misión
+puede aprobarse) o descartar la misión entera (cobra cero).
+**La distri que aprobó parcial no tiene ninguna.** Si el gondolero nunca actúa,
+queda así para siempre — o hasta que la barrida de arriba lo pague solo.
+
+Resumen de las tres respuestas: estado `pendiente`, puntos **todos y tarde** por
+un filtro que mira la columna equivocada, y limbo del lado del revisor.
+
+No implementar sin decidir antes la regla de producto: si el rechazo de una foto
+tiene que anular la misión, pagar proporcional, o forzar la recaptura. Las tres
+son defendibles y el código hoy no hace ninguna.
 
 ### Formato de `mision_respuestas.valor` — normalizado el 14/9/2026
 
