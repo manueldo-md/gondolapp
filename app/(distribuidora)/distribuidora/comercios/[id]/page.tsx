@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, Camera, History, CheckCircle2, AlertCircle } from 'lucide-react'
 import { formatearFechaHora, tiempoRelativo, calcularDistanciaMetros } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
+import { ReportesPanel, type ReporteRow } from './reportes-panel'
 
 /**
  * Detalle de un comercio.
@@ -68,7 +69,7 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = admin as any
 
-  const [comercioRes, historialRes, fotosRes] = await Promise.all([
+  const [comercioRes, historialRes, fotosRes, reportesRes] = await Promise.all([
     db.from('comercios')
       .select('id, nombre, direccion, tipo, validado, estado, lat, lng, created_at, foto_fachada_url, registrado_por')
       .eq('id', params.id)
@@ -82,13 +83,25 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
       .eq('comercio_id', params.id)
       .order('created_at', { ascending: false })
       .limit(1),
+    db.from('comercios_reportes_ubicacion')
+      .select('id, lat, lng, created_at, gondolero_id, gondolero:profiles(nombre, alias)')
+      .eq('comercio_id', params.id)
+      .eq('estado', 'pendiente')
+      .order('created_at', { ascending: false }),
   ])
 
   const comercio = comercioRes.data
   if (!comercio) notFound()
 
   const historial = (historialRes.data ?? []) as HistorialRow[]
+  const reportes  = (reportesRes.data ?? []) as ReporteRow[]
   const ultimaVisita: string | null = fotosRes.data?.[0]?.created_at ?? null
+
+  // Coordenadas previas a la última corrección, para el "volver atrás".
+  // historial viene ordenado descendente, así que [0] es la más reciente.
+  const anterior = historial[0]?.lat_anterior != null && historial[0]?.lng_anterior != null
+    ? { lat: historial[0].lat_anterior, lng: historial[0].lng_anterior }
+    : null
 
   let fachadaUrl: string | null = null
   if (comercio.foto_fachada_url) {
@@ -174,6 +187,17 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
         <p className="text-xs text-gray-400 mt-2">
           Registrado {formatearFechaHora(comercio.created_at)}
         </p>
+      </div>
+
+      {/* Reportes pendientes — arriba del historial: es lo accionable */}
+      <div className="mb-4">
+        <ReportesPanel
+          comercioId={comercio.id}
+          lat={comercio.lat}
+          lng={comercio.lng}
+          reportes={reportes}
+          anterior={anterior}
+        />
       </div>
 
       {/* Historial de correcciones */}

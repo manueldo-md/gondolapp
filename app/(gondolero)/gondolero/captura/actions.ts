@@ -15,20 +15,10 @@ import { registrarChecksGPSInterno } from './actions-checks'
 import { resolverMisionDirecta } from '@/lib/misiones'
 import { calcularDistanciaMetros } from '@/lib/utils'
 
-/** Mismo radio que usa el paso de GPS del flujo normal de captura. */
-const RADIO_GPS_METROS = Number(process.env.NEXT_PUBLIC_GPS_RADIO_METROS ?? 50) || 50
-
-/**
- * Tope duro: más allá de esto la misión no se registra.
- *
- * No es el mismo número que el aviso de 50m, y es a propósito. Entre 50 y 200
- * el control sigue BLANDO —el gondolero ve "acercate" y puede seguir— porque un
- * GPS urbano impreciso, un edificio alto o una galería comercial mueven el fix
- * decenas de metros y castigar eso bloquea a gente honesta. Pero 200 metros no
- * los explica ningún error de GPS: es media cuadra larga, y a 1,5 km ya es otro
- * barrio.
- */
-const RADIO_BLOQUEO_METROS = Number(process.env.NEXT_PUBLIC_GPS_BLOQUEO_METROS ?? 200) || 200
+// Los radios viven en lib/gps-radios.ts: el de bloqueo lo usan también el paso
+// de GPS del cliente y la resolución de reportes del panel de la distribuidora,
+// y tienen que coincidir sí o sí.
+import { RADIO_AVISO_METROS as RADIO_GPS_METROS, RADIO_BLOQUEO_METROS } from '@/lib/gps-radios'
 
 export async function obtenerConfigCompresion(): Promise<ConfigCompresion> {
   return getConfigCompresion()

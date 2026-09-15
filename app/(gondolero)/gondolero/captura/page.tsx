@@ -36,6 +36,7 @@ import {
   type CampoBloque, type BloqueData, type CampanaData,
 } from '@/lib/campana-cache'
 import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed } from '@/lib/mision-queue'
+import { RADIO_BLOQUEO_METROS } from '@/lib/gps-radios'
 import {
   encolarReporte, marcarComercioReportado, leerComerciosReportados,
   enviarReportesPendientes,
@@ -143,16 +144,12 @@ interface ComercioRow {
 const RADIO_SUGERENCIA_M = 100
 
 /**
- * Tope duro de captura. Debe coincidir con RADIO_BLOQUEO_METROS del servidor:
- * este bloqueo es la cortesía de avisar antes, no el control. El control está
- * en registrarMision, porque un chequeo que vive solo en el cliente no es un
- * chequeo.
- *
- * Entre 50 y 200 el aviso sigue siendo blando: un GPS urbano impreciso se va
- * decenas de metros y bloquear eso castiga a gondoleros honestos. Más allá de
- * 200 no hay error de GPS que lo explique.
+ * Tope duro de captura. Viene de lib/gps-radios.ts, el mismo módulo que lee
+ * registrarMision: este bloqueo es la cortesía de avisar antes, no el control.
+ * El control está en el servidor, porque un chequeo que vive solo en el cliente
+ * no es un chequeo.
  */
-const RADIO_BLOQUEO_M = 200
+const RADIO_BLOQUEO_M = RADIO_BLOQUEO_METROS
 
 /**
  * Filtra una lista de comercios por distancia desde (lat, lng).

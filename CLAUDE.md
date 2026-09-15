@@ -820,6 +820,46 @@ Eliminar la sección "Economía" del panel de configuración cuando se implement
 
 ---
 
+### Texto explicativo de la campaña para el gondolero — YA EXISTE
+
+Se planteó el 15/9/2026 como pendiente: que el creador escriba en criollo qué va
+a tener que hacer el gondolero ("vas a entrar al comercio, preguntar quién le
+provee, completar el precio, una foto y listo"), para que se entere **antes** de
+aceptar y no adentro del comercio.
+
+**Está construido de punta a punta.** Se relevó antes de anotarlo como pendiente:
+
+| Pieza | Dónde |
+|---|---|
+| Columna | `campanas.instruccion`, desde el schema inicial |
+| Captura | Los formularios de creación, como "Instrucción general", con placeholder "Qué deben hacer los gondoleros en esta campaña..." |
+| Lista del gondolero | `campanas-sections.tsx:190` — bajo el nombre, con `line-clamp-2` |
+| Detalle, **antes de unirse** | `gondolero/campanas/[id]/page.tsx:352` — con el encabezado **"¿Qué tenés que hacer?"** |
+
+O sea que el lugar donde se muestra es exactamente el que se pedía, y el texto
+del encabezado también.
+
+**Lo que queda por verificar, que es otra cosa:**
+
+- **¿Se está llenando?** Las dos vistas tienen guarda `{c.instruccion && ...}`,
+  así que una campaña con el campo vacío no muestra nada **y no se nota**: no hay
+  hueco, no hay placeholder, no hay aviso al creador. Si el problema real es que
+  los creadores lo dejan vacío, la solución no es una feature nueva sino hacerlo
+  obligatorio o mostrar el vacío en el editor.
+- **El `line-clamp-2` de la lista.** Un texto de tres renglones se corta sin
+  indicar que sigue. En la lista puede estar bien —el detalle lo muestra
+  completo— pero conviene decidirlo, no que quede por default.
+- **La colisión de nombres es real y es el riesgo que se identificó bien:**
+  `campanas.instruccion` (la campaña entera, se ve antes de aceptar) y
+  `bloques_foto.instruccion` (qué fotografiar en ese bloque) se llaman igual. En
+  el editor hay que distinguirlas o el creador escribe lo mismo dos veces.
+
+**Y en campañas de seguimiento vale más todavía**, que es lo genuinamente nuevo:
+el repositor vuelve al mismo comercio muchas veces y necesita saber qué se espera
+de **cada visita**, no de la campaña. Eso el campo actual no lo cubre — describe
+la campaña, no la visita. Cuando se implemente la modalidad seguimiento hay que
+decidir si alcanza con reescribir el texto o si hace falta un campo aparte.
+
 ### Catálogo de premios por marca y distribuidora
 
 **Estado: pendiente de producto. No empezar — hay un problema sin resolver que
