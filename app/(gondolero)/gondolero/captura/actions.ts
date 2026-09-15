@@ -181,6 +181,23 @@ export async function registrarMision(params: RegistrarMisionParams) {
     .single()
 
   if (misionError) {
+    // Choque contra misiones_campana_comercio_uniq: otro gondolero ya relevó
+    // este comercio en esta campaña puntual. Pasa cuando dos trabajan sin señal
+    // sobre el mismo comercio y sincronizan a la vez — el filtro de la lista de
+    // comercios no puede verlo offline, así que el índice es la única red.
+    //
+    // Se filtra por NOMBRE DE ÍNDICE y no solo por código: misiones tiene otro
+    // índice único (misiones_idempotencia_key_idx) que también da 23505, y ese
+    // es un reintento idempotente, no un comercio duplicado. Sin el nombre, un
+    // reintento le mostraría al gondolero un mensaje que no tiene nada que ver.
+    const detalle = `${misionError.message ?? ''} ${misionError.details ?? ''}`
+    if (misionError.code === '23505' && detalle.includes('misiones_campana_comercio_uniq')) {
+      throw new Error(
+        'Otro gondolero relevó este comercio antes que vos. Pasa cuando dos personas ' +
+        'trabajan sin señal al mismo tiempo. Esta misión no se puede registrar. ' +
+        'Elegí otro comercio de la lista.'
+      )
+    }
     throw new Error('No pudimos crear la misión: ' + misionError.message)
   }
 
