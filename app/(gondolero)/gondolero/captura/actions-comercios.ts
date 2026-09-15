@@ -155,17 +155,28 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
   const { data: cercanos } = await admin
     .from('comercios')
     .select('id, nombre, lat, lng')
-    .not('lat', 'is', null)
-    .not('lng', 'is', null)
 
+  // Deduplicación por NOMBRE, sin condicionar a la distancia.
+  //
+  // Hasta el 15/9/2026 exigía `dist <= 50 && nombreSimilar(...)` y excluía de la
+  // query a los que tenían lat/lng nulos. O sea que el control tenía el mismo
+  // punto ciego que la lista de cercanos: un comercio cargado con coordenadas
+  // imprecisas no aparecía para elegirlo Y tampoco se detectaba como duplicado
+  // al crear el nuevo. El gondolero no tenía alternativa, el sistema no tenía
+  // forma de notarlo, y el comercio viejo quedaba huérfano para siempre.
+  //
+  // La distancia ahora desempata, no filtra: entre varios nombres parecidos se
+  // prefiere el más cercano, y uno sin coordenadas sigue siendo candidato.
   let posibleDuplicadoId: string | null = null
-  if (cercanos && cercanos.length > 0) {
-    for (const c of cercanos as { id: string; nombre: string; lat: number; lng: number }[]) {
-      const dist = distanciaMetros(params.lat, params.lng, c.lat, c.lng)
-      if (dist <= 50 && nombreSimilar(params.nombre, c.nombre)) {
-        posibleDuplicadoId = c.id
-        break
-      }
+  let mejorDistancia = Number.POSITIVE_INFINITY
+  for (const c of (cercanos ?? []) as { id: string; nombre: string; lat: number | null; lng: number | null }[]) {
+    if (!nombreSimilar(params.nombre, c.nombre)) continue
+    const dist = c.lat != null && c.lng != null
+      ? distanciaMetros(params.lat, params.lng, c.lat, c.lng)
+      : Number.POSITIVE_INFINITY
+    if (posibleDuplicadoId === null || dist < mejorDistancia) {
+      posibleDuplicadoId = c.id
+      mejorDistancia = dist
     }
   }
 

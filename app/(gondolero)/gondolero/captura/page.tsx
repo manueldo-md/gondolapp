@@ -91,7 +91,13 @@ function calcularBlur(blob: Blob): Promise<number> {
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Paso = 'comercio' | 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'formulario-camara-blur' | 'confirmacion' | 'mision-resumen' | 'exito'
+// El paso 'comercio' (búsqueda por texto en pantalla propia) se eliminó el
+// 15/9/2026. Quedó inalcanzable el 7/4/2026 en da2373d, cuando el redirect a
+// 'comercios-gps' —que hasta ahí valía solo para campañas tipo 'comercios'—
+// pasó a aplicar a todas. Nadie lo notó porque no falla: la pantalla
+// simplemente no aparece. La búsqueda por nombre ahora vive dentro de
+// 'comercios-gps', que es el único paso de selección que queda.
+type Paso = 'gps' | 'camara' | 'blur-advertencia' | 'formulario' | 'formulario-camara' | 'formulario-camara-blur' | 'confirmacion' | 'mision-resumen' | 'exito'
   | 'comercios-gps' | 'comercios-existente' | 'comercios-formulario' | 'comercios-fachada' | 'comercios-exito'
   | 'retake-intro' | 'guardada-offline'
 
@@ -106,6 +112,23 @@ interface ComercioRow {
 }
 
 // ── Constantes de búsqueda de comercios ───────────────────────────────────────
+//
+// PENDIENTE — filtrar por distancia EN EL SERVIDOR (bounding box).
+//
+// Las dos queries que alimentan la lista traen `.limit(500).order('nombre')` y
+// después filtran por distancia en el cliente. El `order` las vuelve
+// DETERMINISTAS, no correctas: es una curita. Con más de 500 comercios en la
+// base, los 500 que vuelven son los primeros alfabéticamente, y el filtro por
+// distancia se aplica solo sobre esos — así que el gondolero puede no ver el
+// comercio que tiene enfrente, sin ningún error ni aviso.
+//
+// Lo mismo vale para el cache offline (`initOffline`, también 500 por nombre):
+// los comercios con nombres de letras tardías son los primeros en desaparecer,
+// en silencio.
+//
+// Hoy no muerde: 93 comercios en producción. El día que una distribuidora cargue
+// 2000 se rompe de golpe y sin síntoma visible. El arreglo real es acotar por
+// bounding box (lat/lng entre ±X grados) en la query y sacar el límite fijo.
 //
 // RADIO_SUGERENCIA_M: radio para mostrar comercios cercanos en el paso
 //   comercios-gps ("¿estás en alguno de estos?"). Se puede agrandar sin riesgo.
@@ -1023,6 +1046,7 @@ function CapturaContent() {
         .from('comercios')
         .select('id, nombre, direccion, lat, lng, tipo, validado')
         .ilike('nombre', `%${busqueda}%`)
+        .order('nombre')
         .limit(10)
         .then(({ data }) => {
           setComercios(data as ComercioRow[] ?? [])
@@ -1040,14 +1064,6 @@ function CapturaContent() {
       gps.solicitar()
     }
     return () => { if (paso !== 'gps') gps.detener() }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paso])
-
-  // Todas las campañas arrancan con GPS — el paso 'comercio' (texto) queda solo como fallback
-  useEffect(() => {
-    if (paso === 'comercio') {
-      setPaso('comercios-gps')
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso])
 
@@ -1090,6 +1106,7 @@ function CapturaContent() {
         const { data } = await supabase
           .from('comercios')
           .select('id, nombre, direccion, lat, lng, tipo, validado')
+          .order('nombre')
           .limit(500)
         setCmComerciosCercanos(filtrarCercanos((data as ComercioRow[]) ?? [], lat, lng))
       } catch {
@@ -1111,7 +1128,7 @@ function CapturaContent() {
   // Advertir antes de cerrar la pestaña si hay captura en progreso
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      const pasosFinal: Paso[] = ['comercio', 'exito', 'guardada-offline', 'comercios-exito', 'comercios-gps']
+      const pasosFinal: Paso[] = ['exito', 'guardada-offline', 'comercios-exito', 'comercios-gps']
       if (!pasosFinal.includes(paso)) {
         e.preventDefault()
         e.returnValue = ''
@@ -2252,6 +2269,15 @@ function CapturaContent() {
           </div>
         </div>
         <div className="flex-1 px-4 py-5 space-y-5">
+          {modoOffline && (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+              <WifiOff size={14} className="text-amber-500 shrink-0" />
+              <p className="text-xs text-amber-700">
+                Modo sin conexión — mostrando comercios guardados
+              </p>
+            </div>
+          )}
+
           {avisosRelevados}
 
           {/* Estado GPS */}
@@ -2354,7 +2380,89 @@ function CapturaContent() {
             </div>
           )}
 
-          {/* Botón para ir al formulario de nuevo comercio */}
+          {/* Búsqueda por nombre.
+              Va ACÁ, entre la lista de cercanos y el botón de registrar nuevo,
+              y a propósito en ese orden: el gondolero que no ve su comercio
+              tenía un solo camino —crear uno nuevo— y ese es justamente el que
+              ensucia la tabla. La salida barata va antes que la cara.
+
+              Sin gate de gps.estado, también a propósito: si el GPS falla o el
+              comercio está cargado con coordenadas imprecisas, esto es la ÚNICA
+              forma de llegar a él. Condicionarlo a GPS activo reproduciría el
+              agujero que vino a cerrar. */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-px flex-1 bg-gray-200" />
+              <span className="text-xs text-gray-400 shrink-0">o buscalo por nombre</span>
+              <div className="h-px flex-1 bg-gray-200" />
+            </div>
+
+            <div className="relative">
+              <input
+                type="text"
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+                placeholder="Nombre del comercio..."
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
+              />
+              {buscando && (
+                <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
+              )}
+            </div>
+
+            {comercios.length > 0 && (
+              <div className="space-y-2">
+                {comercios.map(c => {
+                  const yaRelevado = relevados.has(c.id)
+                  return (
+                    <button
+                      key={c.id}
+                      disabled={yaRelevado}
+                      onClick={() => {
+                        if (yaRelevado) return
+                        setRelevadoAviso(null)
+                        if (esComercios) {
+                          setCmComercioYaExiste(c); setPaso('comercios-existente')
+                        } else {
+                          setComercio(c); setPaso('gps')
+                        }
+                      }}
+                      className={`w-full flex items-start gap-3 p-3 border rounded-xl text-left transition-colors ${
+                        yaRelevado
+                          ? 'bg-gray-50 border-gray-200 cursor-not-allowed'
+                          : 'bg-white border-gray-100 hover:border-gondo-verde-400'
+                      }`}
+                    >
+                      <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-400' : 'text-gondo-verde-400'}`} />
+                      <div className="min-w-0">
+                        <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-500' : 'text-gray-900'}`}>{c.nombre}</p>
+                        {c.direccion && (
+                          <p className="text-gray-400 text-xs truncate">{c.direccion}</p>
+                        )}
+                        {yaRelevado && (
+                          <span className="inline-block mt-1.5 px-2 py-0.5 bg-gray-200 border border-gray-300 rounded-md text-[11px] font-bold text-gray-700 uppercase tracking-wide">
+                            Ya relevado en esta campaña
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {busqueda.trim() && comercios.length === 0 && !buscando && (
+              <p className="text-sm text-gray-500 text-center py-2">
+                No encontramos &quot;{busqueda}&quot;
+              </p>
+            )}
+          </div>
+
+          {/* Botón para ir al formulario de nuevo comercio.
+              Sigue condicionado a GPS activo, y está bien: crear un comercio sin
+              coordenadas buenas es justamente lo que genera los comercios
+              inalcanzables. Sin GPS se puede buscar y elegir uno existente, pero
+              no crear. */}
           {gps.estado === 'activo' && !cmBuscandoCercanos && (
             <button
               onClick={() => setPaso('comercios-formulario')}
@@ -2676,9 +2784,7 @@ function CapturaContent() {
         <div className="flex items-center gap-3 mb-3">
           <button
             onClick={() => {
-              if (paso === 'comercio') {
-                router.back()
-              } else if (esRetake && paso === 'gps') {
+              if (esRetake && paso === 'gps') {
                 // En retake el comercio viene fijado por la misión: atrás vuelve
                 // a la pantalla de fotos rechazadas, no al selector de comercios.
                 cerrarMisionStream()
@@ -2709,7 +2815,6 @@ function CapturaContent() {
                 }
               } else {
                 const prev: Record<Paso, Paso> = {
-                  comercio:                    'comercios-gps',
                   gps:                         'comercios-gps',
                   camara:                      'gps',           // dead code (5c eliminará este paso)
                   'blur-advertencia':          'camara',        // dead code (5c eliminará este paso)
@@ -2765,92 +2870,6 @@ function CapturaContent() {
       </div>
 
       <div className="flex-1 px-4 py-5">
-
-        {/* ── PASO 1: COMERCIO ── */}
-        {paso === 'comercio' && (
-          <div className="space-y-4">
-            {modoOffline && (
-              <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
-                <WifiOff size={14} className="text-amber-500 shrink-0" />
-                <p className="text-xs text-amber-700">
-                  Modo sin conexión — mostrando comercios guardados
-                </p>
-              </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                ¿En qué comercio estás?
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={busqueda}
-                  onChange={e => setBusqueda(e.target.value)}
-                  placeholder="Buscá por nombre del comercio..."
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
-                  autoFocus
-                />
-                {buscando && (
-                  <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
-                )}
-              </div>
-            </div>
-
-            {avisosRelevados}
-
-            {/* Resultados */}
-            {comercios.length > 0 && (
-              <div className="space-y-2">
-                {comercios.map(c => {
-                  const yaRelevado = relevados.has(c.id)
-                  return (
-                  <button
-                    key={c.id}
-                    disabled={yaRelevado}
-                    onClick={() => {
-                      if (yaRelevado) return
-                      setRelevadoAviso(null)
-                      setComercio(c); setPaso('gps')
-                    }}
-                    className={`w-full flex items-start gap-3 p-3 border rounded-xl text-left transition-colors ${
-                      yaRelevado
-                        ? 'bg-gray-50 border-gray-200 cursor-not-allowed'
-                        : 'bg-white border-gray-100 hover:border-gondo-verde-400'
-                    }`}
-                  >
-                    <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-400' : 'text-gondo-verde-400'}`} />
-                    <div className="min-w-0">
-                      <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-500' : 'text-gray-900'}`}>{c.nombre}</p>
-                      {c.direccion && (
-                        <p className="text-gray-400 text-xs truncate">{c.direccion}</p>
-                      )}
-                      {yaRelevado && (
-                        <span className="inline-block mt-1.5 px-2 py-0.5 bg-gray-200 border border-gray-300 rounded-md text-[11px] font-bold text-gray-700 uppercase tracking-wide">
-                          Ya relevado en esta campaña
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                  )
-                })}
-              </div>
-            )}
-
-            {busqueda.trim() && comercios.length === 0 && !buscando && (
-              <div className="text-center py-6">
-                <p className="text-sm text-gray-500 mb-3">
-                  No encontramos &quot;{busqueda}&quot; en el mapa
-                </p>
-                <button
-                  onClick={() => router.push(`/gondolero/comercios/nuevo?nombre=${encodeURIComponent(busqueda)}&campana=${campanaId}`)}
-                  className="px-4 py-2 border border-gondo-verde-400 text-gondo-verde-400 rounded-xl text-sm font-semibold"
-                >
-                  + Agregar comercio nuevo
-                </button>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* ── PASO 2: GPS ── */}
         {paso === 'gps' && comercio && (
