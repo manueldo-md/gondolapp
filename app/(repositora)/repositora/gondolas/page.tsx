@@ -5,6 +5,7 @@ import { Images } from 'lucide-react'
 import { formatearFechaHora } from '@/lib/utils'
 import type { DeclaracionFoto } from '@/types'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
+import { FotoDistancia } from '@/components/shared/foto-distancia'
 
 function adminClient() {
   return createAdminClient(
@@ -77,7 +78,7 @@ export default async function RepoGondolasPage({
   let query = (admin as any)
     .from('fotos')
     .select(
-      'id, url, estado, declaracion, created_at, gondolero_id, ' +
+      'id, url, estado, declaracion, distancia_metros, created_at, gondolero_id, ' +
       'fixer:profiles!gondolero_id(alias, nombre), ' +
       'campana:campanas(nombre), ' +
       'comercio:comercios(nombre, direccion)',
@@ -98,6 +99,8 @@ export default async function RepoGondolasPage({
     url: string
     estado: string
     declaracion: DeclaracionFoto
+    /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
+    distancia_metros: number | null
     created_at: string
     gondolero_id: string
     fixer: { alias: string | null; nombre: string | null } | null
@@ -180,6 +183,14 @@ export default async function RepoGondolasPage({
                         {f.comercio?.direccion && (
                           <p className="text-xs text-gray-400">{f.comercio.direccion}</p>
                         )}
+                        {/* Esta pantalla es de solo lectura —la repositora aprueba
+                            desde /repositora/campanas/[id]/resultados— pero el chip
+                            va igual: es una superficie donde se mira una foto, y
+                            tenerlo en unas sí y en otras no es lo que hace que la
+                            próxima se olvide. */}
+                        <div className="mt-1">
+                          <FotoDistancia metros={f.distancia_metros} />
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         {f.campana?.nombre ?? '—'}

@@ -8,6 +8,7 @@ import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { aprobarFoto, rechazarFoto, accionMasivaDistri } from './actions'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
+import { FotoDistancia } from '@/components/shared/foto-distancia'
 import { SelectorMotivoRechazo } from '@/components/shared/selector-motivo-rechazo'
 
 const DECL_LABEL: Record<DeclaracionFoto, string> = {
@@ -28,6 +29,12 @@ interface FotoPendiente {
   url: string | null
   declaracion: DeclaracionFoto
   precio_detectado: number | null
+  /**
+   * Metros al comercio al capturar. null = foto anterior al 15/9/2026.
+   * El dato ya venía en el objeto que manda page.tsx (spread completo): faltaba
+   * declararlo acá y dibujarlo.
+   */
+  distancia_metros: number | null
   created_at: string
   campana_id: string
   gondolero: { nombre: string | null; alias: string | null } | null
@@ -226,6 +233,14 @@ export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
                   <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ml-2 ${DECL_COLOR[decl]}`}>
                     {DECL_LABEL[decl]}
                   </span>
+                </div>
+
+                {/* La distancia va ACÁ, en la cola de aprobación, y no solo en la
+                    pestaña de aprobadas: esta es la pantalla donde se decide, y
+                    guardar la distancia sin mostrársela al que decide no sirve
+                    de nada. */}
+                <div className="mt-1">
+                  <FotoDistancia metros={foto.distancia_metros} />
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
