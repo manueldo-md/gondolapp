@@ -4,6 +4,72 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 
+/**
+ * Comercios que ya tienen una misión viva en esta campaña.
+ *
+ * Sirve para marcarlos como "Ya relevado" en la lista y que el gondolero no los
+ * pueda elegir. Es el control PRINCIPAL: el índice único es la red para el caso
+ * raro de dos gondoleros offline, no el lugar donde se enteran. Bloquear recién
+ * al enviar significa hacerle sacar la foto y llenar el formulario para después
+ * decirle que no.
+ *
+ * POR QUÉ SERVER ACTION Y NO UNA QUERY DESDE EL BROWSER:
+ * la RLS de `misiones` hoy tiene una sola policy, `FOR ALL USING (true)` sin
+ * cláusula TO — o sea PUBLIC — así que una query client-side funcionaría. Pero
+ * eso es un agujero que está para cerrarse (ver "RLS por fases" en CLAUDE.md), y
+ * el día que se cierre la query devolvería solo las misiones propias: los
+ * comercios tomados por OTROS gondoleros aparecerían libres. Sin error y sin
+ * log, o sea FALLA ABIERTA EN SILENCIO, que es el modo que ya nos mordió con
+ * comercios_relevados. Con service role no depende de la RLS.
+ *
+ * Devuelve [] en campañas de seguimiento: ahí un comercio se visita muchas
+ * veces a propósito y no hay nada que marcar.
+ */
+export async function obtenerComerciosRelevados(campanaId: string): Promise<string[]> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
+  const { data: campana } = await db
+    .from('campanas')
+    .select('modalidad')
+    .eq('id', campanaId)
+    .maybeSingle()
+
+  if (!campana || campana.modalidad !== 'puntual') return []
+
+  const { data, error } = await db
+    .from('misiones')
+    .select('comercio_id, estado')
+    .eq('campana_id', campanaId)
+
+  if (error) {
+    console.error('[obtenerComerciosRelevados] error:', error.message)
+    return []
+  }
+
+  // El filtro de estado va acá y no en la query a propósito: el índice usa
+  // `estado IS DISTINCT FROM 'descartada'`, que INCLUYE las filas con estado
+  // NULL (la columna es nullable). Un `.neq('estado','descartada')` en PostgREST
+  // las excluiría —lógica de tres valores— y entonces la UI no marcaría un
+  // comercio que el índice sí bloquea. El `!==` de JS sobre null da true y
+  // reproduce el predicado exacto.
+  const ids = (data ?? [])
+    .filter((m: { estado: string | null }) => m.estado !== 'descartada')
+    .map((m: { comercio_id: string | null }) => m.comercio_id)
+    .filter(Boolean) as string[]
+
+  return [...new Set(ids)]
+}
+
 export interface CrearComercioParams {
   campanaId: string
   nombre: string

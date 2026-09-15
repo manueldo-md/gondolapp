@@ -23,16 +23,19 @@ import {
   asegurarBloqueGenerico, obtenerConfigCompresion, getMisionParaRetake,
   type FotoRecapturaInput,
 } from './actions'
-import { crearComercioNuevo, crearComercioParaCaptura, subirFotoFachada } from './actions-comercios'
+import {
+  crearComercioNuevo, crearComercioParaCaptura, subirFotoFachada,
+  obtenerComerciosRelevados,
+} from './actions-comercios'
 import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 import type { TipoComercio } from '@/types'
 import {
   CAMPANA_CACHE_PREFIX, CAMPANA_CACHE_SELECT, toCampanaData,
-  guardarComercios, leerComercios,
+  guardarComercios, leerComercios, guardarRelevados, leerRelevados,
   type CampoBloque, type BloqueData, type CampanaData,
 } from '@/lib/campana-cache'
-import { guardarMisionEnCola, borrarMisionDeCola } from '@/lib/mision-queue'
+import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed } from '@/lib/mision-queue'
 
 // ── Blur detection ────────────────────────────────────────────────────────────
 const BLUR_THRESHOLD = typeof window !== 'undefined' &&
@@ -683,6 +686,22 @@ function CapturaContent() {
   // Datos del flujo
   const [busqueda, setBusqueda] = useState('')
   const [comercios, setComercios] = useState<ComercioRow[]>([])
+
+  // Comercios que ya tienen una misión viva en esta campaña: se marcan "Ya
+  // relevado" y no se pueden elegir. Vacío en campañas de seguimiento.
+  const [relevados, setRelevados] = useState<Set<string>>(new Set())
+  // ¿El set vino del servidor en esta sesión, o de cache?
+  //
+  // El umbral es ese y no un TTL en minutos a propósito: un TTL afirma que "30
+  // minutos es aceptable", que es una suposición. "Lo pedí recién" vs. "salió
+  // del disco" es un hecho. Todo lo que venga de cache muestra el aviso, porque
+  // el uso normal —precargar en casa y trabajar el día sin señal— produce sets
+  // de ocho horas, y ese es el peor caso, no la excepción.
+  const [relevadosFresco, setRelevadosFresco] = useState(false)
+  // Aviso de la revalidación en el paso de GPS. Local y no errorGlobal: ese hace
+  // early-return a pantalla completa con un botón de volver, y acá el gondolero
+  // tiene que quedarse en la lista para elegir otro comercio, no salir.
+  const [relevadoAviso, setRelevadoAviso] = useState<string | null>(null)
   const [buscando, setBuscando] = useState(false)
   const [comercio, setComercio] = useState<ComercioRow | null>(null)
   const [fotoBlob, setFotoBlob] = useState<Blob | null>(null)
@@ -849,6 +868,84 @@ function CapturaContent() {
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retakeMisionId, campana?.id, cargando])
+
+  // ── Set de comercios ya relevados ───────────────────────────────────────────
+  // Una consulta al entrar a captura, no por búsqueda: el input tiene debounce
+  // de 300ms y lo martillaría.
+  useEffect(() => {
+    if (!campana?.id) return
+
+    // En seguimiento un comercio se visita muchas veces a propósito: no hay
+    // nada que marcar y nada que pueda estar desactualizado.
+    if ((campana.modalidad ?? 'puntual') === 'seguimiento') {
+      setRelevados(new Set())
+      setRelevadosFresco(true)
+      return
+    }
+
+    let vivo = true
+    const campanaId = campana.id
+
+    const cargar = async () => {
+      if (navigator.onLine) {
+        try {
+          const ids = await obtenerComerciosRelevados(campanaId)
+          if (!vivo) return
+          setRelevados(new Set(ids))
+          setRelevadosFresco(true)
+          guardarRelevados(campanaId, ids).catch(() => {})
+          return
+        } catch (e) {
+          console.warn('[relevados] falló la consulta, caigo al cache:', e)
+        }
+      }
+      // Offline, o la consulta falló: cache, y con aviso.
+      try {
+        const cached = await leerRelevados(campanaId)
+        if (!vivo) return
+        setRelevados(new Set(cached ?? []))
+      } catch { /* sin cache */ }
+      if (vivo) setRelevadosFresco(false)
+    }
+
+    cargar()
+    return () => { vivo = false }
+  }, [campana?.id, campana?.modalidad])
+
+  // ── Revalidación al llegar al paso de GPS ───────────────────────────────────
+  // El set se cargó al entrar a captura y es una foto de ese momento, no un
+  // lock. Entre elegir y enviar puede pasar de todo. Esta consulta mueve el
+  // rechazo del final —después de la foto y el formulario— a antes de la
+  // primera foto, que era el problema de fondo.
+  //
+  // Sin señal no revalida y sigue: ahí el índice único queda como red.
+  useEffect(() => {
+    if (paso !== 'gps') return
+    if (!campana?.id || !comercio?.id) return
+    if ((campana.modalidad ?? 'puntual') === 'seguimiento') return
+    if (!navigator.onLine) return
+
+    let vivo = true
+    const campanaId = campana.id
+    const comercioId = comercio.id
+
+    obtenerComerciosRelevados(campanaId)
+      .then(ids => {
+        if (!vivo) return
+        setRelevados(new Set(ids))
+        setRelevadosFresco(true)
+        guardarRelevados(campanaId, ids).catch(() => {})
+        if (ids.includes(comercioId)) {
+          setComercio(null)
+          setRelevadoAviso('Otro gondolero relevó ese comercio mientras lo elegías. Elegí otro de la lista.')
+          setPaso('comercios-gps')
+        }
+      })
+      .catch(e => console.warn('[relevados] revalidación falló, sigo:', e))
+
+    return () => { vivo = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso, campana?.id, comercio?.id])
 
   // Inicializar caché de comercios y manejar comercio_nuevo param
   useEffect(() => {
@@ -1493,14 +1590,32 @@ function CapturaContent() {
       setFotosEnviadas(fotosDeBloque.length + campoFotosInput.length)
       setPaso('exito')
     } catch (err) {
-      if (guardadoEnIDB) {
-        // Red o servidor fallaron, pero la misión está guardada en IDB — no mostrar error
+      const msg = err instanceof Error ? err.message : String(err)
+
+      // Falta de señal: la misión queda en la cola y se envía sola al recuperar.
+      if (guardadoEnIDB && esErrorDeRed(err)) {
         bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
         setPaso('guardada-offline')
         return
       }
-      // Sin backup en IDB (QuotaExceededError + fallo de red): error como antes
-      const msg = err instanceof Error ? err.message : String(err)
+
+      // Rechazo del servidor: es terminal, no lo arregla tener señal. Hasta
+      // ahora caía en la rama de arriba y al gondolero se le decía "se enviará
+      // cuando tengas señal" sobre una misión que ya estaba rechazada.
+      //
+      // Se marca en IDB para que la cola no la reintente: el reintento vuelve a
+      // subir todas las fotos para recibir el mismo rechazo, y son megas sobre
+      // una conexión móvil.
+      if (guardadoEnIDB) {
+        await actualizarMisionEnCola(idempotenciaKey, {
+          ultimoIntentoAt: Date.now(),
+          ultimoError:     msg,
+          estado:          'rechazada',
+          motivoRechazo:   msg,
+        }).catch(() => {})
+        window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
+      }
+
       // Si el mensaje parece JSON de infraestructura (Vercel/Next.js), mostrar mensaje amigable
       const esJsonInfra = msg.startsWith('{') || msg.startsWith('[')
       setErrorGlobal(esJsonInfra
@@ -1618,6 +1733,26 @@ function CapturaContent() {
       </div>
     )
   }
+
+  // Avisos de la lista de comercios, compartidos por los dos caminos de
+  // selección: el de cercanos por GPS y el de búsqueda por texto.
+  const avisosRelevados = (
+    <>
+      {relevadoAviso && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-sm">
+          {relevadoAviso}
+        </div>
+      )}
+      {!relevadosFresco && (campana?.modalidad ?? 'puntual') !== 'seguimiento' && (
+        <div className="flex items-start gap-2 text-xs text-gray-500 px-1">
+          <WifiOff size={13} className="shrink-0 mt-0.5 text-gray-400" />
+          <span>
+            Sin señal: la marca de &quot;ya relevado&quot; puede estar desactualizada.
+          </span>
+        </div>
+      )}
+    </>
+  )
 
   if (errorGlobal) {
     return (
@@ -2154,6 +2289,8 @@ function CapturaContent() {
             )}
           </div>
 
+          {avisosRelevados}
+
           {/* Buscando comercios cercanos */}
           {cmBuscandoCercanos && (
             <div className="flex items-center gap-2 text-gray-500 justify-center py-3">
@@ -2173,30 +2310,42 @@ function CapturaContent() {
                     : `Encontramos ${cmComerciosCercanos.length} comercio${cmComerciosCercanos.length !== 1 ? 's' : ''} cerca. ¿Estás en alguno?`}
                 </p>
               </div>
-              {cmComerciosCercanos.map(c => (
+              {cmComerciosCercanos.map(c => {
+                const yaRelevado = relevados.has(c.id)
+                return (
                 <button
                   key={c.id}
+                  disabled={yaRelevado}
                   onClick={() => {
+                    if (yaRelevado) return
+                    setRelevadoAviso(null)
                     if (esComercios) {
                       setCmComercioYaExiste(c); setPaso('comercios-existente')
                     } else {
                       setComercio(c); setPaso('gps')
                     }
                   }}
-                  className="w-full flex items-start gap-3 p-3.5 bg-white border border-gray-200 rounded-xl text-left hover:border-gondo-verde-400 transition-colors"
+                  className={`w-full flex items-start gap-3 p-3.5 border rounded-xl text-left transition-colors ${
+                    yaRelevado
+                      ? 'bg-gray-50 border-gray-200 cursor-not-allowed'
+                      : 'bg-white border-gray-200 hover:border-gondo-verde-400'
+                  }`}
                 >
-                  <MapPin size={16} className="text-gondo-verde-400 mt-0.5 shrink-0" />
+                  <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-300' : 'text-gondo-verde-400'}`} />
                   <div className="min-w-0">
-                    <p className="font-medium text-gray-900 text-sm">{c.nombre}</p>
+                    <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-400' : 'text-gray-900'}`}>{c.nombre}</p>
                     {c.direccion && <p className="text-xs text-gray-400 truncate">{c.direccion}</p>}
-                    {gps.posicion && (
+                    {yaRelevado ? (
+                      <p className="text-[11px] font-semibold text-gray-500 mt-0.5">Ya relevado</p>
+                    ) : gps.posicion && (
                       <p className="text-[11px] text-gondo-verde-600 mt-0.5">
                         A {Math.round(calcularDistanciaMetros(gps.posicion.lat, gps.posicion.lng, c.lat, c.lng))}m
                       </p>
                     )}
                   </div>
                 </button>
-              ))}
+                )
+              })}
               <p className="text-xs text-gray-400 text-center">o bien...</p>
             </div>
           )}
@@ -2643,24 +2792,41 @@ function CapturaContent() {
               </div>
             </div>
 
+            {avisosRelevados}
+
             {/* Resultados */}
             {comercios.length > 0 && (
               <div className="space-y-2">
-                {comercios.map(c => (
+                {comercios.map(c => {
+                  const yaRelevado = relevados.has(c.id)
+                  return (
                   <button
                     key={c.id}
-                    onClick={() => { setComercio(c); setPaso('gps') }}
-                    className="w-full flex items-start gap-3 p-3 bg-white border border-gray-100 rounded-xl text-left hover:border-gondo-verde-400 transition-colors"
+                    disabled={yaRelevado}
+                    onClick={() => {
+                      if (yaRelevado) return
+                      setRelevadoAviso(null)
+                      setComercio(c); setPaso('gps')
+                    }}
+                    className={`w-full flex items-start gap-3 p-3 border rounded-xl text-left transition-colors ${
+                      yaRelevado
+                        ? 'bg-gray-50 border-gray-200 cursor-not-allowed'
+                        : 'bg-white border-gray-100 hover:border-gondo-verde-400'
+                    }`}
                   >
-                    <MapPin size={16} className="text-gondo-verde-400 mt-0.5 shrink-0" />
+                    <MapPin size={16} className={`mt-0.5 shrink-0 ${yaRelevado ? 'text-gray-300' : 'text-gondo-verde-400'}`} />
                     <div className="min-w-0">
-                      <p className="font-medium text-gray-900 text-sm">{c.nombre}</p>
+                      <p className={`font-medium text-sm ${yaRelevado ? 'text-gray-400' : 'text-gray-900'}`}>{c.nombre}</p>
                       {c.direccion && (
                         <p className="text-gray-400 text-xs truncate">{c.direccion}</p>
                       )}
+                      {yaRelevado && (
+                        <p className="text-[11px] font-semibold text-gray-500 mt-0.5">Ya relevado</p>
+                      )}
                     </div>
                   </button>
-                ))}
+                  )
+                })}
               </div>
             )}
 

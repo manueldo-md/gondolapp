@@ -75,6 +75,25 @@ export function misionQueueKey(idempotenciaKey: string): string {
 }
 
 /**
+ * ¿El envío falló por falta de red, o el servidor lo rechazó?
+ *
+ * Las dos situaciones necesitan respuestas opuestas: la de red se reintenta y
+ * la misión sigue viva; la del servidor es terminal y hay que decírselo al
+ * gondolero. Confundirlas le miente — le dijimos "se enviará cuando tengas
+ * señal" a una misión que el servidor ya había rechazado definitivamente.
+ *
+ * Vive acá y no en cada caller porque hay DOS caminos de envío —el primer envío
+ * desde captura y el reintento desde la cola— y durante un tiempo solo uno de
+ * los dos discriminaba. Es el patrón contra el que advierte CLAUDE.md §20.
+ *
+ * El criterio: fetch tira TypeError cuando no puede completar la request. Un
+ * throw del Server Action llega como Error común.
+ */
+export function esErrorDeRed(err: unknown): boolean {
+  return err instanceof TypeError
+}
+
+/**
  * Misiones que se están enviando ahora mismo (en memoria, transitorio).
  * Se vacía al cerrar la app. No persiste entre sesiones — usar ultimoIntentoAt
  * y ultimoError en la entry de IDB para estados que sobrevivan un cierre.

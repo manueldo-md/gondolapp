@@ -23,6 +23,7 @@ import {
   borrarMisionDeCola,
   actualizarMisionEnCola,
   misionesEnviando,
+  esErrorDeRed,
 } from '@/lib/mision-queue'
 import type { FotoMisionInput } from '@/app/(gondolero)/gondolero/captura/actions'
 import {
@@ -156,7 +157,7 @@ export async function procesarColaOffline(fromBackoff = false) {
       } catch (err) {
         misionesEnviando.delete(mision.idempotenciaKey)
         const mensajeError = err instanceof Error ? err.message : String(err)
-        const esErrorRed = err instanceof TypeError
+        const esErrorRed = esErrorDeRed(err)
 
         if (esErrorRed) {
           // ── Error de red: backoff + dejar estado actual en IDB ────────────
