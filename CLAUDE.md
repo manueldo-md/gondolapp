@@ -2022,6 +2022,52 @@ existía**.
 Producción no quedó afectada porque allá el backfill fue la única fuente.
 Limpiado en dev con un `DELETE` que conserva la fila más vieja de cada par.
 
+### Pendiente — borrar `campanas.comercios_relevados`
+
+**La columna no debería existir.** `lib/campana-avance.ts` la cita como EL
+ejemplo de por qué no se guarda estado derivado: *"se guardó, se desincronizó, y
+tuvo una alerta rota durante meses sin que nadie lo notara"*. Y
+`lib/resultados.ts:107` dice *"No usar `campanas.comercios_relevados`: está
+inflado por doble incremento"*. El propio código la señala dos veces.
+
+Lo correcto es borrarla y que cada consumidor cuente
+`COUNT(DISTINCT comercio_id)` sobre `misiones`. Mientras tanto,
+`lib/comercios-relevados.ts` la mantiene honesta recalculándola en los tres
+puntos de escritura.
+
+**EL TAMAÑO REAL: 17 archivos la leen, no dos.** Esto está escrito acá porque el
+15/9/2026 se estimó en "dos consumidores" y sobre ese número se tomó la decisión
+de borrarla; al inventariar aparecieron 17 y hubo que dar marcha atrás. El
+próximo que lo agarre tiene que empezar sabiendo el tamaño.
+
+**Tres son lógica de negocio, no carteles:**
+
+| Archivo | Qué decide |
+|---|---|
+| `gondolero/captura/actions.ts` | El auto-cierre por `tope_total_comercios` |
+| `gondolero/campanas/[id]/actions.ts:136` | **Bloquea unirse** cuando se llenó el cupo |
+| `distribuidora/alertas/page.tsx:205` | **Dispara la alerta** de campaña atrasada (`< minimo * 0.5`) |
+
+> **Los dos últimos fallan en silencio.** Una barra de progreso en cero se ve; un
+> gate que deja de bloquear inscripciones al llegar al tope, o una alerta que no
+> salta, no se ven hasta que alguien los sufre. Si se borra la columna, esos dos
+> son los que hay que verificar a mano en producción, no los gráficos.
+
+**Los otros catorce son presentación:** el detalle de campaña del gondolero (la
+usa nueve veces: progreso, cupos restantes, "sin cupos"), `campanas-sections`,
+los dashboards de distribuidora y repositora, las listas de campañas de los
+cuatro paneles, los detalles de relación de marca/distri/admin, y los cuatro
+`resultados/page.tsx`.
+
+**El orden, cuando se haga:** código que deja de usarla → deploy → verificar en
+producción → `DROP COLUMN`. Igual que con `objetivo_comercios`. Con 17 archivos
+de por medio, la ventana entre el deploy y el DROP importa más, no menos: es
+donde se detecta la barra que quedó en cero.
+
+Hace falta además un índice en `misiones (campana_id, comercio_id)`: el que
+existe es `(gondolero_id, campana_id, estado)` y no sirve para agrupar por
+campaña.
+
 ### El Service Worker no se actualiza solo: `CACHE_NAME` se bumpea a mano
 
 Detectado el 15/9/2026, después de que un cambio deployado no apareciera en modo

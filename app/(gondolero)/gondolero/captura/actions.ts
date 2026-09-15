@@ -13,6 +13,7 @@ import {
 } from '@/lib/notificaciones'
 import { registrarChecksGPSInterno } from './actions-checks'
 import { resolverMisionDirecta } from '@/lib/misiones'
+import { sincronizarComerciosRelevados } from '@/lib/comercios-relevados'
 import { calcularDistanciaMetros } from '@/lib/utils'
 
 // Los radios viven en lib/gps-radios.ts: el de bloqueo lo usan también el paso
@@ -355,15 +356,16 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // Los puntos se acreditan en actualizarEstadoMision cuando todas las fotos
   // están aprobadas Y el gondolero alcanzó el mínimo de misiones para cobrar.
 
-  // 5. Incrementar comercios_relevados y verificar tope global (no bloquea el flujo)
+  // 5. Sincronizar comercios_relevados y verificar tope global (no bloquea el flujo)
+  //
+  // Recalcula en vez de sumar 1. El `+1` era correcto mientras un comercio no
+  // pudiera tener dos misiones vivas, pero la modalidad 'seguimiento' —donde un
+  // comercio se visita muchas veces a propósito— lo convierte en un contador de
+  // VISITAS bajo un nombre que dice comercios. Ver lib/comercios-relevados.ts.
   try {
-    const nuevoRelevados = (campana.comercios_relevados ?? 0) + 1
-    const { error: updErr } = await db
-      .from('campanas')
-      .update({ comercios_relevados: nuevoRelevados })
-      .eq('id', params.campanaId)
-    if (updErr) {
-      console.error('[registrarMision] Error incrementando comercios_relevados:', updErr.message)
+    const nuevoRelevados = await sincronizarComerciosRelevados(params.campanaId, db)
+    if (nuevoRelevados === null) {
+      console.error('[registrarMision] No se pudo sincronizar comercios_relevados')
     } else if (
       campana.tope_total_comercios != null &&
       nuevoRelevados >= campana.tope_total_comercios
@@ -865,18 +867,11 @@ export async function descartarRecaptura(misionId: string) {
     .eq('mision_id', misionId)
 
   // 3. Descontar el comercio relevado.
-  const { data: campana } = await db
-    .from('campanas')
-    .select('comercios_relevados')
-    .eq('id', mision.campana_id)
-    .maybeSingle()
-
-  if (campana) {
-    await db
-      .from('campanas')
-      .update({ comercios_relevados: Math.max(0, (campana.comercios_relevados ?? 0) - 1) })
-      .eq('id', mision.campana_id)
-  }
+  //
+  // Recalcula en vez de restar 1: en seguimiento el comercio puede tener otras
+  // visitas vivas, y ahí descartar una NO lo saca del conteo de comercios
+  // relevados. El helper lo resuelve sin que este flujo tenga que saberlo.
+  await sincronizarComerciosRelevados(mision.campana_id, db)
 
   console.log('[descartarRecaptura] OK', { misionId, campanaId: mision.campana_id })
 

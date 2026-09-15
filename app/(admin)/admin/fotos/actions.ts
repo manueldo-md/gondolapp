@@ -26,7 +26,7 @@ export async function aprobarFotoAdmin(fotoId: string) {
 
   const { data: fotoRaw } = await admin
     .from('fotos')
-    .select('gondolero_id, campana_id, mision_id, bloque_id, campana:campanas(puntos_por_foto, puntos_por_mision, min_comercios_para_cobrar, comercios_relevados, nombre), comercio:comercios(nombre)')
+    .select('gondolero_id, campana_id, mision_id, bloque_id, campana:campanas(puntos_por_foto, puntos_por_mision, min_comercios_para_cobrar, nombre), comercio:comercios(nombre)')
     .eq('id', fotoId)
     .single()
 

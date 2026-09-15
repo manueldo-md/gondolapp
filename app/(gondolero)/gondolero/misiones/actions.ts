@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { sincronizarComerciosRelevados } from '@/lib/comercios-relevados'
 
 export async function abandonarCampana(campanaId: string): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
@@ -108,22 +109,17 @@ export async function retirarFoto(fotoId: string): Promise<{ error?: string }> {
       console.log('[retirarFoto] Update participacion:', updPartError?.message ?? 'OK')
     }
 
-    // 5. Decrementar comercios_relevados en campanas
-    const { data: campana, error: campanaError } = await admin
-      .from('campanas')
-      .select('comercios_relevados')
-      .eq('id', foto.campana_id)
-      .single()
-
-    console.log('[retirarFoto] Campana:', campana, '| Error:', campanaError?.message)
-
-    if (campana) {
-      const { error: updCampError } = await admin
-        .from('campanas')
-        .update({ comercios_relevados: Math.max(0, (campana.comercios_relevados ?? 0) - 1) })
-        .eq('id', foto.campana_id)
-      console.log('[retirarFoto] Update campana:', updCampError?.message ?? 'OK')
-    }
+    // 5. Sincronizar comercios_relevados en campanas
+    //
+    // Antes restaba 1 POR FOTO retirada, que es el espejo exacto del bug que se
+    // sacó de aprobarFoto: una misión de dos fotos descontaba dos comercios.
+    // Y peor, descontaba aunque la misión siguiera viva con sus otras fotos —
+    // el comercio seguía relevado y el contador decía que no.
+    //
+    // El recálculo lo resuelve sin aritmética: retirar una foto no borra la
+    // misión, así que el comercio sigue contando, que es lo correcto.
+    const nuevo = await sincronizarComerciosRelevados(foto.campana_id, admin)
+    console.log('[retirarFoto] comercios_relevados sincronizado:', nuevo)
 
     revalidatePath('/gondolero/misiones')
     revalidatePath(`/gondolero/misiones/${foto.campana_id}`)

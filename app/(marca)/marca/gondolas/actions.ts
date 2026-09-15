@@ -28,7 +28,7 @@ export async function aprobarFotoMarca(fotoId: string) {
   // 1. Obtener la foto con datos de la campaña en una sola query
   const { data: foto, error: fotoError } = await admin
     .from('fotos')
-    .select('*, campanas(puntos_por_foto, puntos_por_mision, nombre, comercios_relevados, min_comercios_para_cobrar), comercios(nombre)')
+    .select('*, campanas(puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar), comercios(nombre)')
     .eq('id', fotoId)
     .single()
 

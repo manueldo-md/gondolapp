@@ -28,7 +28,7 @@ export async function aprobarFoto(fotoId: string) {
   // 1. Obtener la foto con datos de la campaña
   const { data: foto, error: fotoError } = await adminClient
     .from('fotos')
-    .select('*, campanas(puntos_por_foto, puntos_por_mision, nombre, comercios_relevados, min_comercios_para_cobrar), comercios(nombre)')
+    .select('*, campanas(puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar), comercios(nombre)')
     .eq('id', fotoId)
     .single()
 
@@ -253,7 +253,7 @@ export async function accionMasivaDistri(
   // Solo fotos pendientes pueden procesarse en masa
   const { data: fotosRaw } = await adminClient
     .from('fotos')
-    .select('id, gondolero_id, campana_id, mision_id, bloque_id, comercios(nombre), campanas(puntos_por_foto, puntos_por_mision, nombre, comercios_relevados, min_comercios_para_cobrar)')
+    .select('id, gondolero_id, campana_id, mision_id, bloque_id, comercios(nombre), campanas(puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar)')
     .in('id', fotoIds)
     .eq('estado', 'pendiente')
 
