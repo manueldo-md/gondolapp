@@ -10,11 +10,27 @@
  * B. Misión con TODAS las fotos aprobadas: se aprueba.
  *    → actualizarEstadoMision() desde actions de aprobación
  *
- * C. Misión con alguna foto rechazada y ninguna pendiente: se rechaza.
- *    → actualizarEstadoMision() desde actions de rechazo (nuevo)
+ * C. Misión con alguna foto rechazada y ninguna pendiente: se rechaza entera y
+ *    no se paga.
+ *    → actualizarEstadoMision() desde actions de rechazo
  *
  * En B y C el entry-point es actualizarEstadoMision(), que opera sobre
  * el mision_id derivado del fotoId.
+ *
+ * ── LA REGLA DEL PAGO ───────────────────────────────────────────────────────
+ * Solo se acredita una misión APROBADA. Está en un único lugar, el filtro de
+ * aprobarMisionCore, y es del lector: no depende de que cada camino que cierre
+ * una misión se acuerde de anular su bounty. Ver el comentario largo ahí.
+ *
+ * ── LO QUE ESTE ARCHIVO NO CUBRE ────────────────────────────────────────────
+ * Una misión SIN FOTOS que no se aprobó al crearse queda trabada en 'pendiente'
+ * para siempre: `actualizarEstadoMision` se dispara desde la revisión de una
+ * foto, así que sin fotos nunca corre, y el `if (total === 0) return` la deja
+ * pasar de largo. Es el caso de un `resolverMisionDirecta` que falló —traga los
+ * errores con un console.error— o de un insert de fotos que no llegó a
+ * ejecutarse. En dev hay 3 así (16/9/2026). Antes la barrida indiscriminada las
+ * rescataba por accidente; con el filtro puesto, no cobran nunca. Necesitan una
+ * decisión aparte: no hay forma de resolverlas desde acá.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -54,28 +70,51 @@ async function aprobarMisionCore(params: {
   const countAprobadas = misionesAprobadas ?? 0
 
   if (countAprobadas >= minParaCobrar) {
-    // 3a. Obtener puntos de las misiones retenidas antes de liberarlas
-    const { data: misionesRetenidas } = await admin
-      .from('misiones')
-      .select('id, puntos_total')
-      .eq('campana_id',   campanaId)
-      .eq('gondolero_id', gondoleroId)
+    // 3a/3b. Liberar las misiones retenidas Y APROBADAS.
+    //
+    // El `estado = 'aprobada'` es la mitad del filtro y no es opcional. Sin él,
+    // la barrida paga TODA misión del gondolero en la campaña que esté en
+    // 'retenido' — y toda misión nace 'pendiente' + 'retenido'. Con el default
+    // de min_comercios_para_cobrar = 3:
+    //
+    //   el gondolero manda 5 misiones          → las 5 pendiente + retenido
+    //   revisan y aprueban las fotos de 1,2,3  → esas 3 pasan a aprobada
+    //   al aprobar la 3ª, count = 3 >= 3       → barrida
+    //   se pagan las 5, con las fotos de la 4 y la 5 sin mirar
+    //
+    // O sea que se pagaba trabajo no validado, y si después el revisor rechazaba
+    // esas fotos la plata ya había salido. En dev pasó: 4 misiones acreditadas
+    // en estado 'pendiente', 410 puntos. En prod todavía no había pasado.
+    //
+    // La defensa que existía era por ESCRITOR: el descarte se acuerda de poner
+    // bounty_estado='anulado' en el origen (ver la migración
+    // 20260909190000_misiones_estado_descartada.sql, que lo explica). Eso obliga
+    // a que cada camino nuevo se acuerde. Filtrar acá lo vuelve una regla del
+    // LECTOR: no se paga lo que no está aprobado, venga de donde venga.
+    // El mismo filtro para leer y para escribir, en una sola definición: si los
+    // dos no coinciden exactamente, el movimiento de puntos no cuadra con lo que
+    // quedó acreditado.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filtroLiberables = (q: any) => q
+      .eq('campana_id',    campanaId)
+      .eq('gondolero_id',  gondoleroId)
       .eq('bounty_estado', 'retenido')
+      .eq('estado',        'aprobada')
 
-    // 3b. Liberar todas las misiones retenidas (incluye la actual)
-    await admin
-      .from('misiones')
-      .update({ bounty_estado: 'acreditado' })
-      .eq('campana_id',   campanaId)
-      .eq('gondolero_id', gondoleroId)
-      .eq('bounty_estado', 'retenido')
+    // 3a. Obtener puntos antes de liberar
+    const { data: misionesRetenidas } = await filtroLiberables(
+      admin.from('misiones').select('id, puntos_total')
+    ) as { data: { id: string; puntos_total: number | null }[] | null }
+
+    // 3b. Liberar (incluye la actual, que el paso 1 acaba de pasar a 'aprobada')
+    await filtroLiberables(
+      admin.from('misiones').update({ bounty_estado: 'acreditado' })
+    )
 
     // 3c. Insertar movimiento por el total liberado.
     //     El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const totalPuntos = (misionesRetenidas ?? []).reduce(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sum, m) => sum + (((m as any).puntos_total as number) ?? 0), 0
+      (sum: number, m) => sum + (m.puntos_total ?? 0), 0
     )
     if (totalPuntos > 0) {
       await admin.from('movimientos_puntos').insert({
@@ -178,9 +217,42 @@ export async function actualizarEstadoMision(params: {
     if (aprobadas === total) {
       // Caso B: todas aprobadas → aprobar misión y liberar bounty
       await aprobarMisionCore({ misionId, gondoleroId, campanaId, minParaCobrar, admin })
+
+    } else if (pendientes === 0 && rechazadas > 0) {
+      // CASO C — ya no queda nada por revisar y alguna foto se rechazó.
+      //
+      // La misión entera se rechaza y no se paga: una misión incompleta no es un
+      // dato utilizable. La marca no puede usar media observación, así que pagar
+      // la mitad sería pagar por algo que no se va a mirar. Si alguna vez
+      // aparece un caso donde media misión sirve, se revisa acá.
+      //
+      // 'rechazada' y no 'parcial': 'parcial' está en el CHECK pero nadie la
+      // escribe ni la lee, y la palabra dice "incompleta", que en los paneles se
+      // confunde con "todavía en curso". Tampoco 'descartada', que significa
+      // "el gondolero la abandonó" y borrar esa diferencia arruina cualquier
+      // disputa posterior.
+      //
+      // Hasta acá no había `else`: la misión quedaba en 'pendiente' para
+      // siempre, sin nada que la moviera. Eso importa ahora más que antes,
+      // porque con el filtro de estado en aprobarMisionCore una misión trabada
+      // en 'pendiente' ya no cobra nunca. El estado terminal es lo que impide
+      // que cerrar el agujero del pago cree misiones huérfanas.
+      await admin
+        .from('misiones')
+        .update({ estado: 'rechazada', bounty_estado: 'anulado' })
+        .eq('id', misionId)
+
+      // El bounty de las fotos también, incluidas las aprobadas de esta misión:
+      // si la misión no se paga, ninguna de sus partes se paga. Mismo cierre que
+      // descartarRecaptura.
+      await admin
+        .from('fotos')
+        .update({ bounty_estado: 'anulado' })
+        .eq('mision_id', misionId)
+
+      // No se notifica acá: el rechazo de cada foto ya le mandó al gondolero una
+      // notificación 'foto_rechazada'. Una segunda por la misma causa es ruido.
     }
-    // Caso C (diferido): fotos con rechazadas → misión queda en pendiente
-    // hasta implementar flujo de recaptura.
     // Si aún hay pendientes/en_revision → esperar; no hacer nada.
 
   } catch (err) {
