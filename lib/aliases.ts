@@ -419,3 +419,27 @@ export async function generarAlias(supabase: any): Promise<string> {
   const num       = Math.floor(Math.random() * 90) + 10
   return `${personaje.replace(/\s+/g, '')}${adjetivo}${num}`
 }
+
+/**
+ * Etiqueta anónima para un perfil SIN alias, en pantallas que ven otros
+ * gondoleros.
+ *
+ * NO cae al nombre real, y eso es deliberado. El alias es un mecanismo de
+ * PRIVACIDAD: el ranking de logros es la única pantalla donde un gondolero ve a
+ * otro, es nacional —el público es cualquier gondolero del sistema, no solo los
+ * de su distri— y su query pide `id, alias, distri_id` **sin `nombre`**, mientras
+ * que la del perfil propio, doce líneas más arriba en el mismo archivo, sí pide
+ * los dos. Esa asimetría es una decisión, no un descuido.
+ *
+ * El sufijo sale del `id` y no del puesto en el ranking por dos razones: el
+ * puesto ya se muestra en la columna de al lado, y CAMBIA — quien mire el
+ * ranking el lunes y el jueves vería a "Gondolero #4" convertirse en "#6" y
+ * pensaría que es otra persona. El del id es el mismo siempre.
+ *
+ * Es una red, no un estado esperado: se ve solo mientras alguien no tenga alias.
+ * El botón "Asignar alias" de /admin/usuarios los completa.
+ */
+export function aliasAnonimo(id: string): string {
+  const sufijo = id.replace(/-/g, '').slice(0, 3).toUpperCase()
+  return sufijo ? `Gondolero ${sufijo}` : 'Gondolero'
+}

@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { resolverEntorno } from './lib/entorno.mjs'
+import { generarAlias } from '../lib/aliases'
 
 // ── Proyecto destino ─────────────────────────────────────────────────────────
 // Este script crea usuarios y escribe en 20 tablas, así que el proyecto se
@@ -444,6 +445,10 @@ async function main() {
     gondoleroIds[g.demo] = uid
     await (db as any).from('profiles').upsert({
       id: uid, tipo_actor: 'gondolero', nombre: g.nombre,
+      // El alias NO es cosmetico: es lo unico que ven otros gondoleros en el
+      // ranking, que no trae el nombre real a proposito. Sin esto el seed
+      // dejaba 24 perfiles en null y el ranking los mostraba todos iguales.
+      alias: await generarAlias(db),
       distri_id: g.distriId, nivel: 'activo',
       puntos_disponibles: 0, puntos_totales_ganados: 0,
     }, { onConflict: 'id' })
@@ -482,6 +487,7 @@ async function main() {
     fixerIds.push(uid)
     await (db as any).from('profiles').upsert({
       id: uid, tipo_actor: 'fixer', nombre: f.nombre,
+      alias: await generarAlias(db),
       repositora_id: f.repoId,
     }, { onConflict: 'id' })
     if (f.repoId) {

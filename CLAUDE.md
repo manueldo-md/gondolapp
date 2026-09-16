@@ -2829,3 +2829,42 @@ un error inesperado en la cola **deja la misión pendiente en vez de marcarla
 rechazada**: los rechazos reales ahora llegan por el `return`, así que lo único
 que cae en el `catch` es transitorio y descartarlo sería tirar trabajo válido.
 El reintento está acotado por el TTL de 7 días de `lib/mision-queue.ts`.
+
+### `profiles.alias` es privacidad, no decoración
+
+**No cambiar el fallback del ranking a `nombre`.** Parece lo obvio y expone datos
+personales. Casi lo hago el 17/9/2026.
+
+Tres evidencias de que el alias existe para que un gondolero NO vea el nombre
+real de otro:
+
+1. **La query del ranking excluye `nombre` a propósito.**
+   `app/(gondolero)/gondolero/logros/page.tsx` pide `id, alias, distri_id` para
+   los OTROS gondoleros y, doce líneas más arriba en la misma función, pide
+   `alias, nombre` para el perfil PROPIO. Misma persona, mismo archivo,
+   decisiones opuestas: es deliberado.
+2. **El alias dejó de ser una abreviatura.** El schema de abril lo definía como
+   `-- "Agustín R." para gondoleros`, un nombre real acortado. Pero
+   `lib/aliases.ts` genera **"NarutoVeloz"**: 600 personajes de anime cruzados
+   con adjetivos. Eso no abrevia un nombre, lo reemplaza. El comentario del
+   schema quedó viejo.
+3. **Los paneles de empresa traen los dos campos, siempre.** Doce queries en
+   distribuidora, marca, admin y repositora piden `nombre, alias` juntos: la
+   distri contrata al gondolero y le paga, tiene que saber quién es. El panel
+   del gondolero es el único que trae solo el alias.
+
+**El ranking de logros es la única pantalla donde un gondolero ve a otro**, y es
+NACIONAL: el público es cualquier gondolero del sistema, no solo los de su
+distri. O sea la superficie de exposición más amplia que tiene la app.
+
+Cuando falta el alias se usa `aliasAnonimo(id)` de `lib/aliases.ts` →
+`"Gondolero 7F2"`. El sufijo sale del `id` y no del puesto en el ranking porque
+el puesto ya se muestra en la columna de al lado y además cambia: quien mirara el
+lunes y el jueves vería a "Gondolero #4" convertirse en "#6" y pensaría que es
+otra persona.
+
+El alias faltante se repara con el botón "Asignar alias" de `/admin/usuarios`, o
+con `npx tsx scripts/asignar-alias.mjs --ref <project-ref>` donde no haya acceso
+de admin. **Nunca con un UPDATE en SQL:** `generarAlias` chequea unicidad contra
+los alias ya escritos, y un UPDATE a mano que no lo replique genera repetidos —
+dos personas con el mismo nombre en el ranking es peor que el problema original.

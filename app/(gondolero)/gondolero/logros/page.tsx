@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Trophy } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { getConfig } from '@/lib/config'
+import { aliasAnonimo } from '@/lib/aliases'
 import { calcularNivelMensual } from '@/lib/nivel'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
@@ -206,7 +207,9 @@ export default async function LogrosPage() {
         const fotasMes = conteoPorGondolero.get(p.id) ?? 0
         return {
           gondolero_id:   p.id,
-          alias:          p.alias ?? 'Gondolero',
+          // Sin alias NO se cae al nombre real: esta pantalla la ven otros
+          // gondoleros y el alias existe justamente para eso. Ver aliasAnonimo.
+          alias:          p.alias ?? aliasAnonimo(p.id),
           nivel:          calcularNivelMensual(fotasMes, fotosCasualAActivo, fotosActivoAPro),
           fotos_este_mes: fotasMes,
         }
