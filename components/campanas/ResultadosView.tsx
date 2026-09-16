@@ -140,12 +140,17 @@ function DistribucionTipos({
 function ContextoRelevamiento({
   ciudades,
   provincias,
+  sinLocalidad,
+  pdvRelevados,
   ventana,
   dias,
   enRevision,
 }: {
   ciudades: number
   provincias: { cantidad: number; unica: string | null }
+  /** PDV relevados cuyo comercio no tiene localidad cargada. */
+  sinLocalidad: number
+  pdvRelevados: number
   ventana: { desde: string | null; hasta: string | null }
   dias: number | null
   /** PDV que todavía no tienen ninguna misión aprobada. */
@@ -168,9 +173,35 @@ function ContextoRelevamiento({
   if (ciudades > 0) {
     geo.push(`${ciudades} ciudad${ciudades !== 1 ? 'es' : ''}`)
   }
+
+  // El hueco se dice, no se omite.
+  //
+  // Sin esto, una campaña cuyos comercios no tienen localidad cargada
+  // simplemente no mostraba chip de geografía, y eso se lee como "esta campaña
+  // no tiene geografía" en vez de "falta cargarla". Desaparecía justo el aviso
+  // de que faltaba un dato. Y con cobertura parcial, "3 ciudades" calculado
+  // sobre 6 de 10 PDV se lee como si fueran los 10.
+  //
+  // No se dice nada si todavía no hay PDV relevados: ahí el número grande de
+  // arriba ya explica por qué no hay geografía, y repetirlo sonaría a falla.
+  if (pdvRelevados > 0 && sinLocalidad > 0) {
+    geo.push(
+      geo.length === 0
+        ? 'Sin localidad cargada'
+        : `${sinLocalidad} sin localidad`
+    )
+  }
+
   if (geo.length > 0) {
+    // En ámbar solo cuando NO hay ninguna localidad: ahí el chip entero es un
+    // aviso. Con cobertura parcial el dato que hay es válido y el gris no le
+    // quita valor al "3 ciudades" que lo acompaña.
+    const esHueco = ciudades === 0 && provincias.cantidad === 0
     partes.push(
-      <span key="geo" className="flex items-center gap-1">
+      <span
+        key="geo"
+        className={`flex items-center gap-1 ${esHueco ? 'text-amber-600' : ''}`}
+      >
         <MapPin size={12} className="shrink-0" />
         {geo.join(' · ')}
       </span>
@@ -233,7 +264,7 @@ export function ResultadosView({
 }: ResultadosViewProps) {
   const {
     modulos, tieneCamposFoto, fotoRespuestasMap, camposMap,
-    misionesAprobadas, pdvRelevados, pdvEnRevision, ciudades, provincias, tiposComercio,
+    misionesAprobadas, pdvRelevados, pdvEnRevision, ciudades, pdvSinLocalidad, provincias, tiposComercio,
     gondolerosRelevaron, ventana,
     counts, totalFotos, fotosAprobadas,
   } = data
@@ -365,6 +396,8 @@ export function ResultadosView({
       <ContextoRelevamiento
         ciudades={ciudades}
         provincias={provincias}
+        sinLocalidad={pdvSinLocalidad}
+        pdvRelevados={pdvRelevados}
         ventana={ventana}
         dias={dias}
         enRevision={pdvEnRevision}

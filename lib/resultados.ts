@@ -116,6 +116,17 @@ export interface ResultadosData {
    */
   ciudades: number
   /**
+   * PDV relevados cuyo comercio no tiene localidad cargada.
+   *
+   * Existe para que el hueco se vea. Sin esto, una campaña con 6 PDV y ninguna
+   * localidad no muestra geografía y se lee como si no tuviera, en vez de como
+   * que falta cargarla; y con cobertura parcial, "3 ciudades" calculado sobre 6
+   * de 10 PDV parece un dato completo. Al 16/9/2026 son 9 de 100 comercios en
+   * dev y 2 de 93 en prod, y el único salto que falla es este primero: si un
+   * comercio tiene localidad, la cadena hasta provincia funciona siempre.
+   */
+  pdvSinLocalidad: number
+  /**
    * Provincias de la muestra, vía
    * comercios → localidades → departamentos → provincias.
    *
@@ -519,6 +530,13 @@ export async function loadResultadosCampanaData(
   const provinciasSet = new Set(
     pdvRelevadosIds.map(id => comercioCtx.get(id)?.provincia).filter(Boolean) as string[]
   )
+  // PDV relevados cuyo comercio no tiene localidad cargada. No se esconden: sin
+  // esto, una campaña con 6 PDV y ninguna localidad no muestra geografía y se
+  // lee como si no tuviera, en vez de como que falta cargarla. Y en una campaña
+  // con cobertura parcial, "3 ciudades" calculado sobre 6 de 10 PDV parece un
+  // dato completo. Mismo criterio que "sin clasificar" en tipo de negocio.
+  const pdvSinLocalidad = pdvRelevadosIds.filter(id => !comercioCtx.get(id)?.ciudad).length
+
   const provincias = {
     cantidad: provinciasSet.size,
     // Con una sola provincia el nombre dice más que el número: "1 provincia" no
@@ -552,6 +570,7 @@ export async function loadResultadosCampanaData(
     pdvRelevados,
     pdvEnRevision,
     ciudades,
+    pdvSinLocalidad,
     provincias,
     tiposComercio,
     gondolerosRelevaron,
