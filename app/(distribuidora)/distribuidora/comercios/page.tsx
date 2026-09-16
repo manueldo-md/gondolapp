@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Store, MapPin, CheckCircle2, Clock, AlertCircle, Camera } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
+import { etiquetaTipo } from '@/lib/tipos-comercio'
 import type { TipoComercio } from '@/types'
 import { ValidarBtn } from './validar-btn'
 
@@ -13,7 +14,8 @@ interface ComercioRow {
   id: string
   nombre: string
   direccion: string | null
-  tipo: TipoComercio
+  /** Nullable desde que se sacó el DEFAULT de la columna: puede no estar clasificado. */
+  tipo: TipoComercio | null
   validado: boolean
   registrado_por: string | null
   created_at: string
@@ -28,15 +30,10 @@ interface ComercioConStats extends ComercioRow {
 
 // ── Helpers visuales ──────────────────────────────────────────────────────────
 
-const TIPO_LABEL: Record<TipoComercio, string> = {
-  autoservicio: 'Autoservicio',
-  almacen:      'Almacén',
-  kiosco:       'Kiosco',
-  mayorista:    'Mayorista',
-  dietetica:    'Dietética',
-  otro:         'Otro',
-}
-
+// Las etiquetas salen de lib/tipos-comercio.ts y no de un mapa local: es la
+// única de las nueve copias que tuvo que contemplar el `null`, y duplicar acá
+// la fila "sin clasificar" habría sido empezar la décima. Los colores siguen
+// siendo locales — migrarlos es parte del tramo pendiente.
 const TIPO_COLOR: Record<TipoComercio, string> = {
   autoservicio: 'bg-blue-100 text-blue-700',
   almacen:      'bg-purple-100 text-purple-700',
@@ -222,8 +219,8 @@ export default async function ComerciosPage() {
 
                   {/* Tipo */}
                   <td className="px-4 py-3.5">
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${TIPO_COLOR[c.tipo] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {TIPO_LABEL[c.tipo] ?? c.tipo}
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${(c.tipo && TIPO_COLOR[c.tipo]) || 'bg-gray-100 text-gray-600'}`}>
+                      {etiquetaTipo(c.tipo)}
                     </span>
                   </td>
 

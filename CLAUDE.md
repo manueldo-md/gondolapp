@@ -2468,3 +2468,25 @@ Las tres fuentes de valor silencioso, relevadas el 16/9/2026:
 La distribución de la cabecera muestra los `null` como "sin clasificar" y no los
 filtra, justamente para que se vean. Pero eso solo sirve si los no clasificados
 **son** null, y hoy el default los disfraza de almacén.
+
+### La interfaz `Comercio` de `types/index.ts` no la usa nadie
+
+Verificado el 16/9/2026 con `grep` sobre todos los imports: **ninguna pantalla
+importa `Comercio`**. Lo que sí se importa es `TipoComercio`, la unión de los
+seis valores, en nueve archivos.
+
+Se descubrió al hacer nullable `Comercio.tipo` para acompañar el `DROP DEFAULT`
+de la columna: el cambio era correcto y `tsc --noEmit` pasó sin un solo error,
+que es exactamente el síntoma de que nadie lo lee. Las pantallas declaran su
+propia forma de fila (`ComercioRow`, o un objeto inline dentro del `.map`), y
+esas son las que importan de verdad.
+
+Al 16/9/2026, después del ajuste, todas declaran `tipo` como nullable. La única
+que decía `TipoComercio` a secas era
+`app/(distribuidora)/distribuidora/comercios/page.tsx:16`; su badge hacía
+`TIPO_LABEL[c.tipo] ?? c.tipo`, que con `null` habría renderizado un badge en
+blanco —sin romper nada y sin que nadie lo notara—. Ahora usa `etiquetaTipo()`.
+
+**Antes de confiar en `types/index.ts` para algo, chequear si la interfaz tiene
+lectores.** Varias de esas interfaces pueden estar en la misma situación: se
+escribieron al principio del proyecto y las pantallas siguieron por su cuenta.

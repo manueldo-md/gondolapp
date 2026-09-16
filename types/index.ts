@@ -123,7 +123,14 @@ export interface Comercio {
   direccion: string | null
   lat: number
   lng: number
-  tipo: TipoComercio
+  /**
+   * Nullable desde que se sacó el `DEFAULT 'almacen'` de la columna (16/9/2026).
+   *
+   * Un comercio que nadie clasificó ahora dice `null` en vez de disfrazarse de
+   * almacén. Quien lo lea tiene que contemplarlo: `etiquetaTipo()` de
+   * `lib/tipos-comercio.ts` devuelve "sin clasificar" para el caso.
+   */
+  tipo: TipoComercio | null
   foto_fachada_url: string | null
   validado: boolean
   zona_id: string | null
