@@ -2327,15 +2327,51 @@ gondolero por la whitelist.
 de registro lo sigue mandando en metadata y el perfil lo sigue leyendo, así que
 todo celular cargado desde esa fecha se descartaba en silencio. Restaurado.
 
-### Pendiente de producto — el registro público está abierto
+### Pendiente de producto — el registro público está abierto y sin aprobación
 
 `middleware.ts` lista `/auth` como ruta pública y el botón **"Registrarme"** de
 `app/auth/page.tsx` se renderiza sin ninguna condición, con `gondolero` como
 primera opción. Cualquiera que abra la URL se da de alta como gondolero.
 
+**Verificado en vivo el 16/9/2026: registro hecho en producción, con entrada a
+la app sin que nadie aprobara nada.** No es una lectura del código, es una
+cuenta real que existe.
+
+Y no termina en el alta. El que se registra **entra, ve las campañas abiertas,
+puede relevar y puede cobrar puntos** sin que ninguna distribuidora ni ningún
+admin lo valide. La cadena completa —darse de alta, tomar misiones, acumular
+puntos, canjearlos— corre sin un solo control humano. Eso lo vuelve un tema de
+plata, no solo de higiene de cuentas.
+
 Salió a la luz relevando `codigo_gondolero`: el agujero de "nace sin código" no
 era latente a la espera de que se abriera el registro, estaba drenando. Eso ya
-está cerrado, pero **queda la decisión de producto de si el registro debe estar
-abierto**, y no es un bug: es una decisión. Lo que hay que definir es si un
-gondolero puede darse de alta solo o solo por invitación de una distribuidora
-(que es el flujo que sugieren `vinculacion_tokens` y los paneles de invitación).
+está cerrado, pero **queda la decisión de producto**, y no es un bug: es una
+decisión. Lo que hay que definir:
+
+- ¿Un gondolero puede darse de alta solo, o solo por invitación de una
+  distribuidora? El segundo es el flujo que sugieren `vinculacion_tokens` y los
+  tres paneles de invitación, que ya existen y funcionan.
+- Si el alta abierta se conserva, ¿qué puede hacer una cuenta no aprobada?
+  Podría entrar pero no ver campañas, o ver pero no relevar, o relevar pero no
+  cobrar hasta estar vinculada a una distribuidora.
+- ¿Qué pasa con las cuentas que ya se registraron así?
+
+**Nota operativa:** la cuenta de prueba creada el 16/9 en producción está en la
+base. Cuenta para el backfill de `codigo_gondolero` — si el conteo de perfiles
+sin código en prod da uno más de lo esperado, es esa.
+
+### Pendiente de producto — el mail de confirmación es el default de Supabase
+
+El email que recibe un gondolero al registrarse es la plantilla que viene de
+fábrica: remitente genérico, asunto genérico, y el cuerpo dice **"an application
+powered by Supabase"**. GondolApp no aparece por ningún lado.
+
+Es el **primer contacto** de la persona con el producto, y llega antes de que
+haya visto una sola pantalla de la app. Hay que personalizar la plantilla en
+Supabase (Auth → Email Templates): remitente, asunto y marca. No es código de
+este repo — se configura en el dashboard, y hay que hacerlo **en los dos
+proyectos**, dev y prod.
+
+Relacionado con la decisión de arriba: si el registro pasa a ser por invitación,
+el mail que hay que escribir es otro, y conviene resolver primero qué flujo
+queda antes de redactar el texto definitivo.
