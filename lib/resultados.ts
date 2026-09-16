@@ -116,7 +116,8 @@ export interface ResultadosData {
    */
   ciudades: number
   /**
-   * Provincias de la muestra, vía localidades.provincia_id.
+   * Provincias de la muestra, vía
+   * comercios → localidades → departamentos → provincias.
    *
    * Lleva el nombre además del conteo porque "1 provincia" no informa nada:
    * cuando hay una sola, la cabecera muestra cómo se llama.
@@ -199,10 +200,21 @@ export async function loadResultadosCampanaData(
   const misiones = (misionesData.data ?? []) as any[]
   const allMisionIds = misiones.map(m => m.id as string)
 
-  // ── 2. Contexto por misión: comercio y ciudad ───────────────────────────────
-  // Se resuelve en dos pasos en vez de con un embed de tres niveles: los embeds
+  // ── 2. Contexto por misión: comercio, ciudad y provincia ────────────────────
+  //
+  // La provincia está a CUATRO niveles del comercio:
+  //   comercios.localidad_id → localidades.departamento_id
+  //                          → departamentos.provincia_id → provincias.nombre
+  // `localidades` NO tiene `provincia_id`. El dump de
+  // docs/schema-real-2026-09-pre-incidente.md dice que sí —con FK e índice—
+  // pero ese archivo es anterior al DROP SCHEMA y a la reconstrucción, y la
+  // base viva no la tiene. Verificado el 16/9/2026.
+  //
+  // Se resuelve en dos consultas y no en un embed de cuatro niveles: los embeds
   // anidados de PostgREST devuelven objeto o array según el caso y ya nos costó
-  // guardas repartidas por todo el archivo.
+  // guardas repartidas por todo el archivo. Cortando en localidades, cada
+  // consulta anida como mucho dos, que es la profundidad que `uno()` ya maneja
+  // en el resto del archivo.
   const comercioIds = [...new Set(misiones.map(m => m.comercio_id).filter(Boolean))] as string[]
   const comercioCtx = new Map<string, {
     nombre: string | null
@@ -213,16 +225,36 @@ export async function loadResultadosCampanaData(
   if (comercioIds.length > 0) {
     const { data: comerciosData } = await admin
       .from('comercios')
-      .select('id, nombre, tipo, localidad:localidades(nombre, provincia:provincias(nombre))')
+      .select('id, nombre, tipo, localidad_id')
       .in('id', comercioIds)
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const co of ((comerciosData ?? []) as any[])) {
-      const loc = uno<{ nombre: string; provincia: unknown }>(co.localidad)
-      const pro = loc ? uno<{ nombre: string }>(loc.provincia) : undefined
+    const comercios = (comerciosData ?? []) as any[]
+    const localidadIds = [...new Set(
+      comercios.map(c => c.localidad_id).filter((v): v is number => v != null)
+    )]
+
+    // localidad → { ciudad, provincia }. Vacío si ningún comercio tiene localidad.
+    const locCtx = new Map<number, { ciudad: string | null; provincia: string | null }>()
+    if (localidadIds.length > 0) {
+      const { data: locData } = await admin
+        .from('localidades')
+        .select('id, nombre, departamento:departamentos(provincia:provincias(nombre))')
+        .in('id', localidadIds)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const l of ((locData ?? []) as any[])) {
+        const depto = uno<{ provincia: unknown }>(l.departamento)
+        const prov  = depto ? uno<{ nombre: string }>(depto.provincia) : undefined
+        locCtx.set(l.id, { ciudad: l.nombre ?? null, provincia: prov?.nombre ?? null })
+      }
+    }
+
+    for (const co of comercios) {
+      const loc = co.localidad_id != null ? locCtx.get(co.localidad_id) : undefined
       comercioCtx.set(co.id, {
         nombre:    co.nombre ?? null,
-        ciudad:    loc?.nombre ?? null,
-        provincia: pro?.nombre ?? null,
+        ciudad:    loc?.ciudad ?? null,
+        provincia: loc?.provincia ?? null,
         tipo:      co.tipo ?? null,
       })
     }
@@ -475,8 +507,9 @@ export async function loadResultadosCampanaData(
   // es lo único defendible ante una marca; el número de ciudades baja respecto
   // de antes porque antes estaba inflado.
   //
-  // Un comercio sin localidad_id no suma ciudad, y uno cuya localidad no tiene
-  // provincia_id no suma provincia: los dos son pisos, no exactos.
+  // Un comercio sin localidad_id no suma ciudad ni provincia. La provincia
+  // además puede perderse en dos saltos más (localidad→departamento→provincia),
+  // así que los dos números son pisos, no exactos.
   const pdvRelevadosIds = [...pdvConAprobada]
 
   const ciudades = new Set(

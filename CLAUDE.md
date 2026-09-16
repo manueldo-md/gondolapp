@@ -2490,3 +2490,50 @@ blanco —sin romper nada y sin que nadie lo notara—. Ahora usa `etiquetaTipo(
 **Antes de confiar en `types/index.ts` para algo, chequear si la interfaz tiene
 lectores.** Varias de esas interfaces pueden estar en la misma situación: se
 escribieron al principio del proyecto y las pantallas siguieron por su cuenta.
+
+### `docs/schema-real-2026-09-pre-incidente.md` NO es la base viva
+
+El nombre lo dice y aun así se usó como fuente de verdad el 16/9/2026, con
+consecuencia: se escribió un embed `localidades(provincia:provincias(nombre))`
+apuntando a `localidades.provincia_id`, una columna que **el dump tiene —con FK
+e índice `idx_localidades_provincia`— y la base viva no**. El embed apuntaba a
+una columna inexistente y la provincia no se resolvía.
+
+El dump se tomó **antes** del `DROP SCHEMA public CASCADE` y de la
+reconstrucción. Lo que se restauró no quedó idéntico, y esa diferencia no está
+anotada en ningún lado más que acá.
+
+**Regla:** el dump sirve para orientarse —qué tablas existen, cómo se llaman las
+cosas— pero **cualquier columna de la que dependa código se verifica contra la
+base** antes de escribir:
+
+```sql
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_name = 'la_tabla'
+ORDER BY ordinal_position;
+```
+
+Diferencias confirmadas hasta hoy:
+
+| Dice el dump | Dice la base viva |
+|---|---|
+| `localidades.provincia_id` existe | **No existe** |
+
+La jerarquía geográfica real es de cuatro niveles:
+
+```
+comercios.localidad_id → localidades.departamento_id
+                       → departamentos.provincia_id → provincias.nombre
+```
+
+`localidades` tiene `(id, nombre, departamento_id)` y `departamentos` tiene
+`(id, nombre, provincia_id)`. Cero localidades sin departamento al 16/9/2026,
+así que la cadena está completa y llegar a la provincia no pierde filas por ese
+salto.
+
+`lib/resultados.ts` la resuelve en **dos consultas** y no en un embed de cuatro
+niveles: corta en `localidades`, así cada consulta anida como mucho dos, que es
+la profundidad que el helper `uno()` maneja en el resto del archivo. Los embeds
+anidados de PostgREST devuelven objeto o array según el caso, y a cuatro niveles
+eso deja de ser manejable.
