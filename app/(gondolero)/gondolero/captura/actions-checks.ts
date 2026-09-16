@@ -59,18 +59,11 @@ async function liberarBounty(admin: any, comercioId: string) {
         foto_id:      foto.id,
       })
 
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('puntos_disponibles')
-        .eq('id', foto.gondolero_id)
-        .maybeSingle() as { data: { puntos_disponibles: number } | null }
-
-      if (profile) {
-        await admin
-          .from('profiles')
-          .update({ puntos_disponibles: (profile.puntos_disponibles ?? 0) + puntos })
-          .eq('id', foto.gondolero_id)
-      }
+      // El saldo lo acredita el trigger on_movimiento_puntos con el insert de
+      // arriba. Hasta el 16/9/2026 acá se leía el perfil DESPUÉS del insert y se
+      // hacía un UPDATE sumando los puntos otra vez — y como la lectura ya traía
+      // lo que había sumado el trigger, el resultado era `X + 2 × puntos`.
+      // DOBLE ACREDITACIÓN, en cada validación automática de comercio.
     }
   }
 }

@@ -81,12 +81,10 @@ export async function aprobarComercioDistri(id: string) {
           gondolero_id: foto.gondolero_id, tipo: 'credito', monto: puntos,
           concepto: 'Comercio nuevo validado', campana_id: foto.campana_id, foto_id: foto.id,
         })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: profile } = await (admin as any).from('profiles').select('puntos_disponibles').eq('id', foto.gondolero_id).maybeSingle() as { data: { puntos_disponibles: number } | null }
-        if (profile) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (admin as any).from('profiles').update({ puntos_disponibles: (profile.puntos_disponibles ?? 0) + puntos }).eq('id', foto.gondolero_id)
-        }
+        // El saldo lo acredita el trigger on_movimiento_puntos con el insert de
+        // arriba. Hasta el 16/9/2026 acá se leía el perfil DESPUÉS del insert y
+        // se sumaban los puntos otra vez sobre un valor que YA los incluía:
+        // doble acreditación en cada comercio validado por la distribuidora.
       }
     }
   }

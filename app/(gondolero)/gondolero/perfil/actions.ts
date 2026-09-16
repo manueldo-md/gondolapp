@@ -60,11 +60,17 @@ export async function solicitarCanje(premio: TipoPremio) {
     concepto: `Canje solicitado: ${premio.replace(/_/g, ' ')}`,
   })
 
-  // Descontar puntos del perfil
-  await admin
-    .from('profiles')
-    .update({ puntos_disponibles: profile.puntos_disponibles - puntos })
-    .eq('id', user.id)
+  // El saldo NO se toca acá: lo descuenta el trigger on_movimiento_puntos al
+  // insertar el débito de arriba. Hasta el 16/9/2026 esta función hacía además
+  // un UPDATE manual con el valor absoluto leído ANTES del insert. No era doble
+  // cobro —los dos caían en el mismo número— pero era una lectura perdida:
+  //
+  //   1000 puntos, canje de 300. Entre la lectura y el update se acredita una
+  //   misión de 500. El trigger deja 1200. El update manual escribe 700.
+  //   Los 500 acreditados desaparecen.
+  //
+  // La ventana es corta, pero las aprobaciones se hacen en lote desde el panel,
+  // que es exactamente cuando se acredita a varios a la vez.
 
   revalidatePath('/gondolero/perfil')
   revalidatePath('/gondolero/actividad')
