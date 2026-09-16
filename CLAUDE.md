@@ -2868,3 +2868,43 @@ con `npx tsx scripts/asignar-alias.mjs --ref <project-ref>` donde no haya acceso
 de admin. **Nunca con un UPDATE en SQL:** `generarAlias` chequea unicidad contra
 los alias ya escritos, y un UPDATE a mano que no lo replique genera repetidos —
 dos personas con el mismo nombre en el ranking es peor que el problema original.
+
+### Pendiente — mover `generarAlias` del cliente a una server action
+
+Hoy el alias del registro público se genera **en el browser**, antes del
+`signUp`: `app/auth/page.tsx` llama a `generarAlias(supabase)` con el cliente
+**anónimo**.
+
+**La promesa de unicidad es de mentira.** Adentro, `generarAlias` chequea así:
+
+```ts
+const { data } = await supabase.from('profiles').select('id').eq('alias', alias)
+if (!data) return alias
+```
+
+Eso corre **sin sesión** —es anterior al alta— y la policy de `profiles` es
+`(id = auth.uid()) OR get_tipo_actor() = 'admin'`. Un anónimo probablemente no
+vea ninguna fila, así que `!data` da verdadero **siempre** y la función devuelve
+el primer candidato sin haber verificado nada. Falla abierta y en silencio: el
+mismo modo que ya mordió con `comercios_relevados` y con el scoping de comercios.
+
+Hay un `catch` vacío alrededor —sin siquiera un `console.error`— cuyo comentario
+dice *"se puede asignar después"*, pero nadie se entera de que hay que hacerlo.
+Es la misma frase que justificaba el `catch` de `resolverMisionDirecta`.
+
+**Todavía no dejó rastro**: al 17/9/2026 prod tiene 29 perfiles con alias y
+**cero repetidos**. El espacio de nombres lo explica —600 personajes × cientos de
+adjetivos— así que las colisiones son improbables aunque nadie las chequee. Los
+24 sin alias que había en dev venían del seed, que nunca llamaba a la función;
+eso ya está arreglado.
+
+**El arreglo es una server action de diez líneas** que llame a `generarAlias` con
+service role: ahí el chequeo ve todas las filas y la promesa se vuelve cierta. Es
+prevención barata, no reparación.
+
+**Se descartó moverlo a `handle_new_user`**, a diferencia de
+`codigo_gondolero`. No es el mismo caso: el generador del código son ocho
+dígitos y cabe en SQL, pero el del alias son 600 personajes y cientos de
+adjetivos, y duplicar esas listas en SQL contradice todo lo demás. Si alguna vez
+se reconsidera, primero hace falta un índice UNIQUE sobre `alias` —hoy no lo
+tiene— porque sin él el reintento del trigger no tendría contra qué chocar.
