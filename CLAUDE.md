@@ -2537,3 +2537,68 @@ niveles: corta en `localidades`, así cada consulta anida como mucho dos, que es
 la profundidad que el helper `uno()` maneja en el resto del archivo. Los embeds
 anidados de PostgREST devuelven objeto o array según el caso, y a cuatro niveles
 eso deja de ser manejable.
+
+## Zona horaria — el servidor corre en UTC y Argentina es GMT-3
+
+**Tema transversal, no de un módulo.** Todo lo que compare fechas o calcule días
+corre **tres horas adelantado** respecto de la hora local argentina. Entre las
+21:00 y la medianoche hora de acá, el servidor ya está en el día siguiente.
+
+No está resuelto en ningún lado. Se anota el 16/9/2026 porque **el día que una
+campaña cierre un día antes de lo que dice, sin esto escrito es muy difícil de
+diagnosticar**: no falla, no tira error, simplemente contesta distinto según la
+hora a la que se mire.
+
+### Dos lugares donde ya puede estar pasando
+
+**1. El gate de campañas vencidas.** `lib/campana-vigencia.ts` compara con
+`diaDe()`, que arma la fecha con `getFullYear/getMonth/getDate` — o sea la hora
+local **del proceso**, que en el server es UTC:
+
+```ts
+function diaDe(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+```
+
+Una campaña con `fecha_fin = 30` deja de aceptar misiones **a las 21:00 del 29**
+hora argentina. El gondolero que releva a las 22:00 del 29 ve su misión
+rechazada por vencimiento un día antes de lo que dice la campaña — y eso es
+plata que no cobra por trabajo hecho en plazo.
+
+**2. La semana lunes a domingo de las campañas de seguimiento**, cuando se haga.
+Con este criterio el lunes empezaría a las 21:00 del domingo, y las visitas de
+esas tres horas contarían para la semana equivocada.
+
+**3. `diasRestantes()` de `lib/utils.ts`** hace `new Date(fechaFin)` contra
+`new Date()`. `new Date('2026-09-30')` se parsea como medianoche **UTC**, así
+que el cálculo arrastra el mismo corrimiento. Lo usa la cabecera de resultados
+para el "quedan N días" y para pintarlo en rojo bajo los 3 días.
+
+### Qué relevar cuando se agarre
+
+- Todos los usos de `CURRENT_DATE`, `now()` y `CURRENT_TIMESTAMP` en las
+  migraciones (27 archivos los mencionan) y cuáles de esos alimentan **una
+  decisión de negocio** y no solo un `created_at`.
+- Todos los `new Date()` del lado servidor que terminen en una comparación de
+  fechas: `lib/campana-vigencia.ts`, `lib/utils.ts:diasRestantes`, y lo que
+  aparezca.
+- Los `DEFAULT now()` de las columnas están bien como están: un `timestamptz`
+  guarda el instante, no el día, y no tiene ambigüedad. El problema aparece
+  cuando ese instante se **convierte a un día** para compararlo con un `date`.
+
+### Las tres salidas, a decidir
+
+1. **Constante `America/Argentina/Buenos_Aires`** en un solo lugar y derivar el
+   "día de hoy" siempre a través de ella. Es lo más simple y cubre el 100% del
+   negocio actual, que es un solo país.
+2. **Zona por campaña**, si alguna vez hay operación fuera de Argentina. Más
+   correcto y más caro; hoy no hay caso que lo justifique.
+3. **Normalizar en el cliente**, mandando el día local del gondolero. Se
+   descarta de entrada para el gate de vencimiento: el cliente ya manda
+   `capturadoAt` y ahí el incentivo para falsearlo es directo — plata. Un dato
+   con el que se decide si se paga no puede venir del que cobra.
+
+La 1 es la recomendación, con la salvedad de que cambiarlo **mueve la frontera
+de un día**: hay que mirar antes si hay campañas cuyo cierre caiga justo en esa
+ventana.
