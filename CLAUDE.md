@@ -2602,3 +2602,57 @@ para el "quedan N días" y para pintarlo en rojo bajo los 3 días.
 La 1 es la recomendación, con la salvedad de que cambiarlo **mueve la frontera
 de un día**: hay que mirar antes si hay campañas cuyo cierre caiga justo en esa
 ventana.
+
+### Una foto rechazada NO cierra la misión — y por qué el `else` que "falta" no va
+
+`lib/misiones.ts` tuvo durante unas horas del 16/9/2026 un `else` que cerraba la
+misión en `rechazada` cuando no quedaban fotos pendientes y alguna estaba
+rechazada. **Se revirtió el mismo día porque rompía la recaptura**, y queda
+escrito para que no se vuelva a agregar.
+
+El encabezado del archivo describía un "Caso C — misión con alguna foto
+rechazada y ninguna pendiente: se rechaza", y el código no lo hacía. Parecía un
+`else` faltante. **Estaba mal el encabezado, no el código.**
+
+`rechazarFoto` (`app/(admin)/admin/fotos/actions.ts`) marca la foto y llama a
+`actualizarEstadoMision` **en el mismo acto**. En ese instante no hay ninguna
+foto pendiente y hay una rechazada, así que el `else` se dispara siempre, al
+toque, y mata la misión — justo después de mandarle al gondolero la
+notificación que dice *"Podés retomar la misión y rehacer esa foto"*.
+
+Peor: `registrarRecaptura` no mira `misiones.estado` (solo exige que la foto
+esté `rechazada` y sin reemplazar) y el flujo de retake de
+`captura/page.tsx` solo bloquea `descartada`. Así que el gondolero **podía**
+rehacer la foto, y al aprobarse la misión pasaba a `aprobada` con
+`bounty_estado='anulado'` — fuera del filtro de liberación. Rehacía el trabajo y
+no cobraba nunca.
+
+La regla verdadera está en la migración
+`20260915140000_misiones_unico_por_comercio.sql`:
+
+> El descarte libera el comercio; una foto rechazada NO lo libera, porque la
+> misión sigue viva y el gondolero la puede rehacer.
+
+**La salida terminal ya existe y es `descartarRecaptura()`**: el gondolero la usa
+cuando no puede volver al comercio, y cierra con `estado='descartada'` +
+`bounty_estado='anulado'`.
+
+### Pendiente — campaña que vence con una recaptura sin hacer
+
+Es el hueco real, y su disparador NO es el rechazo de la foto sino el
+vencimiento. Si `fecha_fin` pasa mientras el gondolero tiene una foto rechazada
+sin rehacer, el gate de `lib/campana-vigencia.ts` le bloquea el retake y la
+misión queda en `pendiente` + `retenido` sin salida: no se puede rehacer, no se
+puede aprobar, y desde el 16/9/2026 tampoco la paga la barrida (que ahora exige
+`estado='aprobada'`).
+
+No se puede resolver desde `actualizarEstadoMision`: esa función solo corre
+cuando alguien revisa una foto, y acá no va a revisar nadie más. Hace falta una
+barrida al vencer, que es justamente la pieza que se descartó al hacer el gate
+(ver `lib/campana-vigencia.ts`: se evaluaron y descartaron el cierre al
+registrar, al leer y con pg_cron).
+
+Al decidirlo hay que definir también **qué pasa con esas misiones**: cerrarlas
+sin pagar castiga a alguien que hizo el trabajo y cuya foto quizás se rechazó por
+un criterio discutible; pagarlas paga una misión incompleta. Probablemente
+dependa de cuántas fotos de la misión estaban aprobadas.

@@ -10,11 +10,13 @@
  * B. Misión con TODAS las fotos aprobadas: se aprueba.
  *    → actualizarEstadoMision() desde actions de aprobación
  *
- * C. Misión con alguna foto rechazada y ninguna pendiente: se rechaza entera y
- *    no se paga.
- *    → actualizarEstadoMision() desde actions de rechazo
+ * C. Misión con alguna foto rechazada: NO se cierra. Queda viva para que el
+ *    gondolero la rehaga. La salida terminal es descartarRecaptura(), que él
+ *    usa cuando no puede volver al comercio.
+ *    (El encabezado decía que acá se rechazaba. Era el encabezado el que estaba
+ *    mal; ver el comentario en actualizarEstadoMision.)
  *
- * En B y C el entry-point es actualizarEstadoMision(), que opera sobre
+ * El entry-point de B y C es actualizarEstadoMision(), que opera sobre
  * el mision_id derivado del fotoId.
  *
  * ── LA REGLA DEL PAGO ───────────────────────────────────────────────────────
@@ -52,20 +54,40 @@ async function aprobarMisionCore(params: {
 }): Promise<void> {
   const { misionId, gondoleroId, campanaId, minParaCobrar, admin } = params
 
+  // Los errores se chequean uno por uno y se convierten en excepción.
+  //
+  // supabase-js NO tira ante un error de Postgres: lo devuelve en `.error` del
+  // resultado. Hasta el 16/9/2026 ninguno de los cuatro pasos de acá lo miraba,
+  // así que un fallo del paso 1 dejaba la misión en 'pendiente' y la función
+  // seguía como si nada — sin excepción, sin log, sin rastro. Es lo que dejó 3
+  // misiones survey-only trabadas en dev: `resolverMisionDirecta` "terminó bien"
+  // y la misión nunca se aprobó.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chequear = (paso: string, error: any) => {
+    if (error) {
+      throw new Error(
+        `[aprobarMisionCore] ${paso} falló para misión ${misionId} ` +
+        `(gondolero ${gondoleroId}, campaña ${campanaId}): ${error.message}`
+      )
+    }
+  }
+
   // 1. Marcar misión como aprobada
-  await admin
+  const { error: errAprobar } = await admin
     .from('misiones')
     .update({ estado: 'aprobada' })
     .eq('id', misionId)
+  chequear('marcar la misión como aprobada', errAprobar)
 
   // 2. Contar misiones aprobadas del gondolero en la campaña
   //    (incluye la que acabamos de actualizar)
-  const { count: misionesAprobadas } = await admin
+  const { count: misionesAprobadas, error: errContar } = await admin
     .from('misiones')
     .select('id', { count: 'exact', head: true })
     .eq('campana_id',   campanaId)
     .eq('gondolero_id', gondoleroId)
     .eq('estado',       'aprobada')
+  chequear('contar las misiones aprobadas', errContar)
 
   const countAprobadas = misionesAprobadas ?? 0
 
@@ -102,14 +124,17 @@ async function aprobarMisionCore(params: {
       .eq('estado',        'aprobada')
 
     // 3a. Obtener puntos antes de liberar
-    const { data: misionesRetenidas } = await filtroLiberables(
+    const { data: misionesRetenidas, error: errLeer } = await filtroLiberables(
       admin.from('misiones').select('id, puntos_total')
-    ) as { data: { id: string; puntos_total: number | null }[] | null }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as { data: { id: string; puntos_total: number | null }[] | null; error: any }
+    chequear('leer las misiones retenidas', errLeer)
 
     // 3b. Liberar (incluye la actual, que el paso 1 acaba de pasar a 'aprobada')
-    await filtroLiberables(
+    const { error: errLiberar } = await filtroLiberables(
       admin.from('misiones').update({ bounty_estado: 'acreditado' })
     )
+    chequear('liberar el bounty', errLiberar)
 
     // 3c. Insertar movimiento por el total liberado.
     //     El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles.
@@ -117,13 +142,18 @@ async function aprobarMisionCore(params: {
       (sum: number, m) => sum + (m.puntos_total ?? 0), 0
     )
     if (totalPuntos > 0) {
-      await admin.from('movimientos_puntos').insert({
+      const { error: errMov } = await admin.from('movimientos_puntos').insert({
         gondolero_id: gondoleroId,
         tipo:         'credito',
         monto:        Math.round(totalPuntos),
         concepto:     `Puntos desbloqueados · ${countAprobadas} misiones aprobadas`,
         campana_id:   campanaId,
       })
+      // El más caro de los cuatro si falla: las misiones ya quedaron en
+      // 'acreditado' y el movimiento es lo único que le suma los puntos al
+      // saldo. Sin el chequeo, el gondolero ve sus misiones acreditadas y el
+      // saldo sin moverse, y nadie sabe por qué.
+      chequear('insertar el movimiento de puntos', errMov)
     }
   }
   // Si count < minParaCobrar → bounty_estado permanece 'retenido'.
@@ -148,7 +178,27 @@ export async function resolverMisionDirecta(params: {
   try {
     await aprobarMisionCore(params)
   } catch (err) {
-    console.error('[resolverMisionDirecta] Error (no-op):', err)
+    // NO se re-lanza, y es deliberado: cuando esto corre la misión y sus
+    // respuestas YA están guardadas. Tirar acá haría fallar a registrarMision
+    // entera, y la cola offline reintentaría una misión que en realidad se
+    // grabó bien. Se perdería trabajo del gondolero por un fallo de
+    // contabilidad.
+    //
+    // Pero deja de ser un 'no-op' silencioso: el log lleva los tres ids para
+    // poder repararla, y la misión queda contable —'pendiente' + 'retenido' sin
+    // ninguna foto— así que el panel de admin la puede listar y reintentar.
+    // Antes decía "Error (no-op)" y nada más; es lo que dejó 3 misiones
+    // trabadas en dev sin que nadie se enterara.
+    console.error(
+      '[resolverMisionDirecta] MISIÓN TRABADA — quedó en pendiente y no se acreditó. ' +
+      'Reparar con "Destrabar misiones" en /admin/misiones.',
+      {
+        misionId:    params.misionId,
+        gondoleroId: params.gondoleroId,
+        campanaId:   params.campanaId,
+        error:       err instanceof Error ? err.message : String(err),
+      }
+    )
   }
 }
 
@@ -218,42 +268,33 @@ export async function actualizarEstadoMision(params: {
       // Caso B: todas aprobadas → aprobar misión y liberar bounty
       await aprobarMisionCore({ misionId, gondoleroId, campanaId, minParaCobrar, admin })
 
-    } else if (pendientes === 0 && rechazadas > 0) {
-      // CASO C — ya no queda nada por revisar y alguna foto se rechazó.
-      //
-      // La misión entera se rechaza y no se paga: una misión incompleta no es un
-      // dato utilizable. La marca no puede usar media observación, así que pagar
-      // la mitad sería pagar por algo que no se va a mirar. Si alguna vez
-      // aparece un caso donde media misión sirve, se revisa acá.
-      //
-      // 'rechazada' y no 'parcial': 'parcial' está en el CHECK pero nadie la
-      // escribe ni la lee, y la palabra dice "incompleta", que en los paneles se
-      // confunde con "todavía en curso". Tampoco 'descartada', que significa
-      // "el gondolero la abandonó" y borrar esa diferencia arruina cualquier
-      // disputa posterior.
-      //
-      // Hasta acá no había `else`: la misión quedaba en 'pendiente' para
-      // siempre, sin nada que la moviera. Eso importa ahora más que antes,
-      // porque con el filtro de estado en aprobarMisionCore una misión trabada
-      // en 'pendiente' ya no cobra nunca. El estado terminal es lo que impide
-      // que cerrar el agujero del pago cree misiones huérfanas.
-      await admin
-        .from('misiones')
-        .update({ estado: 'rechazada', bounty_estado: 'anulado' })
-        .eq('id', misionId)
-
-      // El bounty de las fotos también, incluidas las aprobadas de esta misión:
-      // si la misión no se paga, ninguna de sus partes se paga. Mismo cierre que
-      // descartarRecaptura.
-      await admin
-        .from('fotos')
-        .update({ bounty_estado: 'anulado' })
-        .eq('mision_id', misionId)
-
-      // No se notifica acá: el rechazo de cada foto ya le mandó al gondolero una
-      // notificación 'foto_rechazada'. Una segunda por la misma causa es ruido.
     }
+
+    // ── POR QUÉ NO HAY `else` ─────────────────────────────────────────────────
+    // "Alguna foto rechazada y ninguna pendiente" NO es un estado terminal: es
+    // el estado normal de "tenés una foto para rehacer". El rechazo de una foto
+    // llama a esta función en el mismo acto (admin/fotos/actions.ts), así que un
+    // `else` acá se dispara al instante y mata la misión ANTES de que el
+    // gondolero pueda recapturar — con la notificación que acaba de recibir
+    // diciéndole "podés retomar la misión y rehacer esa foto".
+    //
+    // La regla está en la migración 20260915140000_misiones_unico_por_comercio:
+    // "El descarte libera el comercio; una foto rechazada NO lo libera, porque
+    // la misión sigue viva y el gondolero la puede rehacer."
+    //
+    // El encabezado de este archivo decía que el Caso C se rechazaba. Estaba
+    // mal el encabezado, no el código: la salida terminal ya existe y es
+    // `descartarRecaptura`, que el gondolero usa cuando no puede volver al
+    // comercio, y que cierra con estado='descartada' + bounty='anulado'.
+    //
+    // Queda un hueco real, pero su disparador es otro: si la campaña vence con
+    // una recaptura pendiente, el gate de vigencia bloquea el retake y la misión
+    // queda en 'pendiente' sin salida. Eso no se puede resolver desde acá —esta
+    // función solo corre cuando alguien revisa una foto— y necesita una barrida
+    // al vencer. Anotado en CLAUDE.md.
+    //
     // Si aún hay pendientes/en_revision → esperar; no hacer nada.
+    void rechazadas; void pendientes
 
   } catch (err) {
     console.error('[actualizarEstadoMision] Error (no-op):', err)
