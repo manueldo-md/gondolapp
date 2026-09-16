@@ -4,10 +4,18 @@
  * Los cuatro ven los mismos resultados; lo único que cambia es el tema y si
  * ven quién relevó. El layout exterior (nav de página) queda en cada page.tsx.
  *
- * Cabecera en tres niveles, para que no sea una fila de siete números iguales:
+ * Cabecera en cuatro niveles, para que no sea una fila de siete números iguales:
  *   1. PDV relevados, grande, con su barra de avance
  *   2. Tres tiles de ejecución: misiones, fotos, gondoleros
- *   3. Una línea de contexto en texto plano: ciudades, ventana temporal, plazo
+ *   3. Una línea de contexto en texto plano: geografía, ventana temporal, plazo
+ *   4. La distribución por tipo de negocio, con barras
+ * Los niveles 3 y 4 describen la MUESTRA, no el formulario: de qué está hecho
+ * el conjunto sobre el que se leen las respuestas de abajo. Por eso el tipo de
+ * negocio va acá arriba y no entre los módulos, aunque comparta su formato.
+ *
+ * Los tres se calculan sobre el mismo set que `pdvRelevados` —comercios con
+ * misión aprobada—, así que la cabecera entera habla de un solo universo.
+ *
  * Después, los módulos en orden (bloque.orden, campo.orden), cada uno dibujado
  * según su tipo en components/campanas/modulos/.
  *
@@ -16,10 +24,12 @@
  */
 
 import React from 'react'
-import { TrendingUp, MapPin, Calendar, Clock, Hourglass, AlertTriangle } from 'lucide-react'
+import { TrendingUp, MapPin, Calendar, Clock, Hourglass, AlertTriangle, Store } from 'lucide-react'
 import { TabFilter } from '@/components/campanas/tab-filter'
 import { calcularPorcentaje, diasRestantes } from '@/lib/utils'
+import { etiquetaTipo, etiquetaTipoPlural } from '@/lib/tipos-comercio'
 import type { ResultadosData } from '@/lib/resultados'
+import { BarraProporcion } from './modulos/piezas'
 import { TEMAS, type Panel } from './modulos/tema'
 import { ModuloDispatcher } from './modulos/ModuloDispatcher'
 import { BadgeAvance } from './BadgeAvance'
@@ -67,13 +77,75 @@ function formatearVentana(desde: string | null, hasta: string | null): string | 
   return `Del ${d.getDate()} de ${MES[d.getMonth()]} al ${h.getDate()} de ${MES[h.getMonth()]}${sufijoAnio}`
 }
 
+/**
+ * Distribución por tipo de negocio de los PDV relevados.
+ *
+ * Va pegada a la cabecera y no abajo con los módulos porque **describe la
+ * muestra**: no es una respuesta que el gondolero haya cargado en el formulario,
+ * es de qué está hecho el conjunto sobre el que se leen todas las respuestas de
+ * abajo. "El 70% son kioscos" cambia cómo se interpreta cada barra del resto de
+ * la pantalla, así que tiene que leerse antes.
+ *
+ * Usa el mismo formato de barras que los módulos de selección para que se lea
+ * igual, con la misma pieza (`BarraProporcion`).
+ */
+function DistribucionTipos({
+  tipos,
+  total,
+  color,
+}: {
+  tipos: { tipo: string | null; n: number }[]
+  total: number
+  color: string
+}) {
+  if (total === 0 || tipos.length === 0) return null
+
+  const frase = tipos
+    .map(t => `${t.n} ${etiquetaTipoPlural(t.tipo, t.n)}`)
+    .join(', ')
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+      <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+          <Store size={13} className="shrink-0" />
+          Tipo de negocio
+        </div>
+        <span className="text-[11px] text-gray-400 tabular-nums">
+          base: {total} PDV relevado{total !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <p className="text-sm text-gray-700 mb-3">{frase}</p>
+
+      {/* Con un solo tipo, una barra al 100% ocupa lugar y no dice nada que la
+          frase no haya dicho ya. */}
+      {tipos.length > 1 && (
+        <div className="space-y-2">
+          {tipos.map(t => (
+            <BarraProporcion
+              key={t.tipo ?? '__sin_tipo__'}
+              label={etiquetaTipo(t.tipo)}
+              n={t.n}
+              total={total}
+              color={color}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ContextoRelevamiento({
   ciudades,
+  provincias,
   ventana,
   dias,
   enRevision,
 }: {
   ciudades: number
+  provincias: { cantidad: number; unica: string | null }
   ventana: { desde: string | null; hasta: string | null }
   dias: number | null
   /** PDV que todavía no tienen ninguna misión aprobada. */
@@ -82,11 +154,25 @@ function ContextoRelevamiento({
   const rango = formatearVentana(ventana.desde, ventana.hasta)
   const partes: React.ReactNode[] = []
 
+  // Geografía en un solo chip: "Córdoba · 5 ciudades" se lee de un saque, y dos
+  // chips con el mismo ícono de ubicación parecerían dos cosas distintas.
+  //
+  // Con una sola provincia se muestra el nombre y no el conteo: "1 provincia" no
+  // informa nada. Con varias no entran los nombres y se cuentan.
+  const geo: string[] = []
+  if (provincias.unica) {
+    geo.push(provincias.unica)
+  } else if (provincias.cantidad > 1) {
+    geo.push(`${provincias.cantidad} provincias`)
+  }
   if (ciudades > 0) {
+    geo.push(`${ciudades} ciudad${ciudades !== 1 ? 'es' : ''}`)
+  }
+  if (geo.length > 0) {
     partes.push(
-      <span key="ciudades" className="flex items-center gap-1">
+      <span key="geo" className="flex items-center gap-1">
         <MapPin size={12} className="shrink-0" />
-        {ciudades} ciudad{ciudades !== 1 ? 'es' : ''}
+        {geo.join(' · ')}
       </span>
     )
   }
@@ -147,7 +233,8 @@ export function ResultadosView({
 }: ResultadosViewProps) {
   const {
     modulos, tieneCamposFoto, fotoRespuestasMap, camposMap,
-    misionesAprobadas, pdvRelevados, pdvEnRevision, ciudades, gondolerosRelevaron, ventana,
+    misionesAprobadas, pdvRelevados, pdvEnRevision, ciudades, provincias, tiposComercio,
+    gondolerosRelevaron, ventana,
     counts, totalFotos, fotosAprobadas,
   } = data
 
@@ -277,9 +364,20 @@ export function ResultadosView({
           números que sí importan. */}
       <ContextoRelevamiento
         ciudades={ciudades}
+        provincias={provincias}
         ventana={ventana}
         dias={dias}
         enRevision={pdvEnRevision}
+      />
+
+      {/* ── De qué está hecha la muestra ───────────────────────────────────
+          Arriba de los módulos y no entre ellos: no es una respuesta del
+          formulario, es el conjunto sobre el que se leen todas las respuestas
+          de abajo. */}
+      <DistribucionTipos
+        tipos={tiposComercio}
+        total={pdvRelevados}
+        color={tema.barraModulo}
       />
 
       {/* ── Filtro de estado: aplica a todas las galerías ────────────────── */}

@@ -2406,3 +2406,65 @@ Relacionado con el pendiente de arriba: si el registro pasa a ser por
 invitación, el mail que hay que escribir es otro. Conviene definir qué flujo
 queda antes de redactar el texto definitivo — pero **el SMTP no espera a esa
 decisión**, porque el límite pega igual con cualquier flujo que mande mails.
+
+### Pendiente — nueve copias del mapa de tipos de comercio
+
+`comercios.tipo` tiene seis valores fijados por `comercios_tipo_check`
+(`almacen`, `kiosco`, `autoservicio`, `dietetica`, `mayorista`, `otro`), y el
+mapa `tipo → etiqueta` está escrito a mano **nueve veces**:
+
+| Archivo | Etiquetas | Colores |
+|---|---|---|
+| `app/(admin)/admin/comercios/page.tsx` | sí | sí |
+| `app/(admin)/admin/comercios/pendientes/page.tsx` | sí | sí |
+| `app/(admin)/admin/tablero/page.tsx` | sí | — |
+| `app/(distribuidora)/distribuidora/comercios/page.tsx` | sí | sí |
+| `app/(distribuidora)/distribuidora/comercios/pendientes/page.tsx` | sí | sí |
+| `app/(distribuidora)/distribuidora/comercios/[id]/page.tsx` | sí | sí |
+| `app/(distribuidora)/distribuidora/dashboard/page.tsx` | sí | — |
+| `app/(gondolero)/gondolero/captura/page.tsx` | sí (+ emoji) | — |
+| `app/(gondolero)/gondolero/comercios/nuevo/page.tsx` | sí (+ emoji) | — |
+
+**Dos ya divergieron**, que es el síntoma de siempre:
+
+- `app/(marca)/marca/dashboard/page.tsx:237` — su `TIPO_LABELS` tiene cuatro
+  valores: le faltan `dietetica` y `otro`. Un comercio de esos tipos cae al
+  fallback y se muestra crudo o vacío.
+- `lib/validations/index.ts:67` — el enum de Zod tenía cinco: **le faltaba
+  `dietetica`**. Corregido el 16/9/2026. Era un bug esperando: el schema no se
+  llama desde ningún lado todavía (ver "conectar los schemas de Zod que nadie
+  llama"), así que el día que se conectara habría empezado a rechazar dietéticas
+  que la base sí acepta.
+
+`lib/tipos-comercio.ts` existe desde el 16/9/2026 con las etiquetas en singular
+y plural — el plural porque la distribución de la cabecera de resultados se lee
+como frase ("42 kioscos, 18 almacenes"), y "42 Kiosco" no es una frase. Lo usa
+**solo** `components/campanas/ResultadosView.tsx`. Migrar las nueve pantallas es
+un tramo aparte; lo que el archivo evitó fue que fueran diez.
+
+Al migrarlas hay que decidir qué pasa con los colores (seis de las nueve tienen
+su propio mapa de clases de Tailwind, y hay que chequear si coinciden entre sí)
+y con los emojis de las dos pantallas de gondolero.
+
+### El default `'almacen'` de `comercios.tipo` (pendiente de decisión)
+
+La columna es `text NULL DEFAULT 'almacen'`. Un insert que no mande `tipo` queda
+como almacén sin que nadie lo haya clasificado, y **un default se ve igual que
+una observación**. Desde que la cabecera de resultados muestra la distribución
+por tipo, eso deja de ser cosmético: infla una categoría real con comercios que
+nadie miró.
+
+Las tres fuentes de valor silencioso, relevadas el 16/9/2026:
+
+1. El `DEFAULT 'almacen'` de la columna.
+2. `scripts/seed-demo-completo.ts:118` — el mapeo del CSV termina en `?? 'otro'`,
+   así que todo tipo no contemplado cae ahí. Y el map traduce
+   `'supermercado' → 'autoservicio'` pero **no incluye `'autoservicio'`**, con lo
+   cual una fila del CSV que diga literalmente "autoservicio" termina en "otro".
+3. `app/(gondolero)/gondolero/comercios/nuevo/page.tsx:33` — el selector arranca
+   preseleccionado en `'autoservicio'`. La action exige el campo, pero ya viene
+   lleno: alcanza con no tocarlo.
+
+La distribución de la cabecera muestra los `null` como "sin clasificar" y no los
+filtra, justamente para que se vean. Pero eso solo sirve si los no clasificados
+**son** null, y hoy el default los disfraza de almacén.

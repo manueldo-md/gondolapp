@@ -109,8 +109,25 @@ export interface ResultadosData {
   pdvRelevados: number
   /** PDV cuyas misiones están todas pendientes de revisión. Va en el contexto, no en el KPI. */
   pdvEnRevision: number
-  /** Ciudades distintas donde se relevó, vía comercios.localidad_id. */
+  /**
+   * Ciudades distintas donde se relevó, vía comercios.localidad_id.
+   * Se calcula sobre el mismo set que `pdvRelevados`: comercios con misión
+   * aprobada. Un comercio sin localidad no suma, así que es un piso.
+   */
   ciudades: number
+  /**
+   * Provincias de la muestra, vía localidades.provincia_id.
+   *
+   * Lleva el nombre además del conteo porque "1 provincia" no informa nada:
+   * cuando hay una sola, la cabecera muestra cómo se llama.
+   */
+  provincias: { cantidad: number; unica: string | null }
+  /**
+   * Distribución por tipo de negocio, de mayor a menor. `tipo: null` es una
+   * categoría más —los comercios sin clasificar no se esconden— y la suma de
+   * los `n` da exactamente `pdvRelevados`.
+   */
+  tiposComercio: { tipo: string | null; n: number }[]
   /**
    * Gondoleros que efectivamente relevaron, no los inscriptos.
    *
@@ -187,16 +204,27 @@ export async function loadResultadosCampanaData(
   // anidados de PostgREST devuelven objeto o array según el caso y ya nos costó
   // guardas repartidas por todo el archivo.
   const comercioIds = [...new Set(misiones.map(m => m.comercio_id).filter(Boolean))] as string[]
-  const comercioCtx = new Map<string, { nombre: string | null; ciudad: string | null }>()
+  const comercioCtx = new Map<string, {
+    nombre: string | null
+    ciudad: string | null
+    provincia: string | null
+    tipo: string | null
+  }>()
   if (comercioIds.length > 0) {
     const { data: comerciosData } = await admin
       .from('comercios')
-      .select('id, nombre, localidad:localidades(nombre)')
+      .select('id, nombre, tipo, localidad:localidades(nombre, provincia:provincias(nombre))')
       .in('id', comercioIds)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const co of ((comerciosData ?? []) as any[])) {
-      const loc = uno<{ nombre: string }>(co.localidad)
-      comercioCtx.set(co.id, { nombre: co.nombre ?? null, ciudad: loc?.nombre ?? null })
+      const loc = uno<{ nombre: string; provincia: unknown }>(co.localidad)
+      const pro = loc ? uno<{ nombre: string }>(loc.provincia) : undefined
+      comercioCtx.set(co.id, {
+        nombre:    co.nombre ?? null,
+        ciudad:    loc?.nombre ?? null,
+        provincia: pro?.nombre ?? null,
+        tipo:      co.tipo ?? null,
+      })
     }
   }
 
@@ -437,11 +465,45 @@ export async function loadResultadosCampanaData(
   // Gondoleros que relevaron, no los inscriptos.
   const gondolerosRelevaron = new Set(misiones.map(m => m.gondolero_id).filter(Boolean)).size
 
-  // Ciudades distintas: se derivan del comercio de cada misión. Un comercio sin
-  // localidad_id no suma (hay 8 de 99 en dev), así que es un piso, no un exacto.
+  // ── Descripción de la muestra ──────────────────────────────────────────────
+  // Ciudades, provincias y tipos se derivan de `pdvConAprobada`, el MISMO set
+  // que cuenta `pdvRelevados`. Antes las ciudades salían de todas las misiones,
+  // y la query de misiones no filtra por estado: una campaña podía decir
+  // "40 PDV relevados · 6 ciudades" donde la sexta venía de un comercio cuya
+  // única misión estaba descartada. Dos números de la misma cabecera hablando de
+  // universos distintos sin avisarlo. El título grande promete "lo validado", y
+  // es lo único defendible ante una marca; el número de ciudades baja respecto
+  // de antes porque antes estaba inflado.
+  //
+  // Un comercio sin localidad_id no suma ciudad, y uno cuya localidad no tiene
+  // provincia_id no suma provincia: los dos son pisos, no exactos.
+  const pdvRelevadosIds = [...pdvConAprobada]
+
   const ciudades = new Set(
-    comercioIds.map(id => comercioCtx.get(id)?.ciudad).filter(Boolean)
+    pdvRelevadosIds.map(id => comercioCtx.get(id)?.ciudad).filter(Boolean)
   ).size
+
+  const provinciasSet = new Set(
+    pdvRelevadosIds.map(id => comercioCtx.get(id)?.provincia).filter(Boolean) as string[]
+  )
+  const provincias = {
+    cantidad: provinciasSet.size,
+    // Con una sola provincia el nombre dice más que el número: "1 provincia" no
+    // informa nada. Con varias, el nombre no entra y se cuenta.
+    unica: provinciasSet.size === 1 ? [...provinciasSet][0] : null,
+  }
+
+  // Distribución por tipo de negocio: describe la muestra, no es una respuesta
+  // del formulario. Los `null` entran como una categoría más y no se filtran:
+  // una muestra donde un tercio no tiene tipo es un dato sobre la muestra.
+  const tiposCount = new Map<string | null, number>()
+  for (const id of pdvRelevadosIds) {
+    const t = comercioCtx.get(id)?.tipo ?? null
+    tiposCount.set(t, (tiposCount.get(t) ?? 0) + 1)
+  }
+  const tiposComercio = [...tiposCount.entries()]
+    .map(([tipo, n]) => ({ tipo, n }))
+    .sort((a, b) => b.n - a.n)
 
   // Ventana temporal: primera y última misión.
   const fechas = misiones.map(m => m.created_at as string).filter(Boolean).sort()
@@ -457,6 +519,8 @@ export async function loadResultadosCampanaData(
     pdvRelevados,
     pdvEnRevision,
     ciudades,
+    provincias,
+    tiposComercio,
     gondolerosRelevaron,
     ventana,
     counts,

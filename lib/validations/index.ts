@@ -64,7 +64,10 @@ export const schemaComercio = z.object({
     .number()
     .min(-180, 'Longitud inválida')
     .max(180, 'Longitud inválida'),
-  tipo: z.enum(['autoservicio', 'almacen', 'kiosco', 'mayorista', 'otro'], {
+  // Los seis valores del CHECK comercios_tipo_check. Faltaba 'dietetica': el
+  // schema no se llama desde ningún lado todavía, así que el día que se conecte
+  // habría empezado a rechazar dietéticas que la base sí acepta.
+  tipo: z.enum(['autoservicio', 'almacen', 'kiosco', 'mayorista', 'dietetica', 'otro'], {
     required_error: 'Seleccioná el tipo de comercio',
   }),
 })
