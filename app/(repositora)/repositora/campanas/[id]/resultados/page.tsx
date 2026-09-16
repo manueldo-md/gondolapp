@@ -35,7 +35,7 @@ export default async function RepoCampanaResultadosPage({
 
   const { data: campanaRaw, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_fin, minimo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, distri_id, marca_id, repositora_id')
+    .select('id, nombre, tipo, estado, fecha_fin, modalidad, visitas_por_semana, minimo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, distri_id, marca_id, repositora_id')
     .eq('id', params.id)
     .single()
 
@@ -86,6 +86,8 @@ export default async function RepoCampanaResultadosPage({
           estado: c.estado ?? null,
           minimo_comercios: c.minimo_comercios ?? null,
           tope_total_comercios: c.tope_total_comercios ?? null,
+          modalidad:            c.modalidad ?? null,
+          visitas_por_semana:   c.visitas_por_semana ?? null,
         }}
         tab={tab}
         panel="repositora"

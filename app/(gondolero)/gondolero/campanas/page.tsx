@@ -10,7 +10,8 @@ type CampanaRow = CampanaCardData
 
 const CAMPANA_SELECT = `
   id, nombre, tipo, marca_id, distri_id, financiada_por, via_ejecucion, estado,
-  puntos_por_foto, puntos_por_mision, fecha_fin, fecha_limite_inscripcion, minimo_comercios,
+  puntos_por_foto, puntos_por_mision, fecha_fin, modalidad, visitas_por_semana,
+  fecha_limite_inscripcion, minimo_comercios,
   tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
   max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
   marca:marcas ( razon_social ),
@@ -244,7 +245,16 @@ export default async function CampanasPage() {
       if (estado === 'abandonada') return false
       return participacionMap.has(c.id) || misionCampanaIds.has(c.id)
     })
+    // Primero lo que vence antes — pero las de SEGUIMIENTO arriba de todo.
+    //
+    // Antes caían al final por el `if (!a.fecha_fin) return 1`, que las trataba
+    // como "sin fecha cargada". Una campaña de seguimiento es la que el
+    // gondolero tiene que atender todas las semanas: mandarla al fondo de la
+    // lista es esconder justo la que más atención necesita.
     .sort((a, b) => {
+      const aSeg = a.modalidad === 'seguimiento'
+      const bSeg = b.modalidad === 'seguimiento'
+      if (aSeg !== bSeg) return aSeg ? -1 : 1
       if (!a.fecha_fin && !b.fecha_fin) return 0
       if (!a.fecha_fin) return 1
       if (!b.fecha_fin) return -1

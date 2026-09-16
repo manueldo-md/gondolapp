@@ -28,23 +28,46 @@ export interface FechasValidacion {
   error: string | null
 }
 
+/** Las dos modalidades de `campanas.modalidad`. */
+export type Modalidad = 'puntual' | 'seguimiento'
+
 /**
- * Valida las fechas de una campaña puntual.
+ * Valida las fechas de una campaña, según su modalidad.
  *
- * `fecha_fin` es obligatoria: una campaña puntual sin fecha de fin no vence
- * nunca, y el gate de registrarMision no dispararía jamás para ella. Si no tiene
- * fin, es continua — y eso es una campaña de seguimiento, otra modalidad.
+ * PUNTUAL: `fecha_fin` es obligatoria. Sin fecha de fin no vence nunca, y el
+ * gate de registrarMision no dispararía jamás para ella.
  *
- * La base lo respalda con el CHECK campanas_fecha_fin_por_modalidad, pero sin
- * esta validación el usuario vería un error de constraint de Postgres en lugar
- * de una frase que se entienda.
+ * SEGUIMIENTO: `fecha_fin` está PROHIBIDA. Una campaña de seguimiento es
+ * continua por definición — esa es toda la diferencia entre las dos
+ * modalidades— y ponerle una fecha de fin la convierte en una puntual con otro
+ * nombre.
+ *
+ * La base respalda las dos mitades con el CHECK
+ * `campanas_fecha_fin_por_modalidad`, pero sin esta validación el usuario vería
+ * un error de constraint de Postgres en lugar de una frase que se entienda.
+ *
+ * El parámetro `modalidad` es obligatorio a propósito: dejarlo opcional con
+ * default 'puntual' haría que un llamador nuevo que se olvide de pasarlo
+ * rechace en silencio todas las campañas de seguimiento. Que no compile es
+ * mejor que que falle callado.
  */
 export function validarFechasCampana(
   fechaInicio: string | null | undefined,
   fechaFin: string | null | undefined,
+  modalidad: Modalidad,
 ): FechasValidacion {
   const inicio = (fechaInicio ?? '').trim()
   const fin    = (fechaFin ?? '').trim()
+
+  if (modalidad === 'seguimiento') {
+    if (fin) {
+      return {
+        ok: false,
+        error: 'Una campaña de seguimiento no lleva fecha de cierre: es continua hasta que la cierres a mano.',
+      }
+    }
+    return { ok: true, error: null }
+  }
 
   if (!fin) {
     return { ok: false, error: 'La fecha de cierre es obligatoria: sin ella la campaña no termina nunca.' }

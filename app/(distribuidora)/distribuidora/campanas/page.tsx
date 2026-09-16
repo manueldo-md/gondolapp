@@ -40,7 +40,7 @@ export default async function CampanasPage() {
   const { data, error } = await admin
     .from('campanas')
     .select(`
-      id, nombre, tipo, estado, fecha_inicio, fecha_fin,
+      id, nombre, tipo, estado, fecha_inicio, fecha_fin, modalidad, visitas_por_semana,
       minimo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto,
       financiada_por, instruccion, actor_campana, created_at,
       marca:marcas ( razon_social )

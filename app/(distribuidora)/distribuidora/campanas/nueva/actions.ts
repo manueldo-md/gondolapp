@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
-import { validarFechasCampana } from '@/lib/campana-fechas'
+import { validarFechasCampana, type Modalidad } from '@/lib/campana-fechas'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -36,15 +36,41 @@ export async function crearCampanaInterna(formData: FormData) {
   )
   if (!chequeoMinimo.ok) return { error: chequeoMinimo.error! }
 
+  // La modalidad manda: define qué otros campos aplican. Cualquier valor que no
+  // sea 'seguimiento' cae a 'puntual', que es el default de la columna — el caso
+  // seguro, porque es el que más restricciones tiene.
+  const modalidad: Modalidad =
+    (formData.get('modalidad') as string) === 'seguimiento' ? 'seguimiento' : 'puntual'
+  const esSeguimiento = modalidad === 'seguimiento'
+
   // Las fechas también en el servidor: el formulario se puede eludir con un POST
   // directo. La base lo respalda con el CHECK campanas_fecha_fin_por_modalidad,
   // pero sin esto el usuario vería un error de constraint de Postgres en vez de
   // una frase que se entienda.
   const chequeoFechas = validarFechasCampana(
     formData.get('fecha_inicio') as string,
-    formData.get('fecha_fin') as string
+    formData.get('fecha_fin') as string,
+    modalidad
   )
   if (!chequeoFechas.ok) return { error: chequeoFechas.error! }
+
+  // Las visitas por semana son obligatorias en seguimiento y están prohibidas en
+  // puntual. Las dos mitades las respalda la base —
+  // campanas_frecuencia_solo_seguimiento y
+  // campanas_visitas_obligatorias_seguimiento— y acá se traducen a una frase.
+  //
+  // No es un campo más: en una campaña de seguimiento la frecuencia ES la
+  // definición. Sin ella el gondolero no sabe cada cuánto volver.
+  let visitasPorSemana: number | null = null
+  if (esSeguimiento) {
+    visitasPorSemana = parseInt(formData.get('visitas_por_semana') as string, 10)
+    if (!Number.isFinite(visitasPorSemana)) {
+      return { error: 'Indicá cuántas visitas por semana espera la campaña.' }
+    }
+    if (visitasPorSemana < 1 || visitasPorSemana > 14) {
+      return { error: 'Las visitas por semana tienen que estar entre 1 y 14.' }
+    }
+  }
 
   const { data: campana, error: errCampana } = await admin
     .from('campanas')
@@ -53,10 +79,15 @@ export async function crearCampanaInterna(formData: FormData) {
       tipo:                        'interna',
       instruccion:                 (formData.get('instruccion') as string) || null,
       puntos_por_mision:           parseInt(formData.get('puntos_por_mision') as string) || 0,
+      modalidad,
       fecha_inicio:                (formData.get('fecha_inicio') as string) || null,
-      fecha_fin:                   (formData.get('fecha_fin') as string) || null,
+      // En seguimiento se fuerzan a null en vez de confiar en que el formulario
+      // los haya limpiado: el POST se puede armar a mano, y acá un valor de más
+      // sería un error de constraint crudo en la cara del usuario.
+      fecha_fin:                   esSeguimiento ? null : ((formData.get('fecha_fin') as string) || null),
+      tope_total_comercios:        esSeguimiento ? null : (parseInt(formData.get('tope_total_comercios') as string) || null),
+      visitas_por_semana:          visitasPorSemana,
       minimo_comercios:            parseInt(formData.get('minimo_comercios') as string) || null,
-      tope_total_comercios:        parseInt(formData.get('tope_total_comercios') as string) || null,
       max_comercios_por_gondolero: parseInt(formData.get('max_comercios_por_gondolero') as string) || 20,
       min_comercios_para_cobrar:   parseInt(formData.get('min_comercios_para_cobrar') as string) || 3,
       distri_id:                   distriId,

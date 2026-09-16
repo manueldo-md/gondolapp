@@ -58,18 +58,33 @@ export function derivarAvance(params: {
   tope: number | null | undefined
   /** `campanas.estado` — el administrativo. */
   estadoCampana: string | null | undefined
+  /** `campanas.modalidad`. Ausente = 'puntual', que es el default de la columna. */
+  modalidad?: string | null
 }): Avance {
   const pdv    = params.pdvAprobados
   const minimo = params.minimo ?? null
   const tope   = params.tope ?? null
   const cerrada = CERRADAS.includes(params.estadoCampana ?? '')
+  const esSeguimiento = params.modalidad === 'seguimiento'
 
   const minimoAlcanzado = minimo !== null && pdv >= minimo
 
   // Sin mínimo no hay estado de avance: no se inventa uno. Las 19 campañas
   // anteriores al cambio caen acá y no muestran badge.
+  //
+  // Una campaña de SEGUIMIENTO viva tampoco tiene estado, por el mismo motivo.
+  // Los cuatro estados describen un recorrido hacia un final, y una campaña
+  // continua no lo tiene: sin tope —el CHECK lo prohíbe— 'completa' es
+  // inalcanzable, así que en cuanto pasa el mínimo se quedaría en 'parcial'
+  // para siempre. Y "Parcial" promete un final que no va a llegar.
+  //
+  // Cerrada sí: ahí ya no puede crecer y la pregunta "¿alcanzó el piso?" vuelve
+  // a tener respuesta. Por eso la condición es "seguimiento Y NO cerrada".
+  //
+  // Los números —pdv, denominador, porcentaje— se siguen calculando igual: lo
+  // que no aplica es la ETIQUETA, no la medición.
   let estado: EstadoAvance | null = null
-  if (minimo !== null) {
+  if (minimo !== null && !(esSeguimiento && !cerrada)) {
     if (cerrada) {
       // Una campaña cerrada ya no puede crecer, así que no tiene sentido que
       // quede "parcial": o cumplió el piso o no lo cumplió.

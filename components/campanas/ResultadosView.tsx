@@ -40,6 +40,10 @@ export interface ResultadosViewCampana {
   nombre: string
   tipo: string
   fecha_fin: string | null
+  /** 'puntual' o 'seguimiento'. Sin ella, derivarAvance asume puntual. */
+  modalidad?: string | null
+  /** Solo en seguimiento: visitas esperadas por comercio por semana. */
+  visitas_por_semana?: number | null
   /** El administrativo: activa, cerrada, pausada… Distinto del de avance. */
   estado: string | null
   /** Piso de representatividad. `null` en las campañas anteriores al cambio. */
@@ -144,6 +148,8 @@ function ContextoRelevamiento({
   pdvRelevados,
   ventana,
   dias,
+  seguimiento,
+  visitasPorSemana,
   enRevision,
 }: {
   ciudades: number
@@ -153,6 +159,10 @@ function ContextoRelevamiento({
   pdvRelevados: number
   ventana: { desde: string | null; hasta: string | null }
   dias: number | null
+  /** Campaña de modalidad 'seguimiento': no tiene plazo, por diseño. */
+  seguimiento: boolean
+  /** Visitas esperadas por comercio por semana. Solo en seguimiento. */
+  visitasPorSemana: number | null
   /** PDV que todavía no tienen ninguna misión aprobada. */
   enRevision: number
 }) {
@@ -215,7 +225,20 @@ function ContextoRelevamiento({
       </span>
     )
   }
-  if (dias !== null) {
+  // Una campaña de seguimiento no tiene plazo por diseño. Se dice, no se omite:
+  // el hueco se lee como una fecha que falta cargar. Y la frecuencia es el dato
+  // que la define, así que va acá y no escondida en la configuración.
+  if (seguimiento) {
+    partes.push(
+      <span key="continua" className="flex items-center gap-1">
+        <Clock size={12} className="shrink-0" />
+        Continua
+        {visitasPorSemana
+          ? ` · ${visitasPorSemana} ${visitasPorSemana === 1 ? 'visita' : 'visitas'}/semana`
+          : ''}
+      </span>
+    )
+  } else if (dias !== null) {
     partes.push(
       <span key="dias" className={`flex items-center gap-1 ${dias <= 3 ? 'text-red-500 font-medium' : ''}`}>
         <Clock size={12} className="shrink-0" />
@@ -278,6 +301,7 @@ export function ResultadosView({
     minimo:        campana.minimo_comercios,
     tope:          campana.tope_total_comercios,
     estadoCampana: campana.estado,
+    modalidad:     campana.modalidad,
   })
 
   // Tres tiles de apoyo, no siete. "Fotos aprobadas" desaparece en campañas
@@ -400,6 +424,8 @@ export function ResultadosView({
         pdvRelevados={pdvRelevados}
         ventana={ventana}
         dias={dias}
+        seguimiento={campana.modalidad === 'seguimiento'}
+        visitasPorSemana={campana.visitas_por_semana ?? null}
         enRevision={pdvEnRevision}
       />
 

@@ -46,7 +46,11 @@ export async function crearCampana(formData: FormData) {
   // una frase que se entienda.
   const chequeoFechas = validarFechasCampana(
     formData.get('fecha_inicio') as string,
-    formData.get('fecha_fin') as string
+    formData.get('fecha_fin') as string,
+    // Este editor no ofrece modalidad, así que solo crea campañas puntuales. La
+    // columna tiene DEFAULT 'puntual', y acá se dice explícito para que quede
+    // claro que es una decisión y no un olvido.
+    'puntual'
   )
   if (!chequeoFechas.ok) return { error: chequeoFechas.error! }
 

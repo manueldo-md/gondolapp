@@ -34,6 +34,8 @@ export interface CampanaCardData {
   puntos_por_foto: number
   puntos_por_mision: number
   fecha_fin: string | null
+  modalidad: string | null
+  visitas_por_semana: number | null
   fecha_limite_inscripcion: string | null
   minimo_comercios: number | null
   tope_total_comercios: number | null
@@ -94,6 +96,7 @@ function CampanaCard({
 }) {
   const participando = participacionEstado === 'activa'
   const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
+  const esSeguimiento = campana.modalidad === 'seguimiento'
   const progreso = calcularPorcentaje(campana.comercios_relevados, campana.minimo_comercios ?? 0)
   const cantFotos = campana.bloques_foto.reduce(
     (acc, b) => acc + b.bloque_campos.filter(c => c.tipo === 'foto').length,
@@ -200,14 +203,27 @@ function CampanaCard({
             {formatearPuntos(campana.puntos_por_mision > 0 ? campana.puntos_por_mision : campana.puntos_por_foto)} pts/misión
           </span>
         </div>
-        {dias !== null && (
+        {/* En seguimiento no hay cuenta regresiva: la campaña es continua. Lo
+            que el gondolero necesita saber es cada cuánto volver, así que va la
+            frecuencia en el lugar donde iría el plazo. Omitirlo dejaba la
+            tarjeta sin ninguna señal de que es una campaña distinta. */}
+        {esSeguimiento ? (
+          <div className="flex items-center gap-1.5">
+            <Clock size={14} className="text-gray-400" />
+            <span className="text-sm font-medium text-gray-500">
+              {campana.visitas_por_semana
+                ? `${campana.visitas_por_semana} ${campana.visitas_por_semana === 1 ? 'visita' : 'visitas'}/semana`
+                : 'Continua'}
+            </span>
+          </div>
+        ) : dias !== null ? (
           <div className="flex items-center gap-1.5">
             <Clock size={14} className="text-gray-400" />
             <span className={`text-sm font-medium ${dias <= 3 ? 'text-red-500' : 'text-gray-500'}`}>
               {dias === 0 ? 'Último día' : `${dias} días`}
             </span>
           </div>
-        )}
+        ) : null}
         {cantFotos > 0 && (
           <div className="flex items-center gap-1.5">
             <Camera size={14} className="text-gray-400" />

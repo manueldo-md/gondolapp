@@ -17,6 +17,8 @@ export interface CampanaFiltroRow {
   estado: EstadoCampana
   fecha_inicio: string | null
   fecha_fin: string | null
+  modalidad: string | null
+  visitas_por_semana: number | null
   minimo_comercios: number | null
   tope_total_comercios: number | null
   /** PDV con al menos una misión aprobada. Sale de una sola query agregada. */
@@ -112,11 +114,14 @@ function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; dis
 
   // Estado de avance del relevamiento, derivado. Responde "¿sirve?", que es
   // otra pregunta que el estado administrativo de al lado.
+  const esSeguimiento = campana.modalidad === 'seguimiento'
+
   const avance = derivarAvance({
     pdvAprobados:  campana.pdvAprobados,
     minimo:        campana.minimo_comercios,
     tope:          campana.tope_total_comercios,
     estadoCampana: campana.estado,
+    modalidad:     campana.modalidad,
   })
 
   return (
@@ -147,14 +152,29 @@ function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; dis
           </div>
           <h3 className="font-semibold text-gray-900 text-base mb-3">{campana.nombre}</h3>
           <div className="flex items-center gap-5 text-xs text-gray-500 flex-wrap">
-            {dias !== null && (
+            {/* Una campaña de seguimiento no tiene plazo POR DISEÑO, así que se
+                dice — no se omite. Omitirlo dejaba el mismo hueco que el chip de
+                geografía: se lee como "le falta cargar la fecha" en vez de
+                "no lleva fecha". Y de paso entra la frecuencia, que es el dato
+                que define la campaña y no aparecía en ningún lado. */}
+            {esSeguimiento ? (
+              <div className="flex items-center gap-1">
+                <Clock size={12} />
+                <span>
+                  Continua
+                  {campana.visitas_por_semana
+                    ? ` · ${campana.visitas_por_semana} ${campana.visitas_por_semana === 1 ? 'visita' : 'visitas'}/semana`
+                    : ''}
+                </span>
+              </div>
+            ) : dias !== null ? (
               <div className="flex items-center gap-1">
                 <Clock size={12} />
                 <span className={dias <= 3 ? 'text-red-500 font-medium' : ''}>
                   {dias === 0 ? 'Último día' : `${dias} días restantes`}
                 </span>
               </div>
-            )}
+            ) : null}
             {/* El denominador es el tope, no el mínimo: "56 / 40" era un 140%
                 dibujado como 100%. Sin tope y por encima del mínimo no hay
                 contra qué medir, así que va el absoluto con el visto. */}
@@ -221,7 +241,21 @@ export function CampanasFiltro({ campanas, distriNombre }: { campanas: CampanaFi
   const hayFiltros = filtroTipo || filtroActor || filtroDesde || filtroHasta
 
   const pendientes = filtradas.filter(c => c.estado === 'pendiente_aprobacion').sort((a, b) => a.created_at.localeCompare(b.created_at))
-  const activas    = filtradas.filter(c => c.estado === 'activa').sort((a, b) => { if (!a.fecha_fin) return 1; if (!b.fecha_fin) return -1; return a.fecha_fin.localeCompare(b.fecha_fin) })
+  // Las activas se ordenan por cercanía del cierre: primero lo que vence antes.
+  //
+  // Las de SEGUIMIENTO no tienen cierre y antes caían al final por el
+  // `if (!a.fecha_fin) return 1`. Eso escondía justamente la campaña que más
+  // atención necesita: la permanente, la que se está ejecutando todas las
+  // semanas. Ahora van PRIMERO, y entre ellas por fecha de creación.
+  const activas = filtradas.filter(c => c.estado === 'activa').sort((a, b) => {
+    const aSeg = a.modalidad === 'seguimiento'
+    const bSeg = b.modalidad === 'seguimiento'
+    if (aSeg !== bSeg) return aSeg ? -1 : 1
+    if (aSeg && bSeg) return b.created_at.localeCompare(a.created_at)
+    if (!a.fecha_fin) return 1
+    if (!b.fecha_fin) return -1
+    return a.fecha_fin.localeCompare(b.fecha_fin)
+  })
   const borradores = filtradas.filter(c => c.estado === 'borrador').sort((a, b) => b.created_at.localeCompare(a.created_at))
   const cerradas   = filtradas.filter(c => ['cerrada', 'cancelada', 'pausada'].includes(c.estado)).sort((a, b) => b.created_at.localeCompare(a.created_at))
 

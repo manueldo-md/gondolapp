@@ -2740,3 +2740,24 @@ juntos —canje + débito, aprobación + acreditación—: **una función SQL qu
 las dos cosas en una transacción**. Elimina la clase de problema en vez de
 angostar la ventana. Hay precedente de RPC en el repo
 (`backfill_codigos_gondolero`, `incrementar_puntos`).
+
+### Pendiente — una campaña de seguimiento cerrada no se va nunca de "finalizadas"
+
+La sección "Campañas finalizadas" del panel del gondolero
+(`app/(gondolero)/gondolero/campanas/page.tsx`) corta a los 90 días **medidos
+desde `fecha_fin`**, y tiene esta guarda:
+
+```ts
+!c.fecha_fin || ahora - new Date(c.fecha_fin).getTime() <= NOVENTA_DIAS_MS
+```
+
+Sin `fecha_fin` → se muestra siempre. Eso está bien para una puntual antigua sin
+fecha, pero una campaña de **seguimiento** nunca tiene `fecha_fin` por diseño:
+una vez cerrada a mano, le va a seguir apareciendo al gondolero **para siempre**.
+
+No es urgente —con pocas campañas no molesta— pero acumula. Para arreglarlo hace
+falta saber **cuándo se cerró efectivamente**, que es un dato que hoy no existe:
+`fecha_fin` es la fecha *planificada* de vencimiento, no la de cierre real. Ya
+está anotado como limitación en el comentario de esa función. La solución
+probablemente sea una columna `cerrada_at` que se escriba al pasar a 'cerrada',
+y entonces el corte de 90 días se mide sobre eso en las dos modalidades.

@@ -8,6 +8,24 @@ import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campo
 import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
 
+/**
+ * Las dos modalidades. El texto de ayuda importa: la diferencia no es evidente
+ * desde el nombre, y elegir mal no se puede deshacer — el trigger
+ * `campanas_modalidad_inmutable` impide cambiarla una vez que hay misiones.
+ */
+const MODALIDADES: { value: 'puntual' | 'seguimiento'; label: string; ayuda: string }[] = [
+  {
+    value: 'puntual',
+    label: 'Puntual',
+    ayuda: 'Cada comercio se releva una sola vez. Termina en una fecha.',
+  },
+  {
+    value: 'seguimiento',
+    label: 'Seguimiento',
+    ayuda: 'Los mismos comercios se visitan cada semana. No termina sola.',
+  },
+]
+
 export default function NuevaCampanaPage() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -22,8 +40,10 @@ export default function NuevaCampanaPage() {
     instruccion:                 '',
     tipo_contenido:              'propios',
     puntos_por_mision:           '50',
+    modalidad:                   'puntual',
     fecha_inicio:                '',
     fecha_fin:                   '',
+    visitas_por_semana:          '',
     minimo_comercios:            '',
     tope_total_comercios:        '',
     max_comercios_por_gondolero: '20',
@@ -35,16 +55,49 @@ export default function NuevaCampanaPage() {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }))
 
+  const esSeguimiento = form.modalidad === 'seguimiento'
+
+  /**
+   * Cambiar de modalidad LIMPIA los campos de la otra.
+   *
+   * No es cosmético: los campos escondidos siguen en el estado y el submit
+   * serializa el objeto entero con `Object.entries(form)`. Si alguien carga una
+   * fecha de cierre, cambia a seguimiento y envía, la fecha viaja igual y la
+   * rechaza el CHECK de Postgres con un error que no se entiende. Limpiar acá
+   * hace que lo que se ve sea lo que se manda.
+   */
+  const setModalidad = (modalidad: 'puntual' | 'seguimiento') =>
+    setForm(p => ({
+      ...p,
+      modalidad,
+      fecha_fin:            modalidad === 'seguimiento' ? '' : p.fecha_fin,
+      tope_total_comercios: modalidad === 'seguimiento' ? '' : p.tope_total_comercios,
+      visitas_por_semana:   modalidad === 'puntual'     ? '' : p.visitas_por_semana,
+    }))
+
   // El minimo es obligatorio y no puede superar el tope. La regla vive en
   // lib/campana-minimo.ts porque los tres editores estan duplicados.
+  // Sigue siendo obligatorio en seguimiento: sin tope y sin fecha de cierre, es
+  // la unica referencia que le queda a la campana para medirse.
   const minimoCheck = validarMinimoComercios(form.minimo_comercios, form.tope_total_comercios)
   const minimoError = form.minimo_comercios.trim() !== '' && !minimoCheck.ok ? minimoCheck.error : null
+
+  const visitasNum = parseInt(form.visitas_por_semana, 10)
+  const visitasError = esSeguimiento && form.visitas_por_semana.trim() !== ''
+    && (!Number.isFinite(visitasNum) || visitasNum < 1 || visitasNum > 14)
+    ? 'Las visitas por semana tienen que estar entre 1 y 14.'
+    : null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
     if (form.nombre.trim().length < 3) { setErrorMsg('El nombre debe tener al menos 3 caracteres.'); return }
     if (campos.length === 0) { setErrorMsg('El bloque debe tener al menos un campo configurado.'); return }
+    if (esSeguimiento && !form.visitas_por_semana.trim()) {
+      setErrorMsg('Indicá cuántas visitas por semana espera la campaña.')
+      return
+    }
+    if (visitasError) { setErrorMsg(visitasError); return }
 
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => fd.set(k, v))
@@ -161,6 +214,28 @@ export default function NuevaCampanaPage() {
             </div>
           </div>
 
+          {/* Modalidad — define qué otros campos aplican, así que va antes que ellos */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Modalidad</label>
+            <div className="grid grid-cols-2 gap-2">
+              {MODALIDADES.map(m => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setModalidad(m.value)}
+                  className={`text-left px-3 py-3 rounded-xl border transition-colors ${
+                    esSeguimiento === (m.value === 'seguimiento')
+                      ? 'bg-gondo-amber-50 border-gondo-amber-400 text-gondo-amber-400'
+                      : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">{m.label}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">{m.ayuda}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Fechas */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -172,20 +247,57 @@ export default function NuevaCampanaPage() {
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
               />
             </div>
+            {/* La fecha de cierre no aplica en seguimiento: la campaña es continua.
+                El lugar no queda vacío —se explica por qué no está— porque un
+                hueco se lee como un campo que falta cargar. */}
+            {esSeguimiento ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1.5">Fecha de cierre</label>
+                <div className="w-full px-3 py-2.5 border border-dashed border-gray-200 rounded-lg text-sm text-gray-400 bg-gray-50">
+                  Sin cierre — es continua
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Fecha de cierre <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  min={form.fecha_inicio || undefined}
+                  value={form.fecha_fin}
+                  onChange={set('fecha_fin')}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Visitas por semana — solo seguimiento, y ahí es obligatoria.
+              Es la definición de la campaña: sin frecuencia, el gondolero no
+              sabe cada cuánto volver ni la marca qué esperar. */}
+          {esSeguimiento && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Fecha de cierre <span className="text-red-500">*</span>
+                Visitas por semana <span className="text-red-500">*</span>
               </label>
               <input
-                type="date"
+                type="number"
                 required
-                min={form.fecha_inicio || undefined}
-                value={form.fecha_fin}
-                onChange={set('fecha_fin')}
+                min={1}
+                max={14}
+                value={form.visitas_por_semana}
+                onChange={set('visitas_por_semana')}
+                placeholder="Ej: 2"
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
               />
+              <p className="text-xs text-gray-400 mt-1">
+                Cuántas veces se espera visitar cada comercio por semana, de lunes a domingo. Entre 1 y 14.
+              </p>
+              {visitasError && <p className="text-xs text-red-600 mt-1">{visitasError}</p>}
             </div>
-          </div>
+          )}
 
           {/* Mínimo de comercios — el piso de representatividad */}
           <div>
@@ -207,21 +319,26 @@ export default function NuevaCampanaPage() {
             {minimoError && <p className="text-xs text-red-600 mt-1">{minimoError}</p>}
           </div>
 
-          {/* Tope global de comercios */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Tope global de comercios <span className="text-gray-400 font-normal">(opcional)</span>
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={form.tope_total_comercios}
-              onChange={set('tope_total_comercios')}
-              placeholder="Ej: 50"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
-            />
-            <p className="text-xs text-gray-400 mt-1">Al alcanzarlo, la campaña se cierra automáticamente. Dejá vacío para sin límite.</p>
-          </div>
+          {/* Tope global de comercios — no aplica en seguimiento: el tope existe
+              para cerrar la campaña sola al llegar a N comercios, y una campaña
+              continua no se cierra sola. Lo prohíbe el CHECK
+              campanas_tope_solo_puntual. */}
+          {!esSeguimiento && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Tope global de comercios <span className="text-gray-400 font-normal">(opcional)</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={form.tope_total_comercios}
+                onChange={set('tope_total_comercios')}
+                placeholder="Ej: 50"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
+              />
+              <p className="text-xs text-gray-400 mt-1">Al alcanzarlo, la campaña se cierra automáticamente. Dejá vacío para sin límite.</p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
