@@ -14,6 +14,7 @@ import {
 import { registrarChecksGPSInterno } from './actions-checks'
 import { resolverMisionDirecta } from '@/lib/misiones'
 import { sincronizarComerciosRelevados } from '@/lib/comercios-relevados'
+import { puedeRegistrarMision } from '@/lib/campana-vigencia'
 import { calcularDistanciaMetros } from '@/lib/utils'
 
 // Los radios viven en lib/gps-radios.ts: el de bloqueo lo usan también el paso
@@ -97,6 +98,18 @@ export interface RegistrarMisionParams {
    */
   desdeCola?: boolean
   /**
+   * Epoch ms de cuándo el gondolero CAPTURÓ la misión, no de cuándo llegó.
+   *
+   * Para envíos en vivo es ~ahora; para los de la cola es `guardadaAt` de la
+   * entry de IDB. Lo usa el gate de vencimiento: quien capturó dentro del plazo
+   * y sincronizó después hizo el trabajo en plazo, y rechazarlo sería el mismo
+   * castigo tardío que ya sacamos del bloqueo por distancia.
+   *
+   * Hace falta como campo propio porque una misión de solo preguntas no tiene
+   * fotos, y el único timestamp de dispositivo del payload vive dentro de ellas.
+   */
+  capturadoAt?: number
+  /**
    * UUID generado en el cliente al guardar la misión en IDB offline.
    * Garantiza idempotencia: si el envío se reintenta (fallo de red + app reabierta),
    * el servidor devuelve la misión ya registrada sin crear un duplicado.
@@ -125,7 +138,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // Verificar que la campaña existe y está activa
   const { data: campana, error: campanaErr } = await db0
     .from('campanas')
-    .select('id, estado, nombre, max_comercios_por_gondolero, tope_total_comercios, comercios_relevados, distri_id, marca_id, min_comercios_para_cobrar')
+    .select('id, estado, nombre, fecha_fin, max_comercios_por_gondolero, tope_total_comercios, comercios_relevados, distri_id, marca_id, min_comercios_para_cobrar')
     .eq('id', params.campanaId)
     .single()
 
@@ -134,6 +147,34 @@ export async function registrarMision(params: RegistrarMisionParams) {
   }
   if (campana.estado !== 'activa') {
     throw new Error('La campaña no está activa.')
+  }
+
+  // ── Gate de vencimiento ─────────────────────────────────────────────────────
+  // Hasta el 16/9/2026 esto no se chequeaba: `estado` es administrativo y nada
+  // lo cierra por fecha, así que un gondolero podía relevar hoy para una campaña
+  // vencida en abril y cobrar.
+  //
+  // Se juzga por el momento de CAPTURA y no por el de llegada: quien capturó el
+  // último día válido y sincronizó dos días después hizo el trabajo en plazo.
+  // Rechazarlo sería el mismo castigo tardío que ya sacamos del bloqueo por
+  // distancia y del rechazo por comercio duplicado.
+  const vigencia = puedeRegistrarMision({
+    fechaFin:    campana.fecha_fin,
+    capturadoAt: params.capturadoAt,
+  })
+  if (!vigencia.ok) {
+    console.warn('[registrarMision] rechazada por vigencia', {
+      campanaId: params.campanaId,
+      fechaFin: campana.fecha_fin,
+      capturadoAt: params.capturadoAt,
+      desdeCola: params.desdeCola ?? false,
+      motivo: vigencia.motivo,
+    })
+    throw new Error(
+      vigencia.motivo === 'vencida'
+        ? `Esta campaña terminó el ${campana.fecha_fin} y ya no acepta misiones. Fijate en las campañas disponibles si hay otra activa.`
+        : 'Esta misión quedó demasiado tiempo sin enviarse y la campaña ya terminó. No se puede registrar.'
+    )
   }
 
   // Admin client para tablas con RLS restringida a service_role.

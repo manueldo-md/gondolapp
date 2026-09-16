@@ -1656,6 +1656,9 @@ function CapturaContent() {
         ],
         respuestasDirectas: respuestasDirectasCombinadas,
         idempotenciaKey: idempotenciaKey || undefined,
+        // Envío en vivo: la captura es ahora. Va explícito igual para que el
+        // servidor no tenga que asumirlo.
+        capturadoAt: Date.now(),
       })
 
       // Misión registrada — borrar de IDB (best-effort: si falla, el reintento será idempotente)

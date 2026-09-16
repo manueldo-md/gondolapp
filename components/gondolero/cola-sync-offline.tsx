@@ -153,6 +153,10 @@ export async function procesarColaOffline(fromBackoff = false) {
           // desde la cola se marca en vez de rechazar, porque el gondolero
           // validó contra las coordenadas cacheadas y pueden haber cambiado.
           desdeCola: true,
+          // Cuándo se capturó, no cuándo llega. El gate de vencimiento juzga por
+          // esto: una misión hecha el último día válido que sincroniza dos días
+          // después es trabajo en plazo.
+          capturadoAt: mision.guardadaAt,
         })
 
         // ── Éxito ───────────────────────────────────────────────────────────

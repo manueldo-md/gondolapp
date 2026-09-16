@@ -2022,6 +2022,73 @@ existía**.
 Producción no quedó afectada porque allá el backfill fue la única fuente.
 Limpiado en dev con un `DELETE` que conserva la fila más vieja de cada par.
 
+### Pendiente — conectar los schemas de Zod que nadie llama
+
+Detectado el 16/9/2026 rastreando por qué había campañas sin `fecha_fin` aunque
+`schemaCampanaPaso2` la declara obligatoria.
+
+**`zodResolver` aparece dos veces en todo el repo, las dos en
+`app/auth/page.tsx`.** Ese es además el único archivo que importa de
+`lib/validations`. Las server actions leen `formData` crudo y castean con `as`,
+que no valida nada en runtime.
+
+O sea que el patrón que la sección 7 de este mismo documento declara estándar
+del proyecto —React Hook Form + Zod con `zodResolver`— corre en **una** pantalla.
+
+**Siete de los nueve schemas están muertos.** Lo que cada uno deja de validar:
+
+| Schema | Qué no se valida hoy |
+|---|---|
+| `schemaComercio` | Nombre 2-100, **lat −90..90, lng −180..180**, tipo del enum |
+| `schemaCampanaPaso1` | Nombre 3-100, instrucción 10-500, puntos 0-10.000 / 0-100.000, al menos una zona, al menos un bloque |
+| `schemaCampanaPaso2` | Las tres fechas obligatorias, **fin > inicio**, **límite ≤ fin**, **mínimo ≤ máximo** |
+| `schemaDeclaracion` | Enum de declaración, precio > 0 |
+| `schemaCanje` | Premio del enum, puntos entero > 0 — **redundante, ver abajo** |
+| `schemaPerfil` | Nombre 2-100, formato de celular |
+| `schemaEmpresa` | Razón social 2-150, **formato de CUIT** |
+
+`schemaLogin` y `schemaRegistro` sí corren.
+
+**`schemaCanje` es el único que no hace falta conectar:** `solicitarCanje` no
+recibe los puntos —salen de la constante `COSTO_CANJE` del servidor— y la tabla
+`canjes` ya tiene `CHECK (premio IN (...))` y `CHECK (puntos > 0)` desde el
+schema inicial. Está cubierto dos veces.
+
+**Los dos que más pesan** son `schemaComercio` (valida lat/lng, y venimos de dos
+días arreglando comercios mal ubicados que nadie podía alcanzar) y los dos
+`refine` de fechas de `schemaCampanaPaso2`, que hoy permiten crear una campaña
+con fin anterior al inicio.
+
+**Por qué no se hizo junto con la fecha:** conectar un schema activa TODAS sus
+reglas de golpe, y no se sabe qué formularios que hoy pasan dejarían de pasar
+hasta probarlos uno por uno. Siete schemas por tres editores duplicados es
+superficie que no se puede verificar en una sesión. La obligatoriedad de
+`fecha_fin` se resolvió aparte, con validación explícita.
+
+**Ojo con el orden cuando se agarre:** los formularios de campaña están
+duplicados en tres rutas (ver "Deuda conocida"). Conectar los schemas sin
+unificarlos antes es escribir la misma conexión tres veces.
+
+### Pendiente — `solicitarCanje` escribe el saldo dos veces
+
+`app/(gondolero)/gondolero/perfil/actions.ts` inserta el movimiento de débito
+—que dispara el trigger `on_movimiento_puntos`, el cual ya descuenta— y
+**además** hace un `UPDATE` manual sobre `profiles.puntos_disponibles`.
+
+No es doble cobro: el update manual escribe un valor absoluto calculado sobre la
+lectura previa, y coincide con lo que dejó el trigger. Pero es una **lectura
+perdida** esperando ocurrir:
+
+> Gondolero con 1000 puntos pide un canje de 300. Entre la lectura y el update
+> manual, se le acredita una misión de 500. El trigger deja 1200. El update
+> manual escribe 1000 − 300 = 700. **Los 500 acreditados desaparecen.**
+
+La ventana es corta pero las aprobaciones se hacen en lote desde el panel, que es
+exactamente cuando se acredita a varios gondoleros a la vez.
+
+El arreglo es borrar el `UPDATE` manual: el trigger es el escritor único de
+`puntos_disponibles`. Detectado el 16/9/2026.
+
 ### Pendiente — borrar `campanas.comercios_relevados`
 
 **La columna no debería existir.** `lib/campana-avance.ts` la cita como EL
