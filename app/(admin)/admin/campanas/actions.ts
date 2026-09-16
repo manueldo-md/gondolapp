@@ -5,6 +5,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { crearNotificacionMarca } from '@/lib/notificaciones'
+import { destrabarMisiones } from '@/lib/misiones-trabadas'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -152,4 +153,32 @@ export async function pedirCambiosCampanaPendiente(campanaId: string, motivo?: s
   }
 
   revalidatePath('/admin/campanas')
+}
+
+/**
+ * Reintenta la aprobación de las misiones survey-only que quedaron trabadas.
+ * La lógica vive en lib/misiones-trabadas.ts; acá solo va la autenticación.
+ *
+ * Devuelve la forma de ResultadoBackfill, para compartir el botón con
+ * "Asignar alias" y "Asignar códigos": asignados y fallidos por separado.
+ */
+export async function destrabarMisionesTrabadas(): Promise<{
+  asignados: number
+  fallidos: number
+  detalle: string[]
+  error?: string
+}> {
+  const admin = await getAdmin()
+  try {
+    const res = await destrabarMisiones(admin)
+    revalidatePath('/admin/campanas')
+    return { asignados: res.resueltas, fallidos: res.fallidas, detalle: res.detalle }
+  } catch (err) {
+    return {
+      asignados: 0,
+      fallidos: 0,
+      detalle: [],
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
 }

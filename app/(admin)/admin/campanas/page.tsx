@@ -10,6 +10,8 @@ import {
 import type { TipoCampana, EstadoCampana, FinanciadaPor } from '@/types'
 import { CampanaAccionesAdmin } from './campana-acciones'
 import { SeccionColapsable } from '@/components/campanas/seccion-colapsable'
+import { DestrabarMisionesBtn } from './destrabar-misiones-btn'
+import { listarMisionesTrabadas } from '@/lib/misiones-trabadas'
 
 function adminClient() {
   return createAdminClient(
@@ -136,6 +138,12 @@ function CampanaTable({ campanas }: { campanas: CampanaAdmin[] }) {
 export default async function CampanasAdminPage() {
   const admin = adminClient()
 
+  // Misiones survey-only que quedaron sin aprobar. El contador del botón es el
+  // único lugar donde este fallo se ve: `resolverMisionDirecta` no puede
+  // avisarle a nadie —corre durante una captura, sin pantalla de admin
+  // delante— así que si no se cuenta acá, no se entera nadie.
+  const misionesTrabadas = await listarMisionesTrabadas(admin)
+
   const { data: campanasRaw } = await admin
     .from('campanas')
     .select(`
@@ -176,12 +184,15 @@ export default async function CampanasAdminPage() {
           <h1 className="text-xl font-bold text-gray-900">Campañas</h1>
           <p className="text-sm text-gray-500 mt-0.5">{campanas.length} campañas</p>
         </div>
-        <Link
-          href="/admin/campanas/nueva"
-          className="flex items-center gap-2 px-4 py-2 bg-[#1E1B4B] text-white text-sm font-semibold rounded-xl hover:bg-[#2d2a6e] transition-colors"
-        >
-          + Nueva campaña
-        </Link>
+        <div className="flex items-center gap-2">
+          <DestrabarMisionesBtn pendientes={misionesTrabadas.length} />
+          <Link
+            href="/admin/campanas/nueva"
+            className="flex items-center gap-2 px-4 py-2 bg-[#1E1B4B] text-white text-sm font-semibold rounded-xl hover:bg-[#2d2a6e] transition-colors"
+          >
+            + Nueva campaña
+          </Link>
+        </div>
       </div>
 
       <div className="space-y-4">

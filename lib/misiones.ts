@@ -31,8 +31,10 @@
  * pasar de largo. Es el caso de un `resolverMisionDirecta` que falló —traga los
  * errores con un console.error— o de un insert de fotos que no llegó a
  * ejecutarse. En dev hay 3 así (16/9/2026). Antes la barrida indiscriminada las
- * rescataba por accidente; con el filtro puesto, no cobran nunca. Necesitan una
- * decisión aparte: no hay forma de resolverlas desde acá.
+ * rescataba por accidente; con el filtro puesto, no cobran nunca.
+ *
+ * Se reparan desde afuera: `lib/misiones-trabadas.ts` las detecta y reintenta
+ * `aprobarMisionCore`, con el botón "Destrabar misiones" de /admin/campanas.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -44,7 +46,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * de misiones para cobrar. Compartido entre Caso A y Caso B.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function aprobarMisionCore(params: {
+export async function aprobarMisionCore(params: {
   misionId: string
   gondoleroId: string
   campanaId: string
