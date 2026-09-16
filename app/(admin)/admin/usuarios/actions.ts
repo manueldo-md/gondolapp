@@ -124,37 +124,59 @@ export async function editarPerfilAdmin(
  * Asigna alias únicos a todos los gondoleros que aún no tienen uno.
  * Retorna la cantidad de aliases asignados.
  */
-export async function asignarAliasExistentes(): Promise<{ asignados: number; error?: string }> {
+/**
+ * Asigna alias a gondoleros y fixers que no tengan uno.
+ *
+ * Reporta asignados y fallidos POR SEPARADO: la versión anterior contaba solo
+ * los éxitos y descartaba los errores en un `catch` vacío, así que una corrida
+ * que arreglaba la mitad decía "12 asignados" y los otros 12 no aparecían en
+ * ningún lado. Mismo criterio que asignarCodigosExistentes.
+ */
+export async function asignarAliasExistentes(): Promise<{
+  asignados: number
+  fallidos: number
+  detalle: string[]
+  error?: string
+}> {
   const admin = await getAdmin()
 
   // Obtener todos los gondoleros y fixers sin alias
   const { data: gondoleros, error } = await admin
     .from('profiles')
-    .select('id')
+    .select('id, nombre')
     .in('tipo_actor', ['gondolero', 'fixer'])
     .is('alias', null)
 
-  if (error) return { asignados: 0, error: error.message }
-  if (!gondoleros || gondoleros.length === 0) return { asignados: 0 }
+  if (error) return { asignados: 0, fallidos: 0, detalle: [], error: error.message }
+  if (!gondoleros || gondoleros.length === 0) return { asignados: 0, fallidos: 0, detalle: [] }
 
   let asignados = 0
+  const detalle: string[] = []
 
-  // Asignar alias a cada gondolero secuencialmente para garantizar unicidad
+  // Secuencial a propósito: generarAlias mira los alias ya escritos para evitar
+  // repetidos, así que en paralelo dos perfiles podrían llevarse el mismo.
   for (const gondolero of gondoleros) {
+    const etiqueta = gondolero.nombre || gondolero.id
     try {
       const alias = await generarAlias(admin)
       const { error: updateError } = await admin
         .from('profiles')
         .update({ alias })
         .eq('id', gondolero.id)
-      if (!updateError) asignados++
-    } catch {
-      // Continuar con el siguiente si falla uno
+      if (updateError) {
+        detalle.push(etiqueta)
+        console.error('[asignarAliasExistentes] %s: %s', etiqueta, updateError.message)
+      } else {
+        asignados++
+      }
+    } catch (e) {
+      detalle.push(etiqueta)
+      console.error('[asignarAliasExistentes] %s: %s', etiqueta, e instanceof Error ? e.message : String(e))
     }
   }
 
   revalidatePath('/admin/usuarios')
-  return { asignados }
+  return { asignados, fallidos: detalle.length, detalle }
 }
 
 /**
