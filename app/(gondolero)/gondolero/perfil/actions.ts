@@ -43,22 +43,60 @@ export async function solicitarCanje(premio: TipoPremio) {
   }
 
   // Insertar canje
-  const { error: errCanje } = await admin.from('canjes').insert({
+  const { data: canjeCreado, error: errCanje } = await admin.from('canjes').insert({
     gondolero_id: user.id,
     premio,
     puntos,
     estado: 'pendiente',
-  })
+  }).select('id').single()
 
   if (errCanje) return { error: 'No se pudo registrar el canje. Intentá de nuevo.' }
 
-  // Registrar movimiento débito
-  await admin.from('movimientos_puntos').insert({
+  // Registrar movimiento débito.
+  //
+  // EL ERROR SE CHEQUEA, y no es opcional. supabase-js no lanza ante un error de
+  // Postgres: lo devuelve en `.error`. Hasta el 16/9/2026 este insert no lo
+  // miraba, así que si el débito fallaba el canje quedaba registrado y el
+  // gondolero conservaba los puntos. Premio gratis, sin ninguna traza.
+  //
+  // Es el único débito de todo el repo, y por eso es el que se arregló primero:
+  // un crédito que falla lo reclama el gondolero y se descubre; un débito que
+  // falla no lo reclama nadie.
+  const { error: errDebito } = await admin.from('movimientos_puntos').insert({
     gondolero_id: user.id,
     tipo:    'debito',
     monto:   puntos,
     concepto: `Canje solicitado: ${premio.replace(/_/g, ' ')}`,
   })
+
+  if (errDebito) {
+    // Se deshace el canje: sin el débito, el premio queda pedido y los puntos
+    // sin descontar. El orden es este —canje primero, débito después— para que
+    // el caso inverso no ocurra nunca: nadie queda debitado por un premio que no
+    // se registró.
+    const { error: errRollback } = await admin
+      .from('canjes')
+      .delete()
+      .eq('id', canjeCreado.id)
+
+    if (errRollback) {
+      // Doble falla: el canje existe y nadie pagó por él. Es lo único que este
+      // camino no puede reparar solo, y por eso grita.
+      console.error(
+        '[solicitarCanje] CANJE SIN DÉBITO — revisar a mano. ' +
+        'El premio quedó pedido y los puntos no se descontaron.',
+        {
+          canjeId:     canjeCreado.id,
+          gondoleroId: user.id,
+          premio,
+          puntos,
+          errorDebito:   errDebito.message,
+          errorRollback: errRollback.message,
+        }
+      )
+    }
+    return { error: 'No se pudo registrar el canje. Intentá de nuevo.' }
+  }
 
   // El saldo NO se toca acá: lo descuenta el trigger on_movimiento_puntos al
   // insertar el débito de arriba. Hasta el 16/9/2026 esta función hacía además

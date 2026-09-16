@@ -2657,7 +2657,7 @@ sin pagar castiga a alguien que hizo el trabajo y cuya foto quizás se rechazó 
 un criterio discutible; pagarlas paga una misión incompleta. Probablemente
 dependa de cuántas fotos de la misión estaban aprobadas.
 
-### Pendiente — 138 escrituras que no chequean el error (34 críticas)
+### Tramo propio — 137 escrituras que no chequean el error (33 críticas)
 
 **El patrón:** `supabase-js` NO lanza excepción ante un error de Postgres. Lo
 devuelve en `.error` del resultado. Entonces esto:
@@ -2666,53 +2666,77 @@ devuelve en `.error` del resultado. Entonces esto:
 await admin.from('movimientos_puntos').insert({ ... })
 ```
 
-falla en silencio: sin excepción, sin log, sin rastro. El código sigue como si
+falla en silencio: sin excepción, sin log, sin rastro, y el código sigue como si
 hubiera funcionado. Salió a la luz el 16/9/2026 porque los cuatro pasos de
-`aprobarMisionCore` tenían el problema, y eso dejó 3 misiones survey-only
-trabadas en dev sin que nadie se enterara.
+`aprobarMisionCore` lo tenían, y eso dejó 3 misiones survey-only trabadas en dev
+sin que nadie se enterara.
 
-**Tamaño**, medido con un barrido sobre `app/` y `lib/` (el script está en la
-sesión; la heurística es: statement que arranca con `await` pelado y contiene
-`.insert(` / `.update(` / `.upsert(`, sin destructurar el resultado):
+**Para medir el avance:** `node scripts/escrituras-sin-chequear.js`. La
+heurística es un statement que arranca con `await` pelado y hace `.insert(` /
+`.update(` / `.upsert(`. Si el resultado se captura, se asume que alguien mira
+el error — **no verifica que lo mire**, así que el número es un piso.
+`retirarFoto` captura `movError` y solo lo pasa por `console.log`.
 
-| | |
+| | Al 16/9/2026 |
 |---|---|
-| Total sin chequear | **138** |
-| Que tocan plata o estado de misión | **34** |
+| Total sin chequear | **137** |
+| Que tocan plata o estado de misión | **33** |
 
-Los 34 críticos, por tabla:
+Los 33 críticos, por tabla:
 
 | Tabla | Casos | Por qué importa |
 |---|---|---|
 | `fotos` | 16 | El estado de la foto decide si la misión se aprueba y si se paga |
-| `movimientos_puntos` | 13 | **Es el único escritor de `profiles.puntos_disponibles`**, vía el trigger `on_movimiento_puntos`. Si el insert falla, los puntos no existen |
+| `movimientos_puntos` | 12 | **Único escritor de `profiles.puntos_disponibles`**, vía el trigger `on_movimiento_puntos`. Si el insert falla, los puntos no existen |
 | `participaciones` | 4 | Avance del gondolero en la campaña |
-| `canjes` | 1 | |
+| `canjes` | 1 | `admin/canjes/actions.ts:21` |
 
-Archivos con más críticos: `admin/fotos/actions.ts` (7),
+Concentrados en cinco archivos: `admin/fotos/actions.ts` (7),
 `distribuidora/gondolas/actions.ts` (7), `marca/gondolas/actions.ts` (4),
 `admin/comercios/pendientes/actions.ts` (3),
 `distribuidora/comercios/pendientes/actions.ts` (3).
 
-**El peor de todos: `app/(gondolero)/gondolero/perfil/actions.ts:56.** El insert
-del canje SÍ chequea su error y corta; el `movimientos_puntos` del débito que
-viene justo después, no. Si ese débito falla, **el canje queda registrado y el
-gondolero conserva los puntos**. Premio gratis, sin ninguna traza.
+### La asimetría que ordena la prioridad
 
-Vale notar la asimetría: un crédito que falla le cuesta plata al gondolero —que
-va a reclamar, así que se descubre—; un débito que falla le cuesta plata a la
-empresa, y no reclama nadie.
+**Un crédito que falla le cuesta plata al gondolero, que reclama — así que se
+descubre. Un débito que falla le cuesta plata a la empresa, y no reclama nadie.**
 
-**Al encararlo**, la decisión no es "chequear todo" sino qué hacer con cada
-error, y hay tres respuestas distintas:
+Por eso los débitos fueron primero. **Hay uno solo de débito en todo el repo** —
+verificado con `grep "'debito'"`: `app/(gondolero)/gondolero/perfil/actions.ts`,
+el del canje. Arreglado el 16/9/2026: chequea el error y, si falla, borra el
+canje que acababa de crear. Antes, si ese insert fallaba, el canje quedaba
+registrado y el gondolero conservaba los puntos: premio gratis, sin traza.
+
+Los 12 `movimientos_puntos` que quedan son **todos créditos**, y por eso pueden
+esperar al tramo: si fallan, el gondolero ve que no le pagaron y avisa.
+
+Queda una operación con forma de débito que el script no marca:
+`gondolero/misiones/actions.ts:79` (`retirarFoto`) borra los
+`movimientos_puntos` de la foto y captura `movError`, pero solo lo loguea. La
+salva una FK: si el borrado falla, el `DELETE` de `fotos` que sigue también
+falla y ese sí corta.
+
+### Las tres respuestas, y por qué la parte difícil no es agregar el chequeo
+
+Chequear el error es una línea. **Lo difícil es elegir qué hacer con él**, y hay
+tres respuestas distintas según el caso:
 
 1. **Tirar** — cuando el llamador puede reintentar sin duplicar nada.
 2. **Devolver `{ error }`** — cuando hay una pantalla adelante que lo muestre.
 3. **Loguear fuerte y seguir** — cuando el trabajo del usuario ya está guardado y
-   fallar perdería más de lo que salva. Es lo que hace `resolverMisionDirecta`:
-   no re-lanza a propósito, porque tirar haría que la cola offline reintente una
-   misión que se grabó bien.
+   fallar perdería más de lo que salva.
 
-La 3 solo es aceptable si existe una forma de reparar después. Para las misiones
-trabadas es el botón "Destrabar misiones" de `/admin/campanas`; para los otros
-casos habrá que inventarla o elegir la 1 o la 2.
+La 3 es la de `resolverMisionDirecta`: no re-lanza a propósito, porque tirar
+haría que la cola offline reintente una misión que se grabó bien, y se perdería
+trabajo del gondolero por un fallo de contabilidad.
+
+**La 3 solo es aceptable si existe una forma de reparar después.** Para las
+misiones trabadas es el botón "Destrabar misiones" de `/admin/campanas`. Para
+los demás casos hay que inventarla, o elegir la 1 o la 2. Ahí se va el trabajo
+del tramo, no en los chequeos.
+
+Un cuarto camino que conviene evaluar para los pares que tienen que pasar
+juntos —canje + débito, aprobación + acreditación—: **una función SQL que haga
+las dos cosas en una transacción**. Elimina la clase de problema en vez de
+angostar la ventana. Hay precedente de RPC en el repo
+(`backfill_codigos_gondolero`, `incrementar_puntos`).
