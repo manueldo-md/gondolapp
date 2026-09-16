@@ -159,15 +159,37 @@ export function MisionesPendientes() {
 
   if (pendientes.length === 0) return null
 
+  // Una sola pregunta —¿queda algo que se envíe solo?— la responden el ícono,
+  // el texto de la cabecera y el pie. Si se calculara por separado en los tres,
+  // el día que cambie el criterio quedarían diciendo cosas distintas.
+  const rechazadas = pendientes.filter(m => m.estado === 'rechazada').length
+  const enEspera   = pendientes.length - rechazadas
+  const hayEnEspera = enEspera > 0
+
+  const plural = (n: number, s: string, p: string) => `${n} ${n === 1 ? s : p}`
+
+  const resumenCabecera =
+    rechazadas === 0 ? plural(enEspera, 'misión guardada offline', 'misiones guardadas offline')
+    : enEspera === 0 ? plural(rechazadas, 'misión rechazada', 'misiones rechazadas')
+    : `${enEspera} guardada${enEspera === 1 ? '' : 's'} · ${rechazadas} rechazada${rechazadas === 1 ? '' : 's'}`
+
   return (
     <div className="mx-4 mt-4 rounded-2xl border border-amber-200 bg-amber-50 overflow-hidden">
-      {/* Cabecera */}
+      {/* Cabecera.
+          El ícono responde a la MISMA pregunta que el pie: ¿queda algo que se
+          vaya a enviar solo? Con mezcla sigue el de sin señal, porque parte del
+          módulo sí espera conexión. Solo cuando están TODAS rechazadas cambia:
+          ahí el problema no es la señal, es que hay que decidir en cada una, y
+          un ícono de "sin conexión" mandaba a esperar algo que no iba a llegar.
+
+          El conteo se desglosa por lo mismo. "3 misiones guardadas offline" con
+          las tres rechazadas es cierto de forma literal y engañoso de hecho. */}
       <div className="px-4 py-3 flex items-center gap-2 border-b border-amber-200">
-        <WifiOff size={16} className="text-amber-500 shrink-0" />
+        {hayEnEspera
+          ? <WifiOff       size={16} className="text-amber-500 shrink-0" />
+          : <AlertTriangle size={16} className="text-red-500 shrink-0" />}
         <p className="text-sm font-semibold text-amber-800">
-          {pendientes.length === 1
-            ? '1 misión guardada offline'
-            : `${pendientes.length} misiones guardadas offline`}
+          {resumenCabecera}
         </p>
       </div>
 
@@ -292,7 +314,7 @@ export function MisionesPendientes() {
           rechazada: el servidor ya la resolvió y no se reintenta sola. Con
           todas rechazadas, el gondolero leía que se resolvía solo cuando en
           realidad tenía que elegir Reintentar o Descartar en cada una. */}
-      {pendientes.some(m => m.estado !== 'rechazada') && (
+      {hayEnEspera && (
         <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-100">
           <p className="text-xs text-amber-700">
             Tu trabajo está guardado. Se enviará automáticamente cuando recuperes señal.
