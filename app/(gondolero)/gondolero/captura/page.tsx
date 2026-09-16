@@ -25,7 +25,7 @@ import {
 } from './actions'
 import {
   crearComercioNuevo, crearComercioParaCaptura, subirFotoFachada,
-  obtenerComerciosRelevados,
+  obtenerEstadoComercios,
 } from './actions-comercios'
 import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
@@ -34,10 +34,12 @@ import {
   CAMPANA_CACHE_PREFIX, CAMPANA_CACHE_SELECT, toCampanaData,
   guardarComercios, leerComercios, guardarRelevados, leerRelevados,
   type CampoBloque, type BloqueData, type CampanaData,
+  type EstadoComerciosCache,
 } from '@/lib/campana-cache'
-import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed } from '@/lib/mision-queue'
+import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed, listarMisionesPendientes } from '@/lib/mision-queue'
 import { RADIO_BLOQUEO_METROS } from '@/lib/gps-radios'
 import { mensajeErrorInfra } from '@/lib/error-infra'
+import { motivoBloqueo, cupoPropioLleno, TEXTO_BLOQUEO } from '@/lib/comercio-seleccionable'
 import {
   encolarReporte, marcarComercioReportado, leerComerciosReportados,
   enviarReportesPendientes,
@@ -735,6 +737,9 @@ function CapturaContent() {
   // el uso normal —precargar en casa y trabajar el día sin señal— produce sets
   // de ocho horas, y ese es el peor caso, no la excepción.
   const [relevadosFresco, setRelevadosFresco] = useState(false)
+  /** Comercios que este gondolero ya tomó — incluye los de la cola offline. */
+  const [misComercios, setMisComercios] = useState<Set<string>>(new Set())
+  const [maxComercios, setMaxComercios] = useState<number | null>(null)
   // Aviso de la revalidación en el paso de GPS. Local y no errorGlobal: ese hace
   // early-return a pantalla completa con un botón de volver, y acá el gondolero
   // tiene que quedarse en la lista para elegir otro comercio, no salir.
@@ -968,37 +973,55 @@ function CapturaContent() {
   useEffect(() => {
     if (!campana?.id) return
 
-    // En seguimiento un comercio se visita muchas veces a propósito: no hay
-    // nada que marcar y nada que pueda estar desactualizado.
-    if ((campana.modalidad ?? 'puntual') === 'seguimiento') {
-      setRelevados(new Set())
-      setRelevadosFresco(true)
-      return
-    }
-
     let vivo = true
     const campanaId = campana.id
 
+    // Comercios que este gondolero ya tomó y todavía están en la cola offline.
+    //
+    // Sin esto, alguien sin señal toma comercios de más: el servidor no los ve
+    // hasta que sincroniza, así que el cliente creería que le queda cupo y los
+    // rechazaría al llegar. Es el castigo tardío que venimos sacando.
+    const comerciosEnCola = async (): Promise<string[]> => {
+      try {
+        const pendientes = await listarMisionesPendientes()
+        return pendientes
+          .filter(m => m.campanaId === campanaId && m.estado !== 'rechazada')
+          .map(m => m.comercioId)
+      } catch {
+        return []
+      }
+    }
+
+    const aplicar = (estado: EstadoComerciosCache, enCola: string[], fresco: boolean) => {
+      setRelevados(new Set(estado.relevadosPorOtros))
+      setMisComercios(new Set([...estado.misComercios, ...enCola]))
+      setMaxComercios(estado.maxComercios)
+      setRelevadosFresco(fresco)
+    }
+
     const cargar = async () => {
+      const enCola = await comerciosEnCola()
+      if (!vivo) return
+
       if (navigator.onLine) {
         try {
-          const ids = await obtenerComerciosRelevados(campanaId)
+          const estado = await obtenerEstadoComercios(campanaId)
           if (!vivo) return
-          setRelevados(new Set(ids))
-          setRelevadosFresco(true)
-          guardarRelevados(campanaId, ids).catch(() => {})
+          aplicar(estado, enCola, true)
+          guardarRelevados(campanaId, estado).catch(() => {})
           return
         } catch (e) {
-          console.warn('[relevados] falló la consulta, caigo al cache:', e)
+          console.warn('[estado-comercios] falló la consulta, caigo al cache:', e)
         }
       }
       // Offline, o la consulta falló: cache, y con aviso.
       try {
         const cached = await leerRelevados(campanaId)
         if (!vivo) return
-        setRelevados(new Set(cached ?? []))
-      } catch { /* sin cache */ }
-      if (vivo) setRelevadosFresco(false)
+        aplicar(cached ?? { relevadosPorOtros: [], misComercios: [], maxComercios: null }, enCola, false)
+      } catch {
+        if (vivo) setRelevadosFresco(false)
+      }
     }
 
     cargar()
@@ -1022,19 +1045,25 @@ function CapturaContent() {
     const campanaId = campana.id
     const comercioId = comercio.id
 
-    obtenerComerciosRelevados(campanaId)
-      .then(ids => {
+    obtenerEstadoComercios(campanaId)
+      .then(estado => {
         if (!vivo) return
-        setRelevados(new Set(ids))
+        setRelevados(new Set(estado.relevadosPorOtros))
+        // No se pisa `misComercios` acá: el set del paso anterior ya incluye los
+        // de la cola offline, que el servidor todavía no ve. Sobrescribirlo con
+        // lo del servidor le devolvería cupo que en realidad ya usó.
+        setMaxComercios(estado.maxComercios)
         setRelevadosFresco(true)
-        guardarRelevados(campanaId, ids).catch(() => {})
-        if (ids.includes(comercioId)) {
+        guardarRelevados(campanaId, estado).catch(() => {})
+        // Solo si NO es propio: si el comercio ya es suyo, "relevado" es él
+        // mismo y sacarlo del paso sería echarlo de su propia misión.
+        if (estado.relevadosPorOtros.includes(comercioId) && !estado.misComercios.includes(comercioId)) {
           setComercio(null)
           setRelevadoAviso('Otro gondolero relevó ese comercio mientras lo elegías. Elegí otro de la lista.')
           setPaso('comercios-gps')
         }
       })
-      .catch(e => console.warn('[relevados] revalidación falló, sigo:', e))
+      .catch(e => console.warn('[estado-comercios] revalidación falló, sigo:', e))
 
     return () => { vivo = false }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1859,6 +1888,11 @@ function CapturaContent() {
     : null
   const demasiadoLejos = distanciaAlComercio != null && distanciaAlComercio > RADIO_BLOQUEO_M
 
+  // Contexto de selección: una sola fuente para las DOS listas de comercios y
+  // para el botón de registrar uno nuevo. Ver lib/comercio-seleccionable.ts.
+  const ctxSeleccion = { relevadosPorOtros: relevados, misComercios, maxComercios }
+  const cupoLlenoPropio = cupoPropioLleno(ctxSeleccion)
+
   // Avisos de la lista de comercios, compartidos por los dos caminos de
   // selección: el de cercanos por GPS y el de búsqueda por texto.
   const avisosRelevados = (
@@ -2447,7 +2481,8 @@ function CapturaContent() {
                 </p>
               </div>
               {cmComerciosCercanos.map(c => {
-                const yaRelevado = relevados.has(c.id)
+                const bloqueo = motivoBloqueo(c.id, ctxSeleccion)
+                const yaRelevado = bloqueo !== null
                 return (
                 <button
                   key={c.id}
@@ -2473,7 +2508,7 @@ function CapturaContent() {
                     {c.direccion && <p className="text-xs text-gray-400 truncate">{c.direccion}</p>}
                     {yaRelevado ? (
                       <span className="inline-block mt-1.5 px-2 py-0.5 bg-gray-200 border border-gray-300 rounded-md text-[11px] font-bold text-gray-700 uppercase tracking-wide">
-                        Ya relevado en esta campaña
+                        {bloqueo ? TEXTO_BLOQUEO[bloqueo] : null}
                       </span>
                     ) : gps.posicion && (
                       <p className="text-[11px] text-gondo-verde-600 mt-0.5">
@@ -2521,7 +2556,8 @@ function CapturaContent() {
             {comercios.length > 0 && (
               <div className="space-y-2">
                 {comercios.map(c => {
-                  const yaRelevado = relevados.has(c.id)
+                  const bloqueo = motivoBloqueo(c.id, ctxSeleccion)
+                  const yaRelevado = bloqueo !== null
                   return (
                     <button
                       key={c.id}
@@ -2549,7 +2585,7 @@ function CapturaContent() {
                         )}
                         {yaRelevado && (
                           <span className="inline-block mt-1.5 px-2 py-0.5 bg-gray-200 border border-gray-300 rounded-md text-[11px] font-bold text-gray-700 uppercase tracking-wide">
-                            Ya relevado en esta campaña
+                            {bloqueo ? TEXTO_BLOQUEO[bloqueo] : null}
                           </span>
                         )}
                       </div>
@@ -2572,14 +2608,27 @@ function CapturaContent() {
               inalcanzables. Sin GPS se puede buscar y elegir uno existente, pero
               no crear. */}
           {gps.estado === 'activo' && !cmBuscandoCercanos && (
-            <button
-              onClick={() => setPaso('comercios-formulario')}
-              className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
-            >
-              {cmComerciosCercanos.length > 0
-                ? (esComercios ? 'No es ninguno — es un comercio nuevo' : 'No es ninguno — registrar nuevo')
-                : 'Continuar — Completar datos'}
-            </button>
+            // Un comercio nuevo es, por definición, uno que el gondolero no
+            // tiene: consume cupo igual que elegir uno de la lista. Sin esta
+            // guarda quedaba el agujero de crear comercios sin límite por un
+            // camino que no pasa por la lista.
+            cupoLlenoPropio ? (
+              <div className="bg-gray-50 rounded-2xl border border-gray-200 p-4 text-center">
+                <p className="text-sm font-semibold text-gray-600">{TEXTO_BLOQUEO.cupo_propio}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Registrar uno nuevo también ocupa lugar, así que no vas a poder hasta que se libere.
+                </p>
+              </div>
+            ) : (
+              <button
+                onClick={() => setPaso('comercios-formulario')}
+                className="w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl min-h-touch"
+              >
+                {cmComerciosCercanos.length > 0
+                  ? (esComercios ? 'No es ninguno — es un comercio nuevo' : 'No es ninguno — registrar nuevo')
+                  : 'Continuar — Completar datos'}
+              </button>
+            )
           )}
         </div>
       </div>

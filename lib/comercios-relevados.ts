@@ -48,7 +48,7 @@ export async function sincronizarComerciosRelevados(
     // COUNT(DISTINCT). Son unos pocos cientos de uuids en el peor caso.
     //
     // El filtro de estado va en JS y no en la query, por la misma razón que en
-    // obtenerComerciosRelevados: el índice único usa
+    // obtenerEstadoComercios: el índice único usa
     // `estado IS DISTINCT FROM 'descartada'`, que INCLUYE las filas con estado
     // NULL, y un `.neq()` de PostgREST las excluiría por lógica de tres valores.
     // El `!==` de JS sobre null da true y reproduce el predicado exacto.

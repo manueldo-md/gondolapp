@@ -101,13 +101,51 @@ export async function leerComercios(): Promise<any[] | null> {
 // puede tener ocho horas. Por eso lo que viene de acá se muestra con aviso —
 // ver esRelevadosFresco en captura/page.tsx.
 
-export async function guardarRelevados(campanaId: string, ids: string[]): Promise<void> {
-  await set(RELEVADOS_CACHE_PREFIX + campanaId, { data: ids, timestamp: Date.now() })
+/**
+ * Forma cacheada del estado de selección de comercios.
+ *
+ * Es el payload de `obtenerEstadoComercios`. Antes del 17/9/2026 acá se
+ * guardaba un `string[]` pelado con los relevados; ahora hace falta también el
+ * cupo propio del gondolero, así que es un objeto.
+ */
+export interface EstadoComerciosCache {
+  relevadosPorOtros: string[]
+  misComercios: string[]
+  maxComercios: number | null
 }
 
-export async function leerRelevados(campanaId: string): Promise<string[] | null> {
+export async function guardarRelevados(campanaId: string, estado: EstadoComerciosCache): Promise<void> {
+  await set(RELEVADOS_CACHE_PREFIX + campanaId, { data: estado, timestamp: Date.now() })
+}
+
+/**
+ * LA GUARDA DEL ARRAY VIEJO NO ES OPCIONAL.
+ *
+ * Los teléfonos que ya usaron la app tienen en IDB la forma anterior —un
+ * `string[]`— escrita antes del deploy. Sin este chequeo, el primer arranque
+ * después de actualizar leería un array donde el código espera un objeto y
+ * rompería en `estado.misComercios`, justo en la pantalla de captura y justo en
+ * el teléfono del que más usa la app.
+ *
+ * Un array viejo se interpreta como lo que era: solo relevados, sin datos de
+ * cupo. `maxComercios: null` hace que `cupoPropioLleno` dé false, así que en el
+ * peor caso no se bloquea de más — el control del servidor sigue estando. El
+ * refresco en línea reemplaza la entrada por la forma nueva.
+ */
+export async function leerRelevados(campanaId: string): Promise<EstadoComerciosCache | null> {
   const entry = await get(RELEVADOS_CACHE_PREFIX + campanaId)
-  if (entry && Array.isArray(entry.data)) return entry.data as string[]
+  if (!entry) return null
+
+  if (Array.isArray(entry.data)) {
+    return { relevadosPorOtros: entry.data as string[], misComercios: [], maxComercios: null }
+  }
+  if (entry.data && Array.isArray(entry.data.relevadosPorOtros)) {
+    return {
+      relevadosPorOtros: entry.data.relevadosPorOtros as string[],
+      misComercios:      Array.isArray(entry.data.misComercios) ? entry.data.misComercios as string[] : [],
+      maxComercios:      typeof entry.data.maxComercios === 'number' ? entry.data.maxComercios : null,
+    }
+  }
   return null
 }
 

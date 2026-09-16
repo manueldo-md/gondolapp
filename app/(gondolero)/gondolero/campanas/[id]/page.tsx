@@ -410,26 +410,50 @@ export default async function CampanaDetallePage({
               </div>
             </div>
 
-            {/* Botón Nueva misión o límite alcanzado (solo si campaña activa) */}
-            {campanaActiva && (!alcanzeLimite && !cupoLleno ? (
-              <Link
-                href={`/gondolero/captura?campana=${c.id}`}
-                className="flex items-center justify-center gap-2 w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-sm text-base hover:bg-gondo-verde-600 transition-colors"
-              >
-                <Camera size={18} />
-                Nueva misión
-              </Link>
-            ) : (
+            {/* ── Entrada a la captura ──────────────────────────────────────
+                Los dos límites son distintos y por eso se tratan distinto:
+
+                · cupoLleno   — es el TOPE GLOBAL de la campaña. Se llenó para
+                  todos y la campaña se cierra sola. No hay nada que hacer, ni
+                  siquiera en los comercios propios: el botón no va.
+
+                · alcanzeLimite — es el cupo PROPIO del gondolero. Significa "no
+                  podés tomar comercios NUEVOS", no "terminaste". El botón entra
+                  igual, y el filtrado va en la lista de comercios, que marca los
+                  nuevos como no seleccionables y deja los propios disponibles.
+
+                Hasta el 17/9/2026 los dos escondían el botón, y con el cupo
+                propio lleno la campaña quedaba sin ninguna vía de entrada: éste
+                es el único link a la captura de toda la pantalla. En una campaña
+                de seguimiento —donde tener el cupo lleno es el estado NORMAL del
+                repositor— eso la volvía inutilizable. */}
+            {campanaActiva && (cupoLleno ? (
               <div className="bg-gray-50 rounded-2xl border border-gray-200 p-4 text-center">
-                <p className="text-sm font-semibold text-gray-600">
-                  {cupoLleno ? 'Campaña sin cupos disponibles' : 'Alcanzaste tu máximo de participaciones en esta campaña'}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {cupoLleno
-                    ? 'El cupo total de la campaña está completo.'
-                    : `Ya tomaste ${comerciosQueOcupanCupo.size} comercios, que es el máximo de esta campaña. Podés seguir trabajando en los que ya tenés.`}
-                </p>
+                <p className="text-sm font-semibold text-gray-600">Campaña sin cupos disponibles</p>
+                <p className="text-xs text-gray-400 mt-1">El cupo total de la campaña está completo.</p>
               </div>
+            ) : (
+              <>
+                <Link
+                  href={`/gondolero/captura?campana=${c.id}`}
+                  className="flex items-center justify-center gap-2 w-full py-4 bg-gondo-verde-400 text-white font-bold rounded-2xl shadow-sm text-base hover:bg-gondo-verde-600 transition-colors"
+                >
+                  <Camera size={18} />
+                  Nueva misión
+                </Link>
+
+                {/* Información AL LADO del botón, no en lugar del botón. El
+                    cartel explica por qué no van a aparecerle comercios nuevos
+                    en la lista; el botón sigue siendo la puerta a los propios. */}
+                {alcanzeLimite && (
+                  <div className="bg-gray-50 rounded-2xl border border-gray-200 p-3 text-center">
+                    <p className="text-xs text-gray-500">
+                      Tenés {comerciosQueOcupanCupo.size} comercios, que es tu máximo en esta campaña.
+                      Podés seguir trabajando en ellos, pero no tomar nuevos.
+                    </p>
+                  </div>
+                )}
+              </>
             ))}
 
             {/* Botón abandonar campaña */}

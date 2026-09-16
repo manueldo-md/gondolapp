@@ -25,10 +25,25 @@ import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
  * log, o sea FALLA ABIERTA EN SILENCIO, que es el modo que ya nos mordió con
  * comercios_relevados. Con service role no depende de la RLS.
  *
- * Devuelve [] en campañas de seguimiento: ahí un comercio se visita muchas
- * veces a propósito y no hay nada que marcar.
+ * `relevadosPorOtros` va vacío en campañas de seguimiento: ahí un comercio se
+ * visita muchas veces a propósito y no hay nada que marcar.
+ *
+ * ── POR QUÉ UN SOLO PAYLOAD Y NO DOS ACTIONS ────────────────────────────────
+ * El cupo propio del gondolero se marca en la MISMA lista y con el mismo
+ * mecanismo: un viaje, un cache en IDB, un flag de frescura, un aviso de "lista
+ * desactualizada". Toda esa maquinaria ya existe alrededor de esta action y es
+ * la parte cara. Una segunda action habría duplicado las cuatro cosas.
  */
-export async function obtenerComerciosRelevados(campanaId: string): Promise<string[]> {
+export interface EstadoComerciosCampana {
+  /** Comercios con una misión viva de CUALQUIER gondolero. Solo campañas puntuales. */
+  relevadosPorOtros: string[]
+  /** Comercios que ESTE gondolero ya tomó. Siempre puede volver a ellos. */
+  misComercios: string[]
+  /** `max_comercios_por_gondolero` de la campaña. null = sin tope propio. */
+  maxComercios: number | null
+}
+
+export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoComerciosCampana> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -41,22 +56,24 @@ export async function obtenerComerciosRelevados(campanaId: string): Promise<stri
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = admin as any
 
+  const vacio: EstadoComerciosCampana = { relevadosPorOtros: [], misComercios: [], maxComercios: null }
+
   const { data: campana } = await db
     .from('campanas')
-    .select('modalidad')
+    .select('modalidad, max_comercios_por_gondolero')
     .eq('id', campanaId)
     .maybeSingle()
 
-  if (!campana || campana.modalidad !== 'puntual') return []
+  if (!campana) return vacio
 
   const { data, error } = await db
     .from('misiones')
-    .select('comercio_id, estado')
+    .select('comercio_id, estado, gondolero_id')
     .eq('campana_id', campanaId)
 
   if (error) {
-    console.error('[obtenerComerciosRelevados] error:', error.message)
-    return []
+    console.error('[obtenerEstadoComercios] error:', error.message)
+    return vacio
   }
 
   // El filtro de estado va acá y no en la query a propósito: el índice usa
@@ -65,12 +82,19 @@ export async function obtenerComerciosRelevados(campanaId: string): Promise<stri
   // las excluiría —lógica de tres valores— y entonces la UI no marcaría un
   // comercio que el índice sí bloquea. El `!==` de JS sobre null da true y
   // reproduce el predicado exacto.
-  const ids = (data ?? [])
-    .filter((m: { estado: string | null }) => m.estado !== 'descartada')
-    .map((m: { comercio_id: string | null }) => m.comercio_id)
-    .filter(Boolean) as string[]
+  const vivas = ((data ?? []) as { comercio_id: string | null; estado: string | null; gondolero_id: string }[])
+    .filter(m => m.estado !== 'descartada' && m.comercio_id)
 
-  return [...new Set(ids)]
+  return {
+    // En seguimiento nadie bloquea a nadie: el comercio se visita muchas veces.
+    relevadosPorOtros: campana.modalidad === 'puntual'
+      ? [...new Set(vivas.map(m => m.comercio_id as string))]
+      : [],
+    misComercios: [...new Set(
+      vivas.filter(m => m.gondolero_id === user.id).map(m => m.comercio_id as string)
+    )],
+    maxComercios: campana.max_comercios_por_gondolero ?? null,
+  }
 }
 
 /**
