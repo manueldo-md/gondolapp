@@ -25,6 +25,7 @@ import {
   misionesEnviando,
   esErrorDeRed,
 } from '@/lib/mision-queue'
+import { mensajeErrorInfra } from '@/lib/error-infra'
 import { enviarReportesPendientes } from '@/lib/reporte-ubicacion-queue'
 import type { FotoMisionInput } from '@/app/(gondolero)/gondolero/captura/actions'
 import {
@@ -142,7 +143,7 @@ export async function procesarColaOffline(fromBackoff = false) {
         }
 
         // ── Enviar ──────────────────────────────────────────────────────────
-        await registrarMision({
+        const resultado = await registrarMision({
           campanaId: mision.campanaId, comercioId: mision.comercioId,
           deviceId: mision.deviceId, lat: mision.lat, lng: mision.lng,
           puntosTotal: mision.puntosTotal, fotos,
@@ -158,6 +159,29 @@ export async function procesarColaOffline(fromBackoff = false) {
           // después es trabajo en plazo.
           capturadoAt: mision.guardadaAt,
         })
+
+        // ── Rechazo de negocio ──────────────────────────────────────────────
+        // Viene DEVUELTO, no lanzado. Es lo que antes caía en el `else` del
+        // catch, pero con el texto entero: Next redacta el mensaje de las
+        // excepciones en producción, así que hasta el 17/9/2026 el gondolero
+        // leía "An error occurred in the Server Components render" como motivo
+        // de rechazo y con eso decidía entre Reintentar y Descartar.
+        //
+        // El `continue` NO es opcional: sin él, el flujo sigue al borrado de
+        // abajo y la misión se elimina de IDB como si hubiera entrado.
+        if (!resultado.ok) {
+          misionesEnviando.delete(mision.idempotenciaKey)
+          await actualizarMisionEnCola(mision.idempotenciaKey, {
+            ultimoIntentoAt: Date.now(),
+            ultimoError:     resultado.motivo,
+            estado:          'rechazada',
+            motivoRechazo:   resultado.motivo,
+          }).catch(() => {})
+          dispatch()
+          console.error('[cola-offline] rechazo del servidor para misión',
+            mision.idempotenciaKey, '—', resultado.motivo)
+          continue
+        }
 
         // ── Éxito ───────────────────────────────────────────────────────────
         misionesEnviando.delete(mision.idempotenciaKey)
@@ -180,19 +204,30 @@ export async function procesarColaOffline(fromBackoff = false) {
           programarReintento()
           break // Detener la cola: las demás también fallarían
         } else {
-          // ── Rechazo del servidor: marcar como rechazada ───────────────────
-          // El gondolero verá el motivo en el módulo y podrá Reintentar o Descartar.
-          // Nota: un 500 transitorio llega aquí también (known limitation, documentado
-          // en CLAUDE.md). El botón Reintentar permite probar de nuevo antes de descartar.
+          // ── Error INESPERADO: queda pendiente, no rechazada ────────────────
+          //
+          // Desde el 17/9/2026 los rechazos de negocio no llegan acá: vienen
+          // devueltos y se manejan arriba. Lo que queda es infraestructura —un
+          // 500, un deploy en el medio, un timeout de Postgres— y eso es
+          // transitorio.
+          //
+          // Antes esta rama marcaba 'rechazada', con un comentario que lo
+          // reconocía como limitación conocida: "un 500 transitorio llega aquí
+          // también". Era tolerable mientras por acá pasaran también los
+          // rechazos reales; ahora sería el ÚNICO caso, y estaría descartando
+          // trabajo válido por un error de un segundo.
+          //
+          // Se deja pendiente con su último error y se reintenta. No hay riesgo
+          // de loop infinito: lib/mision-queue.ts borra las entradas a los 7
+          // días, así que el reintento está acotado.
           await actualizarMisionEnCola(mision.idempotenciaKey, {
             ultimoIntentoAt: Date.now(),
-            ultimoError: mensajeError,
-            estado: 'rechazada',
-            motivoRechazo: mensajeError,
+            ultimoError: mensajeErrorInfra(mensajeError, true),
           }).catch(() => {})
           dispatch()
-          console.error('[cola-offline] rechazo del servidor para misión',
+          console.error('[cola-offline] error inesperado en misión',
             mision.idempotenciaKey, '—', mensajeError)
+          programarReintento()
           // Continuar con las demás misiones
         }
       }

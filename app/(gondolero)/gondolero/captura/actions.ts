@@ -118,7 +118,34 @@ export interface RegistrarMisionParams {
   idempotenciaKey?: string
 }
 
-export async function registrarMision(params: RegistrarMisionParams) {
+/**
+ * Resultado de registrarMision.
+ *
+ * ── POR QUÉ DEVUELVE EL RECHAZO EN VEZ DE LANZARLO ──────────────────────────
+ * Esto es un Server Action, y **Next.js redacta el mensaje de toda excepción no
+ * atrapada en producción**: al cliente le llega "An error occurred in the Server
+ * Components render" y el texto real queda solo en los logs de Vercel. O sea que
+ * hasta el 17/9/2026 ninguno de los seis mensajes cuidados de esta función era
+ * legible para el gondolero.
+ *
+ * Donde más dolía era la cola offline: guarda el mensaje como `motivoRechazo` en
+ * IndexedDB y se lo muestra al gondolero con los botones Reintentar y Descartar.
+ * Tenía que decidir entre los dos leyendo el error de Next.
+ *
+ * Un valor devuelto NO se redacta. Por eso:
+ *   · rechazo de NEGOCIO (terminal, el gondolero puede entenderlo) → se devuelve
+ *   · error de INFRAESTRUCTURA (transitorio, se reintenta)          → se lanza
+ *
+ * La distinción es la que usan los dos llamadores para decidir si la misión se
+ * marca rechazada o se deja pendiente para reintentar. Cambiar uno sin el otro
+ * rompe la cola: si deja de lanzar y el llamador sigue esperando la excepción,
+ * toma el rechazo como éxito y borra la misión de IDB.
+ */
+export type ResultadoMision =
+  | { ok: true;  misionId: string; puntos: number }
+  | { ok: false; motivo: string }
+
+export async function registrarMision(params: RegistrarMisionParams): Promise<ResultadoMision> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -142,11 +169,22 @@ export async function registrarMision(params: RegistrarMisionParams) {
     .eq('id', params.campanaId)
     .single()
 
-  if (campanaErr || !campana) {
-    throw new Error('La campaña no existe.')
+  // Los dos casos se separan a propósito: hasta el 17/9/2026 eran un solo
+  // `if (campanaErr || !campana)`.
+  //
+  // `campanaErr` es que FALLÓ LA QUERY — un blip de Postgres, un timeout. Si
+  // eso devolviera un rechazo, la cola marcaría la misión como rechazada para
+  // siempre por un error de un segundo. Se lanza, para que se reintente.
+  if (campanaErr) {
+    throw new Error('No pudimos leer la campaña: ' + campanaErr.message)
+  }
+  // `!campana` es que la campaña realmente no está. Terminal: reintentar no la
+  // va a hacer aparecer.
+  if (!campana) {
+    return { ok: false, motivo: 'Esta campaña ya no existe. Elegí otra de la lista de campañas disponibles.' }
   }
   if (campana.estado !== 'activa') {
-    throw new Error('La campaña no está activa.')
+    return { ok: false, motivo: 'Esta campaña ya no está activa y no acepta misiones nuevas.' }
   }
 
   // ── Gate de vencimiento ─────────────────────────────────────────────────────
@@ -170,11 +208,12 @@ export async function registrarMision(params: RegistrarMisionParams) {
       desdeCola: params.desdeCola ?? false,
       motivo: vigencia.motivo,
     })
-    throw new Error(
-      vigencia.motivo === 'vencida'
+    return {
+      ok: false,
+      motivo: vigencia.motivo === 'vencida'
         ? `Esta campaña terminó el ${campana.fecha_fin} y ya no acepta misiones. Fijate en las campañas disponibles si hay otra activa.`
-        : 'Esta misión quedó demasiado tiempo sin enviarse y la campaña ya terminó. No se puede registrar.'
-    )
+        : 'Esta misión quedó demasiado tiempo sin enviarse y la campaña ya terminó. No se puede registrar.',
+    }
   }
 
   // Admin client para tablas con RLS restringida a service_role.
@@ -200,7 +239,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
 
     if (existente) {
       console.log('[registrarMision] reintento idempotente — devolviendo misión existente:', existente.id)
-      return { misionId: existente.id, puntos: existente.puntos_total ?? params.puntosTotal }
+      return { ok: true, misionId: existente.id, puntos: existente.puntos_total ?? params.puntosTotal }
     }
   }
 
@@ -242,10 +281,12 @@ export async function registrarMision(params: RegistrarMisionParams) {
       // nada: es exactamente lo que la campaña le pide hacer.
       const esComercioNuevo = !comerciosPropios.has(params.comercioId)
       if (esComercioNuevo && comerciosPropios.size >= campana.max_comercios_por_gondolero) {
-        throw new Error(
-          `Ya tenés ${comerciosPropios.size} comercios en esta campaña, que es el máximo. ` +
-          `Podés seguir trabajando en los que ya tomaste.`
-        )
+        return {
+          ok: false,
+          motivo:
+            `Ya tenés ${comerciosPropios.size} comercios en esta campaña, que es el máximo. ` +
+            `Podés seguir trabajando en los que ya tomaste.`,
+        }
       }
     }
   }
@@ -284,11 +325,13 @@ export async function registrarMision(params: RegistrarMisionParams) {
   // ahora la ve en el panel.
   if (distanciaMetros != null && distanciaMetros > RADIO_BLOQUEO_METROS) {
     if (!params.desdeCola) {
-      throw new Error(
-        `Estás a ${(distanciaMetros / 1000).toFixed(1)} km del comercio. ` +
-        'Para registrar la misión tenés que estar en el comercio. ' +
-        'Si el comercio está mal ubicado en el mapa, avisale a tu distribuidora.'
-      )
+      return {
+        ok: false,
+        motivo:
+          `Estás a ${(distanciaMetros / 1000).toFixed(1)} km del comercio. ` +
+          'Para registrar la misión tenés que estar en el comercio. ' +
+          'Si el comercio está mal ubicado en el mapa, avisale a tu distribuidora.',
+      }
     }
     console.warn('[registrarMision] misión de la cola fuera de radio — entra marcada', {
       comercioId: params.comercioId,
@@ -325,11 +368,13 @@ export async function registrarMision(params: RegistrarMisionParams) {
     // reintento le mostraría al gondolero un mensaje que no tiene nada que ver.
     const detalle = `${misionError.message ?? ''} ${misionError.details ?? ''}`
     if (misionError.code === '23505' && detalle.includes('misiones_campana_comercio_uniq')) {
-      throw new Error(
-        'Otro gondolero relevó este comercio antes que vos. Pasa cuando dos personas ' +
-        'trabajan sin señal al mismo tiempo. Esta misión no se puede registrar. ' +
-        'Elegí otro comercio de la lista.'
-      )
+      return {
+        ok: false,
+        motivo:
+          'Otro gondolero relevó este comercio antes que vos. Pasa cuando dos personas ' +
+          'trabajan sin señal al mismo tiempo. Esta misión no se puede registrar. ' +
+          'Elegí otro comercio de la lista.',
+      }
     }
     throw new Error('No pudimos crear la misión: ' + misionError.message)
   }
@@ -596,7 +641,7 @@ export async function registrarMision(params: RegistrarMisionParams) {
     console.error('[registrarMision] Error en checks GPS:', checksErr)
   }
 
-  return { misionId: mision.id, puntos: params.puntosTotal }
+  return { ok: true, misionId: mision.id, puntos: params.puntosTotal }
 }
 
 // ── DESCARTE DE MISIÓN OFFLINE RECHAZADA ──────────────────────────────────────

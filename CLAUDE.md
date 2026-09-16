@@ -2789,3 +2789,43 @@ Lo que hay que definir y construir:
 - **Contra qué se mide.** El denominador natural es
   `comercios asignados × visitas_por_semana`, pero "asignados" no existe como
   concepto: hoy el gondolero toma los comercios que quiere hasta el máximo.
+
+### Los Server Actions redactan el mensaje de las excepciones en producción
+
+Cuando un Server Action **lanza** una excepción que nadie atrapa, Next.js
+reemplaza el mensaje por uno genérico en los builds de producción:
+
+> An error occurred in the Server Components render. The specific message is
+> omitted in production builds to avoid leaking sensitive details.
+
+El texto real queda solo en los logs de Vercel, con un digest. **Un valor
+DEVUELTO no se redacta.**
+
+Hasta el 17/9/2026 `registrarMision` tenía seis mensajes cuidados —vencimiento,
+cupo, distancia, comercio duplicado, campaña inexistente, campaña inactiva— y
+**ninguno era legible** para el gondolero. Donde más dolía era la cola offline,
+que guarda el mensaje como `motivoRechazo` en IndexedDB y se lo muestra con los
+botones Reintentar y Descartar: el gondolero decidía entre los dos leyendo el
+error de Next. El bloqueo por distancia parecía funcionar solo porque el cliente
+lo frena antes, en el paso de GPS, con su propio texto.
+
+**La regla, en `registrarMision` y en cualquier action nueva:**
+
+| Tipo | Qué hace | Por qué |
+|---|---|---|
+| Rechazo de **negocio** — terminal, el usuario puede entenderlo | `return { ok: false, motivo }` | El texto llega entero |
+| Error de **infraestructura** — transitorio | `throw` | Se reintenta; el texto no importa |
+
+La distinción no es estética: es la que usan los llamadores para decidir si la
+misión se marca rechazada o queda pendiente. Al cambiar una action a este
+contrato, **todos sus llamadores van en el mismo commit**. Si deja de lanzar y
+un llamador sigue esperando la excepción, toma el rechazo como éxito — en la cola
+eso significa `borrarMisionDeCola`, o sea el trabajo del gondolero borrado sin
+registro. `components/gondolero/cola-sync-offline.tsx` lleva un `continue` en la
+rama de rechazo que es exactamente esa guarda.
+
+`lib/error-infra.ts` traduce lo que igual llegue ilegible. Y desde este cambio,
+un error inesperado en la cola **deja la misión pendiente en vez de marcarla
+rechazada**: los rechazos reales ahora llegan por el `return`, así que lo único
+que cae en el `catch` es transitorio y descartarlo sería tirar trabajo válido.
+El reintento está acotado por el TTL de 7 días de `lib/mision-queue.ts`.

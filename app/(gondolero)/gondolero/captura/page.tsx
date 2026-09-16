@@ -37,6 +37,7 @@ import {
 } from '@/lib/campana-cache'
 import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed } from '@/lib/mision-queue'
 import { RADIO_BLOQUEO_METROS } from '@/lib/gps-radios'
+import { mensajeErrorInfra } from '@/lib/error-infra'
 import {
   encolarReporte, marcarComercioReportado, leerComerciosReportados,
   enviarReportesPendientes,
@@ -1665,6 +1666,28 @@ function CapturaContent() {
         capturadoAt: Date.now(),
       })
 
+      // ── Rechazo de negocio ──────────────────────────────────────────────
+      // Viene DEVUELTO, no lanzado, así que el texto llega entero: Next redacta
+      // el mensaje de las excepciones en producción pero no toca los valores de
+      // retorno. Es terminal —no lo arregla tener señal— así que se marca en IDB
+      // para que la cola no lo reintente: reintentar vuelve a subir todas las
+      // fotos para recibir el mismo rechazo, y son megas sobre datos móviles.
+      if (!result.ok) {
+        if (guardadoEnIDB) {
+          await actualizarMisionEnCola(idempotenciaKey, {
+            ultimoIntentoAt: Date.now(),
+            ultimoError:     result.motivo,
+            estado:          'rechazada',
+            motivoRechazo:   result.motivo,
+          }).catch(() => {})
+          window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
+        }
+        bloquesCompletados.forEach(b => URL.revokeObjectURL(b.previewUrl))
+        setErrorGlobal(result.motivo)
+        console.warn('[handleEnviarMision] rechazo del servidor:', result.motivo)
+        return
+      }
+
       // Misión registrada — borrar de IDB (best-effort: si falla, el reintento será idempotente)
       if (guardadoEnIDB) {
         borrarMisionDeCola(idempotenciaKey).catch(e =>
@@ -1688,29 +1711,30 @@ function CapturaContent() {
         return
       }
 
-      // Rechazo del servidor: es terminal, no lo arregla tener señal. Hasta
-      // ahora caía en la rama de arriba y al gondolero se le decía "se enviará
-      // cuando tengas señal" sobre una misión que ya estaba rechazada.
+      // ── Error inesperado ────────────────────────────────────────────────
+      // Desde el 17/9/2026 los rechazos de negocio NO llegan acá: vienen
+      // devueltos. Lo que queda es infraestructura —un 500, un timeout, un
+      // deploy en el medio— y eso es transitorio.
       //
-      // Se marca en IDB para que la cola no la reintente: el reintento vuelve a
-      // subir todas las fotos para recibir el mismo rechazo, y son megas sobre
-      // una conexión móvil.
+      // Por eso la misión ya NO se marca 'rechazada': se deja pendiente con su
+      // último error para que la cola la reintente. Marcarla rechazada era
+      // tolerable cuando por acá pasaban también los rechazos reales; ahora
+      // sería el único caso, y estaría descartando trabajo válido por un blip.
+      // El reintento no es infinito: la cola tiene TTL de 7 días.
       if (guardadoEnIDB) {
         await actualizarMisionEnCola(idempotenciaKey, {
           ultimoIntentoAt: Date.now(),
           ultimoError:     msg,
-          estado:          'rechazada',
-          motivoRechazo:   msg,
         }).catch(() => {})
         window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
       }
 
-      // Si el mensaje parece JSON de infraestructura (Vercel/Next.js), mostrar mensaje amigable
-      const esJsonInfra = msg.startsWith('{') || msg.startsWith('[')
-      setErrorGlobal(esJsonInfra
-        ? 'Error al enviar la misión. Revisá tu conexión e intentá de nuevo.'
-        : (msg || 'Error al enviar la misión.'))
-      console.error('[handleEnviarMision] error:', msg)
+      // El texto crudo de un error de infraestructura no le sirve a nadie:
+      // "An error occurred in the Server Components render" es lo que Next
+      // muestra en producción, y un JSON de Vercel es peor. Se reemplaza por
+      // algo que diga qué pasó y qué va a pasar.
+      setErrorGlobal(mensajeErrorInfra(msg, guardadoEnIDB))
+      console.error('[handleEnviarMision] error inesperado:', msg)
     } finally {
       setEnviando(false)
     }
