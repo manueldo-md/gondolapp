@@ -2256,3 +2256,86 @@ pero la segmentación por zona no funciona y la precarga de comercios cae al fal
 de `limit(1500)` sin filtro. Es un agujero de onboarding que hay que resolver: definir
 cuándo y cómo se completa este paso (¿en el onboarding inicial? ¿al entrar a la
 lista de campañas con un banner? ¿obligatorio antes de poder unirse a una campaña?).
+
+### `codigo_gondolero` — un solo generador (resuelto 16/9/2026)
+
+**El agujero de fondo:** `handle_new_user()` no asignaba código. Todo gondolero
+que se registraba por `/auth` nacía sin código — 24 en dev y 24 en prod. La
+migración retroactiva de abril no los alcanzó porque corrió antes de que
+existieran; el `seed-demo-completo.ts` los creó después.
+
+**Había cuatro generadores con reglas distintas**, ninguno con chequeo de
+colisión pese a que la columna es UNIQUE (`profiles_codigo_gondolero_key`):
+
+| Origen | Prefijo | Rango | Limpieza |
+|---|---|---|---|
+| `20260404120258` (SQL) | `alias` → `nombre` → `GOND` | 1000-9999 | ninguna |
+| `20260404140924` (SQL) | igual | **0000-9998** | ninguna |
+| `20260408174732` (SQL) | `FIXR` fijo | 1000-9999 | N/A |
+| `admin/usuarios/actions.ts` (TS) | solo `nombre` | **0000-9998** | `[^a-zA-Z]` |
+
+El `FIXR-` de la migración de fixers nunca se usó: los dos fixers de prod tenían
+`FIXE-`, derivado de "Fixer 1"/"Fixer 2" por el generador de TypeScript.
+
+**Cómo quedó.** La única implementación del formato es la función SQL
+`generar_codigo_gondolero()` (migración `20260916180000`). La llaman dos lugares:
+`handle_new_user()` al registrarse y `backfill_codigos_gondolero()` desde el
+botón "Asignar códigos" de `/admin/usuarios`. **El TypeScript ya no genera
+códigos**; `lib/codigo-gondolero.ts` solo *reconoce* el formato, para el
+placeholder de los paneles de vinculación y para el contador de pendientes.
+
+**Formato: `GND-NNNN-NNNN` con dígitos 2-9.** 8^8 = 16.777.216 combinaciones.
+Sin letras en la parte variable y sin 0 ni 1 porque el código se dicta por
+teléfono — hay un botón de WhatsApp en el perfil del gondolero. Sacar solo `I` y
+`O` no alcanzaba: en castellano be/de/pe/te/ve/e riman entre sí, así que la
+confusión auditoria sobrevive a cualquier alfabeto que incluya letras.
+
+El prefijo es **fijo y no deriva del nombre**. Derivarlo filtraba el nombre real
+de la persona a cualquiera que tuviera el código, y daba prefijos de ancho
+variable (el TS borraba lo que no fuera `[a-zA-Z]` *antes* de cortar a 4, así que
+"Ñuñez" daba `UEZ-`, de tres letras). Es el mismo prefijo para gondoleros y
+fixers: comparten la columna, el UNIQUE es global, y las tres búsquedas por
+código (`distribuidora/gondoleros`, `distribuidora/fixers`, `repositora/fixers`)
+filtran por `tipo_actor`, no por prefijo.
+
+**Tres decisiones de diseño que conviene no revertir sin leer esto:**
+
+1. **Si el trigger agota los 10 reintentos, inserta con `codigo_gondolero` NULL y
+   deja entrar al usuario.** Un código faltante lo repara el botón del panel; un
+   registro abortado es una persona que no pudo entrar a la app y no vuelve.
+   Queda registrado con `RAISE WARNING` en los logs de Postgres, y el botón de
+   `/admin/usuarios` muestra el contador de pendientes.
+2. **El reintento va dentro de un bloque `BEGIN/EXCEPTION`**, que en plpgsql abre
+   una subtransacción: capturar `unique_violation` ahí no aborta el alta. Y se
+   filtra por `CONSTRAINT_NAME`, porque `unique_violation` también se dispara si
+   el `id` ya existe — reintentar eso sería un loop garantizado a fallar diez
+   veces y a tragarse un error real.
+3. **El backfill apunta a los que no tengan el formato nuevo**, no a "todos": así
+   reescribe los 5 códigos viejos de prueba y al mismo tiempo es idempotente.
+
+**Arruga de la whitelist.** `handle_new_user()` fuerza `tipo_actor='gondolero'`
+para cualquier alta (es lo que impide registrarse como admin con la anon key), así
+que también le genera código a marcas, distris y repositoras creadas desde el
+panel admin. El `UPDATE` posterior de `crearUsuario` les pone
+`codigo_gondolero: null` junto con el `tipo_actor` correcto. La alternativa
+—decidir mirando el `tipo_actor` crudo de metadata— se descartó porque deja sin
+código a quien se registre públicamente eligiendo "Marca" y termine convertido en
+gondolero por la whitelist.
+
+**De paso, un bug vecino que se arregló acá:** la versión 052 de
+`handle_new_user()` (7/9/2026) había perdido `celular` del INSERT. El formulario
+de registro lo sigue mandando en metadata y el perfil lo sigue leyendo, así que
+todo celular cargado desde esa fecha se descartaba en silencio. Restaurado.
+
+### Pendiente de producto — el registro público está abierto
+
+`middleware.ts` lista `/auth` como ruta pública y el botón **"Registrarme"** de
+`app/auth/page.tsx` se renderiza sin ninguna condición, con `gondolero` como
+primera opción. Cualquiera que abra la URL se da de alta como gondolero.
+
+Salió a la luz relevando `codigo_gondolero`: el agujero de "nace sin código" no
+era latente a la espera de que se abriera el registro, estaba drenando. Eso ya
+está cerrado, pero **queda la decisión de producto de si el registro debe estar
+abierto**, y no es un bug: es una decisión. Lo que hay que definir es si un
+gondolero puede darse de alta solo o solo por invitación de una distribuidora
+(que es el flujo que sugieren `vinculacion_tokens` y los paneles de invitación).

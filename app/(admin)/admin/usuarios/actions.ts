@@ -8,12 +8,6 @@ import type { TipoActor } from '@/types'
 import { generarAlias } from '@/lib/aliases'
 import { appUrl } from '@/lib/app-url'
 
-function generarCodigo(nombre: string, prefix4: string = 'FIXR'): string {
-  const prefix = nombre.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase() || prefix4
-  const suffix = Math.floor(Math.random() * 9999).toString().padStart(4, '0')
-  return `${prefix}-${suffix}`
-}
-
 async function getAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -163,6 +157,40 @@ export async function asignarAliasExistentes(): Promise<{ asignados: number; err
   return { asignados }
 }
 
+/**
+ * Asigna código a gondoleros y fixers que no tengan uno, o que tengan uno del
+ * formato viejo. Toda la lógica vive en la función SQL backfill_codigos_gondolero,
+ * que reintenta ante colisión contra la columna UNIQUE.
+ *
+ * A diferencia de asignarAliasExistentes, esto NO se traga los errores: devuelve
+ * fallidos aparte de asignados, con el detalle de quiénes quedaron sin código. Un
+ * backfill que arregla la mitad y reporta solo los éxitos deja creer que terminó.
+ */
+export async function asignarCodigosExistentes(): Promise<{
+  asignados: number
+  fallidos: number
+  detalle: string[]
+  error?: string
+}> {
+  const admin = await getAdmin()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (admin as any).rpc('backfill_codigos_gondolero')
+
+  if (error) return { asignados: 0, fallidos: 0, detalle: [], error: error.message }
+
+  // La función devuelve una sola fila (RETURNS TABLE + un RETURN NEXT).
+  const fila = Array.isArray(data) ? data[0] : data
+  if (!fila) return { asignados: 0, fallidos: 0, detalle: [] }
+
+  revalidatePath('/admin/usuarios')
+  return {
+    asignados: fila.asignados ?? 0,
+    fallidos:  fila.fallidos ?? 0,
+    detalle:   (fila.detalle_fallidos ?? []) as string[],
+  }
+}
+
 export async function eliminarUsuario(userId: string): Promise<{ error?: string }> {
   const admin = await getAdmin()
   const { error } = await admin.auth.admin.deleteUser(userId)
@@ -241,11 +269,19 @@ export async function crearUsuario(payload: {
     repositora_id: repositoraId,
   }
 
-  // Generar alias + código personal para gondoleros y fixers
+  // El código personal ya lo puso handle_new_user(), que es el único generador
+  // (generar_codigo_gondolero en la base). Acá solo falta el alias.
+  //
+  // El trigger fuerza tipo_actor='gondolero' para cualquier alta — es la
+  // whitelist que impide registrarse como admin con la anon key — así que
+  // también le genera código a marcas, distris y repositoras. Ellas no lo usan,
+  // y dejarles uno puesto las haría aparecer en las búsquedas por código de los
+  // paneles de vinculación. Se limpia acá, en el mismo UPDATE que les corrige el
+  // tipo_actor.
   if (payload.tipo_actor === 'gondolero' || payload.tipo_actor === 'fixer') {
-    const defaultPrefix = payload.tipo_actor === 'fixer' ? 'FIXR' : 'GOND'
-    profileUpdate.codigo_gondolero = generarCodigo(payload.nombre, defaultPrefix)
     profileUpdate.alias = await generarAlias(admin)
+  } else {
+    profileUpdate.codigo_gondolero = null
   }
 
   await admin.from('profiles').update(profileUpdate).eq('id', authData.user.id)

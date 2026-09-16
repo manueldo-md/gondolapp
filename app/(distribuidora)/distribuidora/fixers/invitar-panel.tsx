@@ -1,5 +1,6 @@
 'use client'
 
+import { EJEMPLO_CODIGO_GONDOLERO } from '@/lib/codigo-gondolero'
 import { useState, useTransition } from 'react'
 import { Link2, Hash, Copy, Check, Loader2, Search, UserCheck } from 'lucide-react'
 import { generarLinkInvitacionFixer, buscarFixerPorCodigo, confirmarVinculacionPorCodigo } from './invitar-actions'
@@ -158,7 +159,7 @@ export function InvitarFixerPanel({
             value={codigo}
             onChange={e => { setCodigo(e.target.value.toUpperCase()); setCodigoError(null); setFixerEncontrado(null); setVinculadoOk(false) }}
             onKeyDown={e => e.key === 'Enter' && handleBuscarCodigo()}
-            placeholder="Ej: FIXR-7823"
+            placeholder={`Ej: ${EJEMPLO_CODIGO_GONDOLERO}`}
             className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gondo-amber-400"
           />
           <button

@@ -4,6 +4,8 @@ import type { TipoActor } from '@/types'
 import { NuevoUsuarioModal } from './nuevo-usuario-modal'
 import { AccionesUsuario } from './acciones-usuario'
 import { AsignarAliasBtn } from './asignar-alias-btn'
+import { AsignarCodigosBtn } from './asignar-codigos-btn'
+import { tieneCodigoVigente } from '@/lib/codigo-gondolero'
 
 function adminClient() {
   return createAdminClient(
@@ -59,6 +61,20 @@ export default async function UsuariosPage({
     admin.from('repositoras').select('id, razon_social').order('razon_social'),
   ])
 
+  // Cuántos gondoleros/fixers están sin código o con uno del formato viejo.
+  // Va en query aparte y no sobre `lista` porque esa está filtrada por tipo y
+  // limitada a 200: el contador tiene que ver a todos, incluso mirando el filtro
+  // "Marcas". Es además el rastro visible de cuando handle_new_user() agota los
+  // reintentos y crea el profile sin código.
+  const { data: codigosData } = await admin
+    .from('profiles')
+    .select('codigo_gondolero')
+    .in('tipo_actor', ['gondolero', 'fixer'])
+
+  const codigosPendientes = ((codigosData ?? []) as { codigo_gondolero: string | null }[])
+    .filter(p => !tieneCodigoVigente(p.codigo_gondolero))
+    .length
+
   // Emails y estado de ban desde auth
   const { data: { users: authUsers } } = await admin.auth.admin.listUsers({ perPage: 1000 })
   const emailMap: Record<string, string> = {}
@@ -102,6 +118,7 @@ export default async function UsuariosPage({
         </div>
         <div className="flex items-center gap-2">
           <AsignarAliasBtn />
+          <AsignarCodigosBtn pendientes={codigosPendientes} />
           <NuevoUsuarioModal
             distribuidoras={(distribuidoras ?? []) as { id: string; razon_social: string }[]}
             marcas={(marcas ?? []) as { id: string; razon_social: string }[]}
