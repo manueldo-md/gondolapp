@@ -106,16 +106,41 @@ function cityCoords(ciudad: string): [number, number] {
   return CITY_COORDS[key] ?? [-32.5, -58.5]
 }
 
+/**
+ * Mapea el tipo del CSV a uno de los seis valores de comercios_tipo_check.
+ *
+ * Los seis valores del CHECK se mapean a sí mismos, además de los sinónimos del
+ * CSV. Faltaban cuatro —entre ellos 'autoservicio', que el map producía como
+ * destino de 'supermercado' pero no aceptaba como entrada— así que una fila que
+ * dijera literalmente "autoservicio" terminaba en 'otro'. Lo mismo con
+ * "mayorista" y "otro".
+ *
+ * El `?? 'otro'` sigue ahí para lo que de verdad no se reconoce, pero avisa: un
+ * tipo que cae al cajón sin que nadie lo note ensucia la distribución del
+ * dashboard, que ahora la muestra.
+ */
+const TIPOS_CSV: Record<string, string> = {
+  // Los seis del CHECK, a sí mismos
+  'almacen':            'almacen',
+  'kiosco':             'kiosco',
+  'autoservicio':       'autoservicio',
+  'dietetica':          'dietetica',
+  'mayorista':          'mayorista',
+  'otro':               'otro',
+  // Sinónimos y variantes con acento que aparecen en el CSV
+  'supermercado':       'autoservicio',
+  'almacen / despensa': 'almacen',
+  'almacén':            'almacen',
+  'despensa':           'almacen',
+  'dietética':          'dietetica',
+}
+
 function tipoComercio(raw: string): string {
-  const m: Record<string, string> = {
-    'supermercado':       'autoservicio',
-    'almacen / despensa': 'almacen',
-    'almacen':            'almacen',
-    'kiosco':             'kiosco',
-    'dietetica':          'dietetica',
-    'dietética':          'dietetica',
-  }
-  return m[raw.toLowerCase().trim()] ?? 'otro'
+  const clave = raw.toLowerCase().trim()
+  const mapeado = TIPOS_CSV[clave]
+  if (mapeado) return mapeado
+  console.warn(`  ⚠ tipo de comercio no reconocido: "${raw}" → 'otro'`)
+  return 'otro'
 }
 
 function driveViewUrl(rawUrl: string): string {

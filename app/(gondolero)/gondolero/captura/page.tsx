@@ -781,7 +781,11 @@ function CapturaContent() {
 
   // ── Estado extra para flujo COMERCIOS ─────────────────────────────────────
   const [cmNombre,    setCmNombre]    = useState('')
-  const [cmTipo,      setCmTipo]      = useState<TipoComercio>('almacen')
+  // Arranca vacío a propósito: un tipo preseleccionado se acepta sin mirarlo y
+  // queda indistinguible de uno elegido de verdad. Hasta el 16/9/2026 arrancaba
+  // en 'almacen', que era además el valor que ponía el DEFAULT de la columna:
+  // los dos disfraces apuntaban a la misma categoría.
+  const [cmTipo,      setCmTipo]      = useState<TipoComercio | ''>('')
   const [cmDireccion, setCmDireccion] = useState('')
   const [cmTelefono,  setCmTelefono]  = useState('')
   const [cmEncargado, setCmEncargado] = useState('')
@@ -1715,6 +1719,10 @@ function CapturaContent() {
   // Handler para enviar el nuevo comercio
   const handleEnviarComercio = async () => {
     if (!campana || !cmNombre.trim()) return
+    // El tipo ya no viene preseleccionado, así que puede faltar. Se avisa acá y
+    // no se deja llegar a la base: el CHECK comercios_tipo_check rechazaría el
+    // string vacío con un error de Postgres que el gondolero no puede leer.
+    if (!cmTipo) { setCmErrorMsg('Elegí el tipo de comercio.'); return }
     if (!navigator.onLine) {
       setCmErrorMsg('Sin conexión: no podés crear comercios nuevos sin internet.')
       return

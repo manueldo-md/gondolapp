@@ -30,7 +30,9 @@ function NuevoComercioForm() {
 
   // ── Datos del comercio ─────────────────────────────────────────────────────
   const [nombre,    setNombre]    = useState(nombreParam)
-  const [tipo,      setTipo]      = useState<TipoComercio>('autoservicio')
+  // Vacío a propósito: un tipo preseleccionado se acepta sin mirarlo y queda
+  // indistinguible de uno elegido. Ver la nota gemela en captura/page.tsx.
+  const [tipo,      setTipo]      = useState<TipoComercio | ''>('')
   const [direccion, setDireccion] = useState('')
   const [lat,       setLat]       = useState<number | null>(null)
   const [lng,       setLng]       = useState<number | null>(null)
@@ -111,6 +113,7 @@ function NuevoComercioForm() {
     setErrorMsg(null)
 
     if (!nombre.trim()) { setErrorMsg('El nombre es obligatorio.'); return }
+    if (!tipo) { setErrorMsg('Elegí el tipo de comercio.'); return }
     if (gpsEstado !== 'ok' || !lat || !lng) {
       setErrorMsg('Necesitamos tu ubicación GPS. Activalo e intentá de nuevo.')
       return
