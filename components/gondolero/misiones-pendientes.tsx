@@ -287,12 +287,18 @@ export function MisionesPendientes() {
         })}
       </ul>
 
-      {/* Pie */}
-      <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-100">
-        <p className="text-xs text-amber-700">
-          Tu trabajo está guardado. Se enviará automáticamente cuando recuperes señal.
-        </p>
-      </div>
+      {/* Pie — solo si hay algo que efectivamente se vaya a enviar solo.
+          La promesa "se enviará automáticamente" no aplica a una misión
+          rechazada: el servidor ya la resolvió y no se reintenta sola. Con
+          todas rechazadas, el gondolero leía que se resolvía solo cuando en
+          realidad tenía que elegir Reintentar o Descartar en cada una. */}
+      {pendientes.some(m => m.estado !== 'rechazada') && (
+        <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-100">
+          <p className="text-xs text-amber-700">
+            Tu trabajo está guardado. Se enviará automáticamente cuando recuperes señal.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
