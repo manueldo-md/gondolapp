@@ -2360,18 +2360,49 @@ decisión. Lo que hay que definir:
 base. Cuenta para el backfill de `codigo_gondolero` — si el conteo de perfiles
 sin código en prod da uno más de lo esperado, es esa.
 
-### Pendiente de producto — el mail de confirmación es el default de Supabase
+### Pendiente — SMTP propio (mail de confirmación: marca, plantilla y límite)
 
-El email que recibe un gondolero al registrarse es la plantilla que viene de
-fábrica: remitente genérico, asunto genérico, y el cuerpo dice **"an application
-powered by Supabase"**. GondolApp no aparece por ningún lado.
+Empezó como un problema de marca y resultó ser uno de disponibilidad. **Las tres
+cosas se resuelven con la misma decisión: poner un SMTP propio.**
 
-Es el **primer contacto** de la persona con el producto, y llega antes de que
-haya visto una sola pantalla de la app. Hay que personalizar la plantilla en
-Supabase (Auth → Email Templates): remitente, asunto y marca. No es código de
-este repo — se configura en el dashboard, y hay que hacerlo **en los dos
-proyectos**, dev y prod.
+**1. La plantilla es la de fábrica.** El mail que recibe un gondolero al
+registrarse tiene remitente y asunto genéricos, y el cuerpo dice **"an
+application powered by Supabase"**. GondolApp no aparece por ningún lado. Es el
+**primer contacto** de la persona con el producto, antes de que haya visto una
+sola pantalla de la app.
 
-Relacionado con la decisión de arriba: si el registro pasa a ser por invitación,
-el mail que hay que escribir es otro, y conviene resolver primero qué flujo
-queda antes de redactar el texto definitivo.
+**2. El remitente no es nuestro.** Sale del dominio de Supabase, no de GondolApp.
+
+**3. El servicio de mail de Supabase tiene un límite fijo que no se puede subir
+sin SMTP propio.** Verificado el 16/9/2026: en dev se llegó al **429 después de
+unos pocos registros seguidos**.
+
+**El riesgo concreto para producción:** si una distribuidora consigue veinte
+altas de gondoleros el mismo día, los últimos **no reciben el mail de
+confirmación y no pueden entrar**. No hay reintento, no hay cola, y desde la app
+el síntoma es indistinguible de "el mail no llegó".
+
+Precisión sobre qué camino es el que está en riesgo, porque no son todos:
+
+| Camino de alta | ¿Manda mail? | ¿Pega contra el límite? |
+|---|---|---|
+| Registro público por `/auth` (`signUp`) | **Sí** | **Sí** |
+| Panel admin (`auth.admin.createUser` con `email_confirm: true`) | No | No |
+
+O sea que el alta desde el panel admin es inmune —la cuenta nace confirmada—
+pero ese **no** es el flujo de una distribuidora: la distri reparte link de
+invitación o código, y cada gondolero se da de alta solo por `/auth`. Veinte
+gondoleros entrando por la invitación de una misma distri son veinte `signUp`
+seguidos, que es exactamente el caso que revienta.
+
+**Relevamiento pendiente para cuando se agarre:**
+- Qué opciones hay (Resend, SendGrid, SES) y cuánto cuesta cada una
+- Qué hay que tocar en Supabase (Auth → SMTP Settings, Auth → Email Templates)
+- Qué hay que tocar en el código, si algo
+- Verificación de dominio / SPF / DKIM para no caer en spam
+- **En los dos proyectos**, dev y prod
+
+Relacionado con el pendiente de arriba: si el registro pasa a ser por
+invitación, el mail que hay que escribir es otro. Conviene definir qué flujo
+queda antes de redactar el texto definitivo — pero **el SMTP no espera a esa
+decisión**, porque el límite pega igual con cualquier flujo que mande mails.
