@@ -48,6 +48,7 @@ type CampanaDetalle = {
 type MisionRow = {
   id: string
   estado: string
+  comercio_id: string | null
   bounty_estado: string | null
   puntos_total: number
   created_at: string
@@ -155,7 +156,7 @@ export default async function CampanaDetallePage({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('misiones')
-      .select('id, estado, bounty_estado, puntos_total, created_at, comercio:comercios ( nombre, direccion )')
+      .select('id, estado, bounty_estado, puntos_total, created_at, comercio_id, comercio:comercios ( nombre, direccion )')
       .eq('campana_id', params.id)
       .eq('gondolero_id', user.id)
       .order('created_at', { ascending: false }),
@@ -225,10 +226,15 @@ export default async function CampanaDetallePage({
   const mostrarPanelAcceso = !yaUnido
   const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || sinAcceso || !!participacionAnteriorEstado
 
-  // Las descartadas se siguen listando abajo (con su etiqueta), pero no
-  // consumen cupo: descartar libera el lugar para hacer otra misión.
-  const misionesQueOcupanCupo = misiones.filter(m => m.estado !== 'descartada')
-  const alcanzeLimite = misionesQueOcupanCupo.length >= c.max_comercios_por_gondolero
+  // El cupo se mide en COMERCIOS DISTINTOS, no en misiones: en seguimiento un
+  // comercio se visita muchas veces a propósito y esas visitas no consumen cupo.
+  // Tiene que coincidir con el gate del servidor en captura/actions.ts.
+  //
+  // Las descartadas no ocupan: descartar libera el lugar para hacer otra misión.
+  const comerciosQueOcupanCupo = new Set(
+    misiones.filter(m => m.estado !== 'descartada').map(m => m.comercio_id).filter(Boolean)
+  )
+  const alcanzeLimite = comerciosQueOcupanCupo.size >= c.max_comercios_por_gondolero
 
   // Para mostrar info de retención de puntos en cada misión
   const misionesAprobadasCount = misiones.filter(m => m.estado === 'aprobada').length
@@ -391,10 +397,14 @@ export default async function CampanaDetallePage({
                 <p className="text-2xl font-bold text-gondo-verde-400">{c.comercios_relevados}</p>
                 <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">comercios<br/>en la campaña</p>
               </div>
+              {/* El contador dice COMERCIOS y no misiones, porque el máximo de
+                  al lado se mide en comercios. Decía "misiones tuyas (máx 20)"
+                  comparando dos cosas distintas: en seguimiento se veía
+                  "45 misiones tuyas (máx 20)", un número imposible. */}
               <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
-                <p className="text-2xl font-bold text-gray-700">{misionesQueOcupanCupo.length}</p>
+                <p className="text-2xl font-bold text-gray-700">{comerciosQueOcupanCupo.size}</p>
                 <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">
-                  {misionesQueOcupanCupo.length === 1 ? 'misión tuya' : 'misiones tuyas'}<br/>
+                  {comerciosQueOcupanCupo.size === 1 ? 'comercio tuyo' : 'comercios tuyos'}<br/>
                   <span className="text-gray-300">(máx {c.max_comercios_por_gondolero})</span>
                 </p>
               </div>
@@ -417,7 +427,7 @@ export default async function CampanaDetallePage({
                 <p className="text-xs text-gray-400 mt-1">
                   {cupoLleno
                     ? 'El cupo total de la campaña está completo.'
-                    : `Completaste el máximo de ${c.max_comercios_por_gondolero} comercios para esta campaña.`}
+                    : `Ya tomaste ${comerciosQueOcupanCupo.size} comercios, que es el máximo de esta campaña. Podés seguir trabajando en los que ya tenés.`}
                 </p>
               </div>
             ))}

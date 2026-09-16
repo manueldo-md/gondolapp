@@ -86,3 +86,97 @@ export async function sincronizarComerciosRelevados(
     return null
   }
 }
+
+/**
+ * Recalcula `participaciones.comercios_completados` de UN gondolero en UNA
+ * campaña: comercios DISTINTOS con al menos una misión aprobada.
+ *
+ * ── POR QUÉ DISTINTOS Y NO MISIONES ─────────────────────────────────────────
+ * Lo que hace valioso el trabajo es la COBERTURA, no el volumen. Un gondolero
+ * que visita el mismo comercio tres veces no cubrió tres puntos de venta. Es el
+ * mismo criterio que el mínimo de la campaña.
+ *
+ * En modalidad 'puntual' no cambia nada: el índice único
+ * `misiones_campana_comercio_uniq` garantiza una misión viva por comercio, así
+ * que misiones aprobadas y comercios distintos son el mismo número. En
+ * 'seguimiento' —donde un comercio se visita a propósito muchas veces— es la
+ * diferencia entre un contador que dice comercios y uno que cuenta visitas.
+ * Por eso el criterio queda igual en las dos modalidades y no hay que ramificar.
+ *
+ * ── POR QUÉ SOBRE APROBADAS ─────────────────────────────────────────────────
+ * Distinto de `sincronizarComerciosRelevados`, que cuenta misiones VIVAS.
+ * No es incoherencia, son preguntas distintas: aquélla responde "cuántos PDV
+ * tocó la campaña" y ésta "cuánto trabajo VALIDADO hizo este gondolero". Y este
+ * número se compara contra `min_comercios_para_cobrar`, que gobierna un pago:
+ * si contara trabajo sin revisar, el gondolero vería "3 de 3" en su tarjeta y no
+ * cobraría, porque el gate del pago sí exige aprobación. Dos números en la
+ * misma pantalla diciendo cosas distintas.
+ *
+ * ── POR QUÉ RECALCULAR ──────────────────────────────────────────────────────
+ * Se mantenía con `+1` repartido en cuatro lugares, y encima incrementaba por
+ * FOTO aprobada: una misión con dos fotos sumaba dos. Mismo argumento que el
+ * contador de la campaña — un recálculo es UNA regla y no puede desincronizarse
+ * de sí misma.
+ */
+export async function sincronizarComerciosCompletados(
+  campanaId: string,
+  gondoleroId: string,
+  admin: Admin,
+): Promise<number | null> {
+  try {
+    const { data, error } = await admin
+      .from('misiones')
+      .select('comercio_id')
+      .eq('campana_id', campanaId)
+      .eq('gondolero_id', gondoleroId)
+      .eq('estado', 'aprobada')
+
+    if (error) {
+      console.error('[comercios-completados] error leyendo misiones:', error.message)
+      return null
+    }
+
+    const total = new Set(
+      (data ?? [])
+        .map((m: { comercio_id: string | null }) => m.comercio_id)
+        .filter(Boolean)
+    ).size
+
+    const update: Record<string, unknown> = { comercios_completados: total }
+
+    // El mínimo cierra la participación, pero NO la reabre.
+    //
+    // Si el número baja —una misión descartada, una foto retirada— y queda por
+    // debajo del mínimo, la participación se deja en 'completada'. Quitarle a
+    // alguien un estado que ya vio en pantalla es peor que dejarlo puesto, y el
+    // pago no depende de esta columna sino de `bounty_estado`.
+    const { data: campana, error: errCampana } = await admin
+      .from('campanas')
+      .select('min_comercios_para_cobrar')
+      .eq('id', campanaId)
+      .maybeSingle()
+
+    if (errCampana) {
+      console.error('[comercios-completados] error leyendo campaña:', errCampana.message)
+    } else {
+      const minimo: number | null = campana?.min_comercios_para_cobrar ?? null
+      if (minimo !== null && total >= minimo) update.estado = 'completada'
+    }
+
+    const { error: errUpd } = await admin
+      .from('participaciones')
+      .update(update)
+      .eq('campana_id', campanaId)
+      .eq('gondolero_id', gondoleroId)
+
+    if (errUpd) {
+      console.error('[comercios-completados] error actualizando participación:', errUpd.message)
+      return null
+    }
+
+    return total
+  } catch (err) {
+    console.error('[comercios-completados] error inesperado:', err)
+    return null
+  }
+}

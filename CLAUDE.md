@@ -2761,3 +2761,31 @@ falta saber **cuándo se cerró efectivamente**, que es un dato que hoy no exist
 está anotado como limitación en el comentario de esa función. La solución
 probablemente sea una columna `cerrada_at` que se escriba al pasar a 'cerrada',
 y entonces el corte de 90 días se mide sobre eso en las dos modalidades.
+
+### Etapa 5 de seguimiento — medir la semana (pendiente)
+
+`visitas_por_semana` hoy **solo se muestra**: en la lista de distri, la tarjeta
+del gondolero y la cabecera de resultados. Barrido el 17/9/2026, no hay una sola
+línea que lo mida. Una campaña de seguimiento acepta 0 visitas o 50 en la semana
+y el sistema no nota la diferencia: declara una frecuencia que nadie verifica.
+
+**Es la diferencia entre "se puede crear y capturar" y "funciona"** — y es
+justamente lo que la distribuidora está comprando.
+
+Lo que hay que definir y construir:
+
+- **Qué es la semana.** Lunes a domingo, según se decidió. Pero el servidor corre
+  en UTC y Argentina es GMT-3, así que el lunes empezaría a las 21:00 del
+  domingo y las visitas de esas tres horas contarían para la semana equivocada.
+  **No se puede hacer bien sin resolver antes la zona horaria** (ver la sección
+  "Zona horaria" de este archivo).
+- **Qué ve el gondolero.** Hoy no tiene forma de saber cuántas visitas le faltan
+  esta semana ni en qué comercio. Sin eso, la frecuencia es una regla que solo
+  conoce quien creó la campaña.
+- **Qué ve la distribuidora.** Cumplimiento por comercio y por semana, que es el
+  dato por el que paga.
+- **Qué pasa si no se cumple.** ¿Se avisa? ¿Afecta el pago? Es una decisión de
+  producto, no una consecuencia técnica.
+- **Contra qué se mide.** El denominador natural es
+  `comercios asignados × visitas_por_semana`, pero "asignados" no existe como
+  concepto: hoy el gondolero toma los comercios que quiere hasta el máximo.

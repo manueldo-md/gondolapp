@@ -662,14 +662,17 @@ async function main() {
         }
       }
 
-      // Actualizar participación count
+      // Los puntos acumulados sí se cuentan acá; `comercios_completados` NO.
+      // Ese contador lo recalcula el PASO FINAL desde las misiones reales: el
+      // `count++` de acá corría también cuando la misión ya existía, así que una
+      // segunda corrida del seed lo inflaba.
       const part = partMap.get(gondoleroId)!
       part.count++
     }
 
-    // Actualizar participaciones con conteos finales
-    for (const [gId, p] of partMap.entries()) {
-      await (db as any).from('participaciones').update({ comercios_completados: p.count, puntos_acumulados: p.count * 100 }).eq('id', p.id)
+    // Solo puntos_acumulados. comercios_completados va en el paso final.
+    for (const [, p] of partMap.entries()) {
+      await (db as any).from('participaciones').update({ puntos_acumulados: p.count * 100 }).eq('id', p.id)
     }
     console.log(`  ✓ Campaña 1: ${stats.misiones} misiones, ${stats.fotos} fotos`)
   }
@@ -936,6 +939,79 @@ async function main() {
   // comercios todavía no tienen localidad_id: siempre asignaba cero.
 
   // ════════════════════════════════════════════════════════════
+  // PASO FINAL — Recalcular contadores derivados
+  // ════════════════════════════════════════════════════════════
+  //
+  // POR QUÉ EXISTE ESTE PASO: el seed inserta misiones y fotos DIRECTO, sin
+  // pasar por las funciones de la app que mantienen los contadores. Cada bloque
+  // que crea datos llevaba su propia cuenta a mano, y esas cuentas se
+  // desincronizaban: `part.count++` corría por cada fila del CSV incluso cuando
+  // la misión ya existía, así que una segunda corrida del seed inflaba el
+  // número. En producción, las participaciones descuadradas al 17/9/2026 tenían
+  // todas misiones con la hora exacta del seed — el descuadre venía de acá, no
+  // del flujo real.
+  //
+  // La solución es la misma que en la app: NO llevar la cuenta, recalcularla.
+  // Un recálculo al final es UNA regla y no puede desincronizarse de sí misma,
+  // y además es idempotente: correr el seed diez veces deja el mismo número.
+  console.log('\n──── PASO FINAL: Recalcular contadores ────')
+  {
+    const { data: todasMisiones } = await (db as any)
+      .from('misiones')
+      .select('campana_id, gondolero_id, comercio_id, estado')
+
+    const misionesArr = (todasMisiones ?? []) as {
+      campana_id: string; gondolero_id: string; comercio_id: string | null; estado: string | null
+    }[]
+
+    // participaciones.comercios_completados = comercios DISTINTOS con misión
+    // APROBADA. Misma definición que lib/comercios-relevados.ts.
+    const porParticipacion = new Map<string, Set<string>>()
+    // campanas.comercios_relevados = comercios DISTINTOS con misión VIVA.
+    const porCampana = new Map<string, Set<string>>()
+
+    for (const m of misionesArr) {
+      if (!m.comercio_id) continue
+      if (m.estado !== 'descartada') {
+        if (!porCampana.has(m.campana_id)) porCampana.set(m.campana_id, new Set())
+        porCampana.get(m.campana_id)!.add(m.comercio_id)
+      }
+      if (m.estado === 'aprobada') {
+        const clave = `${m.campana_id}|${m.gondolero_id}`
+        if (!porParticipacion.has(clave)) porParticipacion.set(clave, new Set())
+        porParticipacion.get(clave)!.add(m.comercio_id)
+      }
+    }
+
+    const { data: participaciones } = await (db as any)
+      .from('participaciones')
+      .select('id, campana_id, gondolero_id')
+
+    let partActualizadas = 0
+    for (const p of ((participaciones ?? []) as { id: string; campana_id: string; gondolero_id: string }[])) {
+      const total = porParticipacion.get(`${p.campana_id}|${p.gondolero_id}`)?.size ?? 0
+      const { error } = await (db as any)
+        .from('participaciones')
+        .update({ comercios_completados: total })
+        .eq('id', p.id)
+      if (error) console.error(`  ⚠ participación ${p.id}: ${error.message}`)
+      else partActualizadas++
+    }
+
+    let campActualizadas = 0
+    for (const [campanaId, comercios] of porCampana.entries()) {
+      const { error } = await (db as any)
+        .from('campanas')
+        .update({ comercios_relevados: comercios.size })
+        .eq('id', campanaId)
+      if (error) console.error(`  ⚠ campaña ${campanaId}: ${error.message}`)
+      else campActualizadas++
+    }
+
+    console.log(`  ✓ ${partActualizadas} participaciones y ${campActualizadas} campañas recalculadas`)
+  }
+
+  // ════════════════════════════════════════════════════════════
   // RESUMEN
   // ════════════════════════════════════════════════════════════
   console.log('\n' + '═'.repeat(55))
@@ -1028,7 +1104,9 @@ async function crearCampanaConMisiones({
     // Participación
     await (db as any).from('participaciones').upsert({
       campana_id: c.id, gondolero_id: gondoleroId,
-      estado: 'activa', comercios_completados: 1, puntos_acumulados: puntosXMision,
+      // comercios_completados arranca en 0: lo fija el PASO FINAL desde las
+      // misiones reales. Ponerlo a mano acá era adivinar.
+      estado: 'activa', comercios_completados: 0, puntos_acumulados: puntosXMision,
     }, { onConflict: 'campana_id,gondolero_id', ignoreDuplicates: true })
   }
 }

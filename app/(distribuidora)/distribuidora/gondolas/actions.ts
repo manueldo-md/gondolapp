@@ -8,6 +8,7 @@ import { getConfig } from '@/lib/config'
 import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
+import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
 
 function createAdminClient() {
   return createSupabaseClient(
@@ -129,30 +130,24 @@ export async function aprobarFoto(fotoId: string) {
   // 7. Actualizar participacion del gondolero
   const { data: part } = await adminClient
     .from('participaciones')
-    .select('comercios_completados, puntos_acumulados')
+    .select('puntos_acumulados')
     .eq('campana_id', foto.campana_id)
     .eq('gondolero_id', foto.gondolero_id)
     .single()
 
   if (part) {
-    const nuevosComercios = (part.comercios_completados ?? 0) + 1
-    const updateData: Record<string, number | string> = {
-      puntos_acumulados:     (part.puntos_acumulados ?? 0) + campana.puntos_por_foto,
-      comercios_completados: nuevosComercios,
-    }
-
-    // Verificar si alcanzó el mínimo para completar la campaña
-    const minRequerido: number | null = campana.min_comercios_para_cobrar ?? null
-    if (minRequerido !== null && nuevosComercios >= minRequerido) {
-      updateData.estado = 'completada'
-    }
-
     await adminClient
       .from('participaciones')
-      .update(updateData)
+      .update({ puntos_acumulados: (part.puntos_acumulados ?? 0) + campana.puntos_por_foto })
       .eq('campana_id', foto.campana_id)
       .eq('gondolero_id', foto.gondolero_id)
   }
+
+  // `comercios_completados` y el estado 'completada' los resuelve el helper:
+  // recalcula comercios DISTINTOS con misión aprobada. Antes acá había un `+1`
+  // por FOTO aprobada —una misión de dos fotos sumaba dos— repetido en cuatro
+  // archivos. Ver lib/comercios-relevados.ts.
+  await sincronizarComerciosCompletados(foto.campana_id, foto.gondolero_id, adminClient)
 
   // 8. Verificar y desbloquear logros
   if (profileNivel) {
@@ -355,27 +350,20 @@ export async function accionMasivaDistri(
     // Participación
     const { data: part } = await adminClient
       .from('participaciones')
-      .select('comercios_completados, puntos_acumulados')
+      .select('puntos_acumulados')
       .eq('campana_id', foto.campana_id)
       .eq('gondolero_id', foto.gondolero_id)
       .single()
 
     if (part) {
-      const nuevosComercios = (part.comercios_completados ?? 0) + 1
-      const updateData: Record<string, number | string> = {
-        puntos_acumulados:     (part.puntos_acumulados ?? 0) + puntos,
-        comercios_completados: nuevosComercios,
-      }
-      const minRequerido: number | null = campana?.min_comercios_para_cobrar ?? null
-      if (minRequerido !== null && nuevosComercios >= minRequerido) {
-        updateData.estado = 'completada'
-      }
       await adminClient
         .from('participaciones')
-        .update(updateData)
+        .update({ puntos_acumulados: (part.puntos_acumulados ?? 0) + puntos })
         .eq('campana_id', foto.campana_id)
         .eq('gondolero_id', foto.gondolero_id)
     }
+
+    await sincronizarComerciosCompletados(foto.campana_id, foto.gondolero_id, adminClient)
 
     // Actualizar estado de la misión y acreditar puntos si alcanzó el mínimo
     await actualizarEstadoMision({

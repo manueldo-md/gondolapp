@@ -204,19 +204,49 @@ export async function registrarMision(params: RegistrarMisionParams) {
     }
   }
 
-  // Verificar que el gondolero no superó el máximo de comercios permitido.
-  // Las descartadas no cuentan: el gondolero no completó esa misión, así que
-  // le queda el cupo libre para hacer otra en su lugar.
+  // Verificar que el gondolero no superó el máximo de COMERCIOS permitido.
+  //
+  // Comercios DISTINTOS, no misiones. Hasta el 17/9/2026 contaba misiones, y en
+  // una campaña de seguimiento eso bloquea a la primera semana: 15 comercios ×
+  // 3 visitas = 45 misiones contra un tope de 20. El repositor quedaba afuera el
+  // miércoles, con un mensaje que le decía que había completado 20 comercios
+  // cuando había hecho 7.
+  //
+  // En puntual no cambia nada: el índice único misiones_campana_comercio_uniq
+  // garantiza una misión viva por comercio, así que los dos números coinciden.
+  //
+  // Las descartadas no cuentan: el gondolero no completó esa misión, así que le
+  // queda el cupo libre para hacer otra en su lugar. El filtro va en JS y no en
+  // la query: `.neq('estado','descartada')` de PostgREST descarta también las
+  // filas con estado NULL —lógica de tres valores— y misiones.estado es nullable
+  // (DEFAULT 'pendiente' pero sin NOT NULL). El `!==` de JS sobre null da true y
+  // las conserva. Mismo motivo que en lib/comercios-relevados.ts.
   if (campana.max_comercios_por_gondolero) {
-    const { count } = await db
+    const { data: misionesPropias, error: errCupo } = await db
       .from('misiones')
-      .select('id', { count: 'exact', head: true })
+      .select('comercio_id, estado')
       .eq('campana_id', params.campanaId)
       .eq('gondolero_id', user.id)
-      .neq('estado', 'descartada')
 
-    if ((count ?? 0) >= campana.max_comercios_por_gondolero) {
-      throw new Error(`Ya completaste el máximo de ${campana.max_comercios_por_gondolero} comercios en esta campaña.`)
+    if (errCupo) {
+      console.error('[registrarMision] Error leyendo el cupo del gondolero:', errCupo.message)
+    } else {
+      const comerciosPropios = new Set(
+        (misionesPropias ?? [])
+          .filter((m: { estado: string | null }) => m.estado !== 'descartada')
+          .map((m: { comercio_id: string | null }) => m.comercio_id)
+          .filter(Boolean)
+      )
+      // El comercio que se está relevando ahora solo ocupa cupo si es NUEVO para
+      // este gondolero. En seguimiento, volver a uno que ya visitó no consume
+      // nada: es exactamente lo que la campaña le pide hacer.
+      const esComercioNuevo = !comerciosPropios.has(params.comercioId)
+      if (esComercioNuevo && comerciosPropios.size >= campana.max_comercios_por_gondolero) {
+        throw new Error(
+          `Ya tenés ${comerciosPropios.size} comercios en esta campaña, que es el máximo. ` +
+          `Podés seguir trabajando en los que ya tomaste.`
+        )
+      }
     }
   }
 

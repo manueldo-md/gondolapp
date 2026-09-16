@@ -5,6 +5,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { calcularDistanciaMetros } from '@/lib/utils'
 import { crearNotificacionDistri, crearNotificacionAdmin } from '@/lib/notificaciones'
+import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
 
 /**
  * Comercios que ya tienen una misión viva en esta campaña.
@@ -364,12 +365,12 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     })
   }
 
-  // Incrementar comercios_completados en la participación
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin as any)
-    .from('participaciones')
-    .update({ comercios_completados: (participacion.comercios_completados ?? 0) + 1 })
-    .eq('id', participacion.id)
+  // `comercios_completados` lo recalcula el helper: comercios DISTINTOS con
+  // misión aprobada. Acá arriba se acaba de crear una misión en 'pendiente', así
+  // que lo más probable es que el número no se mueva todavía — y eso es
+  // correcto. Antes había un `+1` que sumaba al crear, o sea que contaba trabajo
+  // sin revisar. Ver lib/comercios-relevados.ts.
+  await sincronizarComerciosCompletados(params.campanaId, user.id, admin)
 
   return {
     comercioId: comercio.id,

@@ -8,6 +8,7 @@ import { getConfig } from '@/lib/config'
 import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
+import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
 
 function adminClient() {
   return createSupabaseClient(
@@ -129,30 +130,22 @@ export async function aprobarFotoMarca(fotoId: string) {
   // 6. Actualizar participación del gondolero
   const { data: part } = await admin
     .from('participaciones')
-    .select('comercios_completados, puntos_acumulados')
+    .select('puntos_acumulados')
     .eq('campana_id', foto.campana_id)
     .eq('gondolero_id', foto.gondolero_id)
     .single()
 
   if (part) {
-    const nuevosComercios = (part.comercios_completados ?? 0) + 1
-    const updateData: Record<string, number | string> = {
-      puntos_acumulados:     (part.puntos_acumulados ?? 0) + campana.puntos_por_foto,
-      comercios_completados: nuevosComercios,
-    }
-
-    // Verificar si alcanzó el mínimo para completar la campaña
-    const minRequerido: number | null = campana.min_comercios_para_cobrar ?? null
-    if (minRequerido !== null && nuevosComercios >= minRequerido) {
-      updateData.estado = 'completada'
-    }
-
     await admin
       .from('participaciones')
-      .update(updateData)
+      .update({ puntos_acumulados: (part.puntos_acumulados ?? 0) + campana.puntos_por_foto })
       .eq('campana_id', foto.campana_id)
       .eq('gondolero_id', foto.gondolero_id)
   }
+
+  // `comercios_completados` y el estado 'completada': comercios DISTINTOS con
+  // misión aprobada, recalculados. Ver lib/comercios-relevados.ts.
+  await sincronizarComerciosCompletados(foto.campana_id, foto.gondolero_id, admin)
 
   // 7. Verificar y desbloquear logros
   if (profileNivel) {

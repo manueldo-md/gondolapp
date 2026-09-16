@@ -81,17 +81,31 @@ export async function aprobarMisionCore(params: {
     .eq('id', misionId)
   chequear('marcar la misión como aprobada', errAprobar)
 
-  // 2. Contar misiones aprobadas del gondolero en la campaña
-  //    (incluye la que acabamos de actualizar)
-  const { count: misionesAprobadas, error: errContar } = await admin
+  // 2. Contar COMERCIOS DISTINTOS aprobados del gondolero en la campaña
+  //    (incluye el de la misión que acabamos de actualizar).
+  //
+  // Distintos y no misiones: `min_comercios_para_cobrar` dice comercios, y lo
+  // que hace valioso el trabajo es la COBERTURA, no el volumen. Un gondolero que
+  // visita el mismo comercio tres veces no cubrió tres puntos de venta, y hasta
+  // el 17/9/2026 cobraba como si lo hubiera hecho.
+  //
+  // En modalidad 'puntual' el número es idéntico —el índice único
+  // misiones_campana_comercio_uniq garantiza una misión viva por comercio— así
+  // que el criterio no se ramifica por modalidad: es el mismo y en puntual no
+  // cambia nada.
+  const { data: aprobadas, error: errContar } = await admin
     .from('misiones')
-    .select('id', { count: 'exact', head: true })
+    .select('comercio_id')
     .eq('campana_id',   campanaId)
     .eq('gondolero_id', gondoleroId)
     .eq('estado',       'aprobada')
-  chequear('contar las misiones aprobadas', errContar)
+  chequear('contar los comercios aprobados', errContar)
 
-  const countAprobadas = misionesAprobadas ?? 0
+  const countAprobadas = new Set(
+    ((aprobadas ?? []) as { comercio_id: string | null }[])
+      .map(m => m.comercio_id)
+      .filter(Boolean)
+  ).size
 
   if (countAprobadas >= minParaCobrar) {
     // 3a/3b. Liberar las misiones retenidas Y APROBADAS.
@@ -148,7 +162,7 @@ export async function aprobarMisionCore(params: {
         gondolero_id: gondoleroId,
         tipo:         'credito',
         monto:        Math.round(totalPuntos),
-        concepto:     `Puntos desbloqueados · ${countAprobadas} misiones aprobadas`,
+        concepto:     `Puntos desbloqueados · ${countAprobadas} comercio${countAprobadas === 1 ? '' : 's'} relevado${countAprobadas === 1 ? '' : 's'}`,
         campana_id:   campanaId,
       })
       // El más caro de los cuatro si falla: las misiones ya quedaron en
