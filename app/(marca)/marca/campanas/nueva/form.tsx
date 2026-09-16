@@ -312,10 +312,12 @@ export function NuevaCampanaForm({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Fecha de cierre
+                  Fecha de cierre <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
+                  required
+                  min={s2.fecha_inicio || undefined}
                   value={s2.fecha_fin}
                   onChange={e => setS2(p => ({ ...p, fecha_fin: e.target.value }))}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-indigo-600/20 focus:border-gondo-indigo-600 transition"

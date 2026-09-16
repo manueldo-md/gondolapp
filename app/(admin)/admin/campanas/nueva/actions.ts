@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
+import { validarFechasCampana } from '@/lib/campana-fechas'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -41,6 +42,16 @@ export async function crearCampanaAdmin(formData: FormData) {
     formData.get('tope_total_comercios') as string
   )
   if (!chequeoMinimo.ok) return { error: chequeoMinimo.error! }
+
+  // Las fechas también en el servidor: el formulario se puede eludir con un POST
+  // directo. La base lo respalda con el CHECK campanas_fecha_fin_por_modalidad,
+  // pero sin esto el usuario vería un error de constraint de Postgres en vez de
+  // una frase que se entienda.
+  const chequeoFechas = validarFechasCampana(
+    formData.get('fecha_inicio') as string,
+    formData.get('fecha_fin') as string
+  )
+  if (!chequeoFechas.ok) return { error: chequeoFechas.error! }
 
   // Crear campaña
   const { data: campana, error: errCampana } = await admin

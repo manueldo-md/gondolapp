@@ -2065,6 +2065,24 @@ hasta probarlos uno por uno. Siete schemas por tres editores duplicados es
 superficie que no se puede verificar en una sesión. La obligatoriedad de
 `fecha_fin` se resolvió aparte, con validación explícita.
 
+> **SE INTENTÓ CONECTAR `schemaCampanaPaso2` EL 16/9/2026 Y NO SE PUEDE.**
+> El schema exige `fecha_limite_inscripcion` y `es_abierta`, y **ninguno de los
+> tres editores manda esos campos**: ni los formularios los piden ni las actions
+> los insertan (se quedan con el default de la base). `safeParse` fallaría el
+> 100% de las creaciones, en los tres paneles.
+>
+> **El schema describe un formulario que ya no existe.** Se escribió en abril,
+> nunca se llamó, y los editores siguieron evolucionando sin él. Eso es lo que
+> hace que "conectar los schemas" no sea un trabajo de plomería: hay que decidir
+> primero, para cada uno, si la regla sigue valiendo o si el schema quedó viejo.
+>
+> Presumir que los otros seis están al día sería el mismo error. Cada uno hay que
+> contrastarlo contra el formulario que dice validar **antes** de enchufarlo.
+>
+> Lo que sí se rescató de `schemaCampanaPaso2` es la regla de que el fin sea
+> posterior al inicio, que vive ahora en `lib/campana-fechas.ts` junto con la
+> obligatoriedad de `fecha_fin`.
+
 **Ojo con el orden cuando se agarre:** los formularios de campaña están
 duplicados en tres rutas (ver "Deuda conocida"). Conectar los schemas sin
 unificarlos antes es escribir la misma conexión tres veces.

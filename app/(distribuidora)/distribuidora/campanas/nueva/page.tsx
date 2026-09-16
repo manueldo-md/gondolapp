@@ -173,9 +173,13 @@ export default function NuevaCampanaPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Fecha de cierre</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Fecha de cierre <span className="text-red-500">*</span>
+              </label>
               <input
                 type="date"
+                required
+                min={form.fecha_inicio || undefined}
                 value={form.fecha_fin}
                 onChange={set('fecha_fin')}
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
