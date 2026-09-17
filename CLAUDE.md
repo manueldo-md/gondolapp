@@ -3593,28 +3593,73 @@ lo manda a buscar algo que no va a encontrar.
 bloque de puntos, y ese último no tiene que arrastrar el módulo de servidor.
 `campana-altas.ts` solo importa `@/types`.
 
-### PENDIENTE de relevar — las fotos de fachada no se ven bien en los thumbs de comercios
+### La fachada se guarda como STORAGE PATH, nunca como URL (resuelto 17/9/2026)
 
-Reportado el 17/9/2026. **Sin relevar: falta precisar en qué pantalla y qué pasa
-exactamente.** Se anota ahora para no perderlo, no como diagnóstico.
+Era el bug de los thumbs. `comercios.foto_fachada_url` tenía **dos formatos**
+según por dónde entró el comercio: `crearComercioNuevo` guardaba el storage path
+y `crearComercioParaCaptura` la URL pública completa. Las cinco pantallas hacen
+`createSignedUrl(valor)`, o sea que **asumen un path**: con una URL adentro, el
+"path" que le llega a Storage es `https:/proyecto.supabase.co/...`, no existe
+ningún objeto así, la firma falla y el thumb queda roto.
 
-Lo que hay que contestar antes de tocar nada:
+**El formato nuevo era el correcto y el viejo el roto** —al revés de lo que
+parecía—. Medido en dev el 17/9: las 3 filas con URL fallan al firmar, las 4 con
+path firman bien, y los archivos de las 7 existen.
 
-- **Qué pantalla.** Hay al menos cinco que muestran comercios con foto:
-  `/admin/comercios`, `/admin/comercios/pendientes`, `/distribuidora/comercios`,
-  `/distribuidora/comercios/pendientes` y `/distribuidora/comercios/[id]`.
-  Pueden no comportarse igual: unas usan URL firmada y otras no.
-- **Qué quiere decir "no se ven bien".** No cargan, cargan recortadas, cargan
-  deformadas, tardan, o se ven las de otros comercios. Son cinco bugs distintos.
-- **Si es de todas las fachadas o de algunas.** Ojo con una diferencia conocida:
-  `crearComercioNuevo` guarda en `comercios.foto_fachada_url` el
-  **`storage_path`**, no la URL pública, mientras que `crearComercioParaCaptura`
-  guarda la **URL**. O sea que la misma columna tiene dos formatos según por
-  dónde entró el comercio — eso solo ya explicaría que unas se vean y otras no.
-- **Si el bucket es público o pide URL firmada.** `/admin/comercios` arma
-  `fachadasSignedMap`, así que al menos ahí se asume que hay que firmar.
+**Por qué gana el path**, en orden de peso:
 
-Relacionado: el aspect ratio de la fachada no está definido en ningún lado. La
-foto sale de la cámara del teléfono en vertical y los thumbs son cuadrados o
-apaisados, así que un recorte centrado puede estar cortando justo el cartel del
-comercio — que es lo único que hace útil a esa foto.
+1. **Los dos buckets son PRIVADOS** (`fotos-gondola` y `fotos-fachada`). La URL
+   guardada es `/object/public/…`, que en un bucket privado no sirve para nada.
+   No era una preferencia de formato: la URL era **dato malo** desde el día uno.
+2. **La URL lleva el dominio del proyecto adentro.** Un dump de dev restaurado en
+   prod —o al revés— deja filas apuntando al storage del otro ambiente. Un path
+   es relativo al bucket del cliente que firma: siempre resuelve contra el
+   ambiente donde corre.
+3. El código ya esperaba un path en los cinco lugares, y `fotos.storage_path` ya
+   establecía la convención.
+
+El costo es resolver al leer, y se paga una sola vez en
+**`lib/storage-fachada.ts`**: `pathDeFachada()` normaliza las tres formas que
+existen —path, URL de Supabase, URL ajena— y `firmarFachadas()` / `firmarFachada()`
+devuelven lo mostrable. Las cinco pantallas pasan por ahí; antes cada una repetía
+el mismo `Promise.all` con el mismo `3600`, y **las cinco tenían el mismo bug**.
+
+Datos migrados con `20260918100000_fachada_un_solo_formato.sql`. El `substring`
+no toca las URLs que no son de nuestro storage: `pathDeFachada` las reconoce como
+ajenas y las muestra tal cual, que es mejor que convertirlas a un path inventado.
+
+**Sigue pendiente lo del aspect ratio**, que es otro problema y no éste: la foto
+sale de la cámara en vertical y los thumbs son cuadrados, así que un recorte
+centrado puede estar cortando el cartel del comercio — lo único que hace útil a
+esa foto.
+
+### `fotos.url` tiene la misma bomba, pero dormida
+
+`fotos` tiene **dos** columnas: `storage_path` (100% paths, en dev y en prod) y
+`url`, que es un cajón mezclado:
+
+| `fotos.url` | Prod | Dev |
+|---|---|---|
+| URL de Drive | 112 | 112 |
+| URL de picsum | 73 | 73 |
+| **URL de Supabase (con el dominio adentro)** | **8** | **67** |
+
+**El diseño ya es correcto y por eso no urge:** los cinco lugares que muestran
+fotos de góndola firman `storage_path` y usan `url` **solo como fallback**
+(`signedUrl ?? f.url`). Las filas de Drive y picsum son del seed y no tienen
+objeto en Storage: para ésas el fallback es lo único que hay, y por eso la
+columna no se puede borrar sin más.
+
+Las 8 de prod y 67 de dev con dominio de Supabase **sí son la bomba**: si un dump
+cruza de ambiente, apuntan al storage del otro. Hoy no se nota porque esas filas
+tienen un `storage_path` válido y el fallback nunca se dispara.
+
+**Dos excepciones que NO firman y muestran `f.url` crudo:**
+`/repositora/dashboard` (línea 178) y `/repositora/gondolas` (línea 171). En un
+bucket privado, una foto de Supabase ahí se ve rota hoy. Es el mismo arreglo que
+las fachadas —pasar por un helper— y queda pendiente.
+
+**Cuando se agarre:** vaciar `fotos.url` para las filas que tengan
+`storage_path` (el fallback no aporta nada ahí) y dejarla solo para las de Drive
+y picsum, que son las únicas que la necesitan. Eso saca el dominio de los datos
+sin romper el seed.

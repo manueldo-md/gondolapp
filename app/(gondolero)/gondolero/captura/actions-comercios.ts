@@ -565,7 +565,17 @@ export async function crearComercioParaCaptura(params: {
     validado:       false,
     estado:         'pendiente_validacion',
   }
-  if (params.fachadaUrl) insertData.foto_fachada_url = params.fachadaUrl
+  // Se guarda el STORAGE PATH, no la URL. Hasta el 17/9/2026 acá iba
+  // `params.fachadaUrl` —la URL pública completa— mientras que
+  // `crearComercioNuevo` guardaba el path: la misma columna con dos formatos,
+  // y las cinco pantallas que la muestran firman asumiendo un path, así que las
+  // filas con URL tenían el thumb roto.
+  //
+  // El path gana porque la URL lleva el dominio del proyecto adentro —un dump de
+  // dev restaurado en prod apuntaría al storage del otro ambiente— y porque los
+  // buckets son PRIVADOS: la URL `/object/public/…` que se guardaba no servía
+  // ni siquiera en su propio ambiente. Ver lib/storage-fachada.ts.
+  if (params.fachadaStoragePath) insertData.foto_fachada_url = params.fachadaStoragePath
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: comercio, error } = await (admin as any)

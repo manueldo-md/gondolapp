@@ -3,6 +3,7 @@ import { Store, MapPin, CheckCircle2, AlertCircle, Camera } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import Link from 'next/link'
 import type { TipoComercio } from '@/types'
+import { firmarFachadas } from '@/lib/storage-fachada'
 
 function adminClient() {
   return createAdminClient(
@@ -61,17 +62,10 @@ export default async function ComerciosAdminPage({
 
   // Generar signed URLs para fotos de fachada
   const fachadasSignedMap: Record<string, string> = {}
-  const conFachada = comercios.filter((c: { foto_fachada_url: string | null }) => c.foto_fachada_url)
-  if (conFachada.length > 0) {
-    await Promise.all(
-      conFachada.map(async (c: { id: string; foto_fachada_url: string }) => {
-        const { data } = await admin.storage
-          .from('fotos-gondola')
-          .createSignedUrl(c.foto_fachada_url, 3600)
-        if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
-      })
-    )
-  }
+  // Firmar las fachadas pasa por `firmarFachadas`: la columna tiene dos formatos
+  // —storage path y URL completa— y firmar el valor crudo falla en las filas con
+  // URL. Ver lib/storage-fachada.ts.
+  Object.assign(fachadasSignedMap, await firmarFachadas(comercios, admin))
 
   const validados  = comercios.filter(c => c.validado).length
   const sinValidar = comercios.length - validados

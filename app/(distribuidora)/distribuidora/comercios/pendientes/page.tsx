@@ -6,6 +6,7 @@ import { MapPin, Camera, Store, AlertTriangle } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { AprobarRechazarBtnsDistri } from './aprobar-rechazar-btns'
+import { firmarFachadas } from '@/lib/storage-fachada'
 
 const TIPO_COLOR: Record<TipoComercio, string> = {
   autoservicio: 'bg-blue-100 text-blue-700',
@@ -92,17 +93,10 @@ export default async function ComerciosPendientesDistriPage() {
 
   // Signed URLs para fotos de fachada
   const fachadasSignedMap: Record<string, string> = {}
-  const conFachada = comercios.filter((c: { foto_fachada_url: string | null }) => c.foto_fachada_url)
-  if (conFachada.length > 0) {
-    await Promise.all(
-      conFachada.map(async (c: { id: string; foto_fachada_url: string }) => {
-        const { data } = await admin.storage
-          .from('fotos-gondola')
-          .createSignedUrl(c.foto_fachada_url, 3600)
-        if (data?.signedUrl) fachadasSignedMap[c.id] = data.signedUrl
-      })
-    )
-  }
+  // Firmar las fachadas pasa por `firmarFachadas`: la columna tiene dos formatos
+  // —storage path y URL completa— y firmar el valor crudo falla en las filas con
+  // URL. Ver lib/storage-fachada.ts.
+  Object.assign(fachadasSignedMap, await firmarFachadas(comercios, admin))
 
   // Detectar posibles duplicados — lat/lng se obtienen en query separada, solo server-side
   const comercioIds = comercios.map((c: { id: string }) => c.id)

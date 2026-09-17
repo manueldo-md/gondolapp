@@ -6,6 +6,7 @@ import { ArrowLeft, MapPin, Camera, History, CheckCircle2, AlertCircle } from 'l
 import { formatearFechaHora, tiempoRelativo, calcularDistanciaMetros } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { ReportesPanel, type ReporteRow } from './reportes-panel'
+import { firmarFachada } from '@/lib/storage-fachada'
 
 /**
  * Detalle de un comercio.
@@ -103,14 +104,9 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
     ? { lat: historial[0].lat_anterior, lng: historial[0].lng_anterior }
     : null
 
-  let fachadaUrl: string | null = null
-  if (comercio.foto_fachada_url) {
-    // Mismo bucket que usa la lista: las fachadas viven en 'fotos-gondola'.
-    const { data } = await admin.storage
-      .from('fotos-gondola')
-      .createSignedUrl(comercio.foto_fachada_url, 3600)
-    fachadaUrl = data?.signedUrl ?? null
-  }
+  // La columna tiene dos formatos —storage path y URL completa— y firmar el
+  // valor crudo falla en las filas con URL. Ver lib/storage-fachada.ts.
+  const fachadaUrl = await firmarFachada(comercio.foto_fachada_url, admin)
 
   const tipo = (comercio.tipo ?? 'otro') as TipoComercio
   const sinCoordenadas = comercio.lat == null || comercio.lng == null
