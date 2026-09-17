@@ -3592,3 +3592,29 @@ lo manda a buscar algo que no va a encontrar.
 `lib/campana-altas.ts`: lo necesitan la validación (servidor, service role) y el
 bloque de puntos, y ese último no tiene que arrastrar el módulo de servidor.
 `campana-altas.ts` solo importa `@/types`.
+
+### PENDIENTE de relevar — las fotos de fachada no se ven bien en los thumbs de comercios
+
+Reportado el 17/9/2026. **Sin relevar: falta precisar en qué pantalla y qué pasa
+exactamente.** Se anota ahora para no perderlo, no como diagnóstico.
+
+Lo que hay que contestar antes de tocar nada:
+
+- **Qué pantalla.** Hay al menos cinco que muestran comercios con foto:
+  `/admin/comercios`, `/admin/comercios/pendientes`, `/distribuidora/comercios`,
+  `/distribuidora/comercios/pendientes` y `/distribuidora/comercios/[id]`.
+  Pueden no comportarse igual: unas usan URL firmada y otras no.
+- **Qué quiere decir "no se ven bien".** No cargan, cargan recortadas, cargan
+  deformadas, tardan, o se ven las de otros comercios. Son cinco bugs distintos.
+- **Si es de todas las fachadas o de algunas.** Ojo con una diferencia conocida:
+  `crearComercioNuevo` guarda en `comercios.foto_fachada_url` el
+  **`storage_path`**, no la URL pública, mientras que `crearComercioParaCaptura`
+  guarda la **URL**. O sea que la misma columna tiene dos formatos según por
+  dónde entró el comercio — eso solo ya explicaría que unas se vean y otras no.
+- **Si el bucket es público o pide URL firmada.** `/admin/comercios` arma
+  `fachadasSignedMap`, así que al menos ahí se asume que hay que firmar.
+
+Relacionado: el aspect ratio de la fachada no está definido en ningún lado. La
+foto sale de la cámara del teléfono en vertical y los thumbs son cuadrados o
+apaisados, así que un recorte centrado puede estar cortando justo el cartel del
+comercio — que es lo único que hace útil a esa foto.
