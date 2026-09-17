@@ -3,6 +3,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
 import { validarFechasCampana, type Modalidad } from '@/lib/campana-fechas'
+import {
+  esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque,
+  BLOQUE_ALTAS, MODALIDAD_ALTAS,
+} from '@/lib/campana-altas'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -72,21 +76,42 @@ export async function crearCampanaInterna(formData: FormData) {
     }
   }
 
+  // ── El bloque se valida ANTES de insertar la campaña ──────────────────────
+  // Si no, un bloque mal configurado deja una campaña huérfana: creada, sin
+  // bloque y sin forma de completarla desde el editor.
+  //
+  // El tipo ahora se elige en el formulario. Hasta el 17/9/2026 era `'interna'`
+  // fijo, y por eso no había forma de crear una campaña de altas desde el panel
+  // de distribuidora — que es justamente quien más las necesita.
+  const tipoPedido = formData.get('tipo') as string
+  const tipo: 'interna' | 'comercios' = tipoPedido === 'comercios' ? 'comercios' : 'interna'
+  const esAltas = esCampanaDeAltas(tipo)
+
+  const parseo = parsearCamposBloque(formData.get('campos_json') as string | null)
+  if (!parseo.ok) return { error: parseo.error }
+  const camposValidos = esAltas ? [] : parseo.campos
+
+  const chequeoBloque = validarBloqueCampana({ tipo, campos: camposValidos.length })
+  if (!chequeoBloque.ok) return { error: chequeoBloque.error }
+
   const { data: campana, error: errCampana } = await admin
     .from('campanas')
     .insert({
       nombre:                      formData.get('nombre') as string,
-      tipo:                        'interna',
+      tipo,
       instruccion:                 (formData.get('instruccion') as string) || null,
       puntos_por_mision:           parseInt(formData.get('puntos_por_mision') as string) || 0,
-      modalidad,
+      // Una campaña de altas es siempre puntual: no se da de alta el mismo
+      // comercio tres veces por semana. Se fuerza acá y no solo en el formulario
+      // porque el POST se puede armar a mano.
+      modalidad:                   esAltas ? MODALIDAD_ALTAS : modalidad,
       fecha_inicio:                (formData.get('fecha_inicio') as string) || null,
       // En seguimiento se fuerzan a null en vez de confiar en que el formulario
       // los haya limpiado: el POST se puede armar a mano, y acá un valor de más
       // sería un error de constraint crudo en la cara del usuario.
       fecha_fin:                   esSeguimiento ? null : ((formData.get('fecha_fin') as string) || null),
       tope_total_comercios:        esSeguimiento ? null : (parseInt(formData.get('tope_total_comercios') as string) || null),
-      visitas_por_semana:          visitasPorSemana,
+      visitas_por_semana:          esAltas ? null : visitasPorSemana,
       minimo_comercios:            parseInt(formData.get('minimo_comercios') as string) || null,
       max_comercios_por_gondolero: parseInt(formData.get('max_comercios_por_gondolero') as string) || 20,
       min_comercios_para_cobrar:   parseInt(formData.get('min_comercios_para_cobrar') as string) || 3,
@@ -110,28 +135,25 @@ export async function crearCampanaInterna(formData: FormData) {
     if (errZonas) console.error('[crearCampanaInterna] Error insertando campana_localidades:', errZonas.message)
   }
 
-  // Crear bloque con sus campos (se requiere al menos un campo)
-  const camposJson = formData.get('campos_json') as string | null
-  let camposValidos: { tipo: string; pregunta: string; opciones: string[]; obligatorio: boolean; orden: number }[] = []
-  if (camposJson) {
-    try {
-      const parsed = JSON.parse(camposJson) as typeof camposValidos
-      camposValidos = parsed.filter(c => c.tipo === 'foto' || c.pregunta.trim())
-    } catch { /* inválido */ }
-  }
-  if (camposValidos.length === 0) return { error: 'El bloque debe tener al menos un campo configurado.' }
+  // El bloque va siempre, también en altas: `crearComercioNuevo` lo busca por
+  // `campana_id` para colgarle la foto de fachada. Lo que no van son los campos.
+  const tipoContenido = esAltas
+    ? BLOQUE_ALTAS.tipoContenido
+    : ((formData.get('tipo_contenido') as string) || 'propios')
+  const solicitarPrecio = esAltas ? BLOQUE_ALTAS.solicitarPrecio : formData.get('solicitar_precio') === 'true'
+  const instruccionBloque = esAltas
+    ? BLOQUE_ALTAS.instruccion
+    : ((formData.get('instruccion') as string) || '')
 
-  const tipoContenido = (formData.get('tipo_contenido') as string) || 'propios'
-  const solicitarPrecio = formData.get('solicitar_precio') === 'true'
   const { data: bloque } = await admin.from('bloques_foto').insert({
     campana_id:       campana.id,
     orden:            1,
-    instruccion:      (formData.get('instruccion') as string) || '',
+    instruccion:      instruccionBloque,
     tipo_contenido:   tipoContenido,
     solicitar_precio: solicitarPrecio,
   }).select('id').single()
 
-  if (bloque?.id) {
+  if (bloque?.id && camposValidos.length > 0) {
     const { error: errCampos } = await admin.from('bloque_campos').insert(
       camposValidos.map(c => ({
         bloque_id:   bloque.id,

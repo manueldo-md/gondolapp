@@ -7,6 +7,7 @@ import { crearCampanaInterna } from './actions'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
 import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
+import { esCampanaDeAltas, validarBloqueCampana, MODALIDAD_ALTAS } from '@/lib/campana-altas'
 
 /**
  * Las dos modalidades. El texto de ayuda importa: la diferencia no es evidente
@@ -26,6 +27,26 @@ const MODALIDADES: { value: 'puntual' | 'seguimiento'; label: string; ayuda: str
   },
 ]
 
+/**
+ * Los dos tipos que puede crear una distribuidora.
+ *
+ * No están 'relevamiento', 'precio' ni los demás: esos son de marca y de admin.
+ * Y 'comercios' no está en el selector de marca, por la razón opuesta — una
+ * marca quiere relevar sus góndolas, no poblar el mapa. Ver lib/campana-altas.ts.
+ */
+const TIPOS_DISTRI: { value: 'interna' | 'comercios'; label: string; ayuda: string }[] = [
+  {
+    value: 'interna',
+    label: 'Relevamiento interno',
+    ayuda: 'Tus gondoleros relevan góndolas y contestan preguntas.',
+  },
+  {
+    value: 'comercios',
+    label: 'Alta de comercios',
+    ayuda: 'Tus gondoleros cargan comercios que no están en el mapa.',
+  },
+]
+
 export default function NuevaCampanaPage() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -37,6 +58,7 @@ export default function NuevaCampanaPage() {
 
   const [form, setForm] = useState({
     nombre:                      '',
+    tipo:                        'interna' as 'interna' | 'comercios',
     instruccion:                 '',
     tipo_contenido:              'propios',
     puntos_por_mision:           '50',
@@ -56,6 +78,25 @@ export default function NuevaCampanaPage() {
     setForm(p => ({ ...p, [k]: e.target.value }))
 
   const esSeguimiento = form.modalidad === 'seguimiento'
+  const esAltas = esCampanaDeAltas(form.tipo)
+
+  /**
+   * Cambiar de tipo limpia lo que el otro tipo no usa, por el mismo motivo que
+   * `setModalidad`: el submit serializa el objeto entero, así que un valor que
+   * dejó de verse viaja igual.
+   *
+   * Una campaña de altas es SIEMPRE puntual — no se da de alta el mismo comercio
+   * tres veces por semana— así que el tipo fuerza la modalidad y de paso evita
+   * el CHECK de `visitas_por_semana`.
+   */
+  const setTipo = (tipo: 'interna' | 'comercios') =>
+    setForm(p => ({
+      ...p,
+      tipo,
+      modalidad:          tipo === 'comercios' ? MODALIDAD_ALTAS : p.modalidad,
+      visitas_por_semana: tipo === 'comercios' ? '' : p.visitas_por_semana,
+      tipo_contenido:     tipo === 'comercios' ? 'ninguno' : p.tipo_contenido,
+    }))
 
   /**
    * Cambiar de modalidad LIMPIA los campos de la otra.
@@ -92,7 +133,8 @@ export default function NuevaCampanaPage() {
     e.preventDefault()
     setErrorMsg(null)
     if (form.nombre.trim().length < 3) { setErrorMsg('El nombre debe tener al menos 3 caracteres.'); return }
-    if (campos.length === 0) { setErrorMsg('El bloque debe tener al menos un campo configurado.'); return }
+    const bloqueCheck = validarBloqueCampana({ tipo: form.tipo, campos: campos.length })
+    if (!bloqueCheck.ok) { setErrorMsg(bloqueCheck.error); return }
     if (esSeguimiento && !form.visitas_por_semana.trim()) {
       setErrorMsg('Indicá cuántas visitas por semana espera la campaña.')
       return
@@ -122,8 +164,14 @@ export default function NuevaCampanaPage() {
           <ArrowLeft size={18} />
         </button>
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Nueva campaña interna</h2>
-          <p className="text-sm text-gray-400">Sin costo de tokens — uso interno</p>
+          <h2 className="text-xl font-bold text-gray-900">
+            {esAltas ? 'Nueva campaña de altas' : 'Nueva campaña interna'}
+          </h2>
+          <p className="text-sm text-gray-400">
+            {esAltas
+              ? 'Tus gondoleros dan de alta comercios nuevos — sin costo de tokens'
+              : 'Sin costo de tokens — uso interno'}
+          </p>
         </div>
       </div>
 
@@ -144,6 +192,34 @@ export default function NuevaCampanaPage() {
             />
           </div>
 
+          {/* Tipo de campaña.
+              Hasta el 17/9/2026 este formulario escribía `tipo: 'interna'` fijo y
+              no había forma de crear una campaña de altas desde el panel de
+              distribuidora. Va acá y no en un formulario aparte: quedamos en UN
+              SOLO formulario para la distri. */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Tipo de campaña
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {TIPOS_DISTRI.map(t => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setTipo(t.value)}
+                  className={`text-left px-3 py-2.5 border rounded-lg transition-colors ${
+                    form.tipo === t.value
+                      ? 'border-gondo-amber-400 bg-gondo-amber-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="block text-sm font-semibold text-gray-800">{t.label}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5 leading-snug">{t.ayuda}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Instrucción */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -158,15 +234,28 @@ export default function NuevaCampanaPage() {
             />
           </div>
 
-          {/* Campos del bloque */}
-          <CamposBloqueBuilder
-            campos={campos}
-            onChange={setCampos}
-            accentClass="focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400"
-          />
+          {/* Campos del bloque — una campaña de altas no lleva */}
+          {!esAltas && (
+            <CamposBloqueBuilder
+              campos={campos}
+              onChange={setCampos}
+              accentClass="focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400"
+            />
+          )}
+
+          {esAltas && (
+            <div className="bg-gondo-amber-50 border border-gondo-amber-200 rounded-xl p-3.5">
+              <p className="text-sm font-medium text-gray-800">El trabajo es dar de alta el comercio</p>
+              <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                El gondolero carga nombre, tipo, dirección, ubicación GPS y una foto
+                de la fachada — obligatoria. No hay góndola que fotografiar ni
+                preguntas que contestar, así que este bloque no lleva campos.
+              </p>
+            </div>
+          )}
 
           {/* Tipo de contenido */}
-          <div>
+          {!esAltas && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Tipo de contenido del bloque
             </label>
@@ -180,10 +269,10 @@ export default function NuevaCampanaPage() {
               <option value="ambos">Mis productos y competencia</option>
               <option value="ninguno">Sin productos (stands, comercios, etc.)</option>
             </select>
-          </div>
+          </div>}
 
-          {/* Solicitar precio */}
-          <label className="flex items-center gap-2.5 cursor-pointer">
+          {/* Solicitar precio — no aplica a una campaña de altas */}
+          {!esAltas && <label className="flex items-center gap-2.5 cursor-pointer">
             <input
               type="checkbox"
               checked={solicitarPrecio}
@@ -194,7 +283,7 @@ export default function NuevaCampanaPage() {
               <span className="text-sm font-medium text-gray-700">Pedir precio al gondolero</span>
               <p className="text-xs text-gray-400 mt-0.5">El gondolero deberá ingresar el precio cuando encuentre el producto</p>
             </div>
-          </label>
+          </label>}
 
           {/* Puntos */}
           <div>
@@ -210,12 +299,15 @@ export default function NuevaCampanaPage() {
                 onChange={set('puntos_por_mision')}
                 className="w-28 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition"
               />
-              <span className="text-sm text-gray-500">puntos por misión aprobada</span>
+              <span className="text-sm text-gray-500">
+                {esAltas ? 'puntos por alta validada' : 'puntos por misión aprobada'}
+              </span>
             </div>
           </div>
 
-          {/* Modalidad — define qué otros campos aplican, así que va antes que ellos */}
-          <div>
+          {/* Modalidad — define qué otros campos aplican, así que va antes que ellos.
+              En una campaña de altas no se ofrece: es siempre puntual. */}
+          {!esAltas && <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Modalidad</label>
             <div className="grid grid-cols-2 gap-2">
               {MODALIDADES.map(m => (
@@ -234,7 +326,7 @@ export default function NuevaCampanaPage() {
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Fechas */}
           <div className="grid grid-cols-2 gap-4">

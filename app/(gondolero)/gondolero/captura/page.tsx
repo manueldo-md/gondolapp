@@ -1910,6 +1910,11 @@ function CapturaContent() {
 
   // Contexto de selección: una sola fuente para las DOS listas de comercios y
   // para el botón de registrar uno nuevo. Ver lib/comercio-seleccionable.ts.
+  // Declarado acá arriba y no más abajo: los `return` de los pasos
+  // 'comercios-gps' y 'comercios-fachada' salen antes, y un `const` leído en su
+  // zona muerta temporal tira ReferenceError — no da undefined.
+  const esCampanaComercio = campana?.tipo === 'comercios'
+
   const ctxSeleccion = { relevadosPorOtros: relevados, misComercios, maxComercios }
   const cupoLlenoPropio = cupoPropioLleno(ctxSeleccion)
 
@@ -2785,7 +2790,11 @@ function CapturaContent() {
         <div className="px-4 py-6 space-y-5">
           <div className="text-center space-y-1.5">
             <p className="text-base font-semibold text-gray-900">Sacá una foto de la fachada del local</p>
-            <p className="text-sm text-gray-500">Ayuda a verificar que el comercio existe</p>
+            <p className="text-sm text-gray-500">
+              {esCampanaComercio
+                ? 'Es la evidencia de que el comercio existe. Sin ella no se puede validar el alta.'
+                : 'Ayuda a verificar que el comercio existe'}
+            </p>
           </div>
 
           {cmFachadaPreview ? (
@@ -2845,6 +2854,10 @@ function CapturaContent() {
             </div>
           )}
 
+          {/* En una campaña de ALTAS la fachada es obligatoria: el trabajo que se
+              paga es el alta, y sin foto nadie puede verificar que el comercio
+              existe. En el alta OPORTUNISTA sigue siendo opcional — ahí el
+              gondolero no cobra por el alta y "Omitir" no le saca nada. */}
           <div className="space-y-2 pt-1">
             {cmFachadaPreview && (
               <button
@@ -2857,16 +2870,23 @@ function CapturaContent() {
                   : 'Guardar con foto'}
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleEnviarComercio}
-              disabled={cmSubiendo}
-              className="w-full py-3.5 text-gray-500 font-medium text-sm rounded-2xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 min-h-touch flex items-center justify-center"
-            >
-              {cmSubiendo && !cmFachadaPreview
-                ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Guardando...</span>
-                : 'Omitir por ahora'}
-            </button>
+            {!esCampanaComercio && (
+              <button
+                type="button"
+                onClick={handleEnviarComercio}
+                disabled={cmSubiendo}
+                className="w-full py-3.5 text-gray-500 font-medium text-sm rounded-2xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 min-h-touch flex items-center justify-center"
+              >
+                {cmSubiendo && !cmFachadaPreview
+                  ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Guardando...</span>
+                  : 'Omitir por ahora'}
+              </button>
+            )}
+            {esCampanaComercio && !cmFachadaPreview && (
+              <p className="text-xs text-gray-400 text-center pt-1">
+                La foto es obligatoria en esta campaña.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -2928,7 +2948,6 @@ function CapturaContent() {
   const tieneCampos = (bloqueActual?.campos?.filter(c => c.tipo !== 'foto').length ?? 0) > 0
   // tieneBloqueFoto: true si el bloque actual tiene al menos un campo tipo='foto'
   const tieneBloqueFoto = (bloqueActual?.campos?.filter(c => c.tipo === 'foto').length ?? 0) > 0
-  const esCampanaComercio = campana?.tipo === 'comercios'
   const totalBloques = campana?.bloques?.length ?? 1
   // Fotos que pide la misión, contadas por CAMPO tipo='foto' — no por bloque.
   // Un bloque sin campos es del flujo viejo y vale una foto de bloque.

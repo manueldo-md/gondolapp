@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import { crearNotificacionAdmin } from '@/lib/notificaciones'
+import { validarBloqueCampana, parsearCamposBloque, TIPOS_POR_PANEL } from '@/lib/campana-altas'
 
 const COSTO_CREACION = 15
 
@@ -54,6 +55,29 @@ export async function crearCampana(formData: FormData) {
   )
   if (!chequeoFechas.ok) return { error: chequeoFechas.error! }
 
+  // ── Tipo y bloque, ANTES de insertar la campaña ───────────────────────────
+  //
+  // El chequeo del bloque corría después del insert, así que un bloque mal
+  // configurado dejaba una campaña huérfana —creada, sin bloque y sin forma de
+  // completarla— y encima le devolvía un error al usuario, que creía que no se
+  // había creado nada.
+  //
+  // El tipo se valida contra la lista del panel y no se confía en el POST: una
+  // marca NO crea campañas de altas de comercios. El alta es infraestructura del
+  // canal y la pagan GondolApp y las distribuidoras; el selector ya no la
+  // ofrece, y acá se cierra la puerta de atrás.
+  const tipo = formData.get('tipo') as TipoCampana
+  if (!TIPOS_POR_PANEL.marca.includes(tipo)) {
+    return { error: 'Ese tipo de campaña no está disponible para marcas.' }
+  }
+
+  const parseo = parsearCamposBloque(formData.get('campos_json') as string | null)
+  if (!parseo.ok) return { error: parseo.error }
+  const camposValidos = parseo.campos
+
+  const chequeoBloque = validarBloqueCampana({ tipo, campos: camposValidos.length })
+  if (!chequeoBloque.ok) return { error: chequeoBloque.error }
+
   // Verificar tokens
   const { data: marca } = await admin
     .from('marcas')
@@ -80,7 +104,7 @@ export async function crearCampana(formData: FormData) {
     .from('campanas')
     .insert({
       nombre:                    formData.get('nombre') as string,
-      tipo:                      formData.get('tipo') as TipoCampana,
+      tipo,
       instruccion:               formData.get('instruccion') as string || null,
       puntos_por_mision:         parseInt(formData.get('puntos_por_mision') as string) || 0,
       fecha_inicio:              formData.get('fecha_inicio') as string || null,
@@ -105,17 +129,6 @@ export async function crearCampana(formData: FormData) {
 
   const campanaId = campana.id
 
-  // Crear bloque con sus campos (se requiere al menos un campo)
-  const camposJson = formData.get('campos_json') as string | null
-  let camposValidos: { tipo: string; pregunta: string; opciones: string[]; obligatorio: boolean; orden: number }[] = []
-  if (camposJson) {
-    try {
-      const campos = JSON.parse(camposJson) as typeof camposValidos
-      camposValidos = campos.filter(c => c.tipo === 'foto' || c.pregunta.trim())
-    } catch { /* inválido */ }
-  }
-  if (camposValidos.length === 0) return { error: 'El bloque debe tener al menos un campo configurado.' }
-
   const tipoContenido = (formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios'
   const solicitarPrecio = formData.get('solicitar_precio') === 'true'
   const { data: bloque } = await admin.from('bloques_foto').insert({
@@ -126,7 +139,7 @@ export async function crearCampana(formData: FormData) {
     solicitar_precio: solicitarPrecio,
   }).select('id').single()
 
-  if (bloque?.id) {
+  if (bloque?.id && camposValidos.length > 0) {
     const { error: errCampos } = await admin.from('bloque_campos').insert(
       camposValidos.map(c => ({
         bloque_id:   bloque.id,

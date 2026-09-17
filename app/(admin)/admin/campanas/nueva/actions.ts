@@ -7,6 +7,9 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
+import {
+  esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque, BLOQUE_ALTAS,
+} from '@/lib/campana-altas'
 
 function adminClient() {
   return createAdminClient(
@@ -57,12 +60,31 @@ export async function crearCampanaAdmin(formData: FormData) {
   )
   if (!chequeoFechas.ok) return { error: chequeoFechas.error! }
 
+  // ── El bloque se valida ANTES de insertar la campaña ──────────────────────
+  //
+  // Hasta el 17/9/2026 este chequeo corría DESPUÉS del insert, así que un bloque
+  // mal configurado dejaba una campaña huérfana —creada, sin bloque y sin forma
+  // de completarla desde el editor— y encima le devolvía un error al usuario,
+  // que creía que no se había creado nada.
+  //
+  // Una campaña de ALTAS no lleva campos: el trabajo es el alta y el flujo de
+  // captura ni siquiera renderiza el bloque. La regla está en lib/campana-altas.ts.
+  const tipo = formData.get('tipo') as TipoCampana
+  const esAltas = esCampanaDeAltas(tipo)
+
+  const parseo = parsearCamposBloque(formData.get('campos_json') as string | null)
+  if (!parseo.ok) return { error: parseo.error }
+  const camposValidos = esAltas ? [] : parseo.campos
+
+  const chequeoBloque = validarBloqueCampana({ tipo, campos: camposValidos.length })
+  if (!chequeoBloque.ok) return { error: chequeoBloque.error }
+
   // Crear campaña
   const { data: campana, error: errCampana } = await admin
     .from('campanas')
     .insert({
       nombre:                      formData.get('nombre') as string,
-      tipo:                        formData.get('tipo') as TipoCampana,
+      tipo,
       instruccion:                 (formData.get('instruccion') as string) || null,
       puntos_por_mision:           parseInt(formData.get('puntos_por_mision') as string) || 0,
       fecha_inicio:                (formData.get('fecha_inicio') as string) || null,
@@ -85,29 +107,26 @@ export async function crearCampanaAdmin(formData: FormData) {
 
   const campanaId = campana.id
 
-  // Crear bloque con sus campos (se requiere al menos un campo)
-  const camposJson = formData.get('campos_json') as string | null
-  let camposValidos: { tipo: string; pregunta: string; opciones: string[]; obligatorio: boolean; orden: number }[] = []
-  if (camposJson) {
-    try {
-      const campos = JSON.parse(camposJson) as typeof camposValidos
-      camposValidos = campos.filter(c => c.tipo === 'foto' || c.pregunta.trim())
-    } catch { /* inválido */ }
-  }
-  if (camposValidos.length === 0) return { error: 'El bloque debe tener al menos un campo configurado.' }
-
-  const tipoContenido = (formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios'
-  const solicitarPrecio = formData.get('solicitar_precio') === 'true'
+  // El bloque SÍ va siempre, también en una campaña de altas: `crearComercioNuevo`
+  // lo busca por `campana_id` para colgarle la foto de fachada. Lo que no van
+  // son los campos.
+  const tipoContenido: TipoContenidoBloque = esAltas
+    ? BLOQUE_ALTAS.tipoContenido
+    : ((formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios')
+  const solicitarPrecio = esAltas ? BLOQUE_ALTAS.solicitarPrecio : formData.get('solicitar_precio') === 'true'
+  const instruccionBloque = esAltas
+    ? BLOQUE_ALTAS.instruccion
+    : ((formData.get('instruccion') as string) || '')
 
   const { data: bloque } = await admin.from('bloques_foto').insert({
     campana_id:       campanaId,
     orden:            1,
-    instruccion:      (formData.get('instruccion') as string) || '',
+    instruccion:      instruccionBloque,
     tipo_contenido:   tipoContenido,
     solicitar_precio: solicitarPrecio,
   }).select('id').single()
 
-  if (bloque?.id) {
+  if (bloque?.id && camposValidos.length > 0) {
     const { error: errCampos } = await admin.from('bloque_campos').insert(
       camposValidos.map(c => ({
         bloque_id:   bloque.id,

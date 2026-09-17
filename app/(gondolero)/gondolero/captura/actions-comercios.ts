@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { calcularDistanciaMetros } from '@/lib/utils'
 import { crearNotificacionDistri, crearNotificacionAdmin } from '@/lib/notificaciones'
 import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
+import { requiereFotoFachada } from '@/lib/campana-altas'
 
 /**
  * Comercios que ya tienen una misión viva en esta campaña.
@@ -290,6 +291,30 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
 
   if (!participacion) {
     return { error: 'No tenés una participación activa en esta campaña.' }
+  }
+
+  // ── La foto de fachada es obligatoria en una campaña de altas ─────────────
+  //
+  // Es la única evidencia de que el comercio existe. Sin foto, el alta es una
+  // fila en una tabla que nadie puede verificar, y hay puntos de por medio:
+  // quien valida decidiría "este comercio existe" mirando un nombre, una
+  // dirección y un punto de GPS que eligió el mismo que cobra.
+  //
+  // En el alta OPORTUNISTA sigue siendo opcional —ver `crearComercioParaCaptura`
+  // más abajo—: ahí el gondolero no cobra por el alta y exigírsela es fricción
+  // sobre una misión que ya está en curso.
+  //
+  // El chequeo va en el servidor aunque la pantalla ya lo pida: es la puerta que
+  // decide si se paga.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campanaTipo } = await (admin as any)
+    .from('campanas')
+    .select('tipo')
+    .eq('id', params.campanaId)
+    .maybeSingle() as { data: { tipo: string | null } | null }
+
+  if (requiereFotoFachada(campanaTipo?.tipo) && !params.fachadaUrl) {
+    return { error: 'La foto de la fachada es obligatoria: es la evidencia de que el comercio existe.' }
   }
 
   // ── Cupo propio, chequeado en el servidor ─────────────────────────────────

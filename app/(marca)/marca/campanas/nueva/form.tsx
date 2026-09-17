@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Loader2, Building2, Sparkles } from 'luci
 import { crearCampana } from './actions'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
+import { TIPOS_POR_PANEL } from '@/lib/campana-altas'
 import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
 
@@ -38,14 +39,22 @@ interface Step3 {
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const TIPOS: { value: TipoCampana; label: string }[] = [
-  { value: 'relevamiento', label: 'Relevamiento'  },
-  { value: 'precio',       label: 'Precio'        },
-  { value: 'cobertura',    label: 'Cobertura'     },
-  { value: 'pop',          label: 'POP'           },
-  { value: 'mapa',         label: 'Mapa'          },
-  { value: 'comercios',    label: 'Comercios'     },
-]
+const LABEL_TIPO: Record<TipoCampana, string> = {
+  relevamiento: 'Relevamiento',
+  precio:       'Precio',
+  cobertura:    'Cobertura',
+  pop:          'POP',
+  mapa:         'Mapa',
+  comercios:    'Alta de comercios',
+  interna:      'Interna',
+}
+
+// SIN 'comercios'. Una marca quiere relevar sus góndolas, no poblar el mapa de
+// GondolApp: el alta de comercios es infraestructura del canal y la pagan
+// quienes se benefician del mapa —GondolApp y las distribuidoras—. La lista por
+// panel vive en lib/campana-altas.ts, no acá.
+const TIPOS: { value: TipoCampana; label: string }[] =
+  TIPOS_POR_PANEL.marca.map(v => ({ value: v, label: LABEL_TIPO[v] }))
 
 const TIPO_CONTENIDO: { value: TipoContenidoBloque; label: string }[] = [
   { value: 'propios',      label: 'Solo mis productos'                      },

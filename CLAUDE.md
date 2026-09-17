@@ -3408,3 +3408,67 @@ Se **sacó** en vez de dejarla con un comentario: si alguien crea esa función
 algún día pensando que falta, cada cierre de campaña pasa a pagar el doble sin
 que nadie toque este archivo. El único escritor de `profiles.puntos_disponibles`
 es el trigger `on_movimiento_puntos`.
+
+### El editor sabe qué es una campaña de altas (17/9/2026)
+
+`lib/campana-altas.ts` es la única definición. Antes el tipo `comercios` era un
+string que se escribía en la columna y nada más: **ningún editor sabía qué era**,
+así que había que agregarle un campo al bloque —los tres exigen al menos uno— y
+ese campo no se muestra nunca. En dev quedó la prueba: la campaña sembrada tiene
+un campo que dice *"Fotografiá la góndola"* en una campaña donde no hay góndola.
+
+Qué cambia cuando el tipo es `comercios`:
+
+| | Campaña normal | Campaña de altas |
+|---|---|---|
+| Campos del bloque | al menos uno | **ninguno** (`validarBloqueCampana`) |
+| Bloque | sí | **sí** — `crearComercioNuevo` lo busca por `campana_id` para colgar la fachada |
+| `tipo_contenido` | lo elige el creador | `'ninguno'` forzado |
+| Precio al gondolero | opcional | no se ofrece |
+| Modalidad | puntual o seguimiento | **puntual** forzada |
+| Foto de fachada | opcional | **obligatoria** |
+
+**Quién crea qué** (`TIPOS_POR_PANEL`): admin todos menos `interna`;
+distribuidora `interna` y `comercios`; **marca NO crea altas**. Una marca quiere
+relevar sus góndolas, no poblar el mapa: el alta de comercios es infraestructura
+del canal y la pagan quienes se benefician del mapa, GondolApp y las
+distribuidoras. La action de marca además valida el tipo contra esa lista — el
+selector ya no lo ofrece, y eso cierra la puerta de atrás del POST.
+
+**El panel de distribuidora ganó selector de tipo.** Escribía `tipo: 'interna'`
+fijo, así que quien más necesita las campañas de altas era el único que no podía
+crearlas. Va en el mismo formulario, no en uno nuevo.
+
+### La foto de fachada es obligatoria en campañas de altas, opcional en el alta oportunista
+
+Es la única evidencia de que el comercio existe. Sin foto el alta es una fila que
+nadie puede verificar, y hay puntos de por medio: quien valida decidiría "este
+comercio existe" mirando un nombre, una dirección y un punto de GPS que eligió el
+mismo que cobra. Con plata al otro lado, eso se abusa solo.
+
+**En el alta oportunista se queda opcional.** Ahí el gondolero no cobra por el
+alta —la paga el relevamiento que ya está haciendo— así que exigírsela es
+fricción sobre una misión en curso, sin nada que proteger.
+
+En la pantalla, el botón "Omitir por ahora" **no se renderiza** en una campaña de
+altas, y `crearComercioNuevo` lo chequea igual en el servidor
+(`requiereFotoFachada`): la pantalla puede eludirse y ésta es la puerta que
+decide si se paga.
+
+> **Ojo con el orden de las declaraciones en `captura/page.tsx`.** Los pasos
+> `comercios-*` hacen `return` mucho antes del final del componente, así que un
+> `const` declarado abajo y leído ahí tira **ReferenceError** por zona muerta
+> temporal — no da `undefined`. `esCampanaComercio` se subió arriba de los
+> `return` por eso.
+
+### El bloque se valida ANTES de insertar la campaña
+
+Los tres editores chequeaban los campos **después** del insert de `campanas`. Si
+el chequeo fallaba, quedaba una campaña huérfana —creada, sin bloque y sin forma
+de completarla desde el editor— y encima el usuario veía un error y creía que no
+se había creado nada.
+
+Ahora el orden es: parsear campos → validar → insertar campaña → insertar bloque.
+`parsearCamposBloque` es compartida y, a diferencia de las tres copias que
+reemplaza, **no se traga el error de parseo**: un JSON inválido devolvía `[]` y
+el usuario leía "el bloque debe tener al menos un campo" después de cargar cinco.

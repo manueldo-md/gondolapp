@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { crearCampanaAdmin } from './actions'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
+import { esCampanaDeAltas, validarBloqueCampana, TIPOS_POR_PANEL } from '@/lib/campana-altas'
 import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
 
@@ -32,14 +33,21 @@ interface Step2 {
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const TIPOS: { value: TipoCampana; label: string }[] = [
-  { value: 'relevamiento', label: 'Relevamiento' },
-  { value: 'precio',       label: 'Precio'       },
-  { value: 'cobertura',    label: 'Cobertura'    },
-  { value: 'pop',          label: 'POP'          },
-  { value: 'mapa',         label: 'Mapa'         },
-  { value: 'comercios',    label: 'Comercios'    },
-]
+const LABEL_TIPO: Record<TipoCampana, string> = {
+  relevamiento: 'Relevamiento',
+  precio:       'Precio',
+  cobertura:    'Cobertura',
+  pop:          'POP',
+  mapa:         'Mapa',
+  comercios:    'Alta de comercios',
+  interna:      'Interna',
+}
+
+// Quién puede crear qué es una regla de producto, no una constante de esta
+// pantalla: vive en lib/campana-altas.ts. Admin crea todos menos 'interna',
+// que es la campaña propia de la distribuidora.
+const TIPOS: { value: TipoCampana; label: string }[] =
+  TIPOS_POR_PANEL.admin.map(v => ({ value: v, label: LABEL_TIPO[v] }))
 
 const TIPO_CONTENIDO: { value: TipoContenidoBloque; label: string }[] = [
   { value: 'propios',     label: 'Solo mis productos'                      },
@@ -77,7 +85,12 @@ export default function NuevaCampanaAdminPage() {
     min_comercios_para_cobrar:  '3',
   })
 
-  const paso1Valido = s1.nombre.trim().length >= 3 && !!s1.tipo && campos.length > 0
+  // Una campaña de ALTAS no lleva campos: el trabajo es el alta, y el flujo de
+  // captura ni siquiera renderiza el bloque. La regla está en lib/campana-altas.ts
+  // porque los tres editores están duplicados.
+  const esAltas = esCampanaDeAltas(s1.tipo)
+  const bloqueCheck = validarBloqueCampana({ tipo: s1.tipo, campos: campos.length })
+  const paso1Valido = s1.nombre.trim().length >= 3 && !!s1.tipo && bloqueCheck.ok
 
   // El minimo es obligatorio y no puede superar el tope. La regla vive en
   // lib/campana-minimo.ts porque los tres editores estan duplicados.
@@ -207,11 +220,22 @@ export default function NuevaCampanaAdminPage() {
               />
             </div>
 
-            {/* Campos dinámicos */}
-            <CamposBloqueBuilder campos={campos} onChange={setCampos} />
+            {/* Campos dinámicos — una campaña de altas no lleva */}
+            {!esAltas && <CamposBloqueBuilder campos={campos} onChange={setCampos} />}
+
+            {esAltas && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5">
+                <p className="text-sm font-medium text-blue-900">El trabajo es dar de alta el comercio</p>
+                <p className="text-xs text-blue-700 mt-1 leading-relaxed">
+                  El gondolero carga nombre, tipo, dirección, ubicación GPS y una
+                  foto de la fachada — obligatoria. No hay góndola que fotografiar
+                  ni preguntas que contestar, así que este bloque no lleva campos.
+                </p>
+              </div>
+            )}
 
             {/* Tipo de contenido */}
-            <div>
+            {!esAltas && <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Contenido a fotografiar
               </label>
@@ -230,10 +254,10 @@ export default function NuevaCampanaAdminPage() {
                   </label>
                 ))}
               </div>
-            </div>
+            </div>}
 
-            {/* Solicitar precio */}
-            <label className="flex items-center gap-2.5 cursor-pointer">
+            {/* Solicitar precio — no aplica a una campaña de altas */}
+            {!esAltas && <label className="flex items-center gap-2.5 cursor-pointer">
               <input
                 type="checkbox"
                 checked={s1.solicitar_precio}
@@ -244,7 +268,7 @@ export default function NuevaCampanaAdminPage() {
                 <span className="text-sm font-medium text-gray-700">Pedir precio al gondolero</span>
                 <p className="text-xs text-gray-400 mt-0.5">El gondolero deberá ingresar el precio cuando encuentre el producto</p>
               </div>
-            </label>
+            </label>}
 
             {/* Puntos por foto */}
             <div>
