@@ -2951,3 +2951,74 @@ definición**. Si se toca una, revisar las tres.
 **No usar `participaciones.comercios_completados`** para esto: es un contador
 guardado y lo encontramos desincronizado por herencia del seed. Un número que
 promete plata no puede salir de una columna que puede estar vieja.
+
+### PENDIENTE — una campaña sin fotos paga sin que nadie mire el dato
+
+**Error conceptual, no un bug puntual. Toca el modelo de revisión entero.**
+
+Una campaña de solo preguntas se aprueba **al registrarse**:
+`registrarMision` llama a `resolverMisionDirecta()` cuando `params.fotos.length
+=== 0`, que marca la misión `'aprobada'` en el acto. Después, al llegar a
+`min_comercios_para_cobrar`, `aprobarMisionCore` libera el bounty. **En ningún
+punto de esa cadena interviene una persona.**
+
+Hoy la ÚNICA puerta de control de calidad es la aprobación de fotos. Las
+campañas sin foto no tienen ninguna: el gondolero contesta lo que quiera, y con
+suficientes comercios cobra.
+
+**Hay que definir quién y cómo valida una misión de solo preguntas.** No alcanza
+con "que la revise la distri": no existe pantalla para eso —los paneles de
+revisión están construidos sobre `fotos`, no sobre `mision_respuestas`— así que
+es diseño nuevo, no un ajuste.
+
+Dos consecuencias laterales que conviene tener a la vista al decidir:
+
+- **El mínimo no es un control de calidad, es un umbral de cantidad.** Hoy es lo
+  único que separa "contestó" de "cobró", y no mira el contenido.
+- **Una campaña sin fotos no sube de nivel.** `incrementar_fotos_aprobadas` se
+  llama al aprobar una FOTO, y el nivel del gondolero sale de ahí. O sea que ese
+  trabajo paga puntos pero no cuenta para su progresión. Puede estar bien o no,
+  pero hoy es un efecto accidental de dónde está el gancho, no una decisión.
+
+Relacionado: "Pendiente — SMTP propio" y el botón "Destrabar misiones", que
+reintenta la aprobación automática de estas mismas misiones.
+
+### BUG — en campaña puntual, el comercio propio no se marca "Ya relevado"
+
+**Síntoma:** el gondolero completa una misión en un comercio de una campaña
+puntual y ese comercio NO queda marcado en la lista. Si intenta volver, lo
+bloquea —el índice único hace su trabajo— pero con el mensaje equivocado:
+*"Otro gondolero relevó este comercio antes que vos"*, cuando fue él.
+
+**Causa: `lib/comercio-seleccionable.ts`.** La exención de "comercio propio" es
+demasiado ancha:
+
+```ts
+const esPropio = ctx.misComercios.has(comercioId)
+if (!esPropio && ctx.relevadosPorOtros.has(comercioId)) return 'ya_relevado'
+if (!esPropio && cupoPropioLleno(ctx))                  return 'cupo_propio'
+```
+
+El `!esPropio` corresponde **solo en la segunda línea**. Volver a un comercio
+propio es lo que una campaña de seguimiento pide, y por eso no consume cupo —
+pero en PUNTUAL el índice único prohíbe una segunda misión viva sobre el mismo
+par (campaña, comercio), sea de quien sea. Al eximirlo, la lista lo muestra
+seleccionable, el gondolero lo elige, y el rechazo llega del servidor por
+violación del índice, con el mensaje de "otro gondolero" que es el único que ese
+camino sabe dar.
+
+**El arreglo es sacar `!esPropio` de la primera línea.** En seguimiento no cambia
+nada: ahí `relevadosPorOtros` viene vacío de `obtenerEstadoComercios`, así que
+esa condición nunca se evalúa.
+
+**Hay un segundo lugar con la misma exención**, introducido en el mismo commit
+(`2c235e7`): la revalidación del paso de GPS en `captura/page.tsx` solo saca al
+gondolero del comercio si `!estado.misComercios.includes(comercioId)`. Mismo
+razonamiento, mismo arreglo.
+
+**Y un tercer factor, secundario:** el set de relevados se carga en un efecto que
+depende de `[campana?.id, campana?.modalidad]`, así que dentro de una misma
+sesión no se refresca después de registrar una misión. La revalidación del paso
+de GPS lo tapa en parte. Conviene refrescarlo al volver a la lista, pero **no es
+la causa principal**: aunque el set estuviera fresco, la exención de arriba
+seguiría mostrando el comercio como elegible.
