@@ -4,8 +4,10 @@
  * PuntosEnCamino
  *
  * Los puntos que el gondolero ganó y todavía no puede canjear, separados en los
- * dos casos que importan: los que esperan revisión (no puede hacer nada) y los
- * que esperan el mínimo (ahí sí puede accionar). Ver lib/puntos-retenidos.ts.
+ * casos que importan: los que esperan revisión, los que esperan VALIDACIÓN del
+ * comercio (una campaña de altas: es otro acto y lo hace otra persona) y los que
+ * esperan el mínimo, que es el único donde puede accionar.
+ * Ver lib/puntos-retenidos.ts.
  *
  * "En camino" y no "retenidos": *retenido* suena a castigo y esto es plata suya
  * que va a llegar.
@@ -50,14 +52,17 @@ export function PuntosEnCamino({ resumen }: { resumen: ResumenRetenidos }) {
         <p className="text-xs text-amber-700 mt-0.5">
           Ganados, todavía no disponibles para canjear.
         </p>
-        {/* El desglose solo si los dos lados tienen algo: con uno solo, repetiría
-            el total de arriba. */}
-        {resumen.totalEsperandoAprobacion > 0 && resumen.totalEsperandoMinimo > 0 && (
-          <p className="text-[11px] text-amber-600 mt-1">
-            {formatearPuntos(resumen.totalEsperandoAprobacion)} esperando aprobación ·{' '}
-            {formatearPuntos(resumen.totalEsperandoMinimo)} esperando el mínimo
-          </p>
-        )}
+        {/* El desglose solo si hay más de un motivo: con uno solo repetiría el
+            total de arriba. "Validación" va aparte de "aprobación" a propósito —
+            son dos actos distintos que hace otra persona. */}
+        {(() => {
+          const partes: string[] = []
+          if (resumen.totalEsperandoAprobacion > 0) partes.push(`${formatearPuntos(resumen.totalEsperandoAprobacion)} esperando aprobación`)
+          if (resumen.totalEsperandoValidacion > 0) partes.push(`${formatearPuntos(resumen.totalEsperandoValidacion)} esperando validación`)
+          if (resumen.totalEsperandoMinimo > 0)     partes.push(`${formatearPuntos(resumen.totalEsperandoMinimo)} esperando el mínimo`)
+          if (partes.length < 2) return null
+          return <p className="text-[11px] text-amber-600 mt-1">{partes.join(' · ')}</p>
+        })()}
       </div>
 
       {/* Detalle por campaña. Cada una tiene su propio mínimo, así que el
@@ -68,7 +73,7 @@ export function PuntosEnCamino({ resumen }: { resumen: ResumenRetenidos }) {
         {resumen.campanas.map(c => {
           const abierta = expandidas.has(c.campanaId)
           const frase = frasePuntosRetenidos(c)
-          const puntos = c.puntosEsperandoAprobacion + c.puntosEsperandoMinimo
+          const puntos = c.puntosEsperandoAprobacion + c.puntosEsperandoMinimo + c.puntosEsperandoValidacion
 
           return (
             <li key={c.campanaId}>

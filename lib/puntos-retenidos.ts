@@ -30,6 +30,8 @@
  * un comercio tiene una descartada Y una aprobada, cuenta por la aprobada.
  */
 
+import { puntosDeLaCampana } from '@/lib/campana-altas'
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = any
 
@@ -38,11 +40,30 @@ export interface CampanaRetenida {
   nombre: string
   /** Puntos de misiones todavía sin revisar. */
   puntosEsperandoAprobacion: number
+  /**
+   * Puntos de comercios CARGADOS y pendientes de validación, en campañas de altas.
+   *
+   * Es un tercer caso y no una variante del primero: en una campaña de altas la
+   * misión no existe hasta que alguien valida el comercio, así que el gondolero
+   * cargaba tres comercios, su saldo no se movía y **no veía nada pendiente** —
+   * el trabajo entregado era invisible hasta que aparecía pagado de golpe.
+   *
+   * Se separa de "esperando aprobación" porque **validar no es aprobar**: es
+   * otro acto, en otra pantalla, y lo hace otra persona. Mezclarlos le diría al
+   * gondolero que espere algo que no es lo que está esperando.
+   */
+  puntosEsperandoValidacion: number
+  /** Comercios cargados esperando validación. */
+  comerciosEsperandoValidacion: number
   /** Puntos de misiones aprobadas que esperan el mínimo. */
   puntosEsperandoMinimo: number
   /** Comercios distintos con misión aprobada. Es lo que cuenta para el mínimo. */
   comerciosAprobados: number
-  /** Comercios distintos con misión en revisión que TODAVÍA no están aprobados. */
+  /**
+   * Comercios entregados que todavía no están aprobados: misiones en revisión
+   * MÁS altas esperando validación. Es lo que va a contar para el mínimo cuando
+   * lo aprueben, así que las dos cosas suman igual.
+   */
   comerciosEnRevision: number
   minimo: number
   /** Cuántos comercios le faltan de verdad. 0 = mínimo cumplido. */
@@ -70,12 +91,15 @@ export interface ResumenRetenidos {
   total: number
   totalEsperandoAprobacion: number
   totalEsperandoMinimo: number
+  /** Altas cargadas esperando que la distribuidora valide el comercio. */
+  totalEsperandoValidacion: number
   /** Ordenadas por accionabilidad: primero las que están más cerca del mínimo. */
   campanas: CampanaRetenida[]
 }
 
 const VACIO: ResumenRetenidos = {
-  total: 0, totalEsperandoAprobacion: 0, totalEsperandoMinimo: 0, campanas: [],
+  total: 0, totalEsperandoAprobacion: 0, totalEsperandoMinimo: 0,
+  totalEsperandoValidacion: 0, campanas: [],
 }
 
 /**
@@ -112,15 +136,47 @@ export async function obtenerPuntosRetenidos(
       campana: any
     }
     const filas = ((data ?? []) as Fila[]).filter(f => f.campana_id)
-    if (filas.length === 0) return VACIO
+
+    // ── Altas esperando validación ────────────────────────────────────────────
+    //
+    // Se consultan aparte porque **no hay misión de la cual colgarlas**: en una
+    // campaña de altas la misión se crea recién al validar el comercio. Sin esta
+    // consulta el gondolero cargaba tres comercios y el bloque no mostraba nada.
+    //
+    // Va acá y no en un helper propio porque el número tiene que entrar al mismo
+    // cálculo de "cuánto falta para el mínimo": un comercio cargado cuenta
+    // cuando lo validen, igual que una foto cuenta cuando la aprueben.
+    const { data: altasData, error: errAltas } = await admin
+      .from('comercios')
+      .select('id, estado, campana_id, campana:campanas(nombre, tipo, min_comercios_para_cobrar, puntos_por_mision, puntos_por_foto)')
+      .eq('registrado_por', gondoleroId)
+      .not('campana_id', 'is', null)
+
+    if (errAltas) console.error('[puntos-retenidos] error leyendo altas:', errAltas.message)
+
+    type FilaAlta = {
+      id: string
+      estado: string | null
+      campana_id: string | null
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      campana: any
+    }
+    // Solo las que esperan: una validada ya tiene misión y entra por el camino
+    // de arriba; una rechazada no va a pagar nunca.
+    const altas = ((altasData ?? []) as FilaAlta[])
+      .filter(a => a.campana_id && a.estado === 'pendiente_validacion')
+
+    if (filas.length === 0 && altas.length === 0) return VACIO
 
     const porCampana = new Map<string, {
       nombre: string
       minimo: number
       aprobados: Set<string>
       enRevision: Set<string>
+      esperandoValidacion: Set<string>
       ptsAprobacion: number
       ptsMinimo: number
+      ptsValidacion: number
     }>()
 
     for (const f of filas) {
@@ -129,12 +185,14 @@ export async function obtenerPuntosRetenidos(
 
       if (!porCampana.has(campanaId)) {
         porCampana.set(campanaId, {
-          nombre:        camp?.nombre ?? 'Campaña',
-          minimo:        camp?.min_comercios_para_cobrar ?? 0,
-          aprobados:     new Set(),
-          enRevision:    new Set(),
-          ptsAprobacion: 0,
-          ptsMinimo:     0,
+          nombre:              camp?.nombre ?? 'Campaña',
+          minimo:              camp?.min_comercios_para_cobrar ?? 0,
+          aprobados:           new Set(),
+          enRevision:          new Set(),
+          esperandoValidacion: new Set(),
+          ptsAprobacion:       0,
+          ptsMinimo:           0,
+          ptsValidacion:       0,
         })
       }
       const acc = porCampana.get(campanaId)!
@@ -152,9 +210,36 @@ export async function obtenerPuntosRetenidos(
       }
     }
 
+    // Las altas pendientes, después de las misiones: una campaña de altas sin
+    // ninguna misión todavía no está en el mapa, así que acá se crea su entrada.
+    for (const a of altas) {
+      const campanaId = a.campana_id as string
+      const camp = Array.isArray(a.campana) ? a.campana[0] : a.campana
+      if (camp?.tipo !== 'comercios') continue   // solo el alta que se paga
+
+      if (!porCampana.has(campanaId)) {
+        porCampana.set(campanaId, {
+          nombre:              camp?.nombre ?? 'Campaña',
+          minimo:              camp?.min_comercios_para_cobrar ?? 0,
+          aprobados:           new Set(),
+          enRevision:          new Set(),
+          esperandoValidacion: new Set(),
+          ptsAprobacion:       0,
+          ptsMinimo:           0,
+          ptsValidacion:       0,
+        })
+      }
+      const acc = porCampana.get(campanaId)!
+      acc.esperandoValidacion.add(a.id)
+      // Cuenta para el mínimo igual que una foto en revisión: es trabajo
+      // entregado que va a contar cuando lo validen.
+      acc.enRevision.add(a.id)
+      acc.ptsValidacion += puntosDeLaCampana(camp ?? {})
+    }
+
     const campanas: CampanaRetenida[] = []
     for (const [campanaId, acc] of porCampana.entries()) {
-      if (acc.ptsAprobacion === 0 && acc.ptsMinimo === 0) continue
+      if (acc.ptsAprobacion === 0 && acc.ptsMinimo === 0 && acc.ptsValidacion === 0) continue
 
       const comerciosAprobados = acc.aprobados.size
       // Un comercio que ya está aprobado no vuelve a contar como "en revisión":
@@ -164,11 +249,13 @@ export async function obtenerPuntosRetenidos(
 
       campanas.push({
         campanaId,
-        nombre:                    acc.nombre,
-        puntosEsperandoAprobacion: acc.ptsAprobacion,
-        puntosEsperandoMinimo:     acc.ptsMinimo,
+        nombre:                       acc.nombre,
+        puntosEsperandoAprobacion:    acc.ptsAprobacion,
+        puntosEsperandoValidacion:    acc.ptsValidacion,
+        comerciosEsperandoValidacion: acc.esperandoValidacion.size,
+        puntosEsperandoMinimo:        acc.ptsMinimo,
         comerciosAprobados,
-        comerciosEnRevision:       enRevisionNuevos,
+        comerciosEnRevision:          enRevisionNuevos,
         minimo:                    acc.minimo,
         faltan,
         enRevisionAlcanza:         faltan > 0 && enRevisionNuevos >= faltan,
@@ -184,11 +271,13 @@ export async function obtenerPuntosRetenidos(
       const bAcc = b.faltan > 0
       if (aAcc !== bAcc) return aAcc ? -1 : 1
       if (aAcc && bAcc) return a.faltan - b.faltan
-      return b.puntosEsperandoAprobacion - a.puntosEsperandoAprobacion
+      return (b.puntosEsperandoAprobacion + b.puntosEsperandoValidacion)
+           - (a.puntosEsperandoAprobacion + a.puntosEsperandoValidacion)
     })
 
     const totalEsperandoAprobacion = campanas.reduce((s, c) => s + c.puntosEsperandoAprobacion, 0)
     const totalEsperandoMinimo     = campanas.reduce((s, c) => s + c.puntosEsperandoMinimo, 0)
+    const totalEsperandoValidacion = campanas.reduce((s, c) => s + c.puntosEsperandoValidacion, 0)
 
     // Si aparece en producción, la liberación no corrió cuando debía.
     const anomalas = campanas.filter(c => c.listoPeroRetenido)
@@ -200,9 +289,10 @@ export async function obtenerPuntosRetenidos(
     }
 
     return {
-      total: totalEsperandoAprobacion + totalEsperandoMinimo,
+      total: totalEsperandoAprobacion + totalEsperandoMinimo + totalEsperandoValidacion,
       totalEsperandoAprobacion,
       totalEsperandoMinimo,
+      totalEsperandoValidacion,
       campanas,
     }
   } catch (err) {
@@ -227,10 +317,31 @@ export function frasePuntosRetenidos(c: CampanaRetenida): { principal: string; d
     // abajo. Decir "falta 1" contando los que están en revisión sería prometer
     // una aprobación que puede no llegar.
     const principal = `A ${c.faltan} ${c.faltan === 1 ? 'comercio' : 'comercios'} de cobrar.`
-    const detalle = c.comerciosEnRevision > 0
-      ? `Tenés ${c.comerciosEnRevision} en revisión que ${c.comerciosEnRevision === 1 ? 'cuenta' : 'cuentan'} cuando ${c.comerciosEnRevision === 1 ? 'lo aprueben' : 'los aprueben'}.`
+    // Cuando lo que está en camino son ALTAS, el verbo es validar. Ver abajo.
+    const n = c.comerciosEnRevision
+    const soloAltas = c.comerciosEsperandoValidacion === n && n > 0
+    const detalle = n > 0
+      ? soloAltas
+        ? `Tenés ${n} ${n === 1 ? 'comercio cargado que cuenta' : 'comercios cargados que cuentan'} cuando ${n === 1 ? 'lo validen' : 'los validen'}.`
+        : `Tenés ${n} en revisión que ${n === 1 ? 'cuenta' : 'cuentan'} cuando ${n === 1 ? 'lo aprueben' : 'los aprueben'}.`
       : null
     return { principal, detalle }
+  }
+
+  // ── VALIDAR NO ES APROBAR ─────────────────────────────────────────────────
+  // Son dos actos distintos, en dos pantallas distintas, y los hace otra
+  // persona: una foto la APRUEBA quien revisa el trabajo; un comercio nuevo lo
+  // VALIDA quien decide si ese punto de venta existe y sirve. Decirle al
+  // gondolero que espere una aprobación cuando lo que espera es una validación
+  // lo manda a buscar algo que no va a encontrar en ningún lado.
+  if (c.puntosEsperandoValidacion > 0 && c.puntosEsperandoAprobacion === 0) {
+    return { principal: 'Esperando que validen los comercios que cargaste.', detalle: null }
+  }
+  if (c.puntosEsperandoValidacion > 0) {
+    return {
+      principal: 'Esperando revisión.',
+      detalle:   `${c.comerciosEsperandoValidacion} ${c.comerciosEsperandoValidacion === 1 ? 'comercio espera' : 'comercios esperan'} validación.`,
+    }
   }
   // "que revisen" y no "que la distribuidora revise": las campañas de marca y
   // las de GondolApp las revisa otro panel, y nombrar al revisor equivocado es

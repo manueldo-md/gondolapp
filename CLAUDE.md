@@ -3556,3 +3556,39 @@ la pantalla no ofrece volver a unirse— así que la ventana es chica. Y en la m
 función, el acumulador suma `campana.puntos_por_foto` **sin el fallback a
 `puntos_por_mision`**: en una campaña de altas suma cero. Mismo error que ya se
 corrigió en las dos actions de validación de comercio.
+
+### Puntos en camino — el tercer caso: esperando VALIDACIÓN (17/9/2026)
+
+El bloque contaba misiones, y en una campaña de altas **la misión no existe hasta
+que la distribuidora valida el comercio**. Resultado: el gondolero cargaba tres
+comercios, su saldo no se movía, el bloque no mostraba nada, y los puntos
+aparecían de golpe días después. Trabajo entregado e invisible — el mismo caso
+que las fotos en revisión, que sí se mostraban.
+
+Ahora `obtenerPuntosRetenidos` hace una segunda consulta sobre `comercios`
+(`registrado_por = él`, `estado = 'pendiente_validacion'`, campaña
+`tipo='comercios'`) y los valúa con `puntosDeLaCampana`. Va en la misma función y
+no en un helper aparte porque **el número tiene que entrar al mismo cálculo de
+"cuánto falta para el mínimo"**: un comercio cargado cuenta cuando lo validen,
+igual que una foto cuenta cuando la aprueben. Entra a `enRevision`, así que
+alimenta `faltan` y `enRevisionAlcanza` sin ramificar nada.
+
+Una campaña de altas sin ninguna misión todavía no estaba en el mapa por
+campaña, así que las altas también **crean su entrada**.
+
+**VALIDAR NO ES APROBAR, y el texto lo dice.** Son dos actos distintos, en dos
+pantallas distintas, y los hace otra persona: una foto la APRUEBA quien revisa el
+trabajo; un comercio nuevo lo VALIDA quien decide si ese punto de venta existe y
+sirve. Mandarlo a esperar una aprobación cuando lo que espera es una validación
+lo manda a buscar algo que no va a encontrar.
+
+| Situación | Frase |
+|---|---|
+| Solo altas pendientes | "Esperando que validen los comercios que cargaste." |
+| Altas + fotos | "Esperando revisión." / "N comercios esperan validación." |
+| Falta para el mínimo, y lo pendiente son altas | "Tenés N comercios cargados que cuentan cuando los validen." |
+
+`puntosDeLaCampana` se mudó de `lib/validacion-comercio.ts` a
+`lib/campana-altas.ts`: lo necesitan la validación (servidor, service role) y el
+bloque de puntos, y ese último no tiene que arrastrar el módulo de servidor.
+`campana-altas.ts` solo importa `@/types`.

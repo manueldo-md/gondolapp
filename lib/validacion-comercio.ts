@@ -44,6 +44,10 @@ import {
   sincronizarComerciosCompletados,
 } from '@/lib/comercios-relevados'
 import { QUE_HACER_TRAS_RECHAZO } from '@/lib/motivos-rechazo-comercio'
+// El fallback puntos_por_mision → puntos_por_foto: las dos actions de validación
+// leían SOLO puntos_por_foto, y la campaña de prod lo tiene en 0 con
+// puntos_por_mision en 200, así que ese camino habría pagado cero.
+import { puntosDeLaCampana } from '@/lib/campana-altas'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = SupabaseClient<any, any, any>
@@ -56,24 +60,6 @@ export interface ResultadoValidacion {
   misionId?: string | null
   /** Puntos que quedaron a nombre de la misión (retenidos o acreditados según el mínimo). */
   puntos?: number
-}
-
-/**
- * Los puntos que vale un alta.
- *
- * Mismo fallback que `aprobarFoto`: `puntos_por_mision` manda y
- * `puntos_por_foto` es el resto de las campañas viejas. Las dos actions de
- * validación leían SOLO `puntos_por_foto`, y la campaña de prod lo tiene en 0
- * con `puntos_por_mision` en 200 — así que aunque la misión hubiera existido,
- * ese camino habría pagado cero.
- */
-export function puntosDeLaCampana(campana: {
-  puntos_por_mision?: number | null
-  puntos_por_foto?: number | null
-}): number {
-  const porMision = campana.puntos_por_mision ?? 0
-  if (porMision > 0) return porMision
-  return campana.puntos_por_foto ?? 0
 }
 
 /**

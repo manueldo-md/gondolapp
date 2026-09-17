@@ -26,6 +26,23 @@
 
 import type { TipoCampana } from '@/types'
 
+/**
+ * Los puntos que vale una misión de la campaña.
+ *
+ * `puntos_por_mision` manda y `puntos_por_foto` es el resto de las campañas
+ * viejas. Vive acá —en un módulo sin dependencias— porque lo necesitan tanto la
+ * validación del comercio (servidor, con service role) como el bloque de puntos
+ * en camino, y ese no tiene que arrastrar el módulo de servidor al bundle.
+ */
+export function puntosDeLaCampana(campana: {
+  puntos_por_mision?: number | null
+  puntos_por_foto?: number | null
+}): number {
+  const porMision = campana.puntos_por_mision ?? 0
+  if (porMision > 0) return porMision
+  return campana.puntos_por_foto ?? 0
+}
+
 /** El trabajo de la campaña es dar de alta comercios. */
 export function esCampanaDeAltas(tipo: string | null | undefined): boolean {
   return tipo === 'comercios'
