@@ -214,18 +214,30 @@ export async function validarComercioYCrearMision(
     misionId = nueva.id
   }
 
-  // ── La foto de fachada pasa a ser la foto de la misión ────────────────────
-  // Deja de ser una unidad de pago suelta: su bounty queda saldado acá y el de
-  // la misión es el único que cuenta. Sin esto, la foto se queda en 'retenido'
-  // y el barrido de `cerrarCampana` la paga OTRA VEZ al cerrar la campaña.
+  // ── La foto de fachada se cierra, pero NO se cuelga de la misión ──────────
+  //
+  // Queda con `mision_id = null` a propósito. La fachada es evidencia DEL
+  // COMERCIO, no de la misión: quien la mira está decidiendo si el comercio
+  // existe y está bien cargado, que es exactamente lo que se acaba de decidir al
+  // validar. Colgarla de la misión la metería en el conteo de
+  // `actualizarEstadoMision` y habría que aprobarla una segunda vez, en otra
+  // pantalla, para cerrar algo que ya está cerrado.
+  //
+  // Lo que sí hay que hacer es SALDARLA. Si se quedaba en 'retenido', el barrido
+  // de `cerrarCampana` —que paga toda foto retenida sin mirar misiones— la
+  // pagaba otra vez al cerrar la campaña. 'acreditado' acá significa "esta foto
+  // ya no debe plata", y la plata la debe la misión.
+  //
+  // CONSECUENCIA ANOTADA: sin `mision_id`, la fachada queda fuera de todo lo que
+  // arma el dashboard de la campaña a partir de las misiones. Ver CLAUDE.md.
   const { error: errFoto } = await db
     .from('fotos')
-    .update({ mision_id: misionId, estado: 'aprobada', bounty_estado: 'acreditado' })
+    .update({ estado: 'aprobada', bounty_estado: 'acreditado' })
     .eq('comercio_id', comercioId)
     .eq('campana_id', campana.id)
     .is('mision_id', null)
 
-  if (errFoto) console.error('[validarComercio] no se pudo enganchar la foto a la misión:', errFoto.message)
+  if (errFoto) console.error('[validarComercio] no se pudo saldar la foto de fachada:', errFoto.message)
 
   // ── El camino normal de aprobación ────────────────────────────────────────
   // Acá se decide si el bounty se libera o sigue retenido, con la misma regla

@@ -85,14 +85,39 @@ export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoC
   const vivas = ((data ?? []) as { comercio_id: string | null; estado: string | null; gondolero_id: string }[])
     .filter(m => m.estado !== 'descartada' && m.comercio_id)
 
+  // ── Las altas todavía sin validar también ocupan cupo ─────────────────────
+  //
+  // En una campaña de altas la misión no existe hasta que alguien valida el
+  // comercio, así que `vivas` está vacío mientras las altas esperan revisión: el
+  // cupo propio daba SIEMPRE cero y `max_comercios_por_gondolero` no frenaba
+  // nada. Con tope 20 se podían cargar 60 altas, y el tope recién se notaba
+  // cuando la distribuidora las validaba — o sea después de que el gondolero
+  // hizo el trabajo, que es justo el rechazo tardío que no queremos.
+  //
+  // Los comercios que él registró en esta campaña y no están rechazados cuentan
+  // como suyos. No es un contador nuevo: se suman a `misComercios`, que es lo que
+  // ya lee `cupoPropioLleno`. Una sola regla de cupo, en un solo lugar.
+  const { data: altasPropias, error: errAltas } = await db
+    .from('comercios')
+    .select('id, estado')
+    .eq('campana_id', campanaId)
+    .eq('registrado_por', user.id)
+
+  if (errAltas) console.error('[obtenerEstadoComercios] error leyendo altas propias:', errAltas.message)
+
+  const idsAltas = ((altasPropias ?? []) as { id: string; estado: string | null }[])
+    .filter(c => c.estado !== 'rechazado')   // una rechazada no le ocupa lugar
+    .map(c => c.id)
+
   return {
     // En seguimiento nadie bloquea a nadie: el comercio se visita muchas veces.
     relevadosPorOtros: campana.modalidad === 'puntual'
       ? [...new Set(vivas.map(m => m.comercio_id as string))]
       : [],
-    misComercios: [...new Set(
-      vivas.filter(m => m.gondolero_id === user.id).map(m => m.comercio_id as string)
-    )],
+    misComercios: [...new Set([
+      ...vivas.filter(m => m.gondolero_id === user.id).map(m => m.comercio_id as string),
+      ...idsAltas,
+    ])],
     maxComercios: campana.max_comercios_por_gondolero ?? null,
   }
 }
@@ -267,6 +292,52 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     return { error: 'No tenés una participación activa en esta campaña.' }
   }
 
+  // ── Cupo propio, chequeado en el servidor ─────────────────────────────────
+  //
+  // La pantalla ya esconde el botón cuando el cupo está lleno, pero eso es el
+  // cliente: la misma guarda tiene que estar acá, como en `registrarMision`. Un
+  // cache viejo o una pestaña abierta desde ayer alcanzan para pasarla.
+  //
+  // Se cuenta igual que en `obtenerEstadoComercios` —altas propias no
+  // rechazadas + comercios con misión viva propia— porque es el mismo cupo. Si
+  // los dos números se calcularan distinto, la pantalla diría una cosa y el
+  // servidor otra, que es la forma de rechazo tardío más difícil de explicar.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campanaCupo } = await (admin as any)
+    .from('campanas')
+    .select('max_comercios_por_gondolero')
+    .eq('id', params.campanaId)
+    .maybeSingle() as { data: { max_comercios_por_gondolero: number | null } | null }
+
+  const maxComercios = campanaCupo?.max_comercios_por_gondolero ?? null
+  if (maxComercios != null) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [{ data: altasPrevias }, { data: misionesPropias }] = await Promise.all([
+      (admin as any).from('comercios')
+        .select('id, estado').eq('campana_id', params.campanaId).eq('registrado_por', user.id),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (admin as any).from('misiones')
+        .select('comercio_id, estado').eq('campana_id', params.campanaId).eq('gondolero_id', user.id),
+    ])
+
+    const ocupados = new Set<string>()
+    for (const c of ((altasPrevias ?? []) as { id: string; estado: string | null }[])) {
+      if (c.estado !== 'rechazado') ocupados.add(c.id)
+    }
+    // `!==` de JS y no `.neq()`: `misiones.estado` es nullable y PostgREST
+    // dejaría afuera las filas con NULL, que son misiones vivas.
+    for (const m of ((misionesPropias ?? []) as { comercio_id: string | null; estado: string | null }[])) {
+      if (m.comercio_id && m.estado !== 'descartada') ocupados.add(m.comercio_id)
+    }
+
+    if (ocupados.size >= maxComercios) {
+      return {
+        error: `Alcanzaste tu máximo de ${maxComercios} comercios en esta campaña. ` +
+               'Podés seguir trabajando en los que ya tomaste.',
+      }
+    }
+  }
+
   // Obtener zona_id
   const { data: zona } = await admin
     .from('zonas')
@@ -285,10 +356,25 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     zonaId = primeraZona?.id ?? null
   }
 
-  // Deduplicación: buscar comercios activos en radio 50m
-  const { data: cercanos } = await admin
+  // Deduplicación por nombre contra los comercios que siguen en juego.
+  //
+  // Los rechazados quedan afuera: un comercio rechazado por duplicado o por no
+  // existir no puede ser el "posible duplicado" de un alta nueva. Si se lo
+  // contara, el alta legítima que reemplaza a una rechazada saldría marcada como
+  // sospechosa contra la fila que justamente se descartó.
+  //
+  // El filtro va en JS y no en la query: `comercios.estado` es nullable (DEFAULT
+  // 'activo' sin NOT NULL, y el CHECK deja pasar NULL), así que un
+  // `.neq('estado','rechazado')` de PostgREST descartaría también las filas con
+  // NULL por lógica de tres valores. Hoy no hay ninguna en dev ni en prod, pero
+  // el día que aparezca una el comercio se volvería invisible sin que nadie se
+  // entere — que es el modo de falla que ya nos mordió dos veces.
+  const { data: todosLosComercios } = await admin
     .from('comercios')
-    .select('id, nombre, lat, lng')
+    .select('id, nombre, lat, lng, estado')
+
+  const cercanos = ((todosLosComercios ?? []) as { id: string; nombre: string; lat: number | null; lng: number | null; estado: string | null }[])
+    .filter(c => c.estado !== 'rechazado')
 
   // Deduplicación por NOMBRE, sin condicionar a la distancia.
   //

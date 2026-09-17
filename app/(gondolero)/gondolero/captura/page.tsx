@@ -117,6 +117,10 @@ interface ComercioRow {
   lng: number
   tipo: string
   validado: boolean
+  /** 'activo' | 'pendiente_validacion' | 'rechazado'. Opcional: el caché viejo
+   *  de IDB no lo tiene, y `undefined !== 'rechazado'` lo deja pasar, que es lo
+   *  correcto — un comercio guardado antes de este cambio no se esconde. */
+  estado?: string | null
 }
 
 // ── Constantes de búsqueda de comercios ───────────────────────────────────────
@@ -1103,13 +1107,17 @@ function CapturaContent() {
         // Cachear todos los comercios para uso offline futuro
         supabase
           .from('comercios')
-          .select('id, nombre, direccion, lat, lng, tipo, validado')
+          .select('id, nombre, direccion, lat, lng, tipo, validado, estado')
           .order('nombre')
           .limit(500)
           .then(({ data }) => {
             if (data) {
-              comerciosCacheRef.current = data as ComercioRow[]
-              guardarComercios(data)
+              // Un comercio RECHAZADO no se ofrece nunca más. Se filtra en JS y
+              // no con .neq(): `comercios.estado` es nullable y PostgREST
+              // descartaría también las filas con NULL, que sí son válidas.
+              const vigentes = (data as ComercioRow[]).filter(c => c.estado !== 'rechazado')
+              comerciosCacheRef.current = vigentes
+              guardarComercios(vigentes)
             }
           })
       }
@@ -1214,10 +1222,12 @@ function CapturaContent() {
       try {
         const { data } = await supabase
           .from('comercios')
-          .select('id, nombre, direccion, lat, lng, tipo, validado')
+          .select('id, nombre, direccion, lat, lng, tipo, validado, estado')
           .order('nombre')
           .limit(500)
-        setCmComerciosCercanos(filtrarCercanos((data as ComercioRow[]) ?? [], lat, lng))
+        // Idem: los rechazados no se sugieren, y el filtro va en JS por el NULL.
+        const vigentes = ((data as ComercioRow[]) ?? []).filter(c => c.estado !== 'rechazado')
+        setCmComerciosCercanos(filtrarCercanos(vigentes, lat, lng))
       } catch {
         // Red falló: usar caché como fallback y cortar el spinner
         setCmComerciosCercanos(filtrarCercanos(comerciosCacheRef.current, lat, lng))

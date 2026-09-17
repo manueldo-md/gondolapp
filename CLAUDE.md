@@ -3285,3 +3285,73 @@ lugar de un botón: mirar y decidir son pantallas distintas.
 `comercios.validado` **sigue teniendo seis lecturas** (las dos listas, los dos
 tableros, el detalle de la distri y el badge de la captura), así que no es un
 `DROP` — se va con el tramo de columnas muertas, moviendo esas seis a `estado`.
+
+### La foto de fachada no cuelga de la misión — y qué queda pendiente por eso
+
+Al validar un alta, la fachada se cierra (`estado='aprobada'`,
+`bounty_estado='acreditado'`) pero **se deja con `mision_id = null` a propósito**.
+
+La fachada es evidencia **del comercio**, no de la misión: quien la mira está
+decidiendo si el comercio existe y está bien cargado, que es exactamente lo que
+se decide al validar. Colgarla de la misión la metería en el conteo de
+`actualizarEstadoMision` y habría que aprobarla una segunda vez, en otra
+pantalla, para cerrar algo que ya está cerrado.
+
+El `bounty_estado='acreditado'` no es decorativo: si quedaba en `'retenido'`, el
+barrido de `cerrarCampana` —que paga toda foto retenida sin mirar misiones— la
+pagaba otra vez al cerrar la campaña.
+
+**PENDIENTE — la fachada queda fuera del dashboard de la campaña.** Todo lo que
+ese panel arma sale de las misiones y sus fotos, y la fachada no tiene
+`mision_id`. Cuando se haga el panel de resultados de una campaña de comercios
+hay que decidir si se muestra y desde dónde: la vía natural es
+`fotos.comercio_id` + `campana_id`, sin pasar por misiones.
+
+### El cupo en campañas de altas contaba cero (arreglado 17/9/2026)
+
+`max_comercios_por_gondolero` se mide contando comercios con misión viva del
+gondolero. En una campaña de altas **la misión no existe hasta que alguien valida
+el comercio**, así que `misComercios` daba siempre vacío y el cupo no frenaba
+nada: con tope 20 se podían cargar 60 altas, y el tope recién aparecía cuando la
+distribuidora validaba — o sea **después** de que el gondolero hizo el trabajo.
+Rechazo tardío del peor tipo.
+
+Arreglado sumando las altas propias no rechazadas a `misComercios` en
+`obtenerEstadoComercios`. **No es un contador nuevo**: alimenta el
+`cupoPropioLleno` que ya existía, que es el que la pantalla consulta para
+esconder el botón de comercio nuevo. Una sola regla de cupo.
+
+Y ahora también se chequea **en el servidor**, dentro de `crearComercioNuevo`,
+como hace `registrarMision`. El cálculo de los dos lados es el mismo a propósito:
+si difirieran, la pantalla diría una cosa y el servidor otra.
+
+Una alta **rechazada no ocupa cupo**. El gondolero no se queda sin lugar por un
+comercio que no le sirvió a nadie.
+
+### Un comercio rechazado se guarda, pero no se ofrece más
+
+**No se borra.** Borrarlo perdería `registrado_por`, el motivo y el rastro de que
+alguien fue hasta ahí, y `fotos.comercio_id` lo referencia. Queda con
+`estado='rechazado'` y su `motivo_rechazo`.
+
+Lo que sí cambió el 17/9/2026 es que **deja de aparecer**. Hasta entonces ninguna
+de las tres consultas filtraba por estado, así que un comercio rechazado por "no
+existe" seguía ofreciéndose a todos los gondoleros: alguien lo elegía, hacía la
+misión, y quedaba una misión sobre un comercio que la distribuidora ya había
+dicho que no existía. Ahora se excluye de:
+
+- la lista de comercios de la captura (y del caché de IDB)
+- la búsqueda de cercanos
+- los candidatos a duplicado de `crearComercioNuevo` — si no, el alta legítima
+  que reemplaza a una rechazada salía marcada como duplicado de la fila que
+  justamente se descartó
+
+**Los tres filtros van en JS, no con `.neq()`**: `comercios.estado` es nullable
+(`DEFAULT 'activo'` sin `NOT NULL`, y el CHECK deja pasar NULL), y PostgREST
+descartaría también las filas con NULL por lógica de tres valores. Hoy no hay
+ninguna en dev ni en prod, pero el día que aparezca el comercio se volvería
+invisible sin que nadie se entere. Mismo razonamiento que en
+`obtenerEstadoComercios` y `comercios-relevados`.
+
+En el caché de IDB viejo el campo no existe, y `undefined !== 'rechazado'` lo
+deja pasar: un comercio guardado antes del cambio no se esconde.
