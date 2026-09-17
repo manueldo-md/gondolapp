@@ -39,12 +39,26 @@ export function motivoBloqueo(
   comercioId: string,
   ctx: ContextoSeleccion,
 ): MotivoBloqueo | null {
-  // Un comercio propio NUNCA se bloquea por cupo: volver a él es exactamente lo
-  // que una campaña de seguimiento le pide hacer, y es lo que el gate del
-  // servidor ya permite (`esComercioNuevo`).
   const esPropio = ctx.misComercios.has(comercioId)
 
-  if (!esPropio && ctx.relevadosPorOtros.has(comercioId)) return 'ya_relevado'
+  // "Ya relevado" NO exime al comercio propio, y esa distinción es todo el bug
+  // que esto tuvo entre el 17 y el 18/9/2026.
+  //
+  // `relevadosPorOtros` se llena SOLO en campañas puntuales, y ahí el índice
+  // único `misiones_campana_comercio_uniq` prohíbe una segunda misión viva sobre
+  // el mismo par (campaña, comercio) — sea de quien sea, incluido él. Al eximir
+  // al propio, la lista lo mostraba elegible, el gondolero sacaba la foto y
+  // completaba el formulario, y recién al enviar lo rechazaba el servidor por
+  // violación del índice. Con el único mensaje que ese camino sabe dar: "otro
+  // gondolero relevó este comercio antes que vos", que además era falso.
+  //
+  // En seguimiento esto no cambia nada: ahí `obtenerEstadoComercios` devuelve
+  // `relevadosPorOtros` vacío, así que la condición no se evalúa.
+  if (ctx.relevadosPorOtros.has(comercioId)) return 'ya_relevado'
+
+  // El cupo SÍ exime al propio: volver a un comercio que ya tomó es exactamente
+  // lo que una campaña de seguimiento le pide, y es lo que el gate del servidor
+  // ya permite con `esComercioNuevo`.
   if (!esPropio && cupoPropioLleno(ctx)) return 'cupo_propio'
   return null
 }

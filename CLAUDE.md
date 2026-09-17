@@ -2983,42 +2983,34 @@ Dos consecuencias laterales que conviene tener a la vista al decidir:
 Relacionado: "Pendiente — SMTP propio" y el botón "Destrabar misiones", que
 reintenta la aprobación automática de estas mismas misiones.
 
-### BUG — en campaña puntual, el comercio propio no se marca "Ya relevado"
+### El comercio propio SÍ se bloquea en campaña puntual (resuelto 18/9/2026)
 
-**Síntoma:** el gondolero completa una misión en un comercio de una campaña
-puntual y ese comercio NO queda marcado en la lista. Si intenta volver, lo
-bloquea —el índice único hace su trabajo— pero con el mensaje equivocado:
-*"Otro gondolero relevó este comercio antes que vos"*, cuando fue él.
-
-**Causa: `lib/comercio-seleccionable.ts`.** La exención de "comercio propio" es
-demasiado ancha:
+En `lib/comercio-seleccionable.ts`, la exención de "comercio propio" vale **solo
+para el cupo**, no para "ya relevado":
 
 ```ts
-const esPropio = ctx.misComercios.has(comercioId)
-if (!esPropio && ctx.relevadosPorOtros.has(comercioId)) return 'ya_relevado'
-if (!esPropio && cupoPropioLleno(ctx))                  return 'cupo_propio'
+if (ctx.relevadosPorOtros.has(comercioId)) return 'ya_relevado'   // sin exención
+if (!esPropio && cupoPropioLleno(ctx))     return 'cupo_propio'   // con exención
 ```
 
-El `!esPropio` corresponde **solo en la segunda línea**. Volver a un comercio
-propio es lo que una campaña de seguimiento pide, y por eso no consume cupo —
-pero en PUNTUAL el índice único prohíbe una segunda misión viva sobre el mismo
-par (campaña, comercio), sea de quien sea. Al eximirlo, la lista lo muestra
-seleccionable, el gondolero lo elige, y el rechazo llega del servidor por
-violación del índice, con el mensaje de "otro gondolero" que es el único que ese
-camino sabe dar.
+`relevadosPorOtros` se llena SOLO en campañas puntuales, y ahí el índice único
+`misiones_campana_comercio_uniq` prohíbe una segunda misión viva sobre el mismo
+par (campaña, comercio) **sea de quien sea, incluido él**. El cupo es otra cosa:
+volver a un comercio propio es lo que una campaña de seguimiento pide, y el gate
+del servidor ya lo permite con `esComercioNuevo`.
 
-**El arreglo es sacar `!esPropio` de la primera línea.** En seguimiento no cambia
-nada: ahí `relevadosPorOtros` viene vacío de `obtenerEstadoComercios`, así que
-esa condición nunca se evalúa.
+Entre el 17 y el 18/9/2026 la exención estaba en las dos líneas, y el efecto era
+el rechazo tardío de siempre: la lista mostraba el comercio elegible, el
+gondolero sacaba la foto y completaba el formulario, y recién al enviar lo
+rechazaba el índice — con el único mensaje que ese camino sabe dar, *"otro
+gondolero relevó este comercio antes que vos"*, que además era falso.
 
-**Hay un segundo lugar con la misma exención**, introducido en el mismo commit
-(`2c235e7`): la revalidación del paso de GPS en `captura/page.tsx` solo saca al
-gondolero del comercio si `!estado.misComercios.includes(comercioId)`. Mismo
-razonamiento, mismo arreglo.
+La revalidación del paso de GPS en `captura/page.tsx` tenía la misma exención y
+se corrigió igual. Ahí ahora se distingue el motivo: *"Ya relevaste ese comercio
+en esta campaña"* si es suyo, *"Otro gondolero relevó ese comercio mientras lo
+elegías"* si no.
 
-**Y un tercer factor, secundario:** el set de relevados se carga en un efecto que
-depende de `[campana?.id, campana?.modalidad]`, así que dentro de una misma
-sesión no se refresca después de registrar una misión. La revalidación del paso
-de GPS lo tapa en parte. Conviene refrescarlo al volver a la lista, pero **no es
-la causa principal**: aunque el set estuviera fresco, la exención de arriba
-seguiría mostrando el comercio como elegible.
+**Queda pendiente un tercer factor, menor:** el set de relevados se carga en un
+efecto que depende de `[campana?.id, campana?.modalidad]`, así que dentro de una
+misma sesión no se refresca después de registrar una misión. La revalidación del
+paso de GPS lo tapa, pero conviene refrescarlo al volver a la lista.

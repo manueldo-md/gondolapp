@@ -1055,11 +1055,21 @@ function CapturaContent() {
         setMaxComercios(estado.maxComercios)
         setRelevadosFresco(true)
         guardarRelevados(campanaId, estado).catch(() => {})
-        // Solo si NO es propio: si el comercio ya es suyo, "relevado" es él
-        // mismo y sacarlo del paso sería echarlo de su propia misión.
-        if (estado.relevadosPorOtros.includes(comercioId) && !estado.misComercios.includes(comercioId)) {
+        // Este efecto solo corre en campañas PUNTUALES (hay un early return
+        // arriba), y ahí el índice único prohíbe una segunda misión viva sobre
+        // el mismo comercio — sea de otro o suya. Así que se lo saca del paso en
+        // los dos casos; lo que cambia es el motivo.
+        //
+        // Hasta el 18/9/2026 el comercio propio quedaba exento y seguía de
+        // largo, para chocar contra el índice recién al enviar: después de la
+        // foto y el formulario, y con el mensaje de "otro gondolero", que era
+        // falso.
+        if (estado.relevadosPorOtros.includes(comercioId)) {
+          const esPropio = estado.misComercios.includes(comercioId)
           setComercio(null)
-          setRelevadoAviso('Otro gondolero relevó ese comercio mientras lo elegías. Elegí otro de la lista.')
+          setRelevadoAviso(esPropio
+            ? 'Ya relevaste ese comercio en esta campaña. Elegí otro de la lista.'
+            : 'Otro gondolero relevó ese comercio mientras lo elegías. Elegí otro de la lista.')
           setPaso('comercios-gps')
         }
       })
