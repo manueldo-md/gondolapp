@@ -5,6 +5,8 @@ import { Trophy } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { getConfig } from '@/lib/config'
 import { aliasAnonimo } from '@/lib/aliases'
+import { obtenerPuntosRetenidos } from '@/lib/puntos-retenidos'
+import { PuntosEnCamino } from '@/components/gondolero/puntos-en-camino'
 import { calcularNivelMensual } from '@/lib/nivel'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
@@ -64,6 +66,7 @@ export default async function LogrosPage() {
     misZonasRes,
     todosLogrosRes,
     gondoleroLogrosRes,
+    retenidos,
   ] = await Promise.all([
     admin.from('profiles')
       .select('nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id, alias, nombre')
@@ -95,6 +98,9 @@ export default async function LogrosPage() {
     admin.from('gondolero_logros')
       .select('logro_clave, frase_mostrada, desbloqueado_at, visto')
       .eq('gondolero_id', user.id),
+    // Entra en el Promise.all y no en un await aparte: es una consulta más, no
+    // un round-trip más.
+    obtenerPuntosRetenidos(user.id, admin),
   ])
 
   const profile = profileRes.data as {
@@ -308,6 +314,13 @@ export default async function LogrosPage() {
             <p className="text-4xl font-bold text-gondo-verde-400">
               {puntosDisponibles.toLocaleString('es-AR')}
             </p>
+
+            {/* Lo que ganó y todavía no puede canjear, justo debajo del saldo:
+                es la pregunta que sigue a "cuántos tengo". No se renderiza nada
+                si no hay puntos en camino. */}
+            <div className="mt-3">
+              <PuntosEnCamino resumen={retenidos} />
+            </div>
           </div>
 
           {/* ── Barra de progreso lineal con 3 nodos ── */}

@@ -2908,3 +2908,46 @@ dígitos y cabe en SQL, pero el del alias son 600 personajes y cientos de
 adjetivos, y duplicar esas listas en SQL contradice todo lo demás. Si alguna vez
 se reconsidera, primero hace falta un índice UNIQUE sobre `alias` —hoy no lo
 tiene— porque sin él el reintento del trigger no tendría contra qué chocar.
+
+### Si aparece "Listo para cobrar, esperando aprobación", la liberación falló
+
+`lib/puntos-retenidos.ts` marca una campaña con `listoPeroRetenido` cuando el
+gondolero **ya alcanzó el mínimo** y todavía tiene puntos de misiones APROBADAS
+en `bounty_estado='retenido'`.
+
+**No debería pasar nunca.** `aprobarMisionCore` corre la barrida de liberación en
+CADA aprobación, así que alcanzado el mínimo no puede quedar nada aprobado
+retenido. Si aparece, la barrida no corrió cuando debía — probablemente un error
+en el camino de aprobación.
+
+Queda un `console.warn` con el `gondoleroId` y las campañas afectadas. **Si se ve
+en los logs de producción, hay que mirarlo**: significa plata que el gondolero
+ganó, que el sistema reconoce como ganada, y que no le llegó al saldo.
+
+La pantalla muestra *"Listo para cobrar, esperando aprobación"* — es la verdad y
+no promete una acción que no existe, porque no hay nada que el gondolero pueda
+hacer al respecto.
+
+### El mínimo se mide en comercios distintos, y hay tres pantallas que lo dicen
+
+`min_comercios_para_cobrar` se compara contra **comercios DISTINTOS con misión
+aprobada**, que es lo que cuenta `aprobarMisionCore` para decidir el pago. En
+modalidad puntual da lo mismo que contar misiones —el índice único garantiza una
+misión viva por comercio— pero en seguimiento no: tres visitas al mismo comercio
+son tres misiones y un solo comercio.
+
+Lo dicen tres superficies, y el 17/9/2026 dos ya habían divergido:
+
+| Pantalla | Qué muestra |
+|---|---|
+| Logros | Bloque "puntos en camino", junto al saldo |
+| Actividad | El mismo bloque, arriba de los movimientos |
+| Detalle de campaña | "a N comercios de cobrar", por misión retenida |
+
+Las tres derivan de `lib/puntos-retenidos.ts`, salvo el detalle de campaña, que
+calcula el suyo con los datos que ya tiene en pantalla pero **con la misma
+definición**. Si se toca una, revisar las tres.
+
+**No usar `participaciones.comercios_completados`** para esto: es un contador
+guardado y lo encontramos desincronizado por herencia del seed. Un número que
+promete plata no puede salir de una columna que puede estar vieja.

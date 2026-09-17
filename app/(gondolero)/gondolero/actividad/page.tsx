@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { BarChart2, ArrowUp, ArrowDown, ChevronRight } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
+import { obtenerPuntosRetenidos } from '@/lib/puntos-retenidos'
+import { PuntosEnCamino } from '@/components/gondolero/puntos-en-camino'
 
 export default async function ActividadPage() {
   const supabase = await createClient()
@@ -18,19 +20,13 @@ export default async function ActividadPage() {
 
   const [
     notificacionesRes,
-    fotosPendientesRes,
     movimientosRes,
     canjesRes,
+    retenidos,
   ] = await Promise.all([
     admin.from('notificaciones')
       .select('id, tipo, titulo, mensaje, leida, created_at')
       .eq('gondolero_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(3),
-    admin.from('fotos')
-      .select('id, created_at, comercio:comercios(nombre), campana:campanas(nombre)', { count: 'exact' })
-      .eq('gondolero_id', user.id)
-      .in('estado', ['pendiente', 'en_revision'])
       .order('created_at', { ascending: false })
       .limit(3),
     admin.from('movimientos_puntos')
@@ -43,14 +39,10 @@ export default async function ActividadPage() {
       .eq('gondolero_id', user.id)
       .order('created_at', { ascending: false })
       .limit(3),
+    obtenerPuntosRetenidos(user.id, admin),
   ])
 
   const notificaciones    = notificacionesRes.data ?? []
-  const fotosPendientesTotal   = fotosPendientesRes.count ?? 0
-  const fotosPendientesPreview = (fotosPendientesRes.data ?? []) as unknown as {
-    id: string; created_at: string
-    comercio: { nombre: string } | null; campana: { nombre: string } | null
-  }[]
   const movimientos = movimientosRes.data ?? []
   const canjes      = canjesRes.data ?? []
 
@@ -137,31 +129,31 @@ export default async function ActividadPage() {
           </div>
         )}
 
-        {/* ── Fotos en revisión ── */}
-        {fotosPendientesTotal > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-sm font-semibold text-amber-800">
-                ⏳ {fotosPendientesTotal} {fotosPendientesTotal === 1 ? 'foto en revisión' : 'fotos en revisión'}
-              </p>
+        {/* ── Puntos en camino ──────────────────────────────────────────────
+            Reemplaza al bloque de "N fotos en revisión" que estaba acá.
+
+            Los dos hablaban del mismo hecho en unidades distintas y podían no
+            cuadrar: una misión de tres fotos con dos aprobadas y una en revisión
+            suma 1 foto pendiente pero retiene los puntos de la misión ENTERA. El
+            gondolero veía "1 foto en revisión" y, dos centímetros más abajo, un
+            saldo que no se movía, sin forma de relacionarlos.
+
+            Y lo que le importa no es cuántas fotos están en revisión sino cuánta
+            plata depende de eso. Va arriba de los movimientos a propósito: el
+            bloque explica el saldo que la lista de abajo detalla. */}
+        {retenidos.total > 0 && (
+          <div>
+            <PuntosEnCamino resumen={retenidos} />
+            {/* El link a la lista de fotos en revisión venía en el bloque viejo
+                y es la única entrada a esa página desde acá: se conserva. */}
+            {retenidos.totalEsperandoAprobacion > 0 && (
               <Link
                 href="/gondolero/actividad/pendientes"
-                className="flex items-center gap-0.5 text-xs text-amber-700 font-medium"
+                className="flex items-center justify-end gap-0.5 text-xs text-amber-700 font-medium mt-1.5 px-1"
               >
-                Ver todas <ChevronRight size={13} />
+                Ver fotos en revisión <ChevronRight size={13} />
               </Link>
-            </div>
-            <p className="text-xs text-amber-600 mb-3">Te avisamos cuando sean aprobadas.</p>
-            <div className="space-y-1.5">
-              {fotosPendientesPreview.map(f => (
-                <div key={f.id} className="flex items-center justify-between text-xs">
-                  <span className="text-amber-800 font-medium truncate mr-2">
-                    {f.comercio?.nombre ?? 'Comercio'}
-                  </span>
-                  <span className="text-amber-600 shrink-0">{f.campana?.nombre ?? ''}</span>
-                </div>
-              ))}
-            </div>
+            )}
           </div>
         )}
 

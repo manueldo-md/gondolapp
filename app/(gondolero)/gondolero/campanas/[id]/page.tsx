@@ -236,9 +236,17 @@ export default async function CampanaDetallePage({
   )
   const alcanzeLimite = comerciosQueOcupanCupo.size >= c.max_comercios_por_gondolero
 
-  // Para mostrar info de retención de puntos en cada misión
-  const misionesAprobadasCount = misiones.filter(m => m.estado === 'aprobada').length
-  const faltanParaCobrar = Math.max(0, c.min_comercios_para_cobrar - misionesAprobadasCount)
+  // Cuántos comercios le faltan para cobrar.
+  //
+  // COMERCIOS DISTINTOS, no misiones. Hasta el 17/9/2026 contaba misiones, y eso
+  // quedó viejo cuando el mínimo pasó a medirse en comercios: en seguimiento,
+  // tres visitas al mismo comercio le decían que ya había llegado al mínimo
+  // cuando le faltaban dos. Es el mismo número que calcula aprobarMisionCore
+  // para decidir el pago, así que lo que ve es lo que la base va a exigir.
+  const comerciosAprobados = new Set(
+    misiones.filter(m => m.estado === 'aprobada').map(m => m.comercio_id).filter(Boolean)
+  ).size
+  const faltanParaCobrar = Math.max(0, c.min_comercios_para_cobrar - comerciosAprobados)
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -491,9 +499,12 @@ export default async function CampanaDetallePage({
                               <span className="text-xs font-medium text-amber-600 block">
                                 {formatearPuntos(mision.puntos_total)} pts retenidos
                               </span>
+                              {/* Dice comercios, igual que el mínimo que se
+                                  compara. Decía "misiones" y en seguimiento eso
+                                  era otro número. */}
                               {faltanParaCobrar > 0 && (
                                 <span className="text-[10px] text-gray-400 block leading-tight">
-                                  +{faltanParaCobrar} {faltanParaCobrar === 1 ? 'misión' : 'misiones'} para cobrar
+                                  a {faltanParaCobrar} {faltanParaCobrar === 1 ? 'comercio' : 'comercios'} de cobrar
                                 </span>
                               )}
                             </div>
