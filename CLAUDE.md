@@ -3253,6 +3253,58 @@ aparecía en "En curso", no solo en "Disponibles". Y como nada cierra por fecha,
 toda campaña que llegue a su `fecha_fin` se convierte en una de estas: el 1/1 en
 prod habrían sido 6.
 
+### `npm run db:types` NO FUNCIONA en esta máquina
+
+`supabase gen types typescript` necesita **Docker** para `--db-url`, y Docker no
+está instalado acá. Con `--linked` tampoco: no hay proyecto linkeado (no existe
+`supabase/config.toml` ni `supabase/.temp/project-ref`). La alternativa
+`--project-id` pide `SUPABASE_ACCESS_TOKEN`.
+
+**Mientras tanto, para tocar `types/database.ts` con seguridad**: el paquete `pg`
+está en node_modules y `PGURL` está en los dos `.env`, así que se puede leer el
+schema real e ir a lo seguro —
+
+```js
+const { rows } = await c.query(`
+  SELECT table_name, column_name FROM information_schema.columns
+  WHERE table_schema = public ORDER BY table_name, ordinal_position`)
+```
+
+— y comparar contra los bloques `Row:` del archivo. Es lo que se hizo el
+18/9/2026 al borrar `nivel` y `fotos_aprobadas`: se editó a mano solo esas seis
+líneas (Row/Insert/Update × 2) y se verificó que `profiles` quedara idéntico a la
+base, columna por columna.
+
+### Deriva conocida entre `types/database.ts` y la base (medida 18/9/2026)
+
+El archivo está generado y **viene atrasado desde antes de este tramo**. Contra
+dev:
+
+| Tabla | Falta en types |
+|---|---|
+| `comercios` | `motivo_rechazo` |
+| `misiones` | `unico_por_comercio` |
+| `comercios_reportes_ubicacion` | la tabla entera |
+| `comercios_ubicacion_historial` | la tabla entera |
+
+No rompe nada porque casi todo el código castea a `any` en esas tablas, pero es
+deuda: se arregla con una regeneración de verdad, que necesita Docker o un token.
+
+### ⚠️ PROD NO TIENE `misiones.unico_por_comercio` (18/9/2026)
+
+Comparando `information_schema` de las dos bases: dev tiene 417 columnas y prod
+416, y la única diferencia es esa.
+
+O sea que la migración `20260915140000_misiones_unico_por_comercio.sql` **nunca
+se corrió en producción**, y con ella faltan el índice parcial
+`misiones_campana_comercio_uniq` y el trigger `misiones_set_unico_por_comercio`.
+
+**Consecuencia real**: en prod, nada impide dos misiones vivas sobre el mismo par
+(campaña, comercio). Dos gondoleros pueden relevar el mismo comercio en una
+campaña puntual y cobrar los dos. El rechazo `comercio_duplicado` —el código que
+acaba de entrar en lib/rechazo-mision.ts— no se dispara nunca ahí, porque
+depende de ese índice.
+
 ### Pendiente de producto — el umbral de 50 misiones es inalcanzable
 
 `configuracion.nivel_fotos_casual_a_activo` vale **50** en las dos bases (no el 20

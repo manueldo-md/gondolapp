@@ -1929,11 +1929,9 @@ export type Database = {
           codigo_gondolero: string | null
           created_at: string | null
           distri_id: string | null
-          fotos_aprobadas: number | null
           id: string
           marca_id: string | null
           monotributo_verificado: boolean | null
-          nivel: string | null
           nombre: string | null
           puntos_disponibles: number | null
           puntos_totales_ganados: number | null
@@ -1949,11 +1947,9 @@ export type Database = {
           codigo_gondolero?: string | null
           created_at?: string | null
           distri_id?: string | null
-          fotos_aprobadas?: number | null
           id: string
           marca_id?: string | null
           monotributo_verificado?: boolean | null
-          nivel?: string | null
           nombre?: string | null
           puntos_disponibles?: number | null
           puntos_totales_ganados?: number | null
@@ -1969,11 +1965,9 @@ export type Database = {
           codigo_gondolero?: string | null
           created_at?: string | null
           distri_id?: string | null
-          fotos_aprobadas?: number | null
           id?: string
           marca_id?: string | null
           monotributo_verificado?: boolean | null
-          nivel?: string | null
           nombre?: string | null
           puntos_disponibles?: number | null
           puntos_totales_ganados?: number | null
