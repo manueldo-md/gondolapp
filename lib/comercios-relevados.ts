@@ -88,6 +88,61 @@ export async function sincronizarComerciosRelevados(
 }
 
 /**
+ * Los comercios que le OCUPAN CUPO a un gondolero en una campaña.
+ *
+ * ── DOS NÚMEROS DISTINTOS, Y ESTE ES EL DE ARRIBA ───────────────────────────
+ * Hay dos preguntas parecidas que NO tienen la misma respuesta, y confundirlas
+ * es lo que rompió la participación al cruzar el mínimo:
+ *
+ *   · **TOMADOS** (esta función) — comercios que ya ocupan lugar. Incluye lo
+ *     pendiente de revisión, porque un comercio pendiente **ya está tomado**:
+ *     nadie más lo puede relevar y él no puede pretender que no lo hizo.
+ *     Gobierna `max_comercios_por_gondolero`.
+ *   · **APROBADOS** (`sincronizarComerciosCompletados`) — comercios con misión
+ *     aprobada. Solo se cobra lo aprobado, así que es el que se compara contra
+ *     `min_comercios_para_cobrar`.
+ *
+ * Tomados >= aprobados, siempre. Son dos cosas y por eso esta función existe
+ * aparte: hasta el 17/9/2026 la regla del cupo estaba escrita tres veces —en la
+ * pantalla, en el chequeo de servidor del alta y en el flip de la participación—
+ * y la tercera usaba el criterio de la otra pregunta.
+ *
+ * Cuenta misiones vivas (todo lo que no esté 'descartada') MÁS las altas propias
+ * no rechazadas: en una campaña de altas la misión no existe hasta que alguien
+ * valida, así que sin las altas el cupo daría cero mientras esperan revisión.
+ */
+export async function comerciosTomadosPorGondolero(
+  campanaId: string,
+  gondoleroId: string,
+  admin: Admin,
+): Promise<Set<string>> {
+  const tomados = new Set<string>()
+
+  const [{ data: misiones, error: errMis }, { data: altas, error: errAltas }] = await Promise.all([
+    admin.from('misiones').select('comercio_id, estado')
+      .eq('campana_id', campanaId).eq('gondolero_id', gondoleroId),
+    admin.from('comercios').select('id, estado')
+      .eq('campana_id', campanaId).eq('registrado_por', gondoleroId),
+  ])
+
+  if (errMis)   console.error('[comercios-tomados] error leyendo misiones:', errMis.message)
+  if (errAltas) console.error('[comercios-tomados] error leyendo altas:', errAltas.message)
+
+  // Los dos filtros van en JS y no en la query: `misiones.estado` y
+  // `comercios.estado` son nullable, y un `.neq()` de PostgREST descartaría
+  // también las filas con NULL por lógica de tres valores — o sea que un
+  // comercio dejaría de ocupar cupo sin que nadie se entere.
+  for (const m of ((misiones ?? []) as { comercio_id: string | null; estado: string | null }[])) {
+    if (m.comercio_id && m.estado !== 'descartada') tomados.add(m.comercio_id)
+  }
+  for (const c of ((altas ?? []) as { id: string; estado: string | null }[])) {
+    if (c.estado !== 'rechazado') tomados.add(c.id)
+  }
+
+  return tomados
+}
+
+/**
  * Recalcula `participaciones.comercios_completados` de UN gondolero en UNA
  * campaña: comercios DISTINTOS con al menos una misión aprobada.
  *
@@ -144,23 +199,41 @@ export async function sincronizarComerciosCompletados(
 
     const update: Record<string, unknown> = { comercios_completados: total }
 
-    // El mínimo cierra la participación, pero NO la reabre.
+    // ── 'completada' es alcanzar el MÁXIMO, no el mínimo ──────────────────────
     //
-    // Si el número baja —una misión descartada, una foto retirada— y queda por
-    // debajo del mínimo, la participación se deja en 'completada'. Quitarle a
-    // alguien un estado que ya vio en pantalla es peor que dejarlo puesto, y el
-    // pago no depende de esta columna sino de `bounty_estado`.
+    // Hasta el 17/9/2026 esto flipeaba con `total >= min_comercios_para_cobrar`,
+    // y era un error de concepto con consecuencia directa: **el mínimo es el
+    // piso para COBRAR, no el techo del trabajo**. Con mínimo 2 y máximo 20, el
+    // gondolero cruzaba el 2, la participación pasaba a 'completada' y el gate
+    // del alta —que exigía 'activa'— le decía "no tenés una participación activa
+    // en esta campaña". Le quedaban 18 comercios por cargar y cobrar.
+    //
+    // Se mide en comercios TOMADOS y no aprobados, a propósito: es la misma
+    // pregunta que responde el cupo, y tiene que dar el mismo número. Si contara
+    // aprobados, la pantalla le bloquearía el botón por cupo lleno mientras la
+    // participación sigue diciendo 'activa', o al revés.
+    //
+    // NO la reabre: si el número baja, la participación se deja en 'completada'.
+    // Quitarle a alguien un estado que ya vio en pantalla es peor que dejarlo.
+    //
+    // Cuando la campaña cierra con el gondolero por debajo del máximo, la
+    // participación queda en 'activa': el gate de campaña cerrada ya lo frena
+    // por otro lado. Un estado 'cerrada' propio —que distinga "terminó el
+    // trabajo" de "se quedó sin tiempo"— está anotado en CLAUDE.md.
     const { data: campana, error: errCampana } = await admin
       .from('campanas')
-      .select('min_comercios_para_cobrar')
+      .select('max_comercios_por_gondolero')
       .eq('id', campanaId)
       .maybeSingle()
 
     if (errCampana) {
       console.error('[comercios-completados] error leyendo campaña:', errCampana.message)
     } else {
-      const minimo: number | null = campana?.min_comercios_para_cobrar ?? null
-      if (minimo !== null && total >= minimo) update.estado = 'completada'
+      const maximo: number | null = campana?.max_comercios_por_gondolero ?? null
+      if (maximo !== null) {
+        const tomados = await comerciosTomadosPorGondolero(campanaId, gondoleroId, admin)
+        if (tomados.size >= maximo) update.estado = 'completada'
+      }
     }
 
     const { error: errUpd } = await admin

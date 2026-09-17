@@ -3472,3 +3472,87 @@ Ahora el orden es: parsear campos → validar → insertar campaña → insertar
 `parsearCamposBloque` es compartida y, a diferencia de las tres copias que
 reemplaza, **no se traga el error de parseo**: un JSON inválido devolvía `[]` y
 el usuario leía "el bloque debe tener al menos un campo" después de cargar cinco.
+
+### 'completada' es alcanzar el MÁXIMO, no el mínimo (17/9/2026)
+
+**El mínimo es el piso para COBRAR, no el techo del trabajo.** Hasta el
+17/9/2026 `sincronizarComerciosCompletados` flipeaba la participación a
+`'completada'` con `total >= min_comercios_para_cobrar`, y el gate del alta
+exigía `'activa'`: con mínimo 2 y máximo 20, el gondolero cruzaba el 2 y recibía
+*"No tenés una participación activa en esta campaña"* con **18 comercios de cupo
+libre**. Reproducido en dev.
+
+Ahora flipea con `tomados >= max_comercios_por_gondolero`. Sigue sin reabrirse si
+el número baja: quitarle a alguien un estado que ya vio en pantalla es peor que
+dejarlo puesto.
+
+**Cuando la campaña cierra, la participación queda en `'activa'`.** El gate de
+campaña cerrada ya frena el trabajo por otro lado. Un estado propio —que
+distinga "terminó el trabajo" de "se quedó sin tiempo"— necesita agregar
+`'cerrada'` al CHECK de `participaciones.estado`, algo que lo escriba al cerrar y
+que los lectores lo entiendan; anotado, no hecho.
+
+**El alcance de lo que estaba roto era más chico de lo que parecía, y por
+accidente:** el flip a `'completada'` lo dispara `aprobarFoto` de distribuidora y
+de marca, o sea CUALQUIER campaña; pero el único gate que bloqueaba trabajo era
+`crearComercioNuevo`, así que solo mordía en campañas de altas. `registrarMision`
+no mira `participaciones` en absoluto. Medido el 17/9: prod 9 'completada' (todas
+del seed) y **7 participaciones activas que ya cruzaron el mínimo** — iban a
+flipear con la próxima foto aprobada, y el día que alguien agregara un gate que
+mirara `'activa'` se caían las siete juntas.
+
+> `admin/fotos/actions.ts` **no** llama a `sincronizarComerciosCompletados`.
+> Tres paneles aprueban fotos y solo dos sincronizan. Sin arreglar.
+
+### Dos números parecidos que no son el mismo: TOMADOS y APROBADOS
+
+| | Qué cuenta | Para qué |
+|---|---|---|
+| **Tomados** | Misiones vivas (≠ `'descartada'`) **+** altas propias no rechazadas | `max_comercios_por_gondolero` — el cupo |
+| **Aprobados** | Comercios distintos con misión `'aprobada'` | `min_comercios_para_cobrar` — el pago |
+
+Tomados ≥ aprobados, siempre. **Un comercio pendiente de aprobación ya ocupa
+lugar** —nadie más lo puede relevar— pero todavía no se cobra.
+
+La regla de TOMADOS vive en `comerciosTomadosPorGondolero()`
+(`lib/comercios-relevados.ts`) y la usan los tres lugares que la necesitan: la
+pantalla (vía `obtenerEstadoComercios` → `cupoPropioLleno`), el chequeo de
+servidor de `crearComercioNuevo`, y el flip de la participación. Estaba escrita
+tres veces y **la tercera usaba el criterio de la otra pregunta**.
+
+**PENDIENTE — renombrar `participaciones.comercios_completados`.** El nombre no
+dice cuál de los dos números es (cuenta APROBADOS) y encima suena a "completó la
+campaña", que es justo lo que ya no significa. Son **37 referencias en 14
+archivos**, más migración y regenerar `types/database.ts`: es un tramo propio.
+Mientras tanto, `lib/puntos-retenidos.ts` sigue sin usarla —cuenta sobre
+`misiones`— porque un número que promete plata no puede salir de una columna que
+puede estar vieja.
+
+### El alta ya no exige participación activa
+
+`crearComercioNuevo` chequeaba `participaciones.estado = 'activa'` y era el único
+control de campaña que tenía. La regla correcta es **si puede ver la campaña y
+tiene cupo, puede cargar**: el estado de la participación describe cómo le fue,
+no si puede trabajar.
+
+En su lugar se chequea lo mismo que chequea `registrarMision`: que la campaña
+exista, esté `'activa'` y no esté vencida (`puedeRegistrarMision`). Sacar el gate
+sin poner esto habría dejado el alta **sin ningún control de campaña**.
+
+Y como la fila de participación ya no está garantizada por el gate, el alta la
+crea si falta: `sincronizarComerciosCompletados` hace un UPDATE, y sobre cero
+filas no escribe nada ni se queja. **No bloquear no puede significar dejar el
+trabajo sin registrar en el panel de la distribuidora.**
+
+### Pendiente — `unirse` resetea `puntos_acumulados`, que no se recalcula
+
+`unirse` y `soloUnirse` reactivan con `comercios_completados: 0,
+puntos_acumulados: 0, joined_at: now()`. El primero se recupera en el próximo
+sync porque se recalcula; **`puntos_acumulados` es un acumulador leído-y-escrito**
+en `aprobarFoto` y no vuelve. En prod hay filas con 1200, 900 y 800 puntos ahí.
+
+Hoy solo se alcanza desde `'abandonada'` —con `'completada'`, `yaUnido` da true y
+la pantalla no ofrece volver a unirse— así que la ventana es chica. Y en la misma
+función, el acumulador suma `campana.puntos_por_foto` **sin el fallback a
+`puntos_por_mision`**: en una campaña de altas suma cero. Mismo error que ya se
+corrigió en las dos actions de validación de comercio.

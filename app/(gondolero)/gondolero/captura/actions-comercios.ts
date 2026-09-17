@@ -5,8 +5,12 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { calcularDistanciaMetros } from '@/lib/utils'
 import { crearNotificacionDistri, crearNotificacionAdmin } from '@/lib/notificaciones'
-import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
+import {
+  sincronizarComerciosCompletados,
+  comerciosTomadosPorGondolero,
+} from '@/lib/comercios-relevados'
 import { requiereFotoFachada } from '@/lib/campana-altas'
+import { puedeRegistrarMision } from '@/lib/campana-vigencia'
 
 /**
  * Comercios que ya tienen una misión viva en esta campaña.
@@ -86,39 +90,18 @@ export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoC
   const vivas = ((data ?? []) as { comercio_id: string | null; estado: string | null; gondolero_id: string }[])
     .filter(m => m.estado !== 'descartada' && m.comercio_id)
 
-  // ── Las altas todavía sin validar también ocupan cupo ─────────────────────
-  //
-  // En una campaña de altas la misión no existe hasta que alguien valida el
-  // comercio, así que `vivas` está vacío mientras las altas esperan revisión: el
-  // cupo propio daba SIEMPRE cero y `max_comercios_por_gondolero` no frenaba
-  // nada. Con tope 20 se podían cargar 60 altas, y el tope recién se notaba
-  // cuando la distribuidora las validaba — o sea después de que el gondolero
-  // hizo el trabajo, que es justo el rechazo tardío que no queremos.
-  //
-  // Los comercios que él registró en esta campaña y no están rechazados cuentan
-  // como suyos. No es un contador nuevo: se suman a `misComercios`, que es lo que
-  // ya lee `cupoPropioLleno`. Una sola regla de cupo, en un solo lugar.
-  const { data: altasPropias, error: errAltas } = await db
-    .from('comercios')
-    .select('id, estado')
-    .eq('campana_id', campanaId)
-    .eq('registrado_por', user.id)
-
-  if (errAltas) console.error('[obtenerEstadoComercios] error leyendo altas propias:', errAltas.message)
-
-  const idsAltas = ((altasPropias ?? []) as { id: string; estado: string | null }[])
-    .filter(c => c.estado !== 'rechazado')   // una rechazada no le ocupa lugar
-    .map(c => c.id)
+  // `misComercios` es lo que consume el cupo, y la regla de qué ocupa cupo vive
+  // en UN solo lugar: `comerciosTomadosPorGondolero`. Estaba escrita acá, en el
+  // chequeo de servidor del alta y en el flip de la participación, y la tercera
+  // copia usaba otro criterio — contaba aprobados en vez de vivos.
+  const tomados = await comerciosTomadosPorGondolero(campanaId, user.id, db)
 
   return {
     // En seguimiento nadie bloquea a nadie: el comercio se visita muchas veces.
     relevadosPorOtros: campana.modalidad === 'puntual'
       ? [...new Set(vivas.map(m => m.comercio_id as string))]
       : [],
-    misComercios: [...new Set([
-      ...vivas.filter(m => m.gondolero_id === user.id).map(m => m.comercio_id as string),
-      ...idsAltas,
-    ])],
+    misComercios: [...tomados],
     maxComercios: campana.max_comercios_por_gondolero ?? null,
   }
 }
@@ -279,18 +262,38 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Verificar que tiene participación activa en la campaña
+  // ── La campaña tiene que estar abierta. La participación NO se mira ──────
+  //
+  // Hasta el 17/9/2026 acá se exigía `participaciones.estado = 'activa'`, y ese
+  // era el gate que rompía: la participación pasaba a 'completada' al cruzar el
+  // MÍNIMO, y el gondolero recibía "No tenés una participación activa en esta
+  // campaña" con 18 comercios de cupo libre. El estado de la participación no es
+  // un permiso — describe cómo le fue, no si puede trabajar.
+  //
+  // La regla es la que corresponde: **si puede ver la campaña y tiene cupo,
+  // puede cargar**. Lo que sí se chequea es lo mismo que chequea
+  // `registrarMision`: que la campaña exista, esté activa y no esté vencida.
+  // Sin esto el alta quedaba sin ningún control de campaña, porque la
+  // participación era el único que había.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: participacion } = await (admin as any)
-    .from('participaciones')
-    .select('id, comercios_completados')
-    .eq('campana_id', params.campanaId)
-    .eq('gondolero_id', user.id)
-    .eq('estado', 'activa')
-    .maybeSingle() as { data: { id: string; comercios_completados: number } | null }
+  const { data: campanaAlta } = await (admin as any)
+    .from('campanas')
+    .select('tipo, estado, fecha_fin')
+    .eq('id', params.campanaId)
+    .maybeSingle() as { data: { tipo: string | null; estado: string | null; fecha_fin: string | null } | null }
 
-  if (!participacion) {
-    return { error: 'No tenés una participación activa en esta campaña.' }
+  if (!campanaAlta) {
+    return { error: 'Esta campaña ya no existe. Elegí otra de la lista.' }
+  }
+  if (campanaAlta.estado !== 'activa') {
+    return { error: 'Esta campaña ya no está activa y no acepta comercios nuevos.' }
+  }
+
+  // El alta exige estar online (la pantalla lo pide antes de llegar acá), así
+  // que el momento de captura es ahora: no hay cola offline para este flujo.
+  const vigencia = puedeRegistrarMision({ fechaFin: campanaAlta.fecha_fin, capturadoAt: Date.now() })
+  if (!vigencia.ok) {
+    return { error: `Esta campaña terminó el ${campanaAlta.fecha_fin} y ya no acepta comercios nuevos.` }
   }
 
   // ── La foto de fachada es obligatoria en una campaña de altas ─────────────
@@ -306,14 +309,7 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
   //
   // El chequeo va en el servidor aunque la pantalla ya lo pida: es la puerta que
   // decide si se paga.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: campanaTipo } = await (admin as any)
-    .from('campanas')
-    .select('tipo')
-    .eq('id', params.campanaId)
-    .maybeSingle() as { data: { tipo: string | null } | null }
-
-  if (requiereFotoFachada(campanaTipo?.tipo) && !params.fachadaUrl) {
+  if (requiereFotoFachada(campanaAlta.tipo) && !params.fachadaUrl) {
     return { error: 'La foto de la fachada es obligatoria: es la evidencia de que el comercio existe.' }
   }
 
@@ -323,10 +319,10 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
   // cliente: la misma guarda tiene que estar acá, como en `registrarMision`. Un
   // cache viejo o una pestaña abierta desde ayer alcanzan para pasarla.
   //
-  // Se cuenta igual que en `obtenerEstadoComercios` —altas propias no
-  // rechazadas + comercios con misión viva propia— porque es el mismo cupo. Si
-  // los dos números se calcularan distinto, la pantalla diría una cosa y el
-  // servidor otra, que es la forma de rechazo tardío más difícil de explicar.
+  // Se cuenta con `comerciosTomadosPorGondolero`, la MISMA función que usa la
+  // pantalla y que decide el flip de la participación. Si los tres calcularan
+  // por su cuenta, la pantalla diría una cosa y el servidor otra — que es la
+  // forma de rechazo tardío más difícil de explicar.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: campanaCupo } = await (admin as any)
     .from('campanas')
@@ -336,24 +332,7 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
 
   const maxComercios = campanaCupo?.max_comercios_por_gondolero ?? null
   if (maxComercios != null) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [{ data: altasPrevias }, { data: misionesPropias }] = await Promise.all([
-      (admin as any).from('comercios')
-        .select('id, estado').eq('campana_id', params.campanaId).eq('registrado_por', user.id),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (admin as any).from('misiones')
-        .select('comercio_id, estado').eq('campana_id', params.campanaId).eq('gondolero_id', user.id),
-    ])
-
-    const ocupados = new Set<string>()
-    for (const c of ((altasPrevias ?? []) as { id: string; estado: string | null }[])) {
-      if (c.estado !== 'rechazado') ocupados.add(c.id)
-    }
-    // `!==` de JS y no `.neq()`: `misiones.estado` es nullable y PostgREST
-    // dejaría afuera las filas con NULL, que son misiones vivas.
-    for (const m of ((misionesPropias ?? []) as { comercio_id: string | null; estado: string | null }[])) {
-      if (m.comercio_id && m.estado !== 'descartada') ocupados.add(m.comercio_id)
-    }
+    const ocupados = await comerciosTomadosPorGondolero(params.campanaId, user.id, admin)
 
     if (ocupados.size >= maxComercios) {
       return {
@@ -513,6 +492,31 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
   //
   // El recálculo se deja igual: es barato y deja el contador honesto si esta
   // campaña ya tenía comercios validados del gondolero.
+  // La participación tiene que EXISTIR para que el alta quede contabilizada —
+  // `sincronizarComerciosCompletados` hace un UPDATE, y sobre cero filas no
+  // escribe nada ni se queja. Antes la garantizaba el gate que acabamos de
+  // sacar. Ahora, si no está, se crea: **no bloquear no puede significar dejar
+  // el trabajo sin registrar en el panel de la distribuidora.**
+  //
+  // Si ya existe no se le toca el estado: que pase a 'completada' es decisión
+  // del helper, al alcanzar el máximo.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: partExistente } = await (admin as any)
+    .from('participaciones')
+    .select('id')
+    .eq('campana_id', params.campanaId)
+    .eq('gondolero_id', user.id)
+    .maybeSingle() as { data: { id: string } | null }
+
+  if (!partExistente) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: errPart } = await (admin as any).from('participaciones').insert({
+      campana_id: params.campanaId, gondolero_id: user.id, estado: 'activa',
+      comercios_completados: 0, puntos_acumulados: 0,
+    })
+    if (errPart) console.error('[crearComercioNuevo] no se pudo crear la participación:', errPart.message)
+  }
+
   await sincronizarComerciosCompletados(params.campanaId, user.id, admin)
 
   return {
