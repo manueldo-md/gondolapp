@@ -9,7 +9,7 @@ import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
 import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
-import { fotoPagaAlAprobar } from '@/lib/validacion-comercio'
+import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
 
 function adminClient() {
   return createSupabaseClient(
@@ -71,7 +71,7 @@ export async function aprobarFotoMarca(fotoId: string) {
   // retención y sin quedar registrada en ninguna misión. En prod pasó el
   // 17/9/2026 — 200 puntos acreditados 31 segundos después del alta, con el
   // comercio todavía sin validar. Ahora la paga validarComercioYCrearMision.
-  if (fotoPagaAlAprobar({ tipoCampana: campana?.tipo, misionId }) && puntosEfectivos > 0) {
+  if (fotoEsUnidadDePago({ tipoCampana: campana?.tipo, misionId }) && puntosEfectivos > 0) {
     await admin.from('movimientos_puntos').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'credito',

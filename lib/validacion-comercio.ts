@@ -79,13 +79,36 @@ export function puntosDeLaCampana(campana: {
 /**
  * Una foto de fachada NO se paga sola.
  *
- * La rama legacy de `aprobarFoto` acredita cualquier foto sin `mision_id`. La
- * fachada de un alta no tiene misión hasta que alguien valida el comercio, así
- * que caía justo ahí y cobraba fuera del sistema de bounty: sin mínimo, sin
- * retención y sin quedar registrada en la misión. Los tres paneles de revisión
- * consultan esto antes de acreditar.
+ * ── LA REGLA: UN TRABAJO, UNA UNIDAD DE PAGO ───────────────────────────────
+ * Hay dos cosas distintas y las dos tienen razón de existir:
+ *
+ *   · ALTA OPORTUNISTA — el gondolero va a relevar, el comercio no está en la
+ *     base, lo carga para poder hacer su misión. Es un MEDIO. No paga aparte:
+ *     paga el relevamiento. (`crearComercioParaCaptura`, sin `campana_id` y sin
+ *     fila en `fotos`, así que no hay nada que pueda cobrar por su cuenta.)
+ *
+ *   · CAMPAÑA DE ALTAS — el trabajo ES cargar el comercio. Paga por alta
+ *     validada, y la unidad de pago es la MISIÓN que crea la validación.
+ *
+ * Lo que no puede pasar es que la misma alta pague dos veces. Esta función es
+ * la regla, y es **del lector**: no depende de que cada camino que pague se
+ * acuerde de anular el bounty de la foto, sino de que ningún camino pague una
+ * foto que no es unidad de pago. Mismo criterio que el filtro
+ * `estado = 'aprobada'` de `aprobarMisionCore`.
+ *
+ * Dos motivos para que una foto NO sea unidad de pago:
+ *
+ *   1. Tiene `mision_id` — la paga la misión. Si además la pagara la foto,
+ *      serían dos pagos por un trabajo.
+ *   2. Es de una campaña `tipo='comercios'` — la paga la validación del
+ *      comercio. La fachada no tiene misión hasta que alguien valida, así que
+ *      sin esta rama caía en el "flujo legacy" de `aprobarFoto` y cobraba sin
+ *      mínimo, sin retención y sin quedar registrada en ninguna misión.
+ *
+ * LOS CUATRO LUGARES QUE PAGAN DESDE `fotos` la consultan: los tres paneles de
+ * revisión (admin, distribuidora, marca) y el barrido de `cerrarCampana`.
  */
-export function fotoPagaAlAprobar(params: {
+export function fotoEsUnidadDePago(params: {
   tipoCampana: string | null | undefined
   misionId: string | null | undefined
 }): boolean {

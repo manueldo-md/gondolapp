@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { crearNotificacionMarca } from '@/lib/notificaciones'
 import { destrabarMisiones } from '@/lib/misiones-trabadas'
+import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -33,12 +34,38 @@ export async function activarCampana(campanaId: string) {
 export async function cerrarCampana(campanaId: string) {
   const admin = await getAdmin()
 
-  // Liberar puntos retenidos de todos los gondoleros en esta campaña
-  const { data: fotosRetenidas } = await admin
+  // ── Liberar puntos retenidos de todos los gondoleros en esta campaña ──────
+  //
+  // Solo de las fotos que SON unidad de pago. Este barrido paga desde `fotos`
+  // ignorando las misiones, así que sin el filtro pagaba dos veces el mismo
+  // trabajo por dos caminos distintos:
+  //
+  //   · Campaña de altas: la fachada queda 'retenido' hasta que alguien valida
+  //     el comercio. Si la campaña cerraba antes, el barrido la pagaba sin
+  //     validación — y si después alguien validaba el comercio, la misión la
+  //     pagaba OTRA VEZ. La cola de pendientes no filtra por estado de campaña,
+  //     así que validar después del cierre es un click normal, no un caso raro.
+  //
+  //   · Cualquier campaña: una foto con `mision_id` cuyo bounty quedara en
+  //     'retenido' se pagaba acá y de nuevo al aprobar su misión.
+  //
+  // La regla es la misma que usan los tres paneles de revisión, en una sola
+  // definición: lib/validacion-comercio.ts.
+  const { data: campanaCierre } = await admin
+    .from('campanas')
+    .select('tipo')
+    .eq('id', campanaId)
+    .maybeSingle() as { data: { tipo: string | null } | null }
+
+  const { data: fotosRetenidasRaw } = await admin
     .from('fotos')
-    .select('id, gondolero_id, puntos_otorgados')
+    .select('id, gondolero_id, puntos_otorgados, mision_id')
     .eq('campana_id', campanaId)
     .eq('bounty_estado', 'retenido')
+
+  const fotosRetenidas = ((fotosRetenidasRaw ?? []) as {
+    id: string; gondolero_id: string | null; puntos_otorgados: number | null; mision_id: string | null
+  }[]).filter(f => fotoEsUnidadDePago({ tipoCampana: campanaCierre?.tipo, misionId: f.mision_id }))
 
   if (fotosRetenidas && fotosRetenidas.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,10 +92,18 @@ export async function cerrarCampana(campanaId: string) {
         concepto: 'Puntos liberados al cierre de campaña',
         campana_id: campanaId,
       })
-      await admin.rpc('incrementar_puntos', {
-        p_gondolero_id: gondoleroId,
-        p_monto: puntos,
-      })
+      // El saldo lo mueve el trigger `on_movimiento_puntos` con el insert de
+      // arriba, que es el único escritor de `profiles.puntos_disponibles`.
+      //
+      // Acá había un `admin.rpc('incrementar_puntos', …)` que sumaba los mismos
+      // puntos por segunda vez. **Esa función NO EXISTE** —verificado el
+      // 17/9/2026 en dev, PGRST202, y no está en ninguna migración—, así que la
+      // llamada venía fallando en silencio desde siempre y por eso el saldo
+      // daba bien. Mismo caso que `incrementar_fotos_aprobadas`.
+      //
+      // Se saca en vez de dejarla: si alguien crea esa función algún día
+      // pensando que falta, cada cierre de campaña pasa a pagar el doble sin
+      // que nadie cambie una línea de este archivo.
       await admin.from('notificaciones').insert({
         gondolero_id: gondoleroId,
         tipo: 'foto_aprobada',

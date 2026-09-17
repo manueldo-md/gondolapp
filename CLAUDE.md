@@ -3218,9 +3218,10 @@ distribuidora— que ahora son las **únicas** dos formas de validar un comercio
    `puntos_total` = `puntos_por_mision ?? puntos_por_foto` (el fallback que las
    dos actions no tenían: la campaña de prod tiene `puntos_por_foto=0` y
    `puntos_por_mision=200`, así que pagaban cero).
-3. La foto de fachada se engancha a la misión (`mision_id`) y su
-   `bounty_estado` pasa a `'acreditado'`. Deja de ser una unidad de pago suelta
-   — si quedaba en `'retenido'`, el barrido de `cerrarCampana` la pagaba otra vez.
+3. La foto de fachada se cierra (`estado='aprobada'`, `bounty_estado='acreditado'`)
+   pero NO se cuelga de la misión — ver la sección propia más abajo. Deja de ser
+   una unidad de pago suelta: si quedaba en `'retenido'`, el barrido de
+   `cerrarCampana` la pagaba otra vez.
 4. `aprobarMisionCore` — **el mismo camino que toda otra misión**. Por eso el
    bounty se libera con la misma regla y el mínimo cuenta igual. Una segunda
    contabilidad para esta campaña habría sido otra regla duplicada.
@@ -3234,7 +3235,7 @@ prometer un pago sobre trabajo que todavía nadie miró.
 crea otra, y si ya está `'aprobada'` la función corta sin pagar. Dos clicks, o el
 admin y la distri aprobando lo mismo, no pagan dos veces.
 
-**La foto de fachada ya no se paga sola.** `fotoPagaAlAprobar()` corta la rama
+**La foto de fachada ya no se paga sola.** `fotoEsUnidadDePago()` corta la rama
 legacy de `aprobarFoto` —la que acredita cualquier foto sin `mision_id`— cuando
 la campaña es `tipo='comercios'`. Está aplicada en los **tres** paneles de
 revisión (admin, distribuidora, marca). Sin esto la fachada cobraba al instante
@@ -3355,3 +3356,55 @@ invisible sin que nadie se entere. Mismo razonamiento que en
 
 En el caché de IDB viejo el campo no existe, y `undefined !== 'rechazado'` lo
 deja pasar: un comercio guardado antes del cambio no se esconde.
+
+### Un alta se paga una sola vez — `fotoEsUnidadDePago` (17/9/2026)
+
+Hay **dos cosas distintas** y las dos tienen razón de existir:
+
+| | Qué es | Quién paga |
+|---|---|---|
+| **Alta oportunista** | El gondolero va a relevar, el comercio no está en la base, lo carga para poder hacer su misión. Es un **medio**. | El relevamiento. El alta no paga aparte. |
+| **Campaña de altas** (`tipo='comercios'`) | El trabajo **es** cargar el comercio. | La **misión** que crea la validación. |
+
+La oportunista ya estaba bien por construcción: `crearComercioParaCaptura` no
+escribe `campana_id` ni crea fila en `fotos`, así que no hay nada que pueda
+cobrar por su cuenta.
+
+Lo que faltaba era que **ningún camino pague una foto que no es unidad de pago**.
+Eso es `fotoEsUnidadDePago()` en `lib/validacion-comercio.ts`, y es una regla
+**del lector** —igual que el filtro `estado='aprobada'` de `aprobarMisionCore`—:
+no depende de que cada camino que paga se acuerde de anular el bounty en el
+origen, que es la defensa que ya nos falló.
+
+Una foto NO es unidad de pago si **tiene `mision_id`** (la paga la misión) o si
+es de una campaña **`tipo='comercios'`** (la paga la validación del comercio).
+
+**Los cuatro lugares que pagan desde `fotos` la consultan:** los tres paneles de
+revisión (admin, distribuidora, marca) y el barrido de `cerrarCampana`.
+
+**Por qué NO un gate en `registrarMision`.** Sería una quinta copia de la regla
+para un caso que ya está cerrado dos veces: la UI de captura manda el comercio
+existente a una pantalla sin salida en campañas de altas, y el índice
+`misiones_campana_comercio_uniq` —activo porque una campaña de altas es
+`modalidad='puntual'`— impide que haya dos misiones vivas sobre el mismo comercio
+en la misma campaña, vengan de donde vengan. Un gate ahí además rechazaría
+**después** de que el gondolero hizo el trabajo.
+
+**El que sí estaba abierto era el cierre de campaña.** `cerrarCampana` paga desde
+`fotos` ignorando las misiones: si la campaña cerraba con altas sin validar, les
+pagaba la fachada sin validación — y si después alguien validaba el comercio, la
+misión la pagaba **otra vez**. Validar después del cierre no es un caso raro: la
+cola de pendientes no filtra por estado de campaña.
+
+### `incrementar_puntos` tampoco existe — y era un doble pago armado
+
+`cerrarCampana` llamaba a `admin.rpc('incrementar_puntos', …)` **además** del
+insert en `movimientos_puntos`, o sea sumaba los mismos puntos dos veces. No
+pasaba porque **la función no existe**: verificado en dev el 17/9/2026 (PGRST202)
+y no está en ninguna migración. La llamada venía fallando en silencio desde
+siempre — tercer caso del mismo patrón, después de `incrementar_fotos_aprobadas`.
+
+Se **sacó** en vez de dejarla con un comentario: si alguien crea esa función
+algún día pensando que falta, cada cierre de campaña pasa a pagar el doble sin
+que nadie toque este archivo. El único escritor de `profiles.puntos_disponibles`
+es el trigger `on_movimiento_puntos`.

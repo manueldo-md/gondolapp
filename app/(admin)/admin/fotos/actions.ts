@@ -8,7 +8,7 @@ import { getConfig } from '@/lib/config'
 import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
-import { fotoPagaAlAprobar } from '@/lib/validacion-comercio'
+import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -60,7 +60,7 @@ export async function aprobarFotoAdmin(fotoId: string) {
     // retención y sin quedar registrada en ninguna misión. En prod pasó el
     // 17/9/2026 — 200 puntos acreditados 31 segundos después del alta, con el
     // comercio todavía sin validar. Ahora la paga validarComercioYCrearMision.
-    if (fotoPagaAlAprobar({ tipoCampana: foto?.campana?.tipo, misionId }) && puntosEfectivos > 0) {
+    if (fotoEsUnidadDePago({ tipoCampana: foto?.campana?.tipo, misionId }) && puntosEfectivos > 0) {
       await admin.from('movimientos_puntos').insert({
         gondolero_id: foto.gondolero_id,
         tipo:         'credito',
