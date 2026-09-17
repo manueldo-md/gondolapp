@@ -6,6 +6,7 @@ import { formatearFechaHora } from '@/lib/utils'
 import type { DeclaracionFoto } from '@/types'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { FotoDistancia } from '@/components/shared/foto-distancia'
+import { firmarFotos } from '@/lib/storage-fotos'
 
 function adminClient() {
   return createAdminClient(
@@ -78,7 +79,7 @@ export default async function RepoGondolasPage({
   let query = (admin as any)
     .from('fotos')
     .select(
-      'id, url, estado, declaracion, distancia_metros, created_at, gondolero_id, ' +
+      'id, url, storage_path, estado, declaracion, distancia_metros, created_at, gondolero_id, ' +
       'fixer:profiles!gondolero_id(alias, nombre), ' +
       'campana:campanas(nombre), ' +
       'comercio:comercios(nombre, direccion)',
@@ -96,7 +97,8 @@ export default async function RepoGondolasPage({
 
   const lista = (fotos ?? []) as {
     id: string
-    url: string
+    url: string | null
+    storage_path: string | null
     estado: string
     declaracion: DeclaracionFoto
     /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
@@ -107,6 +109,11 @@ export default async function RepoGondolasPage({
     campana: { nombre: string } | null
     comercio: { nombre: string; direccion: string | null } | null
   }[]
+
+  // Los buckets son PRIVADOS: mostrar `f.url` crudo deja la imagen rota para
+  // toda foto que viva en Storage. Esta pantalla y /repositora/dashboard eran las
+  // dos que no firmaban — las otras cinco ya lo hacían. Ver lib/storage-fotos.ts.
+  const fotosFirmadas = await firmarFotos(lista, admin)
 
   const total = count ?? 0
   const totalPaginas = Math.ceil(total / POR_PAGINA)
@@ -168,7 +175,7 @@ export default async function RepoGondolasPage({
                     <tr key={f.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
                         <FotoLightbox
-                          src={f.url || null}
+                          src={fotosFirmadas[f.id] ?? null}
                           alt={`Foto de ${f.comercio?.nombre ?? 'comercio'}`}
                           containerClassName="relative w-12 h-12 rounded-lg overflow-hidden shrink-0"
                         />

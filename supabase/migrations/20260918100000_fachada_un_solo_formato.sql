@@ -46,7 +46,7 @@ WHERE foto_fachada_url IS NOT NULL
 
 COMMENT ON COLUMN comercios.foto_fachada_url IS
   'STORAGE PATH dentro del bucket fotos-gondola (prefijo fachadas/), no una URL. '
-  'La URL se resuelve al leer con lib/storage-fachada.ts, que firma: el bucket es '
+  'La URL se resuelve al leer con lib/storage-fotos.ts, que firma: el bucket es '
   'privado. Guardar la URL metía el dominio del proyecto en los datos.';
 
 -- Verificación — tiene que devolver 0 filas:

@@ -3619,7 +3619,7 @@ path firman bien, y los archivos de las 7 existen.
    establecía la convención.
 
 El costo es resolver al leer, y se paga una sola vez en
-**`lib/storage-fachada.ts`**: `pathDeFachada()` normaliza las tres formas que
+**`lib/storage-fotos.ts`**: `pathDeFachada()` normaliza las tres formas que
 existen —path, URL de Supabase, URL ajena— y `firmarFachadas()` / `firmarFachada()`
 devuelven lo mostrable. Las cinco pantallas pasan por ahí; antes cada una repetía
 el mismo `Promise.all` con el mismo `3600`, y **las cinco tenían el mismo bug**.
@@ -3654,12 +3654,24 @@ Las 8 de prod y 67 de dev con dominio de Supabase **sí son la bomba**: si un du
 cruza de ambiente, apuntan al storage del otro. Hoy no se nota porque esas filas
 tienen un `storage_path` válido y el fallback nunca se dispara.
 
-**Dos excepciones que NO firman y muestran `f.url` crudo:**
-`/repositora/dashboard` (línea 178) y `/repositora/gondolas` (línea 171). En un
-bucket privado, una foto de Supabase ahí se ve rota hoy. Es el mismo arreglo que
-las fachadas —pasar por un helper— y queda pendiente.
+**Las dos pantallas de repositora que no firmaban — arregladas el 17/9/2026.**
+`/repositora/dashboard` y `/repositora/gondolas` mostraban `f.url` crudo y ni
+siquiera pedían `storage_path` en el select. Ahora pasan por `firmarFotos()`.
 
-**Cuando se agarre:** vaciar `fotos.url` para las filas que tengan
-`storage_path` (el fallback no aporta nada ahí) y dejarla solo para las de Drive
-y picsum, que son las únicas que la necesitan. Eso saca el dominio de los datos
-sin romper el seed.
+**CORRECCIÓN a lo que dije antes: NO estaban rotas en producción.** Medido
+después: las 25 fotos de fixers de prod —y las 25 de dev— tienen `url` de Drive o
+picsum, y su `storage_path` **no resuelve** (son filas del seed, sin objeto en
+Storage). O sea que el camino crudo funcionaba por casualidad, porque ninguna foto
+de fixer vive todavía en Storage.
+
+El arreglo vale igual, y el orden del helper es lo que lo hace seguro: **firma
+primero, `url` después**. Para esas 25 el firmado falla, cae al fallback y se ven
+igual que antes; para la primera foto real que suba un fixer, se firma y se ve —
+que es lo que hoy no pasaría.
+
+**PENDIENTE — vaciar `fotos.url` donde haya `storage_path`.** El fallback no
+aporta nada en esas filas y es donde vive el dominio del proyecto. Dejarla solo
+para las de Drive y picsum, que son las únicas que la necesitan. Tramo propio:
+hay que verificar fila por fila que el `storage_path` resuelva **antes** de
+borrar la url, porque las 25 de arriba son la prueba de que tener `storage_path`
+no garantiza que el objeto exista.

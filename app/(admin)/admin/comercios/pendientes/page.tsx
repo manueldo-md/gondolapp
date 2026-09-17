@@ -3,7 +3,7 @@ import { MapPin, Camera, Store, AlertTriangle } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { AprobarRechazarBtns } from './aprobar-rechazar-btns'
-import { firmarFachadas } from '@/lib/storage-fachada'
+import { firmarFachadas } from '@/lib/storage-fotos'
 
 function adminClient() {
   return createAdminClient(
@@ -73,7 +73,7 @@ export default async function ComerciosPendientesPage() {
   const fachadasSignedMap: Record<string, string> = {}
   // Firmar las fachadas pasa por `firmarFachadas`: la columna tiene dos formatos
   // —storage path y URL completa— y firmar el valor crudo falla en las filas con
-  // URL. Ver lib/storage-fachada.ts.
+  // URL. Ver lib/storage-fotos.ts.
   Object.assign(fachadasSignedMap, await firmarFachadas(comercios, admin))
 
   // Detectar posibles duplicados: cargar todos los activos y calcular distancia por JS

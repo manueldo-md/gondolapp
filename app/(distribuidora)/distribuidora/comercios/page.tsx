@@ -6,7 +6,7 @@ import { Store, MapPin, CheckCircle2, Clock, AlertCircle, Camera } from 'lucide-
 import { tiempoRelativo } from '@/lib/utils'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 import type { TipoComercio } from '@/types'
-import { firmarFachadas } from '@/lib/storage-fachada'
+import { firmarFachadas } from '@/lib/storage-fotos'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ export default async function ComerciosPage() {
   const fachadasSignedMap: Record<string, string> = {}
   // Firmar las fachadas pasa por `firmarFachadas`: la columna tiene dos formatos
   // —storage path y URL completa— y firmar el valor crudo falla en las filas con
-  // URL. Ver lib/storage-fachada.ts.
+  // URL. Ver lib/storage-fotos.ts.
   Object.assign(fachadasSignedMap, await firmarFachadas(comercios, admin))
 
   const lista: ComercioConStats[] = comercios.map(c => ({

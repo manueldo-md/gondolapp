@@ -6,7 +6,7 @@ import { ArrowLeft, MapPin, Camera, History, CheckCircle2, AlertCircle } from 'l
 import { formatearFechaHora, tiempoRelativo, calcularDistanciaMetros } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { ReportesPanel, type ReporteRow } from './reportes-panel'
-import { firmarFachada } from '@/lib/storage-fachada'
+import { firmarFachada } from '@/lib/storage-fotos'
 
 /**
  * Detalle de un comercio.
@@ -105,7 +105,7 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
     : null
 
   // La columna tiene dos formatos —storage path y URL completa— y firmar el
-  // valor crudo falla en las filas con URL. Ver lib/storage-fachada.ts.
+  // valor crudo falla en las filas con URL. Ver lib/storage-fotos.ts.
   const fachadaUrl = await firmarFachada(comercio.foto_fachada_url, admin)
 
   const tipo = (comercio.tipo ?? 'otro') as TipoComercio

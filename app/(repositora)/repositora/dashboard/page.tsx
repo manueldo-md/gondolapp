@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Users, Camera, CheckCircle2, Clock, Megaphone } from 'lucide-react'
 import { formatearFechaHora } from '@/lib/utils'
+import { firmarFotos } from '@/lib/storage-fotos'
 
 function makeAdmin() {
   return createAdminClient(
@@ -85,7 +86,7 @@ export default async function RepoDashboardPage() {
     // Fotos recientes de los fixers
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any).from('fotos')
-      .select('id, url, estado, created_at, gondolero_id, campana:campanas(nombre), comercio:comercios(nombre)')
+      .select('id, url, storage_path, estado, created_at, gondolero_id, campana:campanas(nombre), comercio:comercios(nombre)')
       .in('gondolero_id', safeFixers)
       .order('created_at', { ascending: false })
       .limit(10),
@@ -102,9 +103,15 @@ export default async function RepoDashboardPage() {
     fecha_fin: string | null; comercios_relevados: number; minimo_comercios: number | null
   }[]
   const fotosRecientes = (fotosRecientesRes.data ?? []) as {
-    id: string; url: string; estado: string; created_at: string; gondolero_id: string
+    id: string; url: string | null; storage_path: string | null
+    estado: string; created_at: string; gondolero_id: string
     campana: { nombre: string } | null; comercio: { nombre: string } | null
   }[]
+
+  // Los buckets son PRIVADOS: mostrar `f.url` crudo deja la imagen rota para
+  // toda foto que viva en Storage. Esta pantalla y /repositora/gondolas eran las
+  // dos que no firmaban — las otras cinco ya lo hacían. Ver lib/storage-fotos.ts.
+  const fotosFirmadas = await firmarFotos(fotosRecientes, admin)
 
   const ESTADO_COLOR: Record<string, string> = {
     pendiente:   'bg-amber-100 text-amber-700',
@@ -174,8 +181,8 @@ export default async function RepoDashboardPage() {
               {fotosRecientes.map(f => (
                 <div key={f.id} className="flex items-center gap-3 px-5 py-3">
                   <div className="w-10 h-10 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
-                    {f.url && (
-                      <Image src={f.url} alt="" width={40} height={40} className="w-full h-full object-cover" />
+                    {fotosFirmadas[f.id] && (
+                      <Image src={fotosFirmadas[f.id]} alt="" width={40} height={40} className="w-full h-full object-cover" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">

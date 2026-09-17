@@ -6,7 +6,7 @@ import { MapPin, Camera, Store, AlertTriangle } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { AprobarRechazarBtnsDistri } from './aprobar-rechazar-btns'
-import { firmarFachadas } from '@/lib/storage-fachada'
+import { firmarFachadas } from '@/lib/storage-fotos'
 
 const TIPO_COLOR: Record<TipoComercio, string> = {
   autoservicio: 'bg-blue-100 text-blue-700',
@@ -95,7 +95,7 @@ export default async function ComerciosPendientesDistriPage() {
   const fachadasSignedMap: Record<string, string> = {}
   // Firmar las fachadas pasa por `firmarFachadas`: la columna tiene dos formatos
   // —storage path y URL completa— y firmar el valor crudo falla en las filas con
-  // URL. Ver lib/storage-fachada.ts.
+  // URL. Ver lib/storage-fotos.ts.
   Object.assign(fachadasSignedMap, await firmarFachadas(comercios, admin))
 
   // Detectar posibles duplicados — lat/lng se obtienen en query separada, solo server-side

@@ -1,5 +1,5 @@
 /**
- * lib/storage-fachada.ts
+ * lib/storage-fotos.ts
  * Resolver la foto de fachada de un comercio para mostrarla.
  *
  * ── EL PROBLEMA ─────────────────────────────────────────────────────────────
@@ -118,4 +118,45 @@ export async function firmarFachada(
   if (!valor) return null
   const mapa = await firmarFachadas([{ id: 'x', foto_fachada_url: valor }], admin, segundos)
   return mapa['x'] ?? null
+}
+
+// ── Fotos de góndola ─────────────────────────────────────────────────────────
+
+/**
+ * Firma las fotos de góndola de una lista. Devuelve `id → url mostrable`.
+ *
+ * ── POR QUÉ `url` ES UN FALLBACK Y NO LA FUENTE ─────────────────────────────
+ * `fotos` tiene dos columnas: `storage_path`, que es la buena —100% paths en dev
+ * y en prod— y `url`, que es un cajón mezclado del seed: 112 URLs de Drive, 73
+ * de picsum y unas cuantas de Supabase.
+ *
+ * Las de Drive y picsum **no tienen objeto en Storage**, así que para esas filas
+ * el fallback es lo único que hay y por eso la columna no se puede borrar sin
+ * más. Las de Supabase sí tienen `storage_path` válido, así que el fallback
+ * nunca se dispara para ellas — y menos mal, porque son las que llevan el
+ * dominio del proyecto adentro.
+ *
+ * El orden importa y es el mismo que ya usaban los cinco paneles que muestran
+ * góndolas: **firmar primero, `url` después**.
+ */
+export async function firmarFotos(
+  fotos: { id: string; storage_path?: string | null; url?: string | null }[],
+  admin: Admin,
+  segundos = 3600,
+): Promise<Record<string, string>> {
+  if (fotos.length === 0) return {}
+
+  const pares = await Promise.all(
+    fotos.map(async f => {
+      if (f.storage_path) {
+        try {
+          const { data } = await admin.storage.from(BUCKET_FOTOS).createSignedUrl(f.storage_path, segundos)
+          if (data?.signedUrl) return [f.id, data.signedUrl] as const
+        } catch { /* cae al fallback */ }
+      }
+      return [f.id, f.url ?? null] as const
+    })
+  )
+
+  return Object.fromEntries(pares.filter((p): p is readonly [string, string] => p[1] !== null))
 }

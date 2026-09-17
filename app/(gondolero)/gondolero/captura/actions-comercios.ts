@@ -574,7 +574,7 @@ export async function crearComercioParaCaptura(params: {
   // El path gana porque la URL lleva el dominio del proyecto adentro —un dump de
   // dev restaurado en prod apuntaría al storage del otro ambiente— y porque los
   // buckets son PRIVADOS: la URL `/object/public/…` que se guardaba no servía
-  // ni siquiera en su propio ambiente. Ver lib/storage-fachada.ts.
+  // ni siquiera en su propio ambiente. Ver lib/storage-fotos.ts.
   if (params.fachadaStoragePath) insertData.foto_fachada_url = params.fachadaStoragePath
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
