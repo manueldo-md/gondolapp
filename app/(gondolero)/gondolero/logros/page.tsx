@@ -7,7 +7,11 @@ import { getConfig } from '@/lib/config'
 import { aliasAnonimo } from '@/lib/aliases'
 import { obtenerPuntosRetenidos } from '@/lib/puntos-retenidos'
 import { PuntosEnCamino } from '@/components/gondolero/puntos-en-camino'
-import { calcularNivelMensual } from '@/lib/nivel'
+import {
+  contarMisionesAprobadasDelMes,
+  nivelPorMisiones,
+  misionesParaSiguienteNivel,
+} from '@/lib/nivel-mensual'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
 import { MarcarLogrosVistos } from './marcar-vistos'
@@ -62,7 +66,7 @@ export default async function LogrosPage() {
     campanasRes,
     comerciosRes,
     config,
-    fotosEsteMesRes,
+    misionesDelMes,
     misZonasRes,
     todosLogrosRes,
     gondoleroLogrosRes,
@@ -85,10 +89,9 @@ export default async function LogrosPage() {
       .eq('gondolero_id', user.id)
       .eq('estado', 'aprobada'),
     getConfig(),
-    admin.from('fotos')
-      .select('gondolero_id')
-      .eq('estado', 'aprobada')
-      .gte('created_at', inicioMes.toISOString()),
+    // El nivel y el ranking cuentan MISIONES aprobadas del mes, no fotos: una
+    // campaña de solo preguntas también es trabajo. Ver lib/nivel-mensual.ts.
+    contarMisionesAprobadasDelMes(admin, ahora),
     admin.from('gondolero_zonas')
       .select('zona_id')
       .eq('gondolero_id', user.id),
@@ -124,45 +127,43 @@ export default async function LogrosPage() {
   const fotosCasualAActivo = config.niveles.fotosCasualAActivo
   const fotosActivoAPro    = config.niveles.fotosActivoAPro
 
-  // fotosEsteMesRes contiene todas las fotos del mes de todos los gondoleros;
-  // extraemos el conteo del usuario actual desde ese mismo mapa (construido más adelante).
-  // Para el cálculo de nivel propio necesitamos el conteo personal del mes:
-  const fotosEsteMes = (fotosEsteMesRes.data ?? []).filter(
-    (f: { gondolero_id: string }) => f.gondolero_id === user.id
-  ).length
+  // El nivel cuenta MISIONES aprobadas del mes, no fotos.
+  //
+  // Con fotos, una campaña de solo preguntas pagaba puntos y no sumaba nada a la
+  // progresión — un efecto de dónde había quedado el gancho, no una decisión.
+  // Una misión cumplida es una misión cumplida.
+  const misionesEsteMes = misionesDelMes.get(user.id) ?? 0
 
-  const nivel: NivelGondolero = calcularNivelMensual(
-    fotosEsteMes,
+  const nivel: NivelGondolero = nivelPorMisiones(
+    misionesEsteMes,
     fotosCasualAActivo,
     fotosActivoAPro,
   )
 
   // ── Progreso de 3 nodos ───────────────────────────────────────────────────
-  const fotasParaSiguiente = nivel === 'casual'
-    ? Math.max(0, fotosCasualAActivo - fotosEsteMes)
-    : nivel === 'activo'
-      ? Math.max(0, fotosActivoAPro - fotosEsteMes)
-      : 0
+  const faltanParaSiguiente = misionesParaSiguienteNivel(
+    misionesEsteMes, nivel, fotosCasualAActivo, fotosActivoAPro,
+  )
 
   // Porcentaje de cada segmento de la barra lineal
   const linea1Pct = nivel === 'casual'
-    ? Math.min(100, Math.round((fotosEsteMes / fotosCasualAActivo) * 100))
+    ? Math.min(100, Math.round((misionesEsteMes / fotosCasualAActivo) * 100))
     : 100
 
   const linea2Pct = nivel === 'casual'
     ? 0
     : nivel === 'activo'
       ? Math.min(100, Math.round(
-          ((fotosEsteMes - fotosCasualAActivo) / (fotosActivoAPro - fotosCasualAActivo)) * 100
+          ((misionesEsteMes - fotosCasualAActivo) / (fotosActivoAPro - fotosCasualAActivo)) * 100
         ))
       : 100
 
   // Label debajo de cada línea
   const linea1Label = nivel === 'casual'
-    ? `${fotosEsteMes}/${fotosCasualAActivo}`
+    ? `${misionesEsteMes}/${fotosCasualAActivo}`
     : '✓'
   const linea2Label = nivel === 'activo'
-    ? `${fotosEsteMes - fotosCasualAActivo}/${fotosActivoAPro - fotosCasualAActivo}`
+    ? `${misionesEsteMes - fotosCasualAActivo}/${fotosActivoAPro - fotosCasualAActivo}`
     : nivel === 'pro'
       ? '✓'
       : `0/${fotosActivoAPro - fotosCasualAActivo}`
@@ -174,12 +175,9 @@ export default async function LogrosPage() {
   const misZonaIds = (misZonasRes.data ?? []).map((z: { zona_id: string }) => z.zona_id)
   const miDistriId = profile?.distri_id ?? null
 
-  const conteoPorGondolero = new Map<string, number>()
-  for (const f of fotosEsteMesRes.data ?? []) {
-    const id = (f as { gondolero_id: string }).gondolero_id
-    conteoPorGondolero.set(id, (conteoPorGondolero.get(id) ?? 0) + 1)
-  }
-  const todosIds = [...conteoPorGondolero.keys()]
+  // El ranking usa el mismo conteo que el nivel: si ordenara por fotos y la
+  // insignia saliera de misiones, la fila mostraría dos medidas que no cuadran.
+  const todosIds = [...misionesDelMes.keys()]
 
   const [perfilesRankingRes, zonaColegasRes, zonasDataRes] = await Promise.all([
     todosIds.length > 0
@@ -210,24 +208,24 @@ export default async function LogrosPage() {
   const buildRanking = (lista: PerfilRanking[]): RankingEntry[] =>
     lista
       .map(p => {
-        const fotasMes = conteoPorGondolero.get(p.id) ?? 0
+        const misionesMes = misionesDelMes.get(p.id) ?? 0
         return {
           gondolero_id:   p.id,
           // Sin alias NO se cae al nombre real: esta pantalla la ven otros
           // gondoleros y el alias existe justamente para eso. Ver aliasAnonimo.
           alias:          p.alias ?? aliasAnonimo(p.id),
-          nivel:          calcularNivelMensual(fotasMes, fotosCasualAActivo, fotosActivoAPro),
-          fotos_este_mes: fotasMes,
+          nivel:             nivelPorMisiones(misionesMes, fotosCasualAActivo, fotosActivoAPro),
+          misiones_este_mes: misionesMes,
         }
       })
-      .sort((a, b) => b.fotos_este_mes - a.fotos_este_mes)
+      .sort((a, b) => b.misiones_este_mes - a.misiones_este_mes)
       .slice(0, 10)
       .map((e, i) => ({ ...e, posicion: i + 1 }))
 
   const getPosicion = (lista: PerfilRanking[]): number | null => {
     const sorted = lista
-      .map(p => ({ id: p.id, fotos: conteoPorGondolero.get(p.id) ?? 0 }))
-      .sort((a, b) => b.fotos - a.fotos)
+      .map(p => ({ id: p.id, misiones: misionesDelMes.get(p.id) ?? 0 }))
+      .sort((a, b) => b.misiones - a.misiones)
     const idx = sorted.findIndex(e => e.id === user.id)
     return idx >= 0 ? idx + 1 : null
   }
@@ -400,13 +398,13 @@ export default async function LogrosPage() {
             {/* Mensaje debajo */}
             <p className="text-xs text-center mt-3 font-medium text-gray-600">
               {nivel === 'casual' && (
-                fotasParaSiguiente > 0
-                  ? `Te faltan ${fotasParaSiguiente} fotos para llegar a ${NIVEL_SIGUIENTE_LABEL[nivel]}`
+                faltanParaSiguiente > 0
+                  ? `Te ${faltanParaSiguiente === 1 ? 'falta' : 'faltan'} ${faltanParaSiguiente} ${faltanParaSiguiente === 1 ? 'misión' : 'misiones'} para llegar a ${NIVEL_SIGUIENTE_LABEL[nivel]}`
                   : `¡Nivel ${NIVEL_SIGUIENTE_LABEL[nivel]} alcanzado!`
               )}
               {nivel === 'activo' && (
-                fotasParaSiguiente > 0
-                  ? `Te faltan ${fotasParaSiguiente} fotos para llegar a Pro`
+                faltanParaSiguiente > 0
+                  ? `Te ${faltanParaSiguiente === 1 ? 'falta' : 'faltan'} ${faltanParaSiguiente} ${faltanParaSiguiente === 1 ? 'misión' : 'misiones'} para llegar a Pro`
                   : '¡Nivel Pro alcanzado!'
               )}
               {nivel === 'pro' && (

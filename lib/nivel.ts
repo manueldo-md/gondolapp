@@ -19,18 +19,13 @@ export function calcularNuevoNivel(
   return nivelActual
 }
 
-/**
- * Calcula el nivel de un gondolero dinámicamente a partir de sus fotos aprobadas
- * en el mes en curso. Fuente de verdad única para todas las vistas.
+/*
+ * `calcularNivelMensual` vivía acá y se borró el 17/9/2026: contaba FOTOS del
+ * mes, y eso dejaba a las campañas de solo preguntas fuera de la progresión.
+ * Su reemplazo es `nivelPorMisiones` en lib/nivel-mensual.ts, que cuenta
+ * misiones aprobadas.
  *
- * Regla: Casual = 0–(fotosCasualAActivo-1), Activo = fotosCasualAActivo–(fotosActivoAPro-1), Pro = fotosActivoAPro+
+ * Su docstring decía "Fuente de verdad única para todas las vistas" y era falso:
+ * la lista de campañas y los gates nunca la usaron — leen `profiles.nivel`. Esa
+ * divergencia sigue abierta, ver CLAUDE.md.
  */
-export function calcularNivelMensual(
-  fotosAprobadaMes: number,
-  fotosCasualAActivo: number,
-  fotosActivoAPro: number,
-): 'casual' | 'activo' | 'pro' {
-  if (fotosAprobadaMes >= fotosActivoAPro) return 'pro'
-  if (fotosAprobadaMes >= fotosCasualAActivo) return 'activo'
-  return 'casual'
-}

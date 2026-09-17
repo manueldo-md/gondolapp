@@ -3014,3 +3014,87 @@ elegías"* si no.
 efecto que depende de `[campana?.id, campana?.modalidad]`, así que dentro de una
 misma sesión no se refresca después de registrar una misión. La revalidación del
 paso de GPS lo tapa, pero conviene refrescarlo al volver a la lista.
+
+### El nivel cuenta misiones aprobadas del mes (17/9/2026)
+
+`lib/nivel-mensual.ts` es la única fuente: **misiones aprobadas del mes en
+curso**, derivadas al leer. Lo usan la pantalla de Logros (nivel, barra de
+progreso, ranking) y el perfil del gondolero.
+
+Antes contaba filas en `fotos`, y eso dejaba a las **campañas de solo preguntas**
+fuera de la progresión: pagaban puntos y no sumaban nada al nivel. No era una
+decisión de producto, era un efecto de dónde había quedado el gancho — el único
+incremento estaba en el camino de aprobación de FOTO.
+
+Los umbrales (`fotosCasualAActivo`, `fotosActivoAPro` en la config) **no
+cambiaron**: en las campañas con foto hay casi siempre una foto por misión, así
+que el número se mueve poco.
+
+El ranking cuenta lo mismo que el nivel. Si ordenara por fotos y la insignia
+saliera de misiones, cada fila mostraría dos medidas que no cuadran.
+
+### `incrementar_fotos_aprobadas` NO EXISTE en la base
+
+Verificado en dev el 17/9/2026: `pg_proc` no devuelve nada para ese nombre, y
+tampoco hay triggers ni funciones que la mencionen.
+
+**Y sin embargo las tres actions de aprobación de foto la llaman** —
+`admin/fotos/actions.ts`, `distribuidora/gondolas/actions.ts`,
+`marca/gondolas/actions.ts`— con un `if (rpcFotosError) console.error(...)`. O sea
+que **cada aprobación de foto viene fallando en silencio desde siempre**, y
+`profiles.fotos_aprobadas` nunca se incrementó en ningún ambiente.
+
+Consecuencias, que importan para el tramo siguiente:
+
+- **`profiles.nivel` nunca se actualizó por la app.** `calcularNuevoNivel` lee el
+  contador, que está en cero, así que nunca sube a nadie. Lo que hay en dev lo
+  escribió el seed a mano (`nivel: 'activo'` literal) o es el DEFAULT `'casual'`.
+- **`tasa_aprobacion` tampoco**, si era esa función quien la recalculaba. El
+  perfil del gondolero y el detalle de usuario del admin la muestran igual.
+
+**Esto se descubrió después de tres afirmaciones mías sobre la base que no se
+verificaron contra la base.** Antes de afirmar que algo existe en Postgres —una
+columna, una función, un trigger— hay que consultarlo. El dump
+`docs/schema-real-2026-09-pre-incidente.md` no alcanza, y el código que llama a
+algo tampoco prueba que ese algo exista.
+
+### Pendiente — el máximo alcanzado, y borrar las dos columnas
+
+El nivel que se MUESTRA es el del mes. Los **gates** —acceso a campañas por
+`nivel_minimo` y el canje de transferencia, que es solo Pro— siguen leyendo
+`profiles.nivel`.
+
+**Decisión tomada (17/9/2026): los gates pasan a usar el MÁXIMO ALCANZADO**,
+derivado también, sin columna: "¿alguna vez en un mes llegó a N misiones?".
+
+El razonamiento: **el privilegio ganado no se pierde**. Un gondolero Pro en marzo
+que no trabaja en abril no puede quedarse sin acceso a campañas Pro ni sin poder
+canjear una transferencia con los puntos que ya ganó. Si en algún momento se
+quiere penalizar la inactividad, va a ser con una regla explícita, no como efecto
+lateral de cómo se calcula el nivel.
+
+Con eso resuelto se pueden borrar `profiles.nivel` y `profiles.fotos_aprobadas`.
+**Inventario de lo que hay que tocar antes** — son 19 sitios, no dos:
+
+| Tipo | Cuántos | Dónde |
+|---|---|---|
+| **Gates** | 3 | `gondolero/campanas/page.tsx` + `[id]/page.tsx` (`nivelOk`), **`campanas/[id]/actions.ts`** (la action de unirse — el control real), `perfil/actions.ts` (transferencia) |
+| Insignias | ~16 | admin ×5, distribuidora ×4, repositora ×2, perfil del gondolero, Logros… |
+| Columna visible | 5 tablas | "Fotos aprobadas" en paneles de admin, distri y repositora |
+
+El orden es el de siempre: primero el código deja de leerlas y de escribirlas,
+después el DROP. Y el seed también las escribe (`nivel: 'activo'`), así que entra
+en el mismo tramo.
+
+### Pendiente de producto — el incentivo por categoría debería ser pagar más, no restringir
+
+Hoy el nivel funciona **quitando** acceso: una campaña con `nivel_minimo = 'pro'`
+deja afuera a los Casual, y la transferencia bancaria es solo para Pro.
+
+La idea a evaluar es al revés: que los niveles altos **cobren un porcentaje más
+de puntos por la misma misión**. Los que más aportan a la comunidad ganan más por
+el mismo trabajo, en vez de que los que menos aportan pierdan el acceso.
+
+No está diseñado ni decidido. Lo que sí conviene saber es que las dos formas de
+incentivo no son equivalentes: restringir reduce la oferta de gondoleros para una
+campaña, y pagar más la aumenta.

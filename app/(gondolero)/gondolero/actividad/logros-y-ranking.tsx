@@ -19,7 +19,7 @@ export interface RankingEntry {
   gondolero_id: string
   alias: string
   nivel: NivelGondolero
-  fotos_este_mes: number
+  misiones_este_mes: number
   posicion: number
 }
 
@@ -151,7 +151,7 @@ function RankingTab({
 
               {/* Fotos */}
               <span className={`text-sm font-bold shrink-0 ${esYo ? 'text-gondo-verde-600' : 'text-gray-700'}`}>
-                {e.fotos_este_mes} 📷
+                {e.misiones_este_mes} ✅
               </span>
             </div>
           )

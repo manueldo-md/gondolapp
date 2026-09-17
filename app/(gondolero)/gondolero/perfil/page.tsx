@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { User } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { getConfig } from '@/lib/config'
-import { calcularNivelMensual } from '@/lib/nivel'
+import { nivelPorMisiones } from '@/lib/nivel-mensual'
 import { LocalidadesSelector } from './zonas-selector'
 import { DatosForm } from './datos-form'
 import { PasswordForm } from './password-form'
@@ -38,12 +38,14 @@ export default async function PerfilPage() {
   const ahora = new Date()
   const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
 
-  const [profileRes, gondoleroLocalidadesRes, fotosEsteMesRes, config] = await Promise.all([
+  const [profileRes, gondoleroLocalidadesRes, misionesEsteMesRes, config] = await Promise.all([
     admin.from('profiles')
       .select('nombre, alias, nivel, distri_id, celular, codigo_gondolero, tipo_actor')
       .eq('id', user.id).single(),
     admin.from('gondolero_localidades').select('localidad_id').eq('gondolero_id', user.id),
-    admin.from('fotos')
+    // MISIONES aprobadas del mes, no fotos: el nivel tiene que contar también
+    // las campañas de solo preguntas. Mismo criterio que la pantalla de Logros.
+    admin.from('misiones')
       .select('id', { count: 'exact', head: true })
       .eq('gondolero_id', user.id)
       .eq('estado', 'aprobada')
@@ -160,10 +162,10 @@ export default async function PerfilPage() {
     }
   }
 
-  // Nivel calculado dinámicamente del mes en curso (fuente de verdad)
-  const fotosEsteMes = fotosEsteMesRes.count ?? 0
-  const nivel = calcularNivelMensual(
-    fotosEsteMes,
+  // Nivel del mes en curso, derivado. Ver lib/nivel-mensual.ts.
+  const misionesEsteMes = misionesEsteMesRes.count ?? 0
+  const nivel = nivelPorMisiones(
+    misionesEsteMes,
     config.niveles.fotosCasualAActivo,
     config.niveles.fotosActivoAPro,
   )
