@@ -7,7 +7,6 @@ import { UnirseButton } from './unirse-button'
 import { AbandonarBtn } from '../../misiones/abandonar-btn'
 import {
   labelTipoCampana,
-  diasRestantes,
   calcularPorcentaje,
   formatearPuntos,
   formatearFecha,
@@ -15,6 +14,7 @@ import {
 import type { TipoCampana } from '@/types'
 import { getConfig } from '@/lib/config'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 
 type BloqueFotoRow = {
@@ -190,7 +190,7 @@ export default async function CampanaDetallePage({
     participacion?.estado === 'completada' || participacion?.estado === 'abandonada'
   ) ? participacion.estado as 'completada' | 'abandonada' : null
 
-  const dias         = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+  const vig          = etiquetaVigencia(c.fecha_fin, { corto: true })
   const progreso     = calcularPorcentaje(c.comercios_relevados, c.minimo_comercios ?? 0)
   const bloques      = [...(c.bloques_foto ?? [])].sort((a, b) => a.orden - b.orden)
 
@@ -346,10 +346,10 @@ export default async function CampanaDetallePage({
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 p-3 text-center">
             <Clock size={18} className="text-gray-400 mx-auto mb-1" />
-            <p className={`text-base font-bold ${dias !== null && dias <= 3 ? 'text-red-500' : 'text-gray-700'}`}>
-              {dias === null ? '—' : dias === 0 ? 'Hoy' : dias}
+            <p className={`text-base font-bold ${vig && !vig.vencida && vig.dias <= 3 ? 'text-red-500' : 'text-gray-700'}`}>
+              {vig === null ? '—' : vig.vencida ? 'Terminada' : vig.dias === 0 ? 'Hoy' : vig.dias}
             </p>
-            <p className="text-[11px] text-gray-400">días</p>
+            <p className="text-[11px] text-gray-400">{vig?.vencida ? 'vigencia' : 'días'}</p>
           </div>
           {(() => {
             const cantFotos = bloques.reduce(

@@ -8,6 +8,12 @@
  * automática (ColaSyncOffline en el layout). Este módulo muestra estado y,
  * cuando hay un rechazo del servidor, permite Reintentar o Descartar.
  *
+ * **Reintentar solo aparece si reintentar puede terminar distinto.** Con una
+ * campaña vencida o un comercio que otro ya tomó, el botón vuelve a subir todas
+ * las fotos para recibir el mismo rechazo: un bucle con el trabajo del gondolero
+ * adentro. Quién es definitivo lo dice `rechazoEsDefinitivo` a partir del código
+ * que manda el servidor, NO del texto del motivo — ver lib/rechazo-mision.ts.
+ *
  * Estados por misión:
  *   - 'esperando'  → en IDB, sin error, no se está enviando ahora
  *   - 'enviando'   → en misionesEnviando (transitorio, en vuelo)
@@ -28,6 +34,7 @@ import {
   type MisionPendienteIDB,
 } from '@/lib/mision-queue'
 import { registrarDescarte } from '@/app/(gondolero)/gondolero/captura/actions'
+import { rechazoEsDefinitivo } from '@/lib/rechazo-mision'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -200,6 +207,10 @@ export function MisionesPendientes() {
           const tsCaptura = calcularTimestampCaptura(mision)
           const enAccion = accionando.has(mision.idempotenciaKey)
           const esRechazada = estado === 'rechazada'
+          // Definitivo = reintentar no puede terminar distinto nunca. Sale del
+          // código que manda el servidor, no del texto del motivo.
+          // Ver lib/rechazo-mision.ts.
+          const esDefinitivo = esRechazada && rechazoEsDefinitivo(mision.codigoRechazo)
 
           return (
             <li
@@ -266,8 +277,20 @@ export function MisionesPendientes() {
                       </p>
                     )}
 
+                    {/* Con un rechazo definitivo el trabajo no se va a poder
+                        cobrar, y decirlo es parte de la respuesta: la única
+                        acción que queda borra lo que hizo. Ofrecerle un tacho
+                        sin explicar por qué sería peor que el bucle. */}
+                    {esDefinitivo && (
+                      <p className="text-xs text-red-500 mt-2 pl-4">
+                        Esta misión no se va a poder registrar. Descartala para
+                        sacarla de la lista — el trabajo no se cobra.
+                      </p>
+                    )}
+
                     {/* Botones de acción */}
                     <div className="flex gap-2 mt-3">
+                      {!esDefinitivo && (
                       <button
                         onClick={() => handleReintentar(mision)}
                         disabled={enAccion}
@@ -284,6 +307,7 @@ export function MisionesPendientes() {
                         )}
                         Reintentar
                       </button>
+                      )}
                       <button
                         onClick={() => handleDescartar(mision)}
                         disabled={enAccion}

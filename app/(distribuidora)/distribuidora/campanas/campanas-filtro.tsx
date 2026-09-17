@@ -3,7 +3,8 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Clock, Target, Users, Camera, DollarSign, Filter } from 'lucide-react'
-import { labelEstadoCampana, colorEstadoCampana, diasRestantes } from '@/lib/utils'
+import { labelEstadoCampana, colorEstadoCampana } from '@/lib/utils'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { derivarAvance } from '@/lib/campana-avance'
 import { BadgeAvance } from '@/components/campanas/BadgeAvance'
 import type { TipoCampana, EstadoCampana } from '@/types'
@@ -109,7 +110,7 @@ function PendienteCard({ campana }: { campana: CampanaFiltroRow }) {
 }
 
 function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; distriNombre?: string }) {
-  const dias     = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
+  const vig      = etiquetaVigencia(campana.fecha_fin)
   const esPropia = campana.financiada_por === 'distri'
 
   // Estado de avance del relevamiento, derivado. Responde "¿sirve?", que es
@@ -167,11 +168,11 @@ function CampanaCard({ campana, distriNombre }: { campana: CampanaFiltroRow; dis
                     : ''}
                 </span>
               </div>
-            ) : dias !== null ? (
+            ) : vig !== null ? (
               <div className="flex items-center gap-1">
                 <Clock size={12} />
-                <span className={dias <= 3 ? 'text-red-500 font-medium' : ''}>
-                  {dias === 0 ? 'Último día' : `${dias} días restantes`}
+                <span className={vig.vencida ? 'text-gray-400' : vig.dias <= 3 ? 'text-red-500 font-medium' : ''}>
+                  {vig.texto}
                 </span>
               </div>
             ) : null}

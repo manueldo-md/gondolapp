@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { diasHastaFin } from './campana-vigencia'
 import type { TipoActor, NivelGondolero, TipoCampana, EstadoCampana, EstadoFoto, TipoPremio } from '@/types'
 
 // ── TAILWIND ──────────────────────────────────────────────────────────────────
@@ -120,11 +121,21 @@ export function tiempoRelativo(fecha: string | Date): string {
 /**
  * Días restantes hasta una fecha
  */
+/**
+ * Días calendario hasta `fechaFin`. **Puede ser negativo**: -140 es una campaña
+ * que terminó hace 140 días.
+ *
+ * Hasta el 18/9/2026 esto tenía un `Math.max(0, …)` que aplastaba a 0 cualquier
+ * fecha pasada, y las pantallas leían 0 como "hoy": una campaña vencida en abril
+ * decía "Último día" en septiembre, en rojo urgente. El dato estaba mal acá, no
+ * en cada pantalla.
+ *
+ * **Para MOSTRARLO usá `etiquetaVigencia` de lib/campana-vigencia.ts**, que
+ * resuelve el texto ("Terminada hace 140 días" / "Último día" / "13 días") en un
+ * solo lugar. Esta función queda para comparaciones numéricas.
+ */
 export function diasRestantes(fechaFin: string): number {
-  const fin = new Date(fechaFin)
-  const ahora = new Date()
-  const diffMs = fin.getTime() - ahora.getTime()
-  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
+  return diasHastaFin(fechaFin)
 }
 
 /**

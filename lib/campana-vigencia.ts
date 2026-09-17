@@ -89,3 +89,73 @@ export function puedeRegistrarMision(params: {
 function diaDe(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+// ── Cuánto falta, y cómo se dice ──────────────────────────────────────────────
+
+/**
+ * Días calendario hasta `fechaFin`. **Puede ser negativo**: -140 es una campaña
+ * que terminó hace 140 días.
+ *
+ * Reemplaza al `Math.max(0, …)` de `diasRestantes`, que aplastaba a 0 cualquier
+ * fecha pasada. Con ese clamp, las 17 pantallas que lo leían mostraban "Último
+ * día" / "Hoy" / "vence en 0 días" para una campaña vencida en abril, y varias
+ * la pintaban de rojo urgente. El dato estaba mal en la función, no en cada
+ * pantalla.
+ *
+ * Compara DÍAS CALENDARIO en hora local, no milisegundos. `new Date('2026-04-30')`
+ * se parsea como medianoche UTC y `new Date()` es local: en Argentina (UTC-3) esa
+ * mezcla corría el límite tres horas, y el último día empezaba a las 21:00 del
+ * anterior. Es el mismo criterio que usa `estaVencida` acá arriba.
+ */
+export function diasHastaFin(
+  fechaFin: string,
+  ahora: Date = new Date(),
+): number {
+  const [y, m, d] = fechaFin.slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return 0
+  const fin = new Date(y, m - 1, d)
+  const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
+  return Math.round((fin.getTime() - hoy.getTime()) / 86_400_000)
+}
+
+export interface EtiquetaVigencia {
+  /** Texto listo para mostrar. */
+  texto: string
+  vencida: boolean
+  /** Días calendario hasta el fin. Negativo si ya terminó. */
+  dias: number
+}
+
+/**
+ * El texto de vigencia de una campaña, en un solo lugar.
+ *
+ * La condición `dias === 0 ? 'Último día' : …` estaba copiada en cinco archivos
+ * y ninguna de las copias contemplaba una fecha pasada — con el clamp a 0, una
+ * campaña de abril decía "Último día" en septiembre. Que el texto salga de acá
+ * es lo que impide que la sexta copia vuelva a olvidarse del caso.
+ *
+ * `corto` es para los chips donde no entra una frase: "140d" en vez de "Terminada
+ * hace 140 días".
+ */
+export function etiquetaVigencia(
+  fechaFin: string | null | undefined,
+  opciones: { corto?: boolean; ahora?: Date } = {},
+): EtiquetaVigencia | null {
+  if (!fechaFin) return null
+  const dias = diasHastaFin(fechaFin, opciones.ahora)
+  const corto = opciones.corto ?? false
+
+  if (dias < 0) {
+    const d = Math.abs(dias)
+    return {
+      vencida: true,
+      dias,
+      texto: corto
+        ? 'Terminada'
+        : d === 1 ? 'Terminada ayer' : `Terminada hace ${d} días`,
+    }
+  }
+  if (dias === 0) return { vencida: false, dias, texto: 'Último día' }
+  if (corto)      return { vencida: false, dias, texto: `${dias}d` }
+  return { vencida: false, dias, texto: dias === 1 ? '1 día' : `${dias} días` }
+}

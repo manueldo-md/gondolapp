@@ -3,7 +3,8 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Clock, Target, Users, Camera, DollarSign, Filter } from 'lucide-react'
-import { labelTipoCampana, labelEstadoCampana, colorEstadoCampana, diasRestantes } from '@/lib/utils'
+import { labelTipoCampana, labelEstadoCampana, colorEstadoCampana } from '@/lib/utils'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { derivarAvance } from '@/lib/campana-avance'
 import { BadgeAvance } from '@/components/campanas/BadgeAvance'
 import type { TipoCampana, EstadoCampana } from '@/types'
@@ -51,7 +52,7 @@ const TIPOS_CAMPANA: { value: string; label: string }[] = [
 ]
 
 function CampanaCard({ c }: { c: CampanaFiltroRow }) {
-  const dias     = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+  const vig      = etiquetaVigencia(c.fecha_fin)
   const estadoLabel = c.estado === 'borrador' && c.motivo_rechazo ? 'Rechazada' : labelEstadoCampana(c.estado)
   const estadoColor = c.estado === 'borrador' && c.motivo_rechazo ? 'bg-red-50 text-red-700 border-red-200' : colorEstadoCampana(c.estado)
 
@@ -92,11 +93,11 @@ function CampanaCard({ c }: { c: CampanaFiltroRow }) {
           </div>
           <h3 className="font-semibold text-gray-900 text-base mb-3">{c.nombre}</h3>
           <div className="flex items-center gap-5 text-xs text-gray-500 flex-wrap">
-            {dias !== null && (
+            {vig !== null && (
               <div className="flex items-center gap-1">
                 <Clock size={12} />
-                <span className={dias <= 3 ? 'text-red-500 font-medium' : ''}>
-                  {dias === 0 ? 'Último día' : `${dias} días restantes`}
+                <span className={vig.vencida ? 'text-gray-400' : vig.dias <= 3 ? 'text-red-500 font-medium' : ''}>
+                  {vig.texto}
                 </span>
               </div>
             )}

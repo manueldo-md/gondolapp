@@ -3,7 +3,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Megaphone, Clock, Target } from 'lucide-react'
-import { labelEstadoCampana, colorEstadoCampana, diasRestantes, calcularPorcentaje } from '@/lib/utils'
+import { labelEstadoCampana, colorEstadoCampana, calcularPorcentaje } from '@/lib/utils'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import type { TipoCampana, EstadoCampana } from '@/types'
 
 function adminClient() {
@@ -144,7 +145,7 @@ export default async function RepoCampanasPage() {
       ) : (
         <div className="space-y-4">
           {lista.map(c => {
-            const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+            const vig = etiquetaVigencia(c.fecha_fin)
             const limiteRepos = c.tope_total_comercios ?? c.minimo_comercios
             const progreso = limiteRepos
               ? calcularPorcentaje(c.comercios_relevados, limiteRepos)
@@ -181,10 +182,10 @@ export default async function RepoCampanasPage() {
                 </div>
 
                 <div className="flex items-center gap-4 text-sm text-gray-500">
-                  {dias !== null && (
+                  {vig !== null && (
                     <span className="flex items-center gap-1">
                       <Clock size={13} />
-                      {dias === 0 ? 'Vence hoy' : `${dias} días`}
+                      {vig.vencida ? vig.texto : vig.dias === 0 ? 'Vence hoy' : vig.texto}
                     </span>
                   )}
                   {limiteRepos && (

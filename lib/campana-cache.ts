@@ -52,6 +52,14 @@ export interface CampanaData {
    * que es el caso seguro (marca de más, nunca de menos).
    */
   modalidad?: string
+  /**
+   * `YYYY-MM-DD` o null (seguimiento no vence). Opcional porque los caches
+   * escritos antes del 18/9/2026 no la tienen: ahí `estaVencida(undefined)` da
+   * false y no se bloquea nada. El gate del servidor sigue estando al enviar, y
+   * bloquear offline por un dato que falta por culpa nuestra sería rechazar
+   * trabajo legítimo.
+   */
+  fecha_fin?: string | null
   puntos_por_foto: number
   puntos_por_mision: number
   bloques: BloqueData[]
@@ -62,7 +70,10 @@ export interface CampanaData {
 // Incluye `orden` en bloques_foto para ordenamiento correcto.
 
 export const CAMPANA_CACHE_SELECT =
-  'id, nombre, tipo, modalidad, puntos_por_foto, puntos_por_mision, ' +
+  // `fecha_fin` está acá para que captura pueda cerrarse ANTES de que el
+  // gondolero saque la primera foto. Sin ella, la única barrera era el gate del
+  // servidor al enviar: rechazo tardío sobre una misión ya hecha entera.
+  'id, nombre, tipo, modalidad, fecha_fin, puntos_por_foto, puntos_por_mision, ' +
   'bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, orden, ' +
   'bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido, solicitar_precio ) )'
 
@@ -174,6 +185,7 @@ export function toCampanaData(raw: any): CampanaData {
     nombre: raw.nombre,
     tipo: raw.tipo ?? 'relevamiento',
     modalidad: raw.modalidad ?? 'puntual',
+    fecha_fin: raw.fecha_fin ?? null,
     puntos_por_foto:   raw.puntos_por_foto,
     puntos_por_mision: raw.puntos_por_mision ?? 0,
     bloques: bloquesData,

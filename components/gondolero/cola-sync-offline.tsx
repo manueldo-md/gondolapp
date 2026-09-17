@@ -26,6 +26,7 @@ import {
   esErrorDeRed,
 } from '@/lib/mision-queue'
 import { mensajeErrorInfra } from '@/lib/error-infra'
+import { rechazoEsDefinitivo } from '@/lib/rechazo-mision'
 import { enviarReportesPendientes } from '@/lib/reporte-ubicacion-queue'
 import type { FotoMisionInput } from '@/app/(gondolero)/gondolero/captura/actions'
 import {
@@ -176,6 +177,9 @@ export async function procesarColaOffline(fromBackoff = false) {
             ultimoError:     resultado.motivo,
             estado:          'rechazada',
             motivoRechazo:   resultado.motivo,
+            // El código, no el texto: es lo que decide si se ofrece Reintentar
+            // y si esta entrada vence a los 7 días. Ver lib/rechazo-mision.ts.
+            codigoRechazo:   resultado.codigo,
           }).catch(() => {})
           dispatch()
           console.error('[cola-offline] rechazo del servidor para misión',
@@ -246,6 +250,19 @@ const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000
  * Elimina de IDB las misiones con más de 7 días de antigüedad (calculado desde
  * guardadaAt). Intenta registrar un registro liviano best-effort antes de borrar.
  * Se llama al montar el layout, una vez por sesión.
+ *
+ * ── LOS RECHAZOS DEFINITIVOS NO VENCEN (18/9/2026) ─────────────────────────
+ * El TTL existe para que la cola no crezca sola: protege del caso "una misión
+ * que se reintenta para siempre". Una misión con rechazo DEFINITIVO no se
+ * reintenta nunca —no hay botón que la mande— así que no hay nada de qué
+ * proteger, y borrarla tiene un costo real.
+ *
+ * Si la única acción posible es descartar y la descartamos nosotros por él, le
+ * sacamos el único registro de que trabajó y de por qué no le sirvió. Un día va
+ * a mirar la lista y no va a estar: sin aviso, sin rastro, y sin forma de
+ * reclamar. Esa entrada se queda hasta que él decida borrarla.
+ *
+ * Las reintentables sí vencen, que es donde el TTL hace su trabajo.
  */
 async function limpiarMisionesVencidas() {
   const ahora = Date.now()
@@ -254,7 +271,10 @@ async function limpiarMisionesVencidas() {
     pendientes = await listarMisionesPendientes()
   } catch { return }
 
-  const vencidas = pendientes.filter(m => ahora - m.guardadaAt > SIETE_DIAS_MS)
+  const vencidas = pendientes.filter(m =>
+    ahora - m.guardadaAt > SIETE_DIAS_MS &&
+    !(m.estado === 'rechazada' && rechazoEsDefinitivo(m.codigoRechazo))
+  )
   if (vencidas.length === 0) return
 
   for (const mision of vencidas) {

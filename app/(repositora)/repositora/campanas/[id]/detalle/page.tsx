@@ -3,9 +3,10 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
 import { Calendar, Target, Coins, Clock, Users } from 'lucide-react'
 import {
-  labelEstadoCampana, colorEstadoCampana, labelTipoCampana, diasRestantes,
+  labelEstadoCampana, colorEstadoCampana, labelTipoCampana,
 } from '@/lib/utils'
 import type { TipoCampana, EstadoCampana } from '@/types'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { CampanaPageNav } from '@/components/campanas/campana-page-nav'
 
 function adminClient() {
@@ -95,7 +96,7 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
     .map((cz: any) => Array.isArray(cz.localidades) ? cz.localidades[0]?.nombre : cz.localidades?.nombre)
     .filter(Boolean)
 
-  const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+  const vig = etiquetaVigencia(c.fecha_fin, { corto: true })
   const bloques = ((c.bloques_foto ?? []) as any[]).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
   const marcaNombre = Array.isArray(c.marca) ? c.marca[0]?.razon_social : c.marca?.razon_social
   const creadorLabel = c.financiada_por === 'distri' ? 'Distribuidora' : (marcaNombre ?? 'Marca')
@@ -147,8 +148,8 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
             <div className="flex items-start gap-2">
               <Calendar size={14} className="text-gray-400 mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs text-gray-400">Fin{dias !== null ? ` · ${dias}d` : ''}</p>
-                <p className={`font-medium ${dias !== null && dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
+                <p className="text-xs text-gray-400">Fin{vig ? ` · ${vig.texto}` : ''}</p>
+                <p className={`font-medium ${vig && !vig.vencida && vig.dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
                   {new Date(c.fecha_fin).toLocaleDateString('es-AR')}
                 </p>
               </div>

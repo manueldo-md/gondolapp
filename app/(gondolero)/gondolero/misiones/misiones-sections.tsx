@@ -4,12 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Star, Clock, ChevronDown, ChevronRight } from 'lucide-react'
 import {
-  labelTipoCampana,
-  diasRestantes,
-  calcularPorcentaje,
+  labelTipoCampana,  calcularPorcentaje,
   formatearPuntos,
 } from '@/lib/utils'
 import type { TipoCampana } from '@/types'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { AbandonarBtn } from './abandonar-btn'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -55,7 +54,7 @@ function MisionCard({
   fotoStats?: FotoStats
 }) {
   const c = p.campana
-  const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+  const vig = etiquetaVigencia(c.fecha_fin)
   const progreso = calcularPorcentaje(p.comercios_completados, c.minimo_comercios ?? 0)
   const esActiva = p.estado === 'activa'
 
@@ -79,11 +78,11 @@ function MisionCard({
               </span>
             )}
           </div>
-          {dias !== null && (
+          {vig !== null && (
             <div className="flex items-center gap-1 text-xs text-gray-400 shrink-0">
               <Clock size={12} />
-              <span className={dias <= 3 ? 'text-red-500 font-medium' : ''}>
-                {dias === 0 ? 'Último día' : `${dias} días`}
+              <span className={vig.vencida ? 'text-gray-400' : vig.dias <= 3 ? 'text-red-500 font-medium' : ''}>
+                {vig.texto}
               </span>
             </div>
           )}

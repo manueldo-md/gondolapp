@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import {
   Megaphone, Store, TrendingUp, MapPin,
   Camera, AlertTriangle, Clock, CheckCircle2,
@@ -361,9 +362,10 @@ export default async function DashboardPage() {
               const stat  = campanaStatMap.get(c.id)
               const totalDecl = stat ? stat.presente + stat.noEncontrado + stat.soloCompetencia : 0
               const pct   = totalDecl > 0 && stat ? Math.round((stat.presente / totalDecl) * 100) : null
-              const diasRestantes = c.fecha_fin
-                ? Math.ceil((new Date(c.fecha_fin).getTime() - ahora.getTime()) / (1000 * 60 * 60 * 24))
-                : null
+              // Cuarta copia de la regla: esta calculaba los días a mano en vez
+              // de usar el helper, y también decía "Hoy" para una campaña que
+              // había terminado hace meses. Ver lib/campana-vigencia.ts.
+              const vig = etiquetaVigencia(c.fecha_fin, { corto: true })
               return (
                 <div key={c.id} className="flex items-center justify-between px-5 py-3 gap-4">
                   <div className="min-w-0 flex-1">
@@ -374,10 +376,10 @@ export default async function DashboardPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    {diasRestantes !== null && (
-                      <span className={`flex items-center gap-1 text-xs font-medium ${diasRestantes <= 7 ? 'text-red-600' : 'text-gray-400'}`}>
+                    {vig !== null && (
+                      <span className={`flex items-center gap-1 text-xs font-medium ${!vig.vencida && vig.dias <= 7 ? 'text-red-600' : 'text-gray-400'}`}>
                         <Clock size={12} />
-                        {diasRestantes > 0 ? `${diasRestantes}d` : 'Hoy'}
+                        {vig.texto}
                       </span>
                     )}
                     <span className="flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">

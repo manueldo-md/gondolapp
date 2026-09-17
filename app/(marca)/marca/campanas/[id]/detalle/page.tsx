@@ -3,9 +3,10 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
 import { Calendar, Target, Coins, AlertCircle, Link2, Clock } from 'lucide-react'
 import {
-  labelEstadoCampana, colorEstadoCampana, labelTipoCampana, diasRestantes,
+  labelEstadoCampana, colorEstadoCampana, labelTipoCampana,
 } from '@/lib/utils'
 import type { TipoCampana, EstadoCampana } from '@/types'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { CampanaPageNav } from '@/components/campanas/campana-page-nav'
 import { CampanaDraftEditor } from '@/components/campanas/draft-editor'
 import { CopiarLinkBtn } from '../copiar-link-btn'
@@ -88,7 +89,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
     .filter((l: any) => !localidadIdsActuales.has(String(l.id)))
     .map((l: any) => ({ id: String(l.id), nombre: l.nombre }))
 
-  const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+  const vig = etiquetaVigencia(c.fecha_fin, { corto: true })
   const bloques = ((c.bloques_foto ?? []) as any[]).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
 
   // Fecha de creación / modificación formateadas
@@ -134,8 +135,8 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
             <div className="flex items-start gap-2">
               <Calendar size={14} className="text-gray-400 mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs text-gray-400">Fin{dias !== null ? ` · ${dias}d restantes` : ''}</p>
-                <p className={`font-medium ${dias !== null && dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
+                <p className="text-xs text-gray-400">Fin{vig ? ` · ${vig.texto}` : ''}</p>
+                <p className={`font-medium ${vig && !vig.vencida && vig.dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
                   {new Date(c.fecha_fin).toLocaleDateString('es-AR')}
                 </p>
               </div>

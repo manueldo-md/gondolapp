@@ -7,9 +7,10 @@ import {
   AlertTriangle, ChevronRight, MapPin, Package, TrendingUp, Clock,
   PackageX,
 } from 'lucide-react'
-import { diasRestantes, formatearPuntos } from '@/lib/utils'
+import { formatearPuntos } from '@/lib/utils'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
 import { getConfig } from '@/lib/config'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { nivelPorMisiones } from '@/lib/nivel-mensual'
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
@@ -458,7 +459,7 @@ export default async function DashboardPage() {
               <AlertaRow
                 key={c.id}
                 emoji="🔴"
-                texto={`Campaña "${c.nombre}" vence en ${diasRestantes(c.fecha_fin)} días`}
+                texto={`Campaña "${c.nombre}" ${etiquetaVigencia(c.fecha_fin)?.vencida ? 'ya terminó' : `vence en ${etiquetaVigencia(c.fecha_fin)?.texto}`}`}
                 href={`/distribuidora/campanas/${c.id}`}
               />
             ))}
@@ -486,7 +487,7 @@ export default async function DashboardPage() {
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
             {campanasActivas.map((c: { id: string; nombre: string; minimo_comercios: number | null; comercios_relevados: number | null; fecha_fin: string | null }) => {
-              const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+              const vig = etiquetaVigencia(c.fecha_fin, { corto: true })
               const progreso = c.minimo_comercios
                 ? Math.min(100, Math.round(((c.comercios_relevados ?? 0) / c.minimo_comercios) * 100))
                 : null
@@ -495,9 +496,9 @@ export default async function DashboardPage() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm font-semibold text-gray-900 truncate mr-3">{c.nombre}</span>
                     <div className="flex items-center gap-3 shrink-0">
-                      {dias !== null && (
-                        <span className={`text-xs font-medium ${dias <= 3 ? 'text-red-500' : 'text-gray-400'}`}>
-                          {dias === 0 ? 'Hoy vence' : `${dias}d`}
+                      {vig !== null && (
+                        <span className={`text-xs font-medium ${!vig.vencida && vig.dias <= 3 ? 'text-red-500' : 'text-gray-400'}`}>
+                          {vig.vencida ? vig.texto : vig.dias === 0 ? 'Hoy vence' : vig.texto}
                         </span>
                       )}
                       <ChevronRight size={14} className="text-gray-300" />

@@ -12,6 +12,7 @@
  */
 
 import { get, set, del, keys } from 'idb-keyval'
+import type { CodigoRechazoMision } from './rechazo-mision'
 
 export const MISION_QUEUE_PREFIX = 'mision_pendiente:'
 
@@ -45,7 +46,18 @@ export interface MisionPendienteIDB {
   guardadaAt: number
   /** Estado actual en IDB. 'rechazada' = el servidor la rechazó con un motivo. */
   estado: 'pendiente' | 'rechazada'
+  /** El texto que LEE el gondolero. Se edita; no se usa para decidir nada. */
   motivoRechazo: string | null
+  /**
+   * El código que DECIDE: si se ofrece "Reintentar" y si la entrada vence a los
+   * 7 días. Ver lib/rechazo-mision.ts.
+   *
+   * Opcional a propósito, y sin bump de `version`: las entradas ya rechazadas en
+   * el teléfono de alguien no lo tienen, y `rechazoEsDefinitivo(undefined)` es
+   * `false` — o sea el comportamiento de siempre, los dos botones y el TTL
+   * corriendo. Un campo ausente no le puede sacar la única salida a nadie.
+   */
+  codigoRechazo?: CodigoRechazoMision | null
   /**
    * epoch ms del último intento de envío. undefined en entradas que nunca
    * se intentaron aún. Junto con ultimoError permite mostrar "cuándo falló" en UI.
@@ -123,7 +135,7 @@ export async function borrarMisionDeCola(idempotenciaKey: string): Promise<void>
  */
 export async function actualizarMisionEnCola(
   idempotenciaKey: string,
-  campos: Partial<Pick<MisionPendienteIDB, 'ultimoIntentoAt' | 'ultimoError' | 'estado' | 'motivoRechazo'>>,
+  campos: Partial<Pick<MisionPendienteIDB, 'ultimoIntentoAt' | 'ultimoError' | 'estado' | 'motivoRechazo' | 'codigoRechazo'>>,
 ): Promise<void> {
   const key = misionQueueKey(idempotenciaKey)
   const existente = await get<MisionPendienteIDB>(key)

@@ -39,6 +39,7 @@ import {
 import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed, listarMisionesPendientes } from '@/lib/mision-queue'
 import { RADIO_BLOQUEO_METROS } from '@/lib/gps-radios'
 import { mensajeErrorInfra } from '@/lib/error-infra'
+import { estaVencida } from '@/lib/campana-vigencia'
 import { motivoBloqueo, cupoPropioLleno, TEXTO_BLOQUEO } from '@/lib/comercio-seleccionable'
 import {
   encolarReporte, marcarComercioReportado, leerComerciosReportados,
@@ -845,6 +846,19 @@ function CapturaContent() {
         .eq('estado', 'activa')
         .single()
         .then(async ({ data, error }) => {
+          // Tercera capa del filtro por fecha: la lista ya no ofrece campañas
+          // vencidas, pero acá se entra por URL directa, por un link viejo o por
+          // el back del navegador. Sin este corte el gondolero sacaba las fotos,
+          // llenaba el formulario y recién al enviar le decíamos que la campaña
+          // había terminado hace cinco meses.
+          //
+          // El chequeo va ANTES del setCampana para que no llegue a montarse el
+          // primer paso. `estado=activa` no alcanza: nada cierra por fecha.
+          if (data && estaVencida((data as { fecha_fin?: string | null }).fecha_fin)) {
+            setErrorGlobal('Esta campaña ya terminó y no acepta misiones nuevas. Buscá otra en la lista de campañas.')
+            setCargando(false)
+            return
+          }
           if (error || !data) {
             // Intentar desde caché como fallback
             try {
@@ -1728,6 +1742,10 @@ function CapturaContent() {
             ultimoError:     result.motivo,
             estado:          'rechazada',
             motivoRechazo:   result.motivo,
+            // El código decide si se ofrece Reintentar y si vence a los 7 días.
+            // Los DOS caminos de envío —este y la cola— lo tienen que guardar:
+            // si uno solo lo hiciera, el otro dejaría entradas sin clasificar.
+            codigoRechazo:   result.codigo,
           }).catch(() => {})
           window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
         }

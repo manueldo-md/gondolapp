@@ -7,6 +7,7 @@ import { CampanasSections, type CampanaCardData } from './campanas-sections'
 import { MisionesPendientes } from '@/components/gondolero/misiones-pendientes'
 import { getConfig } from '@/lib/config'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
+import { estaVencida } from '@/lib/campana-vigencia'
 
 type CampanaRow = CampanaCardData
 
@@ -248,9 +249,23 @@ export default async function CampanasPage() {
     listaActivas = (campanas as CampanaRow[] | null) ?? []
   }
 
+  // ── Vencidas: 'activa' en la base, terminadas en el calendario ───────────────
+  //
+  // `campanas.estado` es ADMINISTRATIVO y nada lo cierra por fecha: una campaña
+  // cuya `fecha_fin` pasó sigue diciendo 'activa' para siempre. Hasta el
+  // 18/9/2026 esta pantalla la trataba como vigente y caía en "En curso" o en
+  // "Disponibles"; "Finalizadas" filtra por `estado`, así que no entraba ahí
+  // tampoco. El gondolero podía abrirla, hacer la misión entera y recién al
+  // enviar recibía "esta campaña terminó el 2026-04-30".
+  //
+  // `estaVencida` existía en lib/campana-vigencia.ts desde el 16/9 y NO LA
+  // LLAMABA NADIE: la regla estaba escrita y sin cablear.
+  const vigentes = listaActivas.filter(c => !estaVencida(c.fecha_fin))
+  const vencidasActivas = listaActivas.filter(c => estaVencida(c.fecha_fin))
+
   // ── Sección 1: En curso ──────────────────────────────────────────────────────
-  // REGLA: campana.estado='activa' AND (tiene participación OR tiene misiones)
-  const misCampanas = listaActivas
+  // REGLA: campana vigente AND (tiene participación OR tiene misiones)
+  const misCampanas = vigentes
     .filter(c => {
       const estado = participacionMap.get(c.id)
       // abandonada → puede volver a unirse → va a disponibles, no a en_curso
@@ -277,14 +292,18 @@ export default async function CampanasPage() {
 
   // ── Sección 2: Disponibles ────────────────────────────────────────────────────
   // REGLA: campana.estado='activa' AND sin participación ni misiones AND cumple zona/nivel
-  const disponibles = listaActivas.filter(c =>
+  const disponibles = vigentes.filter(c =>
     !misCampanasIds.has(c.id)
     && tieneAcceso(c)
   )
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
-  // REGLA: campana.estado IN ('cerrada','suspendida','pausada') AND (tiene participación OR misiones)
-  const activaIds = new Set(listaActivas.map(c => c.id))
+  // REGLA: (estado IN ('cerrada','suspendida','pausada') OR fecha_fin pasada)
+  //        AND (tiene participación OR misiones)
+  //
+  // `activaIds` cuenta solo las VIGENTES: una vencida tiene que poder entrar acá
+  // aunque su estado siga siendo 'activa'.
+  const activaIds = new Set(vigentes.map(c => c.id))
   // abandonada sin misiones → no mostrar en finalizadas
   const idsParaFinalizadas = new Set([
     ...misionCampanaIds,
@@ -295,8 +314,8 @@ export default async function CampanasPage() {
   const todasMisIds = idsParaFinalizadas
   const finalizadasPotenciales = [...todasMisIds].filter(id => !activaIds.has(id))
 
-  // Sección "Campañas finalizadas": solo las que vencieron en los últimos 90 días.
-  // Las más antiguas se ocultan para no saturar la lista.
+  // Sección "Campañas finalizadas": las CERRADAS solo si vencieron en los
+  // últimos 90 días. Las más antiguas se ocultan para no saturar la lista.
   // Nota: fecha_fin es la fecha planificada de vencimiento, no cuándo se cerró
   // efectivamente la campaña. Si una campaña se cierra antes o después de fecha_fin,
   // puede aparecer en la sección incorrecta o desaparecer antes de tiempo.
@@ -317,6 +336,26 @@ export default async function CampanasPage() {
       // Sin fecha_fin: no hay cómo determinar cuándo cerró → mostrar siempre
       !c.fecha_fin || ahora - new Date(c.fecha_fin).getTime() <= NOVENTA_DIAS_MS
     )
+  }
+
+  // Las vencidas que el gondolero trabajó se suman acá, y SIN la ventana de 90
+  // días. No es un descuido: la ventana esconde campañas que alguien ya cerró y
+  // que por lo tanto el gondolero vio terminar. Una vencida sigue diciendo
+  // 'activa' —nadie la cerró nunca— así que nunca apareció en esta sección, y
+  // aplicarle la ventana la haría desaparecer de la pantalla en el mismo deploy
+  // que la sacó de "Disponibles". La campaña de prod venció hace 140 días: con
+  // ventana no iría "abajo de todo", se esfumaría.
+  //
+  // Se filtran por las que tienen participación o misiones, igual que el resto
+  // de la sección: una vencida que el gondolero nunca tocó no le interesa.
+  const vencidasPropias = vencidasActivas.filter(c => idsParaFinalizadas.has(c.id))
+  if (vencidasPropias.length > 0) {
+    finalizadas = [...finalizadas, ...vencidasPropias].sort((a, b) => {
+      if (!a.fecha_fin && !b.fecha_fin) return 0
+      if (!a.fecha_fin) return 1
+      if (!b.fecha_fin) return -1
+      return new Date(b.fecha_fin).getTime() - new Date(a.fecha_fin).getTime()
+    })
   }
 
   // Progreso por campaña: contar misiones directamente

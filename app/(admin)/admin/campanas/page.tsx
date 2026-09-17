@@ -1,12 +1,11 @@
 import Link from 'next/link'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { Camera, DollarSign } from 'lucide-react'
 import {
   labelEstadoCampana,
   colorEstadoCampana,
-  labelTipoCampana,
-  diasRestantes,
-} from '@/lib/utils'
+  labelTipoCampana,} from '@/lib/utils'
 import type { TipoCampana, EstadoCampana, FinanciadaPor } from '@/types'
 import { CampanaAccionesAdmin } from './campana-acciones'
 import { SeccionColapsable } from '@/components/campanas/seccion-colapsable'
@@ -68,7 +67,7 @@ function CampanaTable({ campanas }: { campanas: CampanaAdmin[] }) {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {campanas.map(c => {
-              const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+              const vig = etiquetaVigencia(c.fecha_fin, { corto: true })
               const progreso = c.minimo_comercios
                 ? Math.round((c.comercios_relevados / c.minimo_comercios) * 100)
                 : null
@@ -113,8 +112,8 @@ function CampanaTable({ campanas }: { campanas: CampanaAdmin[] }) {
                     {progreso !== null ? `${c.comercios_relevados}/${c.minimo_comercios} (${progreso}%)` : '—'}
                   </td>
                   <td className="px-4 py-3 text-xs">
-                    {dias !== null
-                      ? <span className={dias <= 3 ? 'text-red-500 font-medium' : 'text-gray-500'}>{dias}d</span>
+                    {vig !== null
+                      ? <span className={vig.vencida ? 'text-gray-400 font-medium' : vig.dias <= 3 ? 'text-red-500 font-medium' : 'text-gray-500'}>{vig.texto}</span>
                       : <span className="text-gray-400">—</span>
                     }
                   </td>

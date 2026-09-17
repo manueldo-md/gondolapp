@@ -3,7 +3,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { PackageX, Store, Megaphone, UserX } from 'lucide-react'
-import { diasRestantes, calcularPorcentaje, tiempoRelativo } from '@/lib/utils'
+import { calcularPorcentaje, tiempoRelativo } from '@/lib/utils'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
 import { IgnorarAlertaBoton } from './ignorar-alerta-boton'
 import { AlertasEnPausa } from './alertas-en-pausa'
@@ -342,15 +343,15 @@ export default async function AlertasPage() {
         ) : (
           campanasRiesgo.map(c => {
             const progreso = calcularPorcentaje(c.comercios_relevados ?? 0, c.minimo_comercios ?? 0)
-            const dias = c.fecha_fin ? diasRestantes(c.fecha_fin) : null
+            const vig = etiquetaVigencia(c.fecha_fin, { corto: true })
             return (
               <div key={c.id} className="px-4 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-gray-900 truncate mr-3">{c.nombre}</p>
                   <div className="flex items-center gap-2 shrink-0">
-                    {dias !== null && (
-                      <span className="text-xs font-semibold text-red-500">
-                        {dias === 0 ? 'Último día' : `${dias}d`}
+                    {vig !== null && (
+                      <span className={`text-xs font-semibold ${vig.vencida ? 'text-gray-400' : 'text-red-500'}`}>
+                        {vig.texto}
                       </span>
                     )}
                     <Link

@@ -15,6 +15,7 @@ import { registrarChecksGPSInterno } from './actions-checks'
 import { resolverMisionDirecta } from '@/lib/misiones'
 import { sincronizarComerciosRelevados } from '@/lib/comercios-relevados'
 import { puedeRegistrarMision } from '@/lib/campana-vigencia'
+import type { CodigoRechazoMision } from '@/lib/rechazo-mision'
 import { calcularDistanciaMetros } from '@/lib/utils'
 
 // Los radios viven en lib/gps-radios.ts: el de bloqueo lo usan también el paso
@@ -140,10 +141,22 @@ export interface RegistrarMisionParams {
  * marca rechazada o se deja pendiente para reintentar. Cambiar uno sin el otro
  * rompe la cola: si deja de lanzar y el llamador sigue esperando la excepción,
  * toma el rechazo como éxito y borra la misión de IDB.
+ *
+ * ── EL CÓDIGO, ADEMÁS DEL MOTIVO (18/9/2026) ────────────────────────────────
+ * `motivo` es para que el gondolero LEA. `codigo` es para que el cliente DECIDA
+ * —hoy, si ofrecer "Reintentar" y si la misión vence a los 7 días.
+ *
+ * Están separados porque el texto se va a seguir editando y el código no. Con
+ * solo el texto, la cola tendría que matchearlo para clasificar el rechazo, y
+ * la primera vez que alguien mejore un mensaje el botón de Reintentar reaparece
+ * donde no debe sin que nada falle visiblemente. Ver lib/rechazo-mision.ts.
+ *
+ * **Agregar un `return { ok: false }` nuevo obliga a elegir un código**: el tipo
+ * no compila sin él, y `rechazoEsDefinitivo` tiene un case por cada uno.
  */
 export type ResultadoMision =
   | { ok: true;  misionId: string; puntos: number }
-  | { ok: false; motivo: string }
+  | { ok: false; codigo: CodigoRechazoMision; motivo: string }
 
 export async function registrarMision(params: RegistrarMisionParams): Promise<ResultadoMision> {
   const supabase = await createClient()
@@ -181,10 +194,10 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
   // `!campana` es que la campaña realmente no está. Terminal: reintentar no la
   // va a hacer aparecer.
   if (!campana) {
-    return { ok: false, motivo: 'Esta campaña ya no existe. Elegí otra de la lista de campañas disponibles.' }
+    return { ok: false, codigo: 'campana_inexistente', motivo: 'Esta campaña ya no existe. Elegí otra de la lista de campañas disponibles.' }
   }
   if (campana.estado !== 'activa') {
-    return { ok: false, motivo: 'Esta campaña ya no está activa y no acepta misiones nuevas.' }
+    return { ok: false, codigo: 'campana_no_activa', motivo: 'Esta campaña ya no está activa y no acepta misiones nuevas.' }
   }
 
   // ── Gate de vencimiento ─────────────────────────────────────────────────────
@@ -208,12 +221,17 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
       desdeCola: params.desdeCola ?? false,
       motivo: vigencia.motivo,
     })
-    return {
-      ok: false,
-      motivo: vigencia.motivo === 'vencida'
-        ? `Esta campaña terminó el ${campana.fecha_fin} y ya no acepta misiones. Fijate en las campañas disponibles si hay otra activa.`
-        : 'Esta misión quedó demasiado tiempo sin enviarse y la campaña ya terminó. No se puede registrar.',
-    }
+    return vigencia.motivo === 'vencida'
+      ? {
+          ok: false,
+          codigo: 'campana_vencida',
+          motivo: `Esta campaña terminó el ${campana.fecha_fin} y ya no acepta misiones. Fijate en las campañas disponibles si hay otra activa.`,
+        }
+      : {
+          ok: false,
+          codigo: 'captura_muy_vieja',
+          motivo: 'Esta misión quedó demasiado tiempo sin enviarse y la campaña ya terminó. No se puede registrar.',
+        }
   }
 
   // Admin client para tablas con RLS restringida a service_role.
@@ -283,6 +301,7 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
       if (esComercioNuevo && comerciosPropios.size >= campana.max_comercios_por_gondolero) {
         return {
           ok: false,
+          codigo: 'cupo_propio_lleno',
           motivo:
             `Ya tenés ${comerciosPropios.size} comercios en esta campaña, que es el máximo. ` +
             `Podés seguir trabajando en los que ya tomaste.`,
@@ -327,6 +346,7 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
     if (!params.desdeCola) {
       return {
         ok: false,
+        codigo: 'fuera_de_radio',
         motivo:
           `Estás a ${(distanciaMetros / 1000).toFixed(1)} km del comercio. ` +
           'Para registrar la misión tenés que estar en el comercio. ' +
@@ -370,6 +390,7 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
     if (misionError.code === '23505' && detalle.includes('misiones_campana_comercio_uniq')) {
       return {
         ok: false,
+        codigo: 'comercio_duplicado',
         motivo:
           'Otro gondolero relevó este comercio antes que vos. Pasa cuando dos personas ' +
           'trabajan sin señal al mismo tiempo. Esta misión no se puede registrar. ' +

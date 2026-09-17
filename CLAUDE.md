@@ -3141,6 +3141,118 @@ campañas de nivel Activo regalados por el seed. Y como no hay ninguna campaña 
 requisito de nivel ni se pidió nunca una transferencia, **los cuatro gates están
 inertes**: el cambio no le sacó acceso a nadie en la práctica.
 
+### Una campaña vencida ya no se ofrece ni deja entrar (18/9/2026)
+
+`campanas.estado` es ADMINISTRATIVO y **nada lo cierra por fecha**. Una campaña
+cuya `fecha_fin` pasó sigue diciendo 'activa' para siempre, y hasta el 18/9/2026
+eso la dejaba en tierra de nadie: la lista del gondolero la mostraba en "En
+curso" o en "Disponibles" (filtran por `estado=activa`) y "Finalizadas" no la
+tomaba (filtra por `estado IN (cerrada, suspendida, pausada)`). El gondolero la
+abría, hacía la misión entera y recién al enviar recibía *"esta campaña terminó
+el 2026-04-30 y ya no acepta misiones"*.
+
+`estaVencida` existía en `lib/campana-vigencia.ts` desde el 16/9 y **no la
+llamaba nadie**. La regla estaba escrita y sin cablear.
+
+El filtro por fecha ahora está en **tres capas**:
+
+1. **Listado** — `listaActivas` se parte en `vigentes` / `vencidasActivas`. "En
+   curso" y "Disponibles" salen de `vigentes`; las vencidas que el gondolero
+   trabajó bajan a "Finalizadas".
+2. **Conteo** — `totalActivas` sale de esos dos grupos, así que ya no cuenta las
+   vencidas.
+3. **Captura** — `captura/page.tsx` corta ANTES de montar el primer paso. Para
+   eso `fecha_fin` entró a `CAMPANA_CACHE_SELECT`: sin ella el dato no estaba en
+   el dispositivo. Los caches viejos no la tienen y ahí no se bloquea nada —
+   `estaVencida(undefined)` es false y el gate del servidor sigue estando.
+
+**La ventana de 90 días NO se aplica a las vencidas**, a propósito. Esa ventana
+esconde campañas que alguien cerró, o sea que el gondolero las vio terminar. Una
+vencida nunca apareció en "Finalizadas" porque nadie la cerró: aplicarle la
+ventana la haría desaparecer de la pantalla en el mismo deploy que la saca de
+"Disponibles". La de prod venció hace 140 días — con ventana no iría "abajo de
+todo", se esfumaría.
+
+### El texto de vigencia sale de un solo lugar
+
+`diasRestantes` tenía `Math.max(0, …)`, así que una fecha de hace cinco meses
+daba **0**, y las pantallas leen 0 como "hoy": "Último día", "Hoy", "vence en 0
+días", en rojo urgente. Eran **17 call sites en 6 paneles** y la condición
+`dias === 0 ? 'Último día' : …` estaba copiada en cinco archivos, ninguno de los
+cuales contemplaba una fecha pasada. El `marca/dashboard` tenía encima su propia
+cuarta copia calculando los días a mano.
+
+Ahora:
+
+- `diasHastaFin` devuelve **días con signo** y compara DÍAS CALENDARIO en hora
+  local. Antes `new Date('YYYY-MM-DD')` se parseaba como medianoche **UTC** y se
+  comparaba contra `new Date()` local: en Argentina eso corría el límite tres
+  horas y el último día empezaba a las 21:00 del anterior.
+- `etiquetaVigencia` devuelve `{ texto, vencida, dias }` y es lo que usan las
+  pantallas: *"Terminada hace 140 días"* / *"Último día"* / *"13 días"*, con
+  `corto: true` para los chips.
+- `diasRestantes` queda como alias numérico y su docstring manda a la etiqueta.
+
+### El rechazo de una misión viene con código, no solo con texto (18/9/2026)
+
+`ResultadoMision` devolvía `{ ok: false, motivo: string }` y nada más. La cola
+offline, que decide si ofrecer "Reintentar", no tenía con qué: mostraba los dos
+botones siempre. Con una campaña vencida, Reintentar vuelve a subir todas las
+fotos para recibir el mismo rechazo — un bucle con el trabajo del gondolero
+adentro, sobre datos móviles.
+
+Ahora `{ ok: false, codigo: CodigoRechazoMision, motivo: string }`:
+
+- **`motivo` es para que el gondolero LEA.** Se va a seguir editando.
+- **`codigo` es para que el cliente DECIDA.** No cambia.
+
+No se clasificó matcheando el texto, y la razón es el modo de falla típico de
+este proyecto: **la regla quedaría escrita dos veces y una se rompería en
+silencio**. Alguien mejora un mensaje y el botón de Reintentar reaparece donde no
+debe, sin que nada falle visiblemente ni ningún test se ponga rojo; se descubre
+tres semanas después. Agregar un `return { ok: false }` nuevo ahora **no compila
+sin elegir un código**.
+
+`lib/rechazo-mision.ts` tiene los siete códigos y `rechazoEsDefinitivo`. Los dos
+que NO son definitivos: `cupo_propio_lleno` (si descarta otra misión se libera un
+lugar) y `fuera_de_radio` (solo se rechaza en vivo; desde la cola entra marcada).
+
+**`rechazoEsDefinitivo(undefined)` es `false` a propósito.** Las entradas ya
+rechazadas en el IDB de alguien no tienen código, y ante la duda van los dos
+botones: esconder "Reintentar" por un campo ausente le sacaría la única salida a
+alguien cuyo rechazo sí era transitorio. Por eso tampoco se bumpeó
+`MisionPendienteIDB.version`.
+
+### El TTL de 7 días no se aplica a los rechazos definitivos
+
+El TTL existe para que la cola no crezca sola: protege del caso "una misión que
+se reintenta para siempre". Una misión con rechazo definitivo **no se reintenta
+nunca** —no hay botón que la mande— así que no hay nada de qué proteger, y
+borrarla tiene un costo real:
+
+> Si la única acción posible es descartar y la descartamos nosotros por él, le
+> sacamos el único registro de que trabajó y de por qué no le sirvió. Un día va a
+> mirar la lista y no va a estar.
+
+Esa entrada se queda hasta que el gondolero la descarte. Las reintentables sí
+vencen, que es donde el TTL hace su trabajo. Y como la única acción que queda
+borra el trabajo, la tarjeta ahora lo dice de frente en vez de ofrecer un tacho
+sin explicación.
+
+### Medido el 18/9/2026 — el problema no era una campaña
+
+```
+                                   PROD        DEV
+activas con fecha_fin vencida      1           1     (la misma, del seed, -140d)
+activas vigentes                   5           12
+próxima en vencer                  31/12       30/09 (en 13 días)
+```
+
+La de prod tiene **10 participaciones y 27 misiones**: para esos 10 gondoleros
+aparecía en "En curso", no solo en "Disponibles". Y como nada cierra por fecha,
+toda campaña que llegue a su `fecha_fin` se convierte en una de estas: el 1/1 en
+prod habrían sido 6.
+
 ### Pendiente de producto — el umbral de 50 misiones es inalcanzable
 
 `configuracion.nivel_fotos_casual_a_activo` vale **50** en las dos bases (no el 20

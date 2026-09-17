@@ -15,6 +15,7 @@ import {
 } from '@/lib/utils'
 import type { TipoCampana, NivelGondolero } from '@/types'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import {
   CAMPANA_CACHE_PREFIX,
   CAMPANA_CACHE_SELECT,
@@ -96,7 +97,7 @@ function CampanaCard({
   esCacheada?: boolean
 }) {
   const participando = participacionEstado === 'activa'
-  const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
+  const vig  = etiquetaVigencia(campana.fecha_fin)
   const esSeguimiento = campana.modalidad === 'seguimiento'
   const progreso = calcularPorcentaje(campana.comercios_relevados, campana.minimo_comercios ?? 0)
   const cantFotos = campana.bloques_foto.reduce(
@@ -219,11 +220,11 @@ function CampanaCard({
                 : 'Continua'}
             </span>
           </div>
-        ) : dias !== null ? (
+        ) : vig !== null ? (
           <div className="flex items-center gap-1.5">
             <Clock size={14} className="text-gray-400" />
-            <span className={`text-sm font-medium ${dias <= 3 ? 'text-red-500' : 'text-gray-500'}`}>
-              {dias === 0 ? 'Último día' : `${dias} días`}
+            <span className={`text-sm font-medium ${vig.vencida ? 'text-gray-400' : vig.dias <= 3 ? 'text-red-500' : 'text-gray-500'}`}>
+              {vig.texto}
             </span>
           </div>
         ) : null}

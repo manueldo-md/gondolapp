@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { getConfig } from '@/lib/config'
 import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
 import type { NivelGondolero } from '@/types'
@@ -12,9 +13,7 @@ import {
 import {
   labelEstadoCampana,
   colorEstadoCampana,
-  labelTipoCampana,
-  diasRestantes,
-  tiempoRelativo,
+  labelTipoCampana,  tiempoRelativo,
 } from '@/lib/utils'
 import type { TipoCampana, EstadoCampana, FinanciadaPor } from '@/types'
 import { CampanaAccionesAdmin } from '../../campana-acciones'
@@ -111,7 +110,7 @@ export default async function AdminCampanaDetallePage({
 
   const fp = (campana.financiada_por ?? 'gondolapp') as FinanciadaPor
   const badge = FINANCIADO_BADGE[fp] ?? FINANCIADO_BADGE.gondolapp
-  const dias = campana.fecha_fin ? diasRestantes(campana.fecha_fin) : null
+  const vig = etiquetaVigencia(campana.fecha_fin, { corto: true })
   const limiteComerciosAdmin = campana.tope_total_comercios ?? campana.minimo_comercios
   const progreso = limiteComerciosAdmin
     ? Math.round((campana.comercios_relevados / limiteComerciosAdmin) * 100)
@@ -271,8 +270,8 @@ export default async function AdminCampanaDetallePage({
             {campana.fecha_fin && (
               <div className="flex justify-between">
                 <dt className="text-gray-500 flex items-center gap-1"><Calendar size={13} /> Fin</dt>
-                <dd className={`font-medium ${dias !== null && dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
-                  {campana.fecha_fin}{dias !== null ? ` (${dias}d)` : ''}
+                <dd className={`font-medium ${vig && !vig.vencida && vig.dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
+                  {campana.fecha_fin}{vig ? ` (${vig.texto})` : ''}
                 </dd>
               </div>
             )}
