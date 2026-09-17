@@ -389,11 +389,19 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     })
   }
 
-  // `comercios_completados` lo recalcula el helper: comercios DISTINTOS con
-  // misión aprobada. Acá arriba se acaba de crear una misión en 'pendiente', así
-  // que lo más probable es que el número no se mueva todavía — y eso es
-  // correcto. Antes había un `+1` que sumaba al crear, o sea que contaba trabajo
-  // sin revisar. Ver lib/comercios-relevados.ts.
+  // El alta NO crea la misión, y eso ahora es a propósito.
+  //
+  // Hasta el 17/9/2026 este comentario decía "acá arriba se acaba de crear una
+  // misión en 'pendiente'". Era falso: no se creaba ninguna, en ningún lado. Por
+  // eso `min_comercios_para_cobrar` —que cuenta comercios distintos con misión
+  // APROBADA— no podía subir nunca y el gondolero no cobraba el alta jamás.
+  //
+  // La misión se crea al VALIDAR el comercio, en lib/validacion-comercio.ts. Un
+  // comercio sin validar puede ser un duplicado o no existir: crear la misión
+  // acá sería prometer un pago sobre trabajo que nadie miró.
+  //
+  // El recálculo se deja igual: es barato y deja el contador honesto si esta
+  // campaña ya tenía comercios validados del gondolero.
   await sincronizarComerciosCompletados(params.campanaId, user.id, admin)
 
   return {

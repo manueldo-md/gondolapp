@@ -1,23 +1,15 @@
-'use server'
-
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { redirect } from 'next/navigation'
-import { revalidatePath } from 'next/cache'
-
-async function getAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
-
-export async function toggleValidarComercio(comercioId: string, nuevoEstado: boolean) {
-  const admin = await getAdmin()
-  await admin.from('comercios').update({ validado: nuevoEstado }).eq('id', comercioId)
-  revalidatePath('/admin/comercios')
-}
+/*
+ * `toggleValidarComercio` vivía acá y se borró el 17/9/2026.
+ *
+ * Escribía SOLO `comercios.validado` y no tocaba `estado`. Como las colas de
+ * pendientes filtran por `estado` y las listas por `validado`, un comercio
+ * "validado" desde acá quedaba aprobado en una pantalla y pendiente en la otra
+ * —y sin cobrar, porque no acreditaba nada. En prod dejó cuatro comercios así.
+ *
+ * Peor que no tener el botón: el tablero mandaba justo a esa lista, así que era
+ * el camino que la app ofrecía para validar comercios y era el que no validaba.
+ *
+ * La única validación es ahora `/admin/comercios/pendientes`, sobre
+ * `lib/validacion-comercio.ts`.
+ */
+export {}

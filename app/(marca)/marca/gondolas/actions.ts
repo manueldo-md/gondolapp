@@ -9,6 +9,7 @@ import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
 import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
+import { fotoPagaAlAprobar } from '@/lib/validacion-comercio'
 
 function adminClient() {
   return createSupabaseClient(
@@ -29,7 +30,7 @@ export async function aprobarFotoMarca(fotoId: string) {
   // 1. Obtener la foto con datos de la campaña en una sola query
   const { data: foto, error: fotoError } = await admin
     .from('fotos')
-    .select('*, campanas(puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar), comercios(nombre)')
+    .select('*, campanas(tipo, puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar), comercios(nombre)')
     .eq('id', fotoId)
     .single()
 
@@ -62,7 +63,15 @@ export async function aprobarFotoMarca(fotoId: string) {
   //    Fotos con misión: actualizarEstadoMision acredita cuando se alcanza
   //    el mínimo de misiones para cobrar.
   //    El trigger on_movimiento_puntos actualiza profiles.puntos_disponibles automáticamente.
-  if (!misionId && puntosEfectivos > 0) {
+  // La fachada de un alta de comercio NO se paga acá.
+  //
+  // Esta rama acredita cualquier foto sin mision_id, y la fachada de una
+  // campaña 'comercios' no tiene misión hasta que alguien VALIDA el comercio:
+  // caía justo acá y cobraba fuera del sistema de bounty, sin mínimo, sin
+  // retención y sin quedar registrada en ninguna misión. En prod pasó el
+  // 17/9/2026 — 200 puntos acreditados 31 segundos después del alta, con el
+  // comercio todavía sin validar. Ahora la paga validarComercioYCrearMision.
+  if (fotoPagaAlAprobar({ tipoCampana: campana?.tipo, misionId }) && puntosEfectivos > 0) {
     await admin.from('movimientos_puntos').insert({
       gondolero_id: foto.gondolero_id,
       tipo:         'credito',

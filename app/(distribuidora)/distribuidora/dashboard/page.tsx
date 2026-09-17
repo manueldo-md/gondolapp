@@ -453,7 +453,7 @@ export default async function DashboardPage() {
               <AlertaRow
                 emoji="🏪"
                 texto={`${pendientesValidacion} comercio${pendientesValidacion > 1 ? 's' : ''} pendiente${pendientesValidacion > 1 ? 's' : ''} de validación`}
-                href="/distribuidora/comercios"
+                href="/distribuidora/comercios/pendientes"
               />
             )}
           </div>

@@ -398,7 +398,7 @@ export default async function AdminTableroPage() {
               <AlertaRow
                 emoji="🏪"
                 texto={`${comerciosPendRec.length} comercio${comerciosPendRec.length > 1 ? 's' : ''} pendiente${comerciosPendRec.length > 1 ? 's' : ''} de validación`}
-                href="/admin/comercios"
+                href="/admin/comercios/pendientes"
               />
             )}
 
@@ -492,7 +492,7 @@ export default async function AdminTableroPage() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <SeccionHeader titulo="Comercios a validar" inline />
-              <Link href="/admin/comercios" className="text-xs text-gondo-amber-400 hover:underline flex items-center gap-0.5">
+              <Link href="/admin/comercios/pendientes" className="text-xs text-gondo-amber-400 hover:underline flex items-center gap-0.5">
                 Ver todos <ChevronRight size={11} />
               </Link>
             </div>
@@ -503,7 +503,7 @@ export default async function AdminTableroPage() {
             ) : (
               <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
                 {comerciosPendRec.map((c: { id: string; nombre: string; tipo: string | null; created_at: string }) => (
-                  <Link key={c.id} href="/admin/comercios"
+                  <Link key={c.id} href="/admin/comercios/pendientes"
                     className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors">
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-gray-800 truncate">{c.nombre}</p>

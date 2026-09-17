@@ -6,7 +6,6 @@ import { Store, MapPin, CheckCircle2, Clock, AlertCircle, Camera } from 'lucide-
 import { tiempoRelativo } from '@/lib/utils'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 import type { TipoComercio } from '@/types'
-import { ValidarBtn } from './validar-btn'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -249,7 +248,14 @@ export default async function ComerciosPage() {
                           <AlertCircle size={12} />
                           <span className="text-[11px] font-medium">Sin validar</span>
                         </div>
-                        <ValidarBtn comercioId={c.id} />
+                        {/* La validación se hace en la cola de pendientes y en
+                            ningún otro lado. El botón que había acá escribía
+                            media verdad: marcaba `validado` sin activar el
+                            comercio ni pagarle el alta al gondolero. */}
+                        <Link href="/distribuidora/comercios/pendientes"
+                          className="text-[11px] font-semibold text-gondo-amber-400 hover:underline">
+                          Revisar
+                        </Link>
                       </div>
                     ) : (
                       <div className="flex items-center justify-center gap-1 text-amber-500">

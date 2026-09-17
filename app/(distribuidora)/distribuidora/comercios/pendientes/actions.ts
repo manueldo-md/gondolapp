@@ -4,6 +4,17 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import {
+  validarComercioYCrearMision,
+  rechazarComercioConMotivo,
+} from '@/lib/validacion-comercio'
+
+/**
+ * Validación de comercios — panel de distribuidora.
+ *
+ * Misma regla que el panel de admin (`lib/validacion-comercio.ts`); lo único
+ * propio es el permiso: la distri solo toca comercios de SUS campañas.
+ */
 
 function adminClient() {
   return createSupabaseClient(
@@ -26,95 +37,63 @@ async function getDistriId(): Promise<string | null> {
   return profile?.distri_id ?? null
 }
 
-export async function aprobarComercioDistri(id: string) {
-  const distriId = await getDistriId()
-  if (!distriId) redirect('/auth')
-
+/**
+ * El comercio sin `campana_id` se deja pasar: lo cargó un gondolero desde la
+ * captura normal y no pertenece a ninguna campaña de altas.
+ */
+async function puedeTocar(comercioId: string, distriId: string): Promise<boolean> {
   const admin = adminClient()
-
-  // Verificar que la campaña de este comercio pertenece a la distri
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: comercio } = await (admin as any)
     .from('comercios')
     .select('campana_id')
-    .eq('id', id)
+    .eq('id', comercioId)
     .maybeSingle() as { data: { campana_id: string | null } | null }
 
-  if (comercio?.campana_id) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: campana } = await (admin as any)
-      .from('campanas')
-      .select('distri_id')
-      .eq('id', comercio.campana_id)
-      .maybeSingle() as { data: { distri_id: string | null } | null }
-    if (campana?.distri_id !== distriId) {
-      return { error: 'No tenés permiso para aprobar este comercio.' }
-    }
-  }
+  if (!comercio?.campana_id) return true
 
-  const { error } = await admin
-    .from('comercios')
-    .update({ estado: 'activo', validado: true })
-    .eq('id', id)
-
-  if (error) return { error: 'No se pudo aprobar el comercio: ' + error.message }
-
-  // Acreditar bounty retenido
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: fotos } = await (admin as any)
-    .from('fotos')
-    .select('id, gondolero_id, campana_id')
-    .eq('comercio_id', id)
-    .eq('bounty_estado', 'retenido')
+  const { data: campana } = await (admin as any)
+    .from('campanas')
+    .select('distri_id')
+    .eq('id', comercio.campana_id)
+    .maybeSingle() as { data: { distri_id: string | null } | null }
 
-  if (fotos && fotos.length > 0) {
-    for (const foto of fotos as { id: string; gondolero_id: string; campana_id: string }[]) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any).from('fotos').update({ bounty_estado: 'acreditado', estado: 'aprobada' }).eq('id', foto.id)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: campana } = await (admin as any)
-        .from('campanas').select('puntos_por_foto').eq('id', foto.campana_id).maybeSingle() as { data: { puntos_por_foto: number } | null }
-      const puntos = campana?.puntos_por_foto ?? 0
-      if (puntos > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any).from('movimientos_puntos').insert({
-          gondolero_id: foto.gondolero_id, tipo: 'credito', monto: puntos,
-          concepto: 'Comercio nuevo validado', campana_id: foto.campana_id, foto_id: foto.id,
-        })
-        // El saldo lo acredita el trigger on_movimiento_puntos con el insert de
-        // arriba. Hasta el 16/9/2026 acá se leía el perfil DESPUÉS del insert y
-        // se sumaban los puntos otra vez sobre un valor que YA los incluía:
-        // doble acreditación en cada comercio validado por la distribuidora.
-      }
-    }
-  }
-
-  revalidatePath('/distribuidora/comercios/pendientes')
-  revalidatePath('/distribuidora/comercios')
-  return { ok: true }
+  return campana?.distri_id === distriId
 }
 
-export async function rechazarComercioDistri(id: string) {
+function revalidar() {
+  revalidatePath('/distribuidora/comercios/pendientes')
+  revalidatePath('/distribuidora/comercios')
+  revalidatePath('/distribuidora/dashboard')
+}
+
+export async function aprobarComercioDistri(id: string) {
   const distriId = await getDistriId()
   if (!distriId) redirect('/auth')
 
-  const admin = adminClient()
+  if (!(await puedeTocar(id, distriId))) {
+    return { error: 'No tenés permiso para aprobar este comercio.' }
+  }
 
-  const { error } = await admin
-    .from('comercios')
-    .update({ estado: 'rechazado', validado: false })
-    .eq('id', id)
+  const resultado = await validarComercioYCrearMision(id, adminClient())
+  revalidar()
 
-  if (error) return { error: 'No se pudo rechazar el comercio: ' + error.message }
+  if (!resultado.ok) return { error: resultado.error }
+  return { ok: true, puntos: resultado.puntos ?? 0 }
+}
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin as any)
-    .from('fotos')
-    .update({ bounty_estado: 'anulado', estado: 'rechazada' })
-    .eq('comercio_id', id)
-    .eq('bounty_estado', 'retenido')
+export async function rechazarComercioDistri(id: string, motivo?: string) {
+  const distriId = await getDistriId()
+  if (!distriId) redirect('/auth')
 
-  revalidatePath('/distribuidora/comercios/pendientes')
-  revalidatePath('/distribuidora/comercios')
+  if (!(await puedeTocar(id, distriId))) {
+    return { error: 'No tenés permiso para rechazar este comercio.' }
+  }
+
+  const resultado = await rechazarComercioConMotivo(id, motivo, adminClient())
+  revalidar()
+
+  if (!resultado.ok) return { error: resultado.error }
   return { ok: true }
 }

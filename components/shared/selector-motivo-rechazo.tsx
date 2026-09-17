@@ -31,9 +31,16 @@ const OTRO = 'Otro'
 export function SelectorMotivoRechazo({
   onChange,
   disabled,
+  motivos = MOTIVOS_RECHAZO,
+  label = 'Motivo del rechazo',
+  placeholder = 'Contá qué pasó, para que sepa qué corregir',
 }: {
   onChange: (motivo: string | null) => void
   disabled?: boolean
+  /** Lista de motivos. El default es la de fotos; el alta de comercios pasa la suya. */
+  motivos?: readonly string[]
+  label?: string
+  placeholder?: string
 }) {
   const [seleccionado, setSeleccionado] = useState<string | null>(null)
   const [textoLibre, setTextoLibre] = useState('')
@@ -50,10 +57,10 @@ export function SelectorMotivoRechazo({
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-medium text-gray-500">Motivo del rechazo</p>
+      <p className="text-[11px] font-medium text-gray-500">{label}</p>
 
       <div className="flex flex-wrap gap-1.5">
-        {[...MOTIVOS_RECHAZO, OTRO].map(m => {
+        {[...motivos, OTRO].map(m => {
           const activo = seleccionado === m
           return (
             <button
@@ -77,7 +84,7 @@ export function SelectorMotivoRechazo({
         <textarea
           value={textoLibre}
           onChange={e => escribir(e.target.value)}
-          placeholder="Contá qué pasó, para que sepa qué corregir"
+          placeholder={placeholder}
           rows={2}
           autoFocus
           disabled={disabled}

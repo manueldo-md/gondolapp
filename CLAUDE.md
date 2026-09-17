@@ -3204,3 +3204,84 @@ existiendo el bug de la misión— el gondolero igual no cobra lo que correspond
 Es el mismo problema de fondo que las dos columnas: **"validar el comercio" está
 repartido en cuatro botones de cuatro pantallas y ninguno dice qué mitad hace.**
 Cualquier arreglo que toque solo una de las dos columnas va a reproducir esto.
+
+### La misión del alta se crea al VALIDAR el comercio (17/9/2026)
+
+Cierra los cuatro problemas de la sección anterior. La regla vive entera en
+**`lib/validacion-comercio.ts`** y la usan los dos paneles de pendientes —admin y
+distribuidora— que ahora son las **únicas** dos formas de validar un comercio.
+
+**Qué pasa al aprobar un alta:**
+
+1. `comercios` → `estado='activo'` **y** `validado=true`. Siempre las dos.
+2. Se crea la misión: `estado='pendiente'`, `bounty_estado='retenido'`,
+   `puntos_total` = `puntos_por_mision ?? puntos_por_foto` (el fallback que las
+   dos actions no tenían: la campaña de prod tiene `puntos_por_foto=0` y
+   `puntos_por_mision=200`, así que pagaban cero).
+3. La foto de fachada se engancha a la misión (`mision_id`) y su
+   `bounty_estado` pasa a `'acreditado'`. Deja de ser una unidad de pago suelta
+   — si quedaba en `'retenido'`, el barrido de `cerrarCampana` la pagaba otra vez.
+4. `aprobarMisionCore` — **el mismo camino que toda otra misión**. Por eso el
+   bounty se libera con la misma regla y el mínimo cuenta igual. Una segunda
+   contabilidad para esta campaña habría sido otra regla duplicada.
+5. Notificación `comercio_validado` al gondolero.
+
+**Por qué al validar y no al dar de alta:** un comercio sin validar puede ser un
+duplicado, estar mal cargado o no existir. Crear la misión en el alta sería
+prometer un pago sobre trabajo que todavía nadie miró.
+
+**Idempotencia:** si el comercio ya tiene una misión viva en esa campaña no se
+crea otra, y si ya está `'aprobada'` la función corta sin pagar. Dos clicks, o el
+admin y la distri aprobando lo mismo, no pagan dos veces.
+
+**La foto de fachada ya no se paga sola.** `fotoPagaAlAprobar()` corta la rama
+legacy de `aprobarFoto` —la que acredita cualquier foto sin `mision_id`— cuando
+la campaña es `tipo='comercios'`. Está aplicada en los **tres** paneles de
+revisión (admin, distribuidora, marca). Sin esto la fachada cobraba al instante
+salteándose el mínimo, que es lo que pasó en prod el 17/9.
+
+### El rechazo de un alta avisa, y no se puede rechazar sin motivo
+
+`comercios.motivo_rechazo` es nueva (migración `20260917200000`), y el motivo es
+**obligatorio**: el botón de confirmar queda deshabilitado hasta que haya uno,
+igual que en el rechazo de foto.
+
+Los motivos son **tipificados** (`lib/motivos-rechazo-comercio.ts`) y no solo
+texto libre, porque cada uno manda al gondolero a hacer algo distinto. El molde
+de la foto no servía tal cual: una foto rechazada se rehace y el mensaje se lo
+dice; **un alta duplicada no se rehace**, y mandarlo a repetirla es mandarlo a
+que se la rechacen de nuevo. Por eso cada motivo lleva pegado su "qué hacer
+ahora" — con "Ya estaba cargado" el gondolero no perdió la campaña: puede hacer
+la misión sobre el comercio que ya existe, y eso es lo único que necesita saber.
+
+El rechazo también deja la misión en `'descartada'` + `'anulado'` si ya existía.
+Una misión `'pendiente'` que nadie va a revisar nunca es el patrón de las
+misiones trabadas.
+
+**Y el aviso de aprobación salió en el mismo tramo.** `comercio_validado` estaba
+en el CHECK desde abril y **nadie lo emitía**: el gondolero daba de alta y no se
+enteraba de nada. Los dos van juntos a propósito — si solo se avisa el rechazo,
+el silencio pasa a significar "todavía no te aprobaron" en vez de "salió bien".
+
+### Las dos acciones muertas de validar comercio — borradas (17/9/2026)
+
+`toggleValidarComercio` (`/admin/comercios`) y `validarComercio`
+(`/distribuidora/comercios`) escribían **solo `validado`**: dejaban el comercio
+aprobado en una pantalla y pendiente en la otra, sin activar nada y sin pagar.
+Se borraron junto con sus dos botones; los archivos quedan con un comentario
+explicando por qué.
+
+**Lo que las hacía peligrosas no era existir, era ser el camino por defecto.** El
+tablero de admin contaba los pendientes con `.eq('validado', false)` y linkeaba a
+`/admin/comercios` en los tres lugares donde hablaba de validar. Nada linkeaba a
+la cola de verdad. Los tres links —y el equivalente del dashboard de
+distribuidora— ahora van a `/…/comercios/pendientes`. El KPI "Comercios
+validados" sigue apuntando a la lista, que es lo que corresponde: es un número,
+no una acción.
+
+Las listas conservan el estado "Sin validar" pero con un link **"Revisar"** en
+lugar de un botón: mirar y decidir son pantallas distintas.
+
+`comercios.validado` **sigue teniendo seis lecturas** (las dos listas, los dos
+tableros, el detalle de la distri y el badge de la captura), así que no es un
+`DROP` — se va con el tramo de columnas muertas, moviendo esas seis a `estado`.

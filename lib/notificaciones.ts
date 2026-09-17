@@ -23,7 +23,7 @@ export type TipoNotificacion =
   | 'admin_campana_pendiente' | 'admin_comercio_pendiente' | 'admin_error_reportado'
   | 'campana_cerrada_por_tope'
   // Corrección de ubicación de comercios
-  | 'comercio_ubicacion_reportada'
+  | 'comercio_ubicacion_reportada' | 'comercio_rechazado'
   // Cambios solicitados
   | 'cambios_solicitados'
 

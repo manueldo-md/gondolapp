@@ -1,8 +1,8 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Store, MapPin, CheckCircle2, AlertCircle, Camera } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
+import Link from 'next/link'
 import type { TipoComercio } from '@/types'
-import { ValidarToggleBtn } from './validar-toggle-btn'
 
 function adminClient() {
   return createAdminClient(
@@ -183,7 +183,15 @@ export default async function ComerciosAdminPage({
                           <span className="text-xs font-medium">Sin validar</span>
                         </div>
                       )}
-                      <ValidarToggleBtn comercioId={c.id} validado={c.validado} />
+                      {/* La validación se hace en /admin/comercios/pendientes y en ningún otro
+                          lado. El toggle que había acá escribía `validado` sin activar el
+                          comercio ni pagarle el alta al gondolero. */}
+                      {!c.validado && (
+                        <Link href="/admin/comercios/pendientes"
+                          className="text-xs font-semibold text-gondo-amber-400 hover:underline">
+                          Revisar
+                        </Link>
+                      )}
                     </div>
                   </td>
                 </tr>

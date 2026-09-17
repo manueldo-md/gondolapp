@@ -4,6 +4,20 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import {
+  validarComercioYCrearMision,
+  rechazarComercioConMotivo,
+} from '@/lib/validacion-comercio'
+
+/**
+ * Validación de comercios — panel de admin.
+ *
+ * La lógica vive entera en `lib/validacion-comercio.ts`: acá solo está el
+ * permiso y el revalidate. Antes estaba duplicada entre este archivo y el de la
+ * distribuidora, y las dos copias ya se habían separado — la de acá leía
+ * `puntos_otorgados` de la foto y no lo usaba, las dos leían `puntos_por_foto`
+ * sin el fallback a `puntos_por_mision`, y ninguna creaba la misión del alta.
+ */
 
 function adminClient() {
   return createSupabaseClient(
@@ -13,94 +27,34 @@ function adminClient() {
   )
 }
 
-export async function aprobarComercio(id: string) {
+async function requerirSesion() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
-
-  const admin = adminClient()
-
-  // Marcar comercio como activo y validado
-  const { error } = await admin
-    .from('comercios')
-    .update({ estado: 'activo', validado: true })
-    .eq('id', id)
-
-  if (error) return { error: 'No se pudo aprobar el comercio: ' + error.message }
-
-  // Acreditar puntos retenidos: buscar fotos con bounty_estado='retenido' de este comercio
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: fotos } = await (admin as any)
-    .from('fotos')
-    .select('id, gondolero_id, campana_id, puntos_otorgados')
-    .eq('comercio_id', id)
-    .eq('bounty_estado', 'retenido')
-
-  if (fotos && fotos.length > 0) {
-    for (const foto of fotos as { id: string; gondolero_id: string; campana_id: string; puntos_otorgados: number }[]) {
-      // Actualizar estado del bounty
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any)
-        .from('fotos')
-        .update({ bounty_estado: 'acreditado', estado: 'aprobada' })
-        .eq('id', foto.id)
-
-      // Acreditar puntos si corresponde (usar puntos de la campaña)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: campana } = await (admin as any)
-        .from('campanas')
-        .select('puntos_por_foto')
-        .eq('id', foto.campana_id)
-        .maybeSingle() as { data: { puntos_por_foto: number } | null }
-
-      const puntos = campana?.puntos_por_foto ?? 0
-      if (puntos > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any).from('movimientos_puntos').insert({
-          gondolero_id: foto.gondolero_id,
-          tipo:         'credito',
-          monto:        puntos,
-          concepto:     'Comercio nuevo validado',
-          campana_id:   foto.campana_id,
-          foto_id:      foto.id,
-        })
-
-        // El saldo lo acredita el trigger on_movimiento_puntos con el insert de
-        // arriba. Hasta el 16/9/2026 acá se leía el perfil DESPUÉS del insert y
-        // se sumaban los puntos otra vez sobre un valor que YA los incluía:
-        // doble acreditación en cada comercio validado desde el panel.
-      }
-    }
-  }
-
-  revalidatePath('/admin/comercios/pendientes')
-  revalidatePath('/admin/comercios')
-  return { ok: true }
 }
 
-export async function rechazarComercio(id: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+export async function aprobarComercio(id: string) {
+  await requerirSesion()
 
-  const admin = adminClient()
-
-  const { error } = await admin
-    .from('comercios')
-    .update({ estado: 'rechazado', validado: false })
-    .eq('id', id)
-
-  if (error) return { error: 'No se pudo rechazar el comercio: ' + error.message }
-
-  // Anular bounty en fotos asociadas
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin as any)
-    .from('fotos')
-    .update({ bounty_estado: 'anulado', estado: 'rechazada' })
-    .eq('comercio_id', id)
-    .eq('bounty_estado', 'retenido')
+  const resultado = await validarComercioYCrearMision(id, adminClient())
 
   revalidatePath('/admin/comercios/pendientes')
   revalidatePath('/admin/comercios')
+  revalidatePath('/admin/tablero')
+
+  if (!resultado.ok) return { error: resultado.error }
+  return { ok: true, puntos: resultado.puntos ?? 0 }
+}
+
+export async function rechazarComercio(id: string, motivo?: string) {
+  await requerirSesion()
+
+  const resultado = await rechazarComercioConMotivo(id, motivo, adminClient())
+
+  revalidatePath('/admin/comercios/pendientes')
+  revalidatePath('/admin/comercios')
+  revalidatePath('/admin/tablero')
+
+  if (!resultado.ok) return { error: resultado.error }
   return { ok: true }
 }
