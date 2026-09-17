@@ -3283,27 +3283,48 @@ dev:
 | Tabla | Falta en types |
 |---|---|
 | `comercios` | `motivo_rechazo` |
-| `misiones` | `unico_por_comercio` |
+| `misiones` | `unico_por_comercio` (ya está en las dos bases; falta solo en el archivo) |
 | `comercios_reportes_ubicacion` | la tabla entera |
 | `comercios_ubicacion_historial` | la tabla entera |
 
 No rompe nada porque casi todo el código castea a `any` en esas tablas, pero es
 deuda: se arregla con una regeneración de verdad, que necesita Docker o un token.
 
-### ⚠️ PROD NO TIENE `misiones.unico_por_comercio` (18/9/2026)
+### La migración `20260915140000` se corrió en prod el 18/9/2026 — tres días tarde
 
-Comparando `information_schema` de las dos bases: dev tiene 417 columnas y prod
-416, y la única diferencia es esa.
+`misiones.unico_por_comercio`, el índice parcial `misiones_campana_comercio_uniq`
+y el trigger `misiones_set_unico_por_comercio` **faltaban en producción desde el
+15/9**. Se detectó comparando `information_schema` de las dos bases: dev tenía
+417 columnas y prod 416, y esa era la única diferencia.
 
-O sea que la migración `20260915140000_misiones_unico_por_comercio.sql` **nunca
-se corrió en producción**, y con ella faltan el índice parcial
-`misiones_campana_comercio_uniq` y el trigger `misiones_set_unico_por_comercio`.
+Durante esos tres días, en prod **nada impedía dos misiones vivas sobre el mismo
+par (campaña, comercio)**: dos gondoleros podían relevar el mismo comercio en una
+campaña puntual y cobrar los dos.
 
-**Consecuencia real**: en prod, nada impide dos misiones vivas sobre el mismo par
-(campaña, comercio). Dos gondoleros pueden relevar el mismo comercio en una
-campaña puntual y cobrar los dos. El rechazo `comercio_duplicado` —el código que
-acaba de entrar en lib/rechazo-mision.ts— no se dispara nunca ahí, porque
-depende de ese índice.
+**Y había un duplicado real, que bloqueó la migración hasta resolverlo.** El
+índice es único: no se crea si los datos ya lo violan. El par era:
+
+| | Creada | Estado | Bounty | Puntos |
+|---|---|---|---|---|
+| Misión 1 | 12/9 20:11 | aprobada | acreditado | 80 |
+| Misión 2 | 16/9 23:50 | **descartada** | anulado | 80 |
+
+Mismo gondolero (ReinerIndomable), mismo comercio ("LB sin conex"), misma campaña
+puntual ("Encuesta presencia Suprante"), **cuatro días de diferencia**. Se
+descartó la segunda —`estado=descartada`, `bounty_estado=anulado`— y recién
+ahí el índice pudo crearse. Verificado después: 0 pares con más de una misión
+viva en las dos bases.
+
+**Lo que esto enseña sobre el orden de las cosas**: una migración que crea un
+índice único no es idempotente respecto de los datos. Correrla tarde significa
+que el período sin protección pudo generar exactamente las filas que después la
+bloquean, y alguien tiene que decidir a mano cuál de las dos sobrevive. Acá el
+duplicado era del mismo gondolero, así que no hubo que elegir entre dos personas;
+si hubieran sido dos, la decisión habría sido de plata.
+
+Relacionado: el rechazo `comercio_duplicado` de `lib/rechazo-mision.ts` **depende
+de este índice**. Entre el 15 y el 18/9 ese código existía en prod y no se
+disparaba nunca.
 
 ### Pendiente de producto — el umbral de 50 misiones es inalcanzable
 
