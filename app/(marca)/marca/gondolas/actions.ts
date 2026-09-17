@@ -4,8 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { getConfig } from '@/lib/config'
-import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
 import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
@@ -24,8 +22,7 @@ export async function aprobarFotoMarca(fotoId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const [admin, config] = [adminClient(), await getConfig()]
-  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
+  const admin = adminClient()
 
   // 1. Obtener la foto con datos de la campaña en una sola query
   const { data: foto, error: fotoError } = await admin
@@ -82,15 +79,6 @@ export async function aprobarFotoMarca(fotoId: string) {
     })
   }
 
-  // 4. Incrementar fotos_aprobadas y recalcular tasa_aprobacion en profiles
-  const { error: rpcFotosError } = await admin.rpc('incrementar_fotos_aprobadas', {
-    p_gondolero_id: foto.gondolero_id,
-  })
-
-  if (rpcFotosError) {
-    console.error('Error RPC incrementar_fotos_aprobadas:', rpcFotosError)
-  }
-
   // 5. Notificación: foto aprobada
   const mensajeNotif = misionId
     ? `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. Los puntos se acreditan al completar el mínimo de misiones.`
@@ -104,37 +92,12 @@ export async function aprobarFotoMarca(fotoId: string) {
     campana_id:   foto.campana_id,
   })
 
-  // 6. Verificar subida de nivel
-  const { data: profileNivel } = await admin
-    .from('profiles')
-    .select('fotos_aprobadas, nivel')
-    .eq('id', foto.gondolero_id)
-    .single()
-
-  if (profileNivel) {
-    const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-    const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
-
-    if (nuevoNivel !== profileNivel.nivel) {
-      await admin.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
-      await admin.from('movimientos_puntos').insert({
-        gondolero_id: foto.gondolero_id,
-        tipo:         'credito',
-        monto:        0,
-        concepto:     `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
-        campana_id:   foto.campana_id,
-      })
-      await admin.from('notificaciones').insert({
-        gondolero_id: foto.gondolero_id,
-        tipo:         'nivel_subido',
-        titulo:       `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
-        mensaje:      nuevoNivel === 'activo'
-          ? 'Felicitaciones, ahora sos nivel Activo. Tenés acceso a más campañas y mejores premios.'
-          : 'Felicitaciones, ahora sos nivel Pro. Podés canjear transferencias bancarias y tenés acceso a todas las campañas.',
-        campana_id:   foto.campana_id,
-      })
-    }
-  }
+  // 6. LO QUE HABÍA ACÁ: la subida de nivel, segunda copia del mismo bloque.
+  //
+  // Leía `profiles.fotos_aprobadas` —que la RPC inexistente
+  // `incrementar_fotos_aprobadas` nunca incrementó— y escribía `profiles.nivel`.
+  // Nunca subió a nadie. El nivel ahora se deriva: lib/nivel-mensual.ts para el
+  // que se muestra, lib/nivel-maximo.ts para el que abre los gates.
 
   // 6. Actualizar participación del gondolero
   const { data: part } = await admin
@@ -156,15 +119,9 @@ export async function aprobarFotoMarca(fotoId: string) {
   // misión aprobada, recalculados. Ver lib/comercios-relevados.ts.
   await sincronizarComerciosCompletados(foto.campana_id, foto.gondolero_id, admin)
 
-  // 7. Verificar y desbloquear logros
-  if (profileNivel) {
-    await verificarLogros(
-      foto.gondolero_id,
-      admin,
-      profileNivel.fotos_aprobadas ?? 0,
-      foto.campana_id
-    )
-  }
+  // 7. Verificar y desbloquear logros. Cuenta las fotos aprobadas por su
+  // cuenta: antes recibía el contador muerto.
+  await verificarLogros(foto.gondolero_id, admin, foto.campana_id)
 
   // 9. Actualizar estado de la misión (si esta foto pertenece a una)
   await actualizarEstadoMision({

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { Users, Camera, CheckCircle2, Clock, Megaphone } from 'lucide-react'
 import { formatearFechaHora } from '@/lib/utils'
 import { firmarFotos } from '@/lib/storage-fotos'
+import { contarFotosAprobadas } from '@/lib/fotos-aprobadas'
 
 function makeAdmin() {
   return createAdminClient(
@@ -37,12 +38,16 @@ export default async function RepoDashboardPage() {
   // Obtener IDs de fixers vinculados
   const { data: fixersData } = await admin
     .from('profiles')
-    .select('id, alias, nombre, fotos_aprobadas')
+    .select('id, alias, nombre')
     .eq('repositora_id', repoId)
     .eq('tipo_actor', 'fixer')
 
   const fixerIds = (fixersData ?? []).map((f: { id: string }) => f.id)
   const safeFixers = safe(fixerIds)
+
+  // "Fotos aprobadas" se cuenta contra `fotos`: `profiles.fotos_aprobadas` era
+  // un contador que la RPC inexistente nunca incrementó. Ver lib/fotos-aprobadas.ts.
+  const aprobadasMap = await contarFotosAprobadas(fixerIds, admin)
 
   // Consultas en paralelo
   const [
@@ -260,7 +265,7 @@ export default async function RepoDashboardPage() {
                       <p className="font-medium text-gray-900">{f.alias ?? f.nombre ?? 'Sin nombre'}</p>
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      {f.fotos_aprobadas ?? 0}
+                      {aprobadasMap.get(f.id) ?? 0}
                     </td>
                   </tr>
                 ))}

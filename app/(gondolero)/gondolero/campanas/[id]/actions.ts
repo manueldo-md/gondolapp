@@ -4,8 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-
-const NIVEL_ORDEN: Record<string, number> = { casual: 0, activo: 1, pro: 2 }
+import { getConfig } from '@/lib/config'
+import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
+import { nivelMaximoAlcanzado } from '@/lib/nivel-maximo'
 
 export async function unirseACampana(campanaId: string): Promise<{ error: string } | void> {
   const supabase = await createClient()
@@ -137,18 +138,28 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
     return { error: 'Esta campaña ya alcanzó su cupo máximo.' }
   }
 
-  // Validar nivel del gondolero
+  // Validar nivel del gondolero.
+  //
+  // El nivel que abre el gate es el MÁXIMO alcanzado —el mejor mes de toda su
+  // historia—, no el del mes en curso: el privilegio ganado no se pierde por
+  // dejar de trabajar un mes. Hasta el 17/9/2026 esto leía `profiles.nivel`, una
+  // columna que ningún camino de la app escribía. Ver lib/nivel-maximo.ts.
   const nivelMinimo = campana.nivel_minimo ?? 'casual'
   if (nivelMinimo !== 'casual') {
-    const { data: profile } = await admin
-      .from('profiles')
-      .select('nivel')
-      .eq('id', user.id)
-      .single() as { data: { nivel: string } | null }
+    const config = await getConfig()
+    const gondoleroNivel = await nivelMaximoAlcanzado(user.id, admin, {
+      activo: config.niveles.fotosCasualAActivo,
+      pro:    config.niveles.fotosActivoAPro,
+    })
 
-    const gondoleroNivel = profile?.nivel ?? 'casual'
-    if ((NIVEL_ORDEN[gondoleroNivel] ?? 0) < (NIVEL_ORDEN[nivelMinimo] ?? 0)) {
-      const NIVEL_LABEL: Record<string, string> = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
+    // `null` no es "casual": es que la consulta falló. Acusarlo de no tener el
+    // nivel sería rechazarlo tardíamente por un problema de infraestructura, con
+    // un mensaje que además le echa la culpa. El error dice lo que pasó.
+    if (gondoleroNivel === null) {
+      return { error: 'No pudimos verificar tu nivel en este momento. Probá de nuevo en unos segundos.' }
+    }
+
+    if (!cumpleNivelMinimo(gondoleroNivel, nivelMinimo)) {
       return { error: `Esta campaña requiere nivel ${NIVEL_LABEL[nivelMinimo] ?? nivelMinimo}. Tu nivel actual es ${NIVEL_LABEL[gondoleroNivel] ?? gondoleroNivel}.` }
     }
   }

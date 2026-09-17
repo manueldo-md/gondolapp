@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import { ValidarDistriBtn } from '../validar-btn'
+import { getConfig } from '@/lib/config'
+import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
 
 function adminClient() {
   return createAdminClient(
@@ -29,7 +31,7 @@ export default async function DistriDetallePage({ params }: { params: { id: stri
   // Gondoleros vinculados con stats
   const { data: gondolerosRaw } = await admin
     .from('profiles')
-    .select('id, alias, nombre, activo, fotos_aprobadas, nivel, created_at')
+    .select('id, alias, nombre, activo, created_at')
     .eq('distri_id', params.id)
     .eq('tipo_actor', 'gondolero')
     .order('created_at', { ascending: false })
@@ -39,6 +41,7 @@ export default async function DistriDetallePage({ params }: { params: { id: stri
   const gondoleroIds = gondoleros.map(g => g.id)
 
   let fotosMap: Record<string, number> = {}
+  const aprobadasMap = new Map<string, number>()
   let totalFotos = 0
   let totalAprobadas = 0
 
@@ -52,11 +55,30 @@ export default async function DistriDetallePage({ params }: { params: { id: stri
     totalFotos = fotos.length
     totalAprobadas = fotos.filter(f => f.estado === 'aprobada').length
 
+    // La columna "Fotos aprobadas" se cuenta acá, con las filas que ya están
+    // cargadas. `profiles.fotos_aprobadas` era un contador que nadie incrementó.
+    for (const f of fotos) {
+      if (f.estado !== 'aprobada') continue
+      aprobadasMap.set(f.gondolero_id, (aprobadasMap.get(f.gondolero_id) ?? 0) + 1)
+    }
+
     fotosMap = fotos.reduce(
       (acc, f) => { acc[f.gondolero_id] = (acc[f.gondolero_id] ?? 0) + 1; return acc },
       {} as Record<string, number>
     )
   }
+
+  // La insignia de nivel sale de las misiones aprobadas del mes.
+  // `profiles.nivel` no la escribía nadie. Ver lib/nivel-mensual.ts.
+  const [config, misionesDelMes] = await Promise.all([
+    getConfig(),
+    contarMisionesAprobadasDelMes(admin),
+  ])
+  const nivelDe = (id: string) => nivelPorMisiones(
+    misionesDelMes.get(id) ?? 0,
+    config.niveles.fotosCasualAActivo,
+    config.niveles.fotosActivoAPro,
+  )
 
   // Campañas activas de esta distribuidora
   const { data: campanasData } = await admin
@@ -168,17 +190,20 @@ export default async function DistriDetallePage({ params }: { params: { id: stri
                     </td>
                     <td className="px-4 py-3.5 font-medium text-gray-900">{g.nombre ?? '—'}</td>
                     <td className="px-4 py-3.5 text-gray-700">{fotosMap[g.id] ?? 0}</td>
-                    <td className="px-4 py-3.5 text-gray-700">{g.fotos_aprobadas ?? 0}</td>
+                    <td className="px-4 py-3.5 text-gray-700">{aprobadasMap.get(g.id) ?? 0}</td>
                     <td className="px-4 py-3.5">
-                      {g.nivel && (
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                          g.nivel === 'pro' ? 'bg-amber-100 text-amber-700'
-                          : g.nivel === 'activo' ? 'bg-blue-100 text-blue-700'
-                          : 'bg-gray-100 text-gray-500'
-                        }`}>
-                          {g.nivel}
-                        </span>
-                      )}
+                      {(() => {
+                        const nivel = nivelDe(g.id)
+                        return (
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                            nivel === 'pro' ? 'bg-amber-100 text-amber-700'
+                            : nivel === 'activo' ? 'bg-blue-100 text-blue-700'
+                            : 'bg-gray-100 text-gray-500'
+                          }`}>
+                            {nivel}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-3.5">
                       {g.activo ? (

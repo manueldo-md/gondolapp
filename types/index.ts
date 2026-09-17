@@ -68,14 +68,17 @@ export interface Profile {
   nombre: string | null
   alias: string | null
   celular: string | null
-  nivel: NivelGondolero
+  // `nivel` y `fotos_aprobadas` salieron de acá el 17/9/2026: eran columnas que
+  // ningún camino de la app escribía. El nivel se deriva —lib/nivel-mensual.ts
+  // para el que se muestra, lib/nivel-maximo.ts para el que abre los gates— y
+  // las fotos aprobadas se cuentan con lib/fotos-aprobadas.ts. Las columnas
+  // siguen existiendo en la base hasta que se corra el DROP.
   puntos_disponibles: number
   puntos_totales_ganados: number
   distri_id: string | null
   marca_id: string | null
   repositora_id?: string | null
   monotributo_verificado: boolean
-  fotos_aprobadas: number
   tasa_aprobacion: number
   activo: boolean
   created_at: string

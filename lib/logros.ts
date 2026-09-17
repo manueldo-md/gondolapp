@@ -4,11 +4,21 @@
  * Verifica y desbloquea logros para un gondolero.
  * Llamar después de cada aprobación de foto.
  * @returns claves de los logros nuevos desbloqueados.
+ *
+ * ── EL PARÁMETRO `fotosAprobadas` QUE YA NO ESTÁ ────────────────────────────
+ * Hasta el 17/9/2026 las tres pantallas de aprobación le pasaban
+ * `profiles.fotos_aprobadas`, una columna que nadie incrementaba nunca: la RPC
+ * `incrementar_fotos_aprobadas` no existe en la base. O sea que el número que
+ * llegaba era 0 (o lo que hubiera dejado el seed), y el logro `primera_foto`
+ * **no se desbloqueó nunca por ese camino**.
+ *
+ * Ahora se cuenta acá adentro, contra `fotos`. Que lo cuente la función y no el
+ * llamador es lo que impide que tres pantallas vuelvan a pasar tres números
+ * distintos — era exactamente eso lo que pasaba.
  */
 export async function verificarLogros(
   gondoleroId: string,
   adminClient: any,
-  fotosAprobadas: number,
   campanaId?: string | null
 ): Promise<string[]> {
   try {
@@ -89,6 +99,10 @@ export async function verificarLogros(
     ])
 
     const campanasCompletadas  = participacionesRes.count ?? 0
+    // `comerciosRes` ya trae TODAS las fotos aprobadas del gondolero: contarlas
+    // no cuesta una query más. Antes este número llegaba por parámetro desde
+    // `profiles.fotos_aprobadas` y valía 0 siempre.
+    const fotosAprobadas       = (comerciosRes.data ?? []).length
     const comerciosVisitados   = new Set(
       (comerciosRes.data ?? []).map((f: any) => f.comercio_id as string)
     ).size
@@ -140,6 +154,7 @@ export async function verificarLogros(
     // 3. Candidatos a desbloquear
     const candidatos: Array<{ clave: string; cumple: boolean }> = [
       { clave: 'primera_foto',    cumple: fotosAprobadas >= 1 },
+      // ↑ contado contra `fotos`, no contra una columna. Ver el docstring.
       { clave: 'velocista',       cumple: fotosHoy >= 10 },
       { clave: 'racha_7_dias',    cumple: tieneRacha },
       { clave: 'explorador',      cumple: comerciosVisitados >= 10 },

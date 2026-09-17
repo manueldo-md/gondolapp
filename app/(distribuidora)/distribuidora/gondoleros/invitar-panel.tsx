@@ -23,7 +23,7 @@ export function InvitarPanel({
   // Código de gondolero
   const [codigo, setCodigo] = useState('')
   const [gondoleroEncontrado, setGondoleroEncontrado] = useState<{
-    id: string; alias: string | null; nombre: string | null; nivel: string; tipo_actor: string
+    id: string; alias: string | null; nombre: string | null; nivel: string | null; tipo_actor: string
   } | null>(null)
   const [codigoError, setCodigoError] = useState<string | null>(null)
   const [isPendingBuscar, startBuscar] = useTransition()
@@ -191,7 +191,7 @@ export function InvitarPanel({
                 <p className="text-xs text-gray-400 flex items-center gap-1.5">
                   {gondoleroEncontrado.tipo_actor === 'fixer'
                     ? <span className="text-blue-600 font-semibold">Fixer</span>
-                    : <>Nivel {NIVEL_LABEL[gondoleroEncontrado.nivel] ?? gondoleroEncontrado.nivel}</>
+                    : <>Nivel {gondoleroEncontrado.nivel ? (NIVEL_LABEL[gondoleroEncontrado.nivel] ?? gondoleroEncontrado.nivel) : '—'}</>
                   }
                 </p>
               </div>

@@ -6,6 +6,8 @@ import type { NivelGondolero } from '@/types'
 import { SolicitudesTab } from './solicitudes-tab'
 import { InvitarPanel } from './invitar-panel'
 import { GondoleroDesvincularBtn } from './gondolero-desvincular-btn'
+import { getConfig } from '@/lib/config'
+import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
 
 function adminClient() {
   return createSupabaseClient(
@@ -19,7 +21,6 @@ interface GondoleroRow {
   id: string
   nombre: string | null
   alias: string | null
-  nivel: NivelGondolero
   activo: boolean
   created_at: string
 }
@@ -93,7 +94,7 @@ export default async function GondolerosPage({
   if (allIds.length > 0) {
     const { data: profilesData } = await admin
       .from('profiles')
-      .select('id, nombre, alias, nivel, activo, created_at')
+      .select('id, nombre, alias, activo, created_at')
       .in('id', allIds)
       .order('created_at', { ascending: false })
     const actualesSet  = new Set(actualesIds)
@@ -107,6 +108,19 @@ export default async function GondolerosPage({
   // Lista combinada: activos primero, luego históricos desvinculados
   const actualesIdSet = new Set(actualesIds)
   const gondoleros: GondoleroRow[] = [...gondolerosActuales, ...gondolerosHistoricos]
+
+  // La insignia de nivel se deriva de las misiones aprobadas del mes.
+  // `profiles.nivel` no la escribía nadie. Ver lib/nivel-mensual.ts.
+  const [config, misionesDelMes] = await Promise.all([
+    getConfig(),
+    contarMisionesAprobadasDelMes(admin),
+  ])
+  const nivelDe = (id: string | null | undefined): NivelGondolero =>
+    nivelPorMisiones(
+      id ? (misionesDelMes.get(id) ?? 0) : 0,
+      config.niveles.fotosCasualAActivo,
+      config.niveles.fotosActivoAPro,
+    )
 
   // Stats de fotos
   const ids = gondoleros.map(g => g.id)
@@ -282,8 +296,8 @@ export default async function GondolerosPage({
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${NIVEL_COLOR[g.nivel]}`}>
-                        {NIVEL_LABEL[g.nivel]}
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${NIVEL_COLOR[nivelDe(g.id)]}`}>
+                        {NIVEL_LABEL[nivelDe(g.id)]}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-right">

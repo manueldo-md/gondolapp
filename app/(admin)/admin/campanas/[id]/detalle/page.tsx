@@ -2,6 +2,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getConfig } from '@/lib/config'
+import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
+import type { NivelGondolero } from '@/types'
 import {
   Calendar, Target, Camera, MapPin, AlertCircle,
   Users, Building2, Package,
@@ -54,7 +57,7 @@ export default async function AdminCampanaDetallePage({
 }) {
   const admin = adminClient()
 
-  const [campanaRes, partDataRes, fotosCuentaRes] = await Promise.all([
+  const [campanaRes, partDataRes, fotosCuentaRes, config, misionesDelMes] = await Promise.all([
     admin.from('campanas').select(`
       id, nombre, tipo, estado, financiada_por, via_ejecucion, motivo_rechazo,
       marca_id, distri_id,
@@ -71,12 +74,24 @@ export default async function AdminCampanaDetallePage({
     `).eq('id', params.id).single(),
 
     admin.from('participaciones')
-      .select('id, estado, comercios_completados, puntos_acumulados, joined_at, gondolero:profiles(id, nombre, alias, nivel)')
+      .select('id, estado, comercios_completados, puntos_acumulados, joined_at, gondolero:profiles(id, nombre, alias)')
       .eq('campana_id', params.id)
       .order('joined_at', { ascending: false }),
 
     admin.from('fotos').select('estado').eq('campana_id', params.id),
+    getConfig(),
+    contarMisionesAprobadasDelMes(admin),
   ])
+
+  // La insignia de nivel se deriva de las misiones aprobadas del mes, igual que
+  // en la pantalla del gondolero. `profiles.nivel` no la escribía nadie: lo que
+  // se veía acá era lo que había dejado el seed.
+  const nivelDe = (id: string | null | undefined): NivelGondolero =>
+    nivelPorMisiones(
+      id ? (misionesDelMes.get(id) ?? 0) : 0,
+      config.niveles.fotosCasualAActivo,
+      config.niveles.fotosActivoAPro,
+    )
 
   if (campanaRes.error || !campanaRes.data) notFound()
 
@@ -394,8 +409,8 @@ export default async function AdminCampanaDetallePage({
                       <p className="text-sm font-medium text-gray-900 truncate">
                         {p.gondolero?.alias ?? p.gondolero?.nombre ?? 'Gondolero'}
                       </p>
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${NIVEL_COLOR[p.gondolero?.nivel ?? 'casual']}`}>
-                        {NIVEL_LABEL[p.gondolero?.nivel ?? 'casual']}
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${NIVEL_COLOR[nivelDe(p.gondolero?.id)]}`}>
+                        {NIVEL_LABEL[nivelDe(p.gondolero?.id)]}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400">

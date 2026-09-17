@@ -449,7 +449,11 @@ async function main() {
       // ranking, que no trae el nombre real a proposito. Sin esto el seed
       // dejaba 24 perfiles en null y el ranking los mostraba todos iguales.
       alias: await generarAlias(db),
-      distri_id: g.distriId, nivel: 'activo',
+      // Sin `nivel`: la columna se dejó de escribir el 17/9/2026 y el nivel se
+      // deriva de las misiones aprobadas. Escribirlo acá era justamente lo que
+      // ponía 22 gondoleros en 'activo' sin haber hecho nada — y eso, con los
+      // gates leyendo la columna, era acceso regalado a campañas por nivel.
+      distri_id: g.distriId,
       puntos_disponibles: 0, puntos_totales_ganados: 0,
     }, { onConflict: 'id' })
     if (g.distriId) {
@@ -909,12 +913,13 @@ async function main() {
       })
       stats.puntos++
     }
-    // Nivel según puntos
-    const nivel = puntos >= 1500 ? 'pro' : puntos >= 500 ? 'activo' : 'casual'
+    // El nivel NO se escribe: sale de contar las misiones aprobadas del mes, y
+    // el seed ya las crea. Si el demo necesita un gondolero de nivel Activo, lo
+    // que hay que sembrar son más misiones aprobadas, no un string en una
+    // columna. Ver lib/nivel-mensual.ts.
     await (db as any).from('profiles').update({
       puntos_disponibles: puntos,
       puntos_totales_ganados: puntos,
-      nivel,
     }).eq('id', gondoleroId)
   }
 

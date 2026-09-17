@@ -2,6 +2,9 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, ArrowUp, ArrowDown } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
+import { getConfig } from '@/lib/config'
+import { nivelPorMisiones } from '@/lib/nivel-mensual'
+import { misionesAprobadasPorMes, claveMes } from '@/lib/nivel-maximo'
 import type { TipoActor } from '@/types'
 import Link from 'next/link'
 
@@ -44,16 +47,35 @@ export default async function UsuarioDetallePage({
     { data: movimientos },
     { data: participaciones },
     { data: canjes },
+    config,
+    misionesPorMes,
   ] = await Promise.all([
     admin.auth.admin.getUserById(userId),
-    admin.from('profiles').select('nombre, celular, tipo_actor, nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id, marca_id, created_at').eq('id', userId).single(),
+    admin.from('profiles').select('nombre, celular, tipo_actor, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id, marca_id, created_at').eq('id', userId).single(),
     admin.from('fotos').select('id, estado, puntos_otorgados, created_at, campanas(nombre), comercios(nombre)').eq('gondolero_id', userId).order('created_at', { ascending: false }).limit(10),
     admin.from('movimientos_puntos').select('id, tipo, monto, concepto, created_at').eq('gondolero_id', userId).order('created_at', { ascending: false }).limit(10),
     admin.from('participaciones').select('id, estado, comercios_completados, puntos_acumulados, joined_at, campanas(nombre)').eq('gondolero_id', userId).order('joined_at', { ascending: false }),
     admin.from('canjes').select('id, premio, puntos, estado, created_at').eq('gondolero_id', userId).order('created_at', { ascending: false }),
+    getConfig(),
+    // Una sola consulta da los dos niveles: el del mes (lo que ve el gondolero)
+    // y el máximo alcanzado (lo que le abre las campañas). Esta pantalla es
+    // donde el admin pregunta "¿por qué no entra a la campaña Pro?", así que
+    // mostrar uno solo dejaba la respuesta afuera. Ver lib/nivel-maximo.ts.
+    misionesAprobadasPorMes(userId, admin),
   ])
 
   if (authError || !authUser) notFound()
+
+  // Los dos niveles derivados. `null` cuando la consulta falló: se muestra "—"
+  // en vez de inventar un "Casual" que nadie midió.
+  const umbralA = config.niveles.fotosCasualAActivo
+  const umbralP = config.niveles.fotosActivoAPro
+  const nivelMes = misionesPorMes === null
+    ? null
+    : nivelPorMisiones(misionesPorMes.get(claveMes(new Date())) ?? 0, umbralA, umbralP)
+  const nivelMax = misionesPorMes === null
+    ? null
+    : nivelPorMisiones(Math.max(0, ...misionesPorMes.values()), umbralA, umbralP)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bannedUntil = (authUser as any).banned_until as string | null
@@ -118,7 +140,8 @@ export default async function UsuarioDetallePage({
             {[
               { k: 'Email',    v: authUser.email },
               { k: 'Celular',  v: profile?.celular ?? '—' },
-              { k: 'Nivel',    v: profile?.nivel ?? '—' },
+              { k: 'Nivel (este mes)', v: nivelMes ?? '—' },
+              { k: 'Nivel máximo',    v: nivelMax ?? '—' },
               { k: 'Registro', v: tiempoRelativo(authUser.created_at) },
               { k: 'User ID',  v: userId },
             ].map(({ k, v }) => (

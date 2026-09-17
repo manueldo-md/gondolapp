@@ -5,7 +5,9 @@ import { Calendar, Target, Coins, Clock, Users } from 'lucide-react'
 import {
   labelEstadoCampana, colorEstadoCampana, labelTipoCampana, diasRestantes,
 } from '@/lib/utils'
-import type { TipoCampana, EstadoCampana } from '@/types'
+import type { TipoCampana, EstadoCampana, NivelGondolero } from '@/types'
+import { getConfig } from '@/lib/config'
+import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
 import { CampanaPageNav } from '@/components/campanas/campana-page-nav'
 import { CampanaDraftEditor } from '@/components/campanas/draft-editor'
 import {
@@ -61,9 +63,23 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
 
   const { data: partData } = await admin
     .from('participaciones')
-    .select('id, estado, comercios_completados, joined_at, gondolero:profiles(nombre, alias, nivel)')
+    .select('id, estado, comercios_completados, joined_at, gondolero_id, gondolero:profiles(nombre, alias)')
     .eq('campana_id', params.id)
     .order('joined_at', { ascending: false })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // La insignia de nivel se deriva de las misiones aprobadas del mes.
+  // `profiles.nivel` no la escribía nadie. Ver lib/nivel-mensual.ts.
+  const [config, misionesDelMes] = await Promise.all([
+    getConfig(),
+    contarMisionesAprobadasDelMes(admin),
+  ])
+  const nivelDe = (id: string | null | undefined): NivelGondolero =>
+    nivelPorMisiones(
+      id ? (misionesDelMes.get(id) ?? 0) : 0,
+      config.niveles.fotosCasualAActivo,
+      config.niveles.fotosActivoAPro,
+    )
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const participaciones = ((partData ?? []) as any[]).map((p: any) => ({
@@ -240,8 +256,8 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
                   <p className="text-xs text-gray-400">{p.comercios_completados} comercios</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${NIVEL_COLOR[p.gondolero?.nivel ?? 'casual']}`}>
-                    {NIVEL_LABEL[p.gondolero?.nivel ?? 'casual']}
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${NIVEL_COLOR[nivelDe(p.gondolero_id)]}`}>
+                    {NIVEL_LABEL[nivelDe(p.gondolero_id)]}
                   </span>
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${ESTADO_PART_COLOR[p.estado] ?? 'bg-gray-100 text-gray-500'}`}>
                     {ESTADO_PART_LABEL[p.estado] ?? p.estado}

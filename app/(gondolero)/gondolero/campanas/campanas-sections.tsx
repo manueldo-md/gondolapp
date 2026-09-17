@@ -13,7 +13,8 @@ import {
   calcularPorcentaje,
   formatearPuntos,
 } from '@/lib/utils'
-import type { TipoCampana } from '@/types'
+import type { TipoCampana, NivelGondolero } from '@/types'
+import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import {
   CAMPANA_CACHE_PREFIX,
   CAMPANA_CACHE_SELECT,
@@ -55,8 +56,8 @@ export interface CampanaCardData {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const NIVEL_ORDEN: Record<string, number> = { casual: 0, activo: 1, pro: 2 }
-const NIVEL_LABEL: Record<string, string>  = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
+// NIVEL_ORDEN, NIVEL_LABEL y la comparación salen de lib/nivel.ts: estaban
+// copiados acá y en los otros dos gates de campaña, los tres diciendo lo mismo.
 
 const COLORES_TIPO: Record<TipoCampana, string> = {
   relevamiento: 'bg-gondo-indigo-50 text-gondo-indigo-600',
@@ -85,7 +86,7 @@ function CampanaCard({
 }: {
   campana: CampanaCardData
   participacionEstado?: 'activa' | 'completada' | 'abandonada'
-  gondoleroNivel: string
+  gondoleroNivel: NivelGondolero | null
   misDistriIds: string[]
   gondoleroComerciosCompletados?: number
   fotosRechazadas?: number
@@ -104,7 +105,9 @@ function CampanaCard({
   )
   const nueva = !participando && (Date.now() - new Date(campana.created_at).getTime() < SIETE_DIAS_MS)
   const nivelMinimo = campana.nivel_minimo ?? 'casual'
-  const nivelOk = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
+  // `gondoleroNivel === null` = no se pudo medir, y entonces NO bloquea: la
+  // pantalla informa, el gate real es la action de unirse. Ver lib/nivel.ts.
+  const nivelOk = cumpleNivelMinimo(gondoleroNivel, nivelMinimo)
 
   const maxPropios = campana.max_comercios_por_gondolero
   const minPropios = campana.min_comercios_para_cobrar
@@ -449,7 +452,7 @@ export function CampanasSections({
   misCampanas: CampanaCardData[]
   disponibles: CampanaCardData[]
   finalizadas: CampanaCardData[]
-  gondoleroNivel: string
+  gondoleroNivel: NivelGondolero | null
   misDistriIds: string[]
   /** IDs de localidades del gondolero — para filtrar la query de comercios al precargar */
   gondoleroLocalidadIds?: number[]

@@ -5,6 +5,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoPremio } from '@/types'
+import { getConfig } from '@/lib/config'
+import { nivelMaximoAlcanzado } from '@/lib/nivel-maximo'
 
 const COSTO_CANJE: Record<TipoPremio, number> = {
   credito_celular: 300,
@@ -29,7 +31,7 @@ export async function solicitarCanje(premio: TipoPremio) {
   // Verificar puntos disponibles
   const { data: profile } = await admin
     .from('profiles')
-    .select('puntos_disponibles, nivel')
+    .select('puntos_disponibles')
     .eq('id', user.id)
     .single()
 
@@ -37,9 +39,27 @@ export async function solicitarCanje(premio: TipoPremio) {
     return { error: 'No tenés suficientes puntos para este canje.' }
   }
 
-  // Transferencia solo para nivel Pro
-  if (premio === 'transferencia' && profile.nivel !== 'pro') {
-    return { error: 'La transferencia bancaria es solo para gondoleros nivel Pro.' }
+  // Transferencia solo para nivel Pro.
+  //
+  // El nivel que habilita es el MÁXIMO alcanzado, no el del mes: un gondolero
+  // que llegó a Pro y aflojó no puede quedarse sin poder canjear los puntos que
+  // ya ganó. Hasta el 17/9/2026 esto leía `profiles.nivel`, que nunca se
+  // escribió desde la app. Ver lib/nivel-maximo.ts.
+  if (premio === 'transferencia') {
+    const config = await getConfig()
+    const nivelMax = await nivelMaximoAlcanzado(user.id, admin, {
+      activo: config.niveles.fotosCasualAActivo,
+      pro:    config.niveles.fotosActivoAPro,
+    })
+
+    // `null` = no se pudo medir. No se le niega el canje por eso: se le pide que
+    // reintente, que es lo que realmente pasó.
+    if (nivelMax === null) {
+      return { error: 'No pudimos verificar tu nivel en este momento. Probá de nuevo en unos segundos.' }
+    }
+    if (nivelMax !== 'pro') {
+      return { error: 'La transferencia bancaria es solo para gondoleros nivel Pro.' }
+    }
   }
 
   // Insertar canje

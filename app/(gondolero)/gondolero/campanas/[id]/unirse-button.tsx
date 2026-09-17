@@ -17,7 +17,7 @@ export function UnirseButton({
   cupoLleno,
   nivelOk = true,
   nivelMinimo = 'casual',
-  gondoleroNivel = 'casual',
+  gondoleroNivel = null,
   participacionAnteriorEstado,
   sinAcceso = false,
   motivoSinAcceso,
@@ -28,7 +28,8 @@ export function UnirseButton({
   cupoLleno?: boolean
   nivelOk?: boolean
   nivelMinimo?: string
-  gondoleroNivel?: string
+  /** `null` = no se pudo medir. Ver lib/nivel-maximo.ts. */
+  gondoleroNivel?: string | null
   participacionAnteriorEstado?: 'completada' | 'abandonada' | null
   sinAcceso?: boolean
   motivoSinAcceso?: string
@@ -110,10 +111,14 @@ export function UnirseButton({
         <div className="w-full py-4 bg-gray-100 text-gray-500 font-semibold rounded-2xl text-center text-base">
           Requiere nivel {NIVEL_LABEL[nivelMinimo] ?? nivelMinimo}
         </div>
-        <p className="text-xs text-center text-gray-400">
-          Tu nivel actual es <span className="font-semibold">{NIVEL_LABEL[gondoleroNivel] ?? gondoleroNivel}</span>.
-          Aprobá más fotos para subir de nivel.
-        </p>
+        {gondoleroNivel && (
+          <p className="text-xs text-center text-gray-400">
+            Tu nivel actual es <span className="font-semibold">{NIVEL_LABEL[gondoleroNivel] ?? gondoleroNivel}</span>.
+            {/* Misiones, no fotos: el nivel dejó de contar fotos el 17/9/2026 y
+                una campaña de solo preguntas también suma. */}
+            {' '}Completá más misiones para subir de nivel.
+          </p>
+        )}
       </div>
     )
   }

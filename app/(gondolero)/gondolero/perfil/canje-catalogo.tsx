@@ -20,20 +20,30 @@ const PREMIOS: Premio[] = [
   { tipo: 'transferencia',   emoji: '🏦', label: 'Transferencia',     puntos: 2000, soloProRequired: true  },
 ]
 
+/**
+ * `nivelParaCanje` es el MÁXIMO alcanzado, no el nivel del mes — es lo mismo que
+ * mira `solicitarCanje`. Si acá entrara el del mes, el catálogo escondería la
+ * transferencia a un Pro que aflojó y la action se la concedería igual: la
+ * pantalla y el gate contando historias distintas.
+ *
+ * `null` = no se pudo medir: no se esconde nada, y si el nivel no alcanza lo
+ * dice la action con un mensaje que explica qué pasó.
+ */
 export function CanjeCatalogo({
   puntosDisponibles,
-  nivel,
+  nivelParaCanje,
 }: {
   puntosDisponibles: number
-  nivel: NivelGondolero
+  nivelParaCanje: NivelGondolero | null
 }) {
+  const esPro = nivelParaCanje === null || nivelParaCanje === 'pro'
   const [seleccionado, setSeleccionado] = useState<Premio | null>(null)
   const [exito, setExito] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const handleSeleccionar = (p: Premio) => {
-    if (p.soloProRequired && nivel !== 'pro') return
+    if (p.soloProRequired && !esPro) return
     if (puntosDisponibles < p.puntos) return
     setSeleccionado(p)
     setExito(null)
@@ -56,7 +66,7 @@ export function CanjeCatalogo({
   return (
     <div className="space-y-2">
       {PREMIOS.map(p => {
-        const bloqueadoPro = p.soloProRequired && nivel !== 'pro'
+        const bloqueadoPro = p.soloProRequired && !esPro
         const faltanPuntos = puntosDisponibles < p.puntos
         const bloqueado = bloqueadoPro || faltanPuntos
         return (

@@ -12,6 +12,7 @@ import {
   nivelPorMisiones,
   misionesParaSiguienteNivel,
 } from '@/lib/nivel-mensual'
+import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
 import { MarcarLogrosVistos } from './marcar-vistos'
@@ -71,9 +72,10 @@ export default async function LogrosPage() {
     todosLogrosRes,
     gondoleroLogrosRes,
     retenidos,
+    mejorMes,
   ] = await Promise.all([
     admin.from('profiles')
-      .select('nivel, puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id, alias, nombre')
+      .select('puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id, alias, nombre')
       .eq('id', user.id)
       .single(),
     admin.from('fotos')
@@ -104,10 +106,12 @@ export default async function LogrosPage() {
     // Entra en el Promise.all y no en un await aparte: es una consulta más, no
     // un round-trip más.
     obtenerPuntosRetenidos(user.id, admin),
+    // El catálogo de canjes es un GATE, no una insignia: la transferencia la
+    // habilita el MÁXIMO alcanzado, no el nivel del mes. Ver lib/nivel-maximo.ts.
+    mejorMesDeMisiones(user.id, admin),
   ])
 
   const profile = profileRes.data as {
-    nivel: NivelGondolero
     puntos_disponibles: number
     puntos_totales_ganados: number
     tasa_aprobacion: number
@@ -139,6 +143,15 @@ export default async function LogrosPage() {
     fotosCasualAActivo,
     fotosActivoAPro,
   )
+
+  // El nivel que habilita el canje de transferencia NO es este: es el máximo
+  // alcanzado. Si el catálogo escondiera la transferencia según el mes, un Pro
+  // que aflojó vería bloqueado un premio que la action sí le concede — la
+  // pantalla y el gate diciendo cosas distintas. Ver lib/nivel-maximo.ts.
+  const nivelParaCanje = nivelDeMejorMes(mejorMes, {
+    activo: fotosCasualAActivo,
+    pro:    fotosActivoAPro,
+  })
 
   // ── Progreso de 3 nodos ───────────────────────────────────────────────────
   const faltanParaSiguiente = misionesParaSiguienteNivel(
@@ -451,7 +464,7 @@ export default async function LogrosPage() {
         {/* ── SECCIÓN 5 — Canjear puntos ── */}
         <div>
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Canjear puntos</h2>
-          <CanjeCatalogo puntosDisponibles={puntosDisponibles} nivel={nivel} />
+          <CanjeCatalogo puntosDisponibles={puntosDisponibles} nivelParaCanje={nivelParaCanje} />
         </div>
 
       </div>

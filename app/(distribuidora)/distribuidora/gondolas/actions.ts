@@ -4,8 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { getConfig } from '@/lib/config'
-import { calcularNuevoNivel } from '@/lib/nivel'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
 import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
@@ -24,8 +22,7 @@ export async function aprobarFoto(fotoId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const [adminClient, config] = [createAdminClient(), await getConfig()]
-  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
+  const adminClient = createAdminClient()
 
   // 1. Obtener la foto con datos de la campaña
   const { data: foto, error: fotoError } = await adminClient
@@ -82,15 +79,6 @@ export async function aprobarFoto(fotoId: string) {
     })
   }
 
-  // 4. Incrementar fotos_aprobadas y recalcular tasa_aprobacion en profiles
-  const { error: rpcFotosError } = await adminClient.rpc('incrementar_fotos_aprobadas', {
-    p_gondolero_id: foto.gondolero_id,
-  })
-
-  if (rpcFotosError) {
-    console.error('Error RPC incrementar_fotos_aprobadas:', rpcFotosError)
-  }
-
   // 5. Notificación: foto aprobada
   const mensajeNotif = misionId
     ? `Tu foto en ${comercio?.nombre ?? 'el comercio'} fue aprobada. Los puntos se acreditan al completar el mínimo de misiones.`
@@ -104,37 +92,15 @@ export async function aprobarFoto(fotoId: string) {
     campana_id:   foto.campana_id,
   })
 
-  // 6. Verificar subida de nivel
-  const { data: profileNivel } = await adminClient
-    .from('profiles')
-    .select('fotos_aprobadas, nivel')
-    .eq('id', foto.gondolero_id)
-    .single()
-
-  if (profileNivel) {
-    const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-    const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
-
-    if (nuevoNivel !== profileNivel.nivel) {
-      await adminClient.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
-      await adminClient.from('movimientos_puntos').insert({
-        gondolero_id: foto.gondolero_id,
-        tipo:         'credito',
-        monto:        0,
-        concepto:     `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
-        campana_id:   foto.campana_id,
-      })
-      await adminClient.from('notificaciones').insert({
-        gondolero_id: foto.gondolero_id,
-        tipo:         'nivel_subido',
-        titulo:       `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
-        mensaje:      nuevoNivel === 'activo'
-          ? 'Felicitaciones, ahora sos nivel Activo. Tenés acceso a más campañas y mejores premios.'
-          : 'Felicitaciones, ahora sos nivel Pro. Podés canjear transferencias bancarias y tenés acceso a todas las campañas.',
-        campana_id:   foto.campana_id,
-      })
-    }
-  }
+  // 6. LO QUE HABÍA ACÁ: la subida de nivel, tercera copia del mismo bloque.
+  //
+  // Leía `profiles.fotos_aprobadas` —un contador que la RPC inexistente
+  // `incrementar_fotos_aprobadas` nunca incrementó— y escribía `profiles.nivel`.
+  // Nunca subió a nadie porque el número que comparaba era siempre 0.
+  //
+  // El nivel ahora se deriva: el visible de las misiones del mes
+  // (lib/nivel-mensual.ts), el de los gates del máximo alcanzado
+  // (lib/nivel-maximo.ts). No hay nada que escribir al aprobar una foto.
 
   // 7. Actualizar participacion del gondolero
   const { data: part } = await adminClient
@@ -158,15 +124,9 @@ export async function aprobarFoto(fotoId: string) {
   // archivos. Ver lib/comercios-relevados.ts.
   await sincronizarComerciosCompletados(foto.campana_id, foto.gondolero_id, adminClient)
 
-  // 8. Verificar y desbloquear logros
-  if (profileNivel) {
-    await verificarLogros(
-      foto.gondolero_id,
-      adminClient,
-      profileNivel.fotos_aprobadas ?? 0,
-      foto.campana_id
-    )
-  }
+  // 8. Verificar y desbloquear logros. Cuenta las fotos aprobadas por su cuenta:
+  // antes recibía el contador muerto y `primera_foto` no se desbloqueaba nunca.
+  await verificarLogros(foto.gondolero_id, adminClient, foto.campana_id)
 
   // 10. Actualizar estado de la misión (si esta foto pertenece a una)
   await actualizarEstadoMision({
@@ -251,8 +211,7 @@ export async function accionMasivaDistri(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const [adminClient, config] = [createAdminClient(), await getConfig()]
-  const { fotosCasualAActivo, fotosActivoAPro } = config.niveles
+  const adminClient = createAdminClient()
 
   // Solo fotos pendientes pueden procesarse en masa
   const { data: fotosRaw } = await adminClient
@@ -334,27 +293,8 @@ export async function accionMasivaDistri(
       campana_id:   foto.campana_id,
     })
 
-    await adminClient.rpc('incrementar_fotos_aprobadas', { p_gondolero_id: foto.gondolero_id })
-
-    // Nivel
-    const { data: profileNivel } = await adminClient
-      .from('profiles').select('fotos_aprobadas, nivel').eq('id', foto.gondolero_id).single()
-    if (profileNivel) {
-      const fotosAprobadas = profileNivel.fotos_aprobadas ?? 0
-      const nuevoNivel = calcularNuevoNivel(fotosAprobadas, profileNivel.nivel, fotosCasualAActivo, fotosActivoAPro)
-      if (nuevoNivel !== profileNivel.nivel) {
-        await adminClient.from('profiles').update({ nivel: nuevoNivel }).eq('id', foto.gondolero_id)
-        await adminClient.from('notificaciones').insert({
-          gondolero_id: foto.gondolero_id,
-          tipo:         'nivel_subido',
-          titulo:       `🎉 ¡Subiste al nivel ${nuevoNivel.toUpperCase()}!`,
-          mensaje:      nuevoNivel === 'activo'
-            ? 'Felicitaciones, ahora sos nivel Activo. Tenés acceso a más campañas y mejores premios.'
-            : 'Felicitaciones, ahora sos nivel Pro. Podés canjear transferencias bancarias y tenés acceso a todas las campañas.',
-          campana_id:   foto.campana_id,
-        })
-      }
-    }
+    // La subida de nivel que había acá se fue con `profiles.nivel`. Ver el
+    // comentario en la aprobación de a una, arriba.
 
     // Participación
     const { data: part } = await adminClient

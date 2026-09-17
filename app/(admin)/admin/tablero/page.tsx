@@ -8,6 +8,8 @@ import {
   TrendingUp, Shield, PackageCheck,
 } from 'lucide-react'
 import { tiempoRelativo, formatearPuntos } from '@/lib/utils'
+import { getConfig } from '@/lib/config'
+import { nivelPorMisiones } from '@/lib/nivel-mensual'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +87,7 @@ export default async function AdminTableroPage() {
     campanasPendAprobRes,
     marcasListRes,
     marcaDistriRelRes,
+    config,
   ] = await Promise.all([
     // Totales globales
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('tipo_actor', 'gondolero'),
@@ -97,7 +100,7 @@ export default async function AdminTableroPage() {
     admin.from('movimientos_puntos').select('monto').eq('tipo', 'credito').gte('created_at', mesInicio.toISOString()),
     admin.from('movimientos_puntos').select('monto').eq('tipo', 'debito').gte('created_at', mesInicio.toISOString()),
     // Gondoleros + distribuidoras (para rankings)
-    admin.from('profiles').select('id, alias, nombre, nivel, distri_id').eq('tipo_actor', 'gondolero'),
+    admin.from('profiles').select('id, alias, nombre, distri_id').eq('tipo_actor', 'gondolero'),
     admin.from('distribuidoras').select('id, razon_social'),
     // Feed reciente
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,6 +143,8 @@ export default async function AdminTableroPage() {
     // Relaciones marca-distri activas (para contar distribuidoras por marca)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any).from('marca_distri_relaciones').select('marca_id, distri_id').eq('estado', 'activa'),
+    // Umbrales de nivel: la insignia del ranking se deriva de las misiones del mes.
+    getConfig(),
   ])
 
   // ── Datos procesados ──────────────────────────────────────────────────────
@@ -313,13 +318,15 @@ export default async function AdminTableroPage() {
 
   const topGondoleros = gondolerosProfiles
     .filter((g: { id: string }) => (gondMisionMap.get(g.id) ?? 0) > 0)
-    .map((g: { id: string; alias: string | null; nombre: string | null; nivel: string | null; distri_id: string | null }) => {
+    .map((g: { id: string; alias: string | null; nombre: string | null; distri_id: string | null }) => {
       const fotas = gondFotaMap.get(g.id)
       const tasa  = fotas && fotas.total > 0 ? Math.round((fotas.aprobadas / fotas.total) * 100) : null
       return {
         id:      g.id,
         alias:   g.alias ?? g.nombre ?? 'Sin nombre',
-        nivel:   g.nivel ?? 'casual',
+        // La insignia sale de las misiones aprobadas del mes, igual que en la
+        // pantalla del gondolero. `profiles.nivel` no la escribía nadie.
+        nivel:   nivelPorMisiones(gondMisionMap.get(g.id) ?? 0, config.niveles.fotosCasualAActivo, config.niveles.fotosActivoAPro),
         distri:  g.distri_id ? ((distriMap.get(g.distri_id) ?? 'Sin distri') as string) : 'Independiente',
         misiones: gondMisionMap.get(g.id) ?? 0,
         tasa,

@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import { diasRestantes, formatearPuntos } from '@/lib/utils'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
+import { getConfig } from '@/lib/config'
+import { nivelPorMisiones } from '@/lib/nivel-mensual'
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
@@ -16,8 +18,6 @@ type GondoleroProfile = {
   id: string
   alias: string | null
   nombre: string | null
-  nivel: string | null
-  fotos_aprobadas: number | null
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -92,10 +92,11 @@ export default async function DashboardPage() {
     fotos14dRes,
     quiebreStockRes,
     alertasIgnoradasRes,
+    config,
   ] = await Promise.all([
     // Perfiles de gondoleros
     admin.from('profiles')
-      .select('id, alias, nombre, nivel, fotos_aprobadas')
+      .select('id, alias, nombre')
       .in('id', safeGond),
 
     // Fotos de este mes (para KPIs + stats por gondolero)
@@ -172,6 +173,10 @@ export default async function DashboardPage() {
       .eq('distri_id', distriId)
       .eq('tipo', 'quiebre_stock')
       .gt('ignorada_hasta', new Date().toISOString()),
+
+    // Umbrales de nivel: la insignia se deriva de las misiones del mes, que esta
+    // pantalla ya cuenta por gondolero.
+    getConfig(),
   ])
 
   // ── Datos procesados ──────────────────────────────────────────────────────
@@ -271,7 +276,15 @@ export default async function DashboardPage() {
         ? Math.round((misAprobadas / misFotos.length) * 100)
         : null
       const activo14 = gondolerosActivos14Set.has(gond.id)
-      return { ...gond, fotasAprobMes: misAprobadas, misionesMes: misMisiones, totalFotasMes: misFotos.length, tasa, activo14 }
+      // La insignia sale de las misiones aprobadas del mes, que ya están
+      // contadas acá arriba. `profiles.nivel` no la escribía nadie: lo que se
+      // veía era lo que había dejado el seed.
+      const nivel = nivelPorMisiones(
+        misMisiones,
+        config.niveles.fotosCasualAActivo,
+        config.niveles.fotosActivoAPro,
+      )
+      return { ...gond, nivel, fotasAprobMes: misAprobadas, misionesMes: misMisiones, totalFotasMes: misFotos.length, tasa, activo14 }
     })
     .sort((a, b) => b.misionesMes - a.misionesMes)
 
@@ -542,8 +555,8 @@ export default async function DashboardPage() {
                             <p className="font-medium text-gray-800 text-sm leading-tight">
                               {g.alias ?? g.nombre ?? 'Sin nombre'}
                             </p>
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${NIVEL_BADGE[g.nivel ?? 'casual']}`}>
-                              {(g.nivel ?? 'casual').charAt(0).toUpperCase() + (g.nivel ?? 'casual').slice(1)}
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${NIVEL_BADGE[g.nivel]}`}>
+                              {g.nivel.charAt(0).toUpperCase() + g.nivel.slice(1)}
                             </span>
                           </div>
                         </div>

@@ -13,6 +13,9 @@ import {
   formatearFecha,
 } from '@/lib/utils'
 import type { TipoCampana } from '@/types'
+import { getConfig } from '@/lib/config'
+import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
+import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 
 type BloqueFotoRow = {
   id: string
@@ -65,8 +68,7 @@ const COLORES_TIPO: Record<TipoCampana, string> = {
   interna:      'bg-gray-100 text-gray-500',
 }
 
-const NIVEL_ORDEN: Record<string, number> = { casual: 0, activo: 1, pro: 2 }
-const NIVEL_LABEL: Record<string, string>  = { casual: 'Casual', activo: 'Activo', pro: 'Pro' }
+// NIVEL_ORDEN, NIVEL_LABEL y la comparación viven en lib/nivel.ts.
 
 const ESTADO_MISION: Record<string, { label: string; color: string }> = {
   pendiente: { label: 'En revisión', color: 'bg-amber-50 text-amber-600' },
@@ -126,7 +128,7 @@ export default async function CampanaDetallePage({
 
   const campanaActiva = (campanaData as unknown as { estado: string }).estado === 'activa'
 
-  const [{ data: participacionData, error: participacionError }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misionesData }] = await Promise.all([
+  const [{ data: participacionData, error: participacionError }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misionesData }, config, mejorMes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('participaciones')
@@ -138,7 +140,7 @@ export default async function CampanaDetallePage({
       .maybeSingle(),
     supabase
       .from('profiles')
-      .select('nivel, tipo_actor')
+      .select('tipo_actor')
       .eq('id', user.id)
       .single(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,14 +162,21 @@ export default async function CampanaDetallePage({
       .eq('campana_id', params.id)
       .eq('gondolero_id', user.id)
       .order('created_at', { ascending: false }),
+    // El gate mira el MÁXIMO alcanzado, no el nivel del mes. Ver lib/nivel-maximo.ts.
+    getConfig(),
+    mejorMesDeMisiones(user.id, admin),
   ])
 
   console.log('[campana-detalle] participacion result:', participacionData, 'error:', participacionError)
 
   const c = campanaData as unknown as CampanaDetalle
   const participacion = participacionData as { id: string; estado: string } | null
-  const profileRow = profileData as { nivel: string; tipo_actor: string } | null
-  const gondoleroNivel = profileRow?.nivel ?? 'casual'
+  const profileRow = profileData as { tipo_actor: string } | null
+  // `null` = no se pudo medir; no se aplasta a 'casual'. Ver lib/nivel.ts.
+  const gondoleroNivel = nivelDeMejorMes(mejorMes, {
+    activo: config.niveles.fotosCasualAActivo,
+    pro:    config.niveles.fotosActivoAPro,
+  })
   const esFixer = profileRow?.tipo_actor === 'fixer'
   const actorCampana = (campanaData as unknown as { actor_campana: string | null }).actor_campana
   const misDistriIds = esFixer
@@ -214,7 +223,7 @@ export default async function CampanaDetallePage({
 
   // Restricciones operativas de acceso
   const nivelMinimo       = c.nivel_minimo ?? 'casual'
-  const nivelOk           = (NIVEL_ORDEN[gondoleroNivel] ?? 0) >= (NIVEL_ORDEN[nivelMinimo] ?? 0)
+  const nivelOk           = cumpleNivelMinimo(gondoleroNivel, nivelMinimo)
   const inscripcionCerrada = !!(c.fecha_limite_inscripcion && new Date(c.fecha_limite_inscripcion) < new Date())
   const cupoLleno         = !!(c.tope_total_comercios != null && c.comercios_relevados >= c.tope_total_comercios)
   const cupoProgreso      = c.tope_total_comercios
@@ -547,9 +556,15 @@ export default async function CampanaDetallePage({
               {nivelMinimo !== 'casual' && (
                 <ReqRow
                   ok={nivelOk}
-                  text={nivelOk
-                    ? `Tu nivel ${NIVEL_LABEL[gondoleroNivel]} cumple el requisito (${NIVEL_LABEL[nivelMinimo]})`
-                    : `Requiere nivel ${NIVEL_LABEL[nivelMinimo]} — tu nivel es ${NIVEL_LABEL[gondoleroNivel]}`}
+                  text={
+                    // Sin nivel medido no se afirma cuál es: la fila dice que el
+                    // requisito existe y nada más. Inventar un "tu nivel es
+                    // Casual" que no se midió sería peor que no decirlo.
+                    gondoleroNivel === null
+                      ? `Requiere nivel ${NIVEL_LABEL[nivelMinimo]}`
+                      : nivelOk
+                        ? `Tu nivel ${NIVEL_LABEL[gondoleroNivel]} cumple el requisito (${NIVEL_LABEL[nivelMinimo]})`
+                        : `Requiere nivel ${NIVEL_LABEL[nivelMinimo]} — tu nivel es ${NIVEL_LABEL[gondoleroNivel]}`}
                 />
               )}
 

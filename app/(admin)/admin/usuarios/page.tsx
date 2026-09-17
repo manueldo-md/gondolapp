@@ -6,6 +6,8 @@ import { AccionesUsuario } from './acciones-usuario'
 import { AsignarAliasBtn } from './asignar-alias-btn'
 import { AsignarCodigosBtn } from './asignar-codigos-btn'
 import { tieneCodigoVigente } from '@/lib/codigo-gondolero'
+import { getConfig } from '@/lib/config'
+import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
 
 function adminClient() {
   return createAdminClient(
@@ -41,7 +43,7 @@ export default async function UsuariosPage({
   let query = admin
     .from('profiles')
     .select(`
-      id, nombre, alias, celular, tipo_actor, nivel, puntos_disponibles, created_at, distri_id, marca_id,
+      id, nombre, alias, celular, tipo_actor, puntos_disponibles, created_at, distri_id, marca_id,
       distri:distribuidoras(razon_social, cuit),
       marca:marcas(razon_social, cuit)
     `)
@@ -86,6 +88,13 @@ export default async function UsuariosPage({
     bannedMap[u.id] = bannedUntil ? new Date(bannedUntil) > new Date() : false
   })
 
+  // La insignia de nivel se deriva de las misiones aprobadas del mes, igual que
+  // en la pantalla del gondolero. `profiles.nivel` mostraba lo que dejó el seed.
+  const [config, misionesDelMes] = await Promise.all([
+    getConfig(),
+    contarMisionesAprobadasDelMes(admin),
+  ])
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const lista = ((profiles ?? []) as any[]).map(p => {
     const distriData = Array.isArray(p.distri) ? p.distri[0] : p.distri
@@ -98,6 +107,13 @@ export default async function UsuariosPage({
       distri_cuit:    distriData?.cuit ?? null,
       marca_nombre:   marcaData?.razon_social ?? null,
       marca_cuit:     marcaData?.cuit ?? null,
+      nivel:          p.tipo_actor === 'gondolero' || p.tipo_actor === 'fixer'
+        ? nivelPorMisiones(
+            misionesDelMes.get(p.id) ?? 0,
+            config.niveles.fotosCasualAActivo,
+            config.niveles.fotosActivoAPro,
+          )
+        : null,
     }
   })
 

@@ -3058,33 +3058,115 @@ columna, una función, un trigger— hay que consultarlo. El dump
 `docs/schema-real-2026-09-pre-incidente.md` no alcanza, y el código que llama a
 algo tampoco prueba que ese algo exista.
 
-### Pendiente — el máximo alcanzado, y borrar las dos columnas
+### Los gates usan el máximo alcanzado (18/9/2026)
 
-El nivel que se MUESTRA es el del mes. Los **gates** —acceso a campañas por
-`nivel_minimo` y el canje de transferencia, que es solo Pro— siguen leyendo
-`profiles.nivel`.
+Hay **dos** niveles y no son el mismo número:
 
-**Decisión tomada (17/9/2026): los gates pasan a usar el MÁXIMO ALCANZADO**,
-derivado también, sin columna: "¿alguna vez en un mes llegó a N misiones?".
+| | Quién lo calcula | Qué mide | Dónde se usa |
+|---|---|---|---|
+| **Del mes** | `lib/nivel-mensual.ts` | misiones aprobadas del mes en curso | lo que se MUESTRA: Logros, perfil, ranking, las 9 insignias de los paneles |
+| **Máximo alcanzado** | `lib/nivel-maximo.ts` | el mejor mes de toda su historia | los 4 GATES |
 
-El razonamiento: **el privilegio ganado no se pierde**. Un gondolero Pro en marzo
-que no trabaja en abril no puede quedarse sin acceso a campañas Pro ni sin poder
-canjear una transferencia con los puntos que ya ganó. Si en algún momento se
-quiere penalizar la inactividad, va a ser con una regla explícita, no como efecto
-lateral de cómo se calcula el nivel.
+**El privilegio ganado no se pierde.** Un Pro de marzo que no trabaja en abril no
+puede quedarse sin acceso a las campañas Pro ni sin poder canjear una
+transferencia con los puntos que ya ganó. Si algún día se quiere penalizar la
+inactividad va a ser con una regla explícita, no como efecto lateral de cómo se
+calcula el nivel.
 
-Con eso resuelto se pueden borrar `profiles.nivel` y `profiles.fotos_aprobadas`.
-**Inventario de lo que hay que tocar antes** — son 19 sitios, no dos:
+Los cuatro gates —eran **cuatro**, no tres: el del canje se venía contando mal—:
 
-| Tipo | Cuántos | Dónde |
+1. `gondolero/campanas/page.tsx` — el chip "Requiere nivel X"
+2. `gondolero/campanas/[id]/page.tsx` — ídem, en el detalle
+3. `gondolero/campanas/[id]/actions.ts` — **el control real**, el de unirse
+4. `gondolero/perfil/actions.ts` — el canje de transferencia, solo Pro
+
+**`null` no es `casual`.** `nivelMaximoAlcanzado` devuelve `null` cuando la
+consulta falla, y eso NO se aplasta a "casual": decirle "requiere nivel Pro" a un
+gondolero que ES Pro porque Supabase devolvió un 500 es el rechazo tardío de
+siempre disfrazado de regla de negocio. Las actions devuelven un error de
+infraestructura que dice "probá de nuevo"; las pantallas no bloquean, porque
+informan y el control real vuelve a medir.
+
+**El catálogo de canjes es un gate, no una insignia.** `CanjeCatalogo` recibía el
+nivel del MES mientras `solicitarCanje` miraba `profiles.nivel`: la pantalla
+escondía la transferencia a alguien a quien la action se la concedía. Ahora los
+dos miran el máximo.
+
+### Se borraron `profiles.nivel` y `profiles.fotos_aprobadas` del código (18/9/2026)
+
+Las columnas **siguen en la base**: el DROP está escrito en
+`supabase/migrations/20260918140000_drop_nivel_y_fotos_aprobadas.sql` y se corre
+cuando este deploy esté verificado en producción. El orden es ese y no el
+inverso — si se dropean primero, cada pantalla que las pedía tira error de
+PostgREST.
+
+Qué se tocó, que eran **19 lecturas + 5 escrituras**:
+
+| Tipo | Cuántos | Con qué quedó |
 |---|---|---|
-| **Gates** | 3 | `gondolero/campanas/page.tsx` + `[id]/page.tsx` (`nivelOk`), **`campanas/[id]/actions.ts`** (la action de unirse — el control real), `perfil/actions.ts` (transferencia) |
-| Insignias | ~16 | admin ×5, distribuidora ×4, repositora ×2, perfil del gondolero, Logros… |
-| Columna visible | 5 tablas | "Fotos aprobadas" en paneles de admin, distri y repositora |
+| Gates | 4 | `lib/nivel-maximo.ts` |
+| Escrituras muertas | 5 | se borraron (ver abajo) |
+| Selects ya muertos | 2 | `logros/page.tsx`, `perfil/page.tsx` traían `nivel` sin usarlo |
+| Insignias | 9 | el nivel del mes, derivado |
+| Columna "Fotos aprobadas" | 5 tablas | `lib/fotos-aprobadas.ts`, contando contra `fotos` |
+| Seed | 2 | dejó de escribir `nivel` |
 
-El orden es el de siempre: primero el código deja de leerlas y de escribirlas,
-después el DROP. Y el seed también las escribe (`nivel: 'activo'`), así que entra
-en el mismo tramo.
+**Las 5 escrituras de `profiles.nivel` existían pero estaban muertas**, que no es
+lo mismo que "nadie las escribía": las tres pantallas de aprobación de foto
+tenían el mismo bloque copiado —`incrementar_fotos_aprobadas` + leer el contador
++ `calcularNuevoNivel` + `update({ nivel })`— y nunca subió a nadie porque el
+contador que comparaban estaba clavado en cero. Se perdió la notificación
+"¡Subiste al nivel X!", que tampoco se envió nunca: con el nivel derivado hace
+falta otro disparador y es un tramo propio.
+
+**`verificarLogros` ya no recibe `fotosAprobadas` por parámetro**: lo cuenta
+adentro, con las filas de `fotos` que ya traía. Que lo cuente la función y no el
+llamador es lo que impide que tres pantallas vuelvan a pasar tres números
+distintos — era exactamente eso lo que pasaba, y por eso el logro
+`primera_foto` **no se desbloqueó nunca** por ese camino.
+
+### Lo medido el 17/9/2026, que es lo que hizo que este tramo fuera gratis
+
+```
+                        PROD           DEV
+nivel = activo        22 de 29       19 de 24
+nivel = pro            1              1
+fotos_aprobadas > 0      5 (máx: 6)     0
+campañas con nivel_minimo != casual   0        0
+canjes de transferencia pedidos         0        0
+```
+
+En prod, **8 de los 22 activo no habían hecho nunca una misión**: ocho accesos a
+campañas de nivel Activo regalados por el seed. Y como no hay ninguna campaña con
+requisito de nivel ni se pidió nunca una transferencia, **los cuatro gates están
+inertes**: el cambio no le sacó acceso a nadie en la práctica.
+
+### Pendiente de producto — el umbral de 50 misiones es inalcanzable
+
+`configuracion.nivel_fotos_casual_a_activo` vale **50** en las dos bases (no el 20
+que está como default en `lib/config.ts`). El nivel cuenta misiones aprobadas en
+un mes calendario, y el mejor mes de cualquier gondolero fue **12 en prod y 20 en
+dev**.
+
+O sea que **activo no lo alcanza nadie**, ni por el nivel del mes ni por el
+máximo. La primera campaña que se cree con `nivel_minimo = activo` no va a
+admitir a nadie, y el gondolero va a ver "Requiere nivel Activo" sin ninguna vía
+para conseguirlo. Hay que decidir el umbral antes de que exista esa campaña.
+
+### Pendiente — cachear el máximo alcanzado si crece el volumen
+
+`nivelMaximoAlcanzado` trae las misiones aprobadas de toda la vida del gondolero
+y agrupa por mes en JS. Hoy son ~10 filas (prod tiene 137 misiones aprobadas EN
+TOTAL entre 29 gondoleros), así que esperar a que haya un problema de performance
+es lo correcto.
+
+**La señal para volver**: lo que vuelve crece para siempre. Un Pro sostenido a 100
+misiones por mes son 2.400 filas en dos años. Cuando moleste, las dos salidas son
+`cache()` de React —por request, sin invalidación que mantener— o materializar la
+agregación en una vista `niveles_por_mes` leída por PostgREST. Una vista sigue
+siendo derivada: no guarda estado. No se hizo una RPC a propósito, porque la
+regla quedaría escrita en dos lenguajes y porque el proyecto ya tiene tres casos
+de código llamando a funciones que no existen en la base.
 
 ### Pendiente de producto — el incentivo por categoría debería ser pagar más, no restringir
 

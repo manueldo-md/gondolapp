@@ -1,6 +1,7 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { tiempoRelativo } from '@/lib/utils'
 import { CheckCircle2 } from 'lucide-react'
+import { contarFotosAprobadas } from '@/lib/fotos-aprobadas'
 
 function adminClient() {
   return createAdminClient(
@@ -15,7 +16,7 @@ export default async function FixersAdminPage() {
 
   const { data: fixersRaw } = await admin
     .from('profiles')
-    .select('id, alias, nombre, activo, fotos_aprobadas, repositora_id, created_at')
+    .select('id, alias, nombre, activo, repositora_id, created_at')
     .eq('tipo_actor', 'fixer')
     .order('created_at', { ascending: false })
 
@@ -37,7 +38,10 @@ export default async function FixersAdminPage() {
   }
 
   // Conteo de fotos por fixer
+  // Las aprobadas se CUENTAN contra `fotos`: `profiles.fotos_aprobadas` era un
+  // contador que nadie incrementaba. Ver lib/fotos-aprobadas.ts.
   const fixerIds = fixers.map(f => f.id)
+  const aprobadasMap = await contarFotosAprobadas(fixerIds, admin)
   let fotosMap: Record<string, number> = {}
   if (fixerIds.length > 0) {
     const { data: fotosData } = await admin
@@ -89,7 +93,7 @@ export default async function FixersAdminPage() {
                     {fotosMap[f.id] ?? 0}
                   </td>
                   <td className="px-4 py-3.5 text-gray-600">
-                    {f.fotos_aprobadas ?? 0}
+                    {aprobadasMap.get(f.id) ?? 0}
                   </td>
                   <td className="px-4 py-3.5">
                     {f.activo ? (

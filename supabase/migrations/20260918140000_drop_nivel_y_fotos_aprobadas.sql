@@ -1,0 +1,73 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- DROP de `profiles.nivel` y `profiles.fotos_aprobadas`
+--
+-- ⚠️  NO CORRER TODAVÍA. Este archivo existe para que el SQL esté escrito y
+--     revisado; se corre cuando el código que dejó de leerlas esté verificado
+--     en producción. Hasta entonces las columnas siguen ahí sin molestar a
+--     nadie: ninguna query las pide.
+--
+-- ── POR QUÉ SE VAN ──────────────────────────────────────────────────────────
+-- `fotos_aprobadas` la mantenía la RPC `incrementar_fotos_aprobadas`, que **no
+-- existe en la base** (verificado en dev y prod el 17/9/2026: `pg_proc` vacío).
+-- Las tres actions de aprobación de foto la llamaban, el error se logueaba y
+-- seguía de largo. El contador nunca se movió en ningún ambiente.
+--
+-- `nivel` la escribía `calcularNuevoNivel`, que leía ese contador. Con el
+-- contador en cero y el umbral en 50, nunca subió a nadie. Lo que hay adentro lo
+-- puso el seed a mano o es el DEFAULT.
+--
+-- Medido el 17/9/2026, antes de sacarlas del código:
+--
+--                          PROD              DEV
+--   nivel = 'activo'       22 de 29          19 de 24
+--   nivel = 'pro'           1                 1
+--   fotos_aprobadas > 0     5 (máximo: 6)     0
+--
+-- Y en prod, **8 de esos 22 'activo' no habían hecho NUNCA una misión**. Como
+-- los cuatro gates leían la columna, eran ocho accesos a campañas de nivel
+-- Activo regalados por el seed.
+--
+-- ── QUÉ LAS REEMPLAZA ───────────────────────────────────────────────────────
+--   · lib/nivel-mensual.ts   → el nivel que se MUESTRA (misiones aprobadas del
+--                              mes en curso)
+--   · lib/nivel-maximo.ts    → el nivel que abre los GATES (el mejor mes de toda
+--                              su historia). El privilegio ganado no se pierde.
+--   · lib/fotos-aprobadas.ts → la columna "Fotos aprobadas" de las cinco tablas,
+--                              contada contra `fotos`
+--
+-- ── ANTES DE CORRERLO ───────────────────────────────────────────────────────
+-- 1. Que el deploy que sacó las columnas del código esté en producción y
+--    verificado. El orden importa: primero el código deja de leerlas, después
+--    el DROP. Al revés, cada pantalla que las pedía tira error de PostgREST.
+--
+-- 2. Comprobar que no haya funciones ni triggers que las toquen — no se pudo
+--    verificar desde la app porque no hay forma de leer `pg_proc` por PostgREST:
+--
+--      SELECT p.proname, left(p.prosrc, 200) AS fragmento
+--      FROM pg_proc p
+--      JOIN pg_namespace n ON n.oid = p.pronamespace
+--      WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+--        AND (p.prosrc ILIKE '%fotos_aprobadas%' OR p.prosrc ILIKE '%.nivel%');
+--
+--      SELECT t.tgname, c.relname
+--      FROM pg_trigger t
+--      JOIN pg_class c ON c.oid = t.tgrelid
+--      WHERE c.relname = 'profiles' AND NOT t.tgisinternal;
+--
+-- 3. Después del DROP, regenerar los tipos: `npm run db:types`.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Sin CASCADE a propósito: si alguna vista o policy depende de la columna,
+-- Postgres se niega y la nombra. Ese error ES la comprobación. Con CASCADE se
+-- llevaría puesta la vista sin avisar.
+--
+-- El CHECK sobre `nivel` del schema inicial se va solo con la columna.
+ALTER TABLE profiles DROP COLUMN IF EXISTS nivel;
+ALTER TABLE profiles DROP COLUMN IF EXISTS fotos_aprobadas;
+
+-- Verificación — tiene que devolver 0 filas:
+--
+--   SELECT column_name
+--   FROM information_schema.columns
+--   WHERE table_name = 'profiles'
+--     AND column_name IN ('nivel', 'fotos_aprobadas');

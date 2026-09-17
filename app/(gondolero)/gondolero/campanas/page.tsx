@@ -5,6 +5,8 @@ import { LayoutGrid } from 'lucide-react'
 import type { TipoCampana } from '@/types'
 import { CampanasSections, type CampanaCardData } from './campanas-sections'
 import { MisionesPendientes } from '@/components/gondolero/misiones-pendientes'
+import { getConfig } from '@/lib/config'
+import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 
 type CampanaRow = CampanaCardData
 
@@ -40,7 +42,7 @@ export default async function CampanasPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misionesRes, fotosRechazadasRes] = await Promise.all([
+  const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misionesRes, fotosRechazadasRes, config, mejorMes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('participaciones')
@@ -49,7 +51,7 @@ export default async function CampanasPage() {
       .in('estado', ['activa', 'completada', 'abandonada']),
     supabase
       .from('profiles')
-      .select('nivel, tipo_actor')
+      .select('tipo_actor')
       .eq('id', user.id)
       .single(),
     supabase
@@ -82,6 +84,10 @@ export default async function CampanasPage() {
       .eq('gondolero_id', user.id)
       .eq('estado', 'rechazada')
       .is('reemplazada_por', null),
+    // El nivel que abre el gate es el MÁXIMO alcanzado, no el del mes: el
+    // privilegio ganado no se pierde por dejar de trabajar. Ver lib/nivel-maximo.ts.
+    getConfig(),
+    mejorMesDeMisiones(user.id, admin),
   ])
 
   const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
@@ -94,8 +100,14 @@ export default async function CampanasPage() {
     }
   }
 
-  const gondoleroNivel = (profileRes.data as { nivel: string; tipo_actor: string } | null)?.nivel ?? 'casual'
-  const gondoleroTipoActor = (profileRes.data as { nivel: string; tipo_actor: string } | null)?.tipo_actor ?? 'gondolero'
+  // `null` = no se pudo medir. Se propaga tal cual: `cumpleNivelMinimo` lo deja
+  // pasar a propósito, y aplastarlo a 'casual' acá le cerraría campañas a quien
+  // sí tiene el nivel. Ver lib/nivel.ts.
+  const gondoleroNivel = nivelDeMejorMes(mejorMes, {
+    activo: config.niveles.fotosCasualAActivo,
+    pro:    config.niveles.fotosActivoAPro,
+  })
+  const gondoleroTipoActor = (profileRes.data as { tipo_actor: string } | null)?.tipo_actor ?? 'gondolero'
   const esFixer = gondoleroTipoActor === 'fixer'
   const misDistriIds = esFixer
     ? (misDistrisFixerRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)

@@ -3,6 +3,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import { getConfig } from '@/lib/config'
+import { nivelPorMisiones } from '@/lib/nivel-mensual'
+import { mejorMesDeMisiones } from '@/lib/nivel-maximo'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
@@ -45,7 +48,7 @@ export async function vincularPorCodigo(
   codigoGondolero: string,
   distriId: string,
   distriNombre: string
-): Promise<{ gondolero?: { id: string; alias: string | null; nombre: string | null; nivel: string; tipo_actor: string }; error?: string; vinculado?: boolean }> {
+): Promise<{ gondolero?: { id: string; alias: string | null; nombre: string | null; nivel: string | null; tipo_actor: string }; error?: string; vinculado?: boolean }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -55,7 +58,7 @@ export async function vincularPorCodigo(
   // Buscar el perfil por código — primero sin filtro de tipo para dar mensajes útiles
   const { data: perfil } = await admin
     .from('profiles')
-    .select('id, alias, nombre, nivel, tipo_actor')
+    .select('id, alias, nombre, tipo_actor')
     .eq('codigo_gondolero', codigoGondolero.toUpperCase())
     .maybeSingle()
 
@@ -83,8 +86,18 @@ export async function vincularPorCodigo(
     return { error: 'Este gondolero ya está vinculado a tu distribuidora.' }
   }
 
+  // El nivel que se le muestra a la distri al vincular es el MÁXIMO alcanzado,
+  // no el del mes: acá está evaluando a quién suma a su equipo, y alguien que
+  // llegó a Pro sigue siendo alguien que llegó a Pro. `null` cuando no se pudo
+  // medir — el panel muestra un guion, no un "Casual" que nadie contó.
+  const config = await getConfig()
+  const mejorMes = await mejorMesDeMisiones(gondolero.id, admin)
+  const nivel = mejorMes === null
+    ? null
+    : nivelPorMisiones(mejorMes, config.niveles.fotosCasualAActivo, config.niveles.fotosActivoAPro)
+
   // Si hay solicitud rechazada, terminada o pendiente → se permite reenviar (upsert)
-  return { gondolero: { id: gondolero.id, alias: gondolero.alias, nombre: gondolero.nombre, nivel: gondolero.nivel, tipo_actor: gondolero.tipo_actor } }
+  return { gondolero: { id: gondolero.id, alias: gondolero.alias, nombre: gondolero.nombre, nivel, tipo_actor: gondolero.tipo_actor } }
 }
 
 export async function confirmarVinculacionPorCodigo(

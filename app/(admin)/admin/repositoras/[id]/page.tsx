@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { tiempoRelativo } from '@/lib/utils'
 import { ValidarRepoBtn, DesactivarRepoBtn } from '../validar-btn'
+import { contarFotosAprobadas } from '@/lib/fotos-aprobadas'
 
 function adminClient() {
   return createAdminClient(
@@ -29,7 +30,7 @@ export default async function RepositoraDetallePage({ params }: { params: { id: 
   // Fixers vinculados con stats
   const { data: fixersRaw } = await admin
     .from('profiles')
-    .select('id, alias, nombre, activo, fotos_aprobadas, created_at')
+    .select('id, alias, nombre, activo, created_at')
     .eq('repositora_id', params.id)
     .eq('tipo_actor', 'fixer')
     .order('created_at', { ascending: false })
@@ -37,6 +38,8 @@ export default async function RepositoraDetallePage({ params }: { params: { id: 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fixers = (fixersRaw ?? []) as any[]
   const fixerIds = fixers.map(f => f.id)
+  // Las fotos aprobadas se cuentan contra `fotos`. Ver lib/fotos-aprobadas.ts.
+  const aprobadasMap = await contarFotosAprobadas(fixerIds, admin)
 
   // Fotos totales por fixer y campañas activas fixer
   let fotosMap: Record<string, number> = {}
@@ -160,7 +163,7 @@ export default async function RepositoraDetallePage({ params }: { params: { id: 
                     <td className="px-4 py-3.5 font-medium text-gray-900">{f.alias ?? '—'}</td>
                     <td className="px-4 py-3.5 text-gray-600">{f.nombre ?? '—'}</td>
                     <td className="px-4 py-3.5 text-gray-700">{fotosMap[f.id] ?? 0}</td>
-                    <td className="px-4 py-3.5 text-gray-700">{f.fotos_aprobadas ?? 0}</td>
+                    <td className="px-4 py-3.5 text-gray-700">{aprobadasMap.get(f.id) ?? 0}</td>
                     <td className="px-4 py-3.5">
                       {f.activo ? (
                         <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">

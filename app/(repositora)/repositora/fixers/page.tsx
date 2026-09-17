@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { Users, CheckCircle2, XCircle } from 'lucide-react'
 import { InvitarFixerPanel } from './invitar-panel'
 import { FixerRepoDesvincularBtn } from './desvincular-btn'
+import { contarFotosAprobadas } from '@/lib/fotos-aprobadas'
 
 function adminClient() {
   return createAdminClient(
@@ -18,7 +19,6 @@ interface FixerRow {
   nombre: string | null
   alias: string | null
   activo: boolean
-  fotos_aprobadas: number
   created_at: string
 }
 
@@ -84,11 +84,15 @@ export default async function FixersPage({
   if (vinculadosIds.length > 0) {
     const { data: profilesData } = await admin
       .from('profiles')
-      .select('id, nombre, alias, activo, fotos_aprobadas, created_at')
+      .select('id, nombre, alias, activo, created_at')
       .in('id', vinculadosIds)
       .order('created_at', { ascending: false })
     fixers = (profilesData ?? []) as FixerRow[]
   }
+
+  // "Fotos aprobadas" se cuenta contra `fotos`: `profiles.fotos_aprobadas` era
+  // un contador que la RPC inexistente nunca incrementó. Ver lib/fotos-aprobadas.ts.
+  const aprobadasMap = await contarFotosAprobadas(fixers.map(f => f.id), admin)
 
   const resolvedSearchParams = await searchParams
   const tab = resolvedSearchParams.tab ?? 'vinculados'
@@ -182,7 +186,7 @@ export default async function FixersPage({
                           <p className="text-xs text-gray-400">{f.nombre}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-gray-600">{f.fotos_aprobadas ?? 0}</td>
+                      <td className="px-4 py-3.5 text-gray-600">{aprobadasMap.get(f.id) ?? 0}</td>
                       <td className="px-4 py-3.5">
                         {f.activo ? (
                           <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
