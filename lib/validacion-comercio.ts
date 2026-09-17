@@ -124,10 +124,31 @@ export async function validarComercioYCrearMision(
   // Las dos columnas, siempre juntas. Ver el encabezado.
   const { error: errUpd } = await db
     .from('comercios')
-    .update({ estado: 'activo', validado: true, motivo_rechazo: null })
+    .update({ estado: 'activo', validado: true })
     .eq('id', comercioId)
 
   if (errUpd) return { ok: false, error: 'No se pudo aprobar el comercio: ' + errUpd.message }
+
+  // ── Limpiar el motivo de un rechazo anterior, en una escritura aparte ─────
+  //
+  // Va separado del UPDATE de arriba A PROPÓSITO, y no es una optimización: es
+  // para que un deploy que llegue ANTES que su migración no rompa la validación
+  // entera. `motivo_rechazo` se agrega en 20260917200000; si viajara en el mismo
+  // UPDATE, PostgREST rechazaría la sentencia completa por la columna que
+  // todavía no existe y nadie podría aprobar NINGÚN comercio — ni siquiera uno
+  // que nunca se rechazó. El orden deploy/migración se nos adelanta seguido.
+  //
+  // Sale barato y falla blando: solo importa cuando el comercio venía de un
+  // rechazo, y el estado que manda ya quedó escrito arriba.
+  const { error: errMotivo } = await db
+    .from('comercios')
+    .update({ motivo_rechazo: null })
+    .eq('id', comercioId)
+
+  if (errMotivo) {
+    console.warn('[validarComercio] no se pudo limpiar motivo_rechazo ' +
+      '(¿falta la migración 20260917200000?):', errMotivo.message)
+  }
 
   // Un comercio cargado fuera de una campaña de altas —desde la captura normal,
   // o por un admin— se valida y ahí termina. No hay alta que pagar.
@@ -299,7 +320,17 @@ export async function rechazarComercioConMotivo(
     .update({ estado: 'rechazado', validado: false, motivo_rechazo: motivo })
     .eq('id', comercioId)
 
-  if (error) return { ok: false, error: 'No se pudo rechazar el comercio: ' + error.message }
+  // Acá el motivo SÍ va en el mismo UPDATE, y tiene que ser así: un rechazo sin
+  // el porqué no es un rechazo a medias, es el que no queremos guardar. Si falta
+  // la migración, esto falla — y falla bien, porque la alternativa sería dejar
+  // al gondolero con el alta rechazada y sin explicación.
+  if (error) {
+    return {
+      ok: false,
+      error: 'No se pudo rechazar el comercio: ' + error.message +
+        (/motivo_rechazo/.test(error.message) ? ' (falta correr la migración 20260917200000)' : ''),
+    }
+  }
 
   // La foto de fachada pierde sus puntos retenidos.
   const { error: errFotos } = await db
