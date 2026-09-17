@@ -3098,3 +3098,109 @@ el mismo trabajo, en vez de que los que menos aportan pierdan el acceso.
 No está diseñado ni decidido. Lo que sí conviene saber es que las dos formas de
 incentivo no son equivalentes: restringir reduce la oferta de gondoleros para una
 campaña, y pagar más la aumenta.
+
+### Campañas `tipo='comercios'` — cuatro roturas encadenadas (relevado 17/9/2026)
+
+Relevado contra **prod en vivo** sobre la campaña `0ef27396` "Alta comercios zona
+norte", con tres altas reales hechas a las 11:15, 11:16 y 11:16.
+
+**1. La misión no se crea nunca.** No hay una sola línea en el repo que inserte
+en `misiones` para una campaña de este tipo. Ni el alta (`crearComercioNuevo`),
+ni la validación del comercio, ni la aprobación de la foto. No es un problema de
+momento —"la misión llega cuando la distri valida"— porque no llega nunca.
+
+No es el patrón de `resolverMisionDirecta`: ahí había una escritura que fallaba y
+un `catch` que la tapaba. Acá **no hay escritura**. No aparece en ningún log
+porque nada da error.
+
+El comentario de `actions-comercios.ts` que dice *"Acá arriba se acaba de crear
+una misión en 'pendiente'"* es falso: se escribió asumiendo una misión que ese
+flujo nunca escribió, y el `sincronizarComerciosCompletados` de la línea
+siguiente recalcula sobre una tabla que este camino no toca.
+
+**Consecuencia:** `min_comercios_para_cobrar` cuenta comercios distintos con
+misión **aprobada**. En una campaña de altas ese número no puede subir nunca. El
+gondolero ve "1 de 3" para siempre, haga 3 altas o 300. El 1 es del seed.
+
+**2. Sin foto de fachada, el alta no deja rastro cobrable.** El insert en `fotos`
+está detrás de `if (bloqueId && params.fachadaUrl)`. Sin foto no hay fila, no hay
+nada en ninguna cola de revisión, y cuando la distri valide el comercio el loop
+de `bounty_estado='retenido'` no va a encontrar nada que pagar. El trabajo queda
+invisible. Dos de las tres altas de prod están así.
+
+**3. Con foto, se paga por el camino equivocado.** La fila de `fotos` sale con
+`mision_id = null`, así que `aprobarFoto` toma la rama legacy y acredita al
+instante, **salteándose `min_comercios_para_cobrar`**. En prod: crédito de 200 a
+las 11:17:18, 31 s después del alta. Y `bounty_estado` queda en `'retenido'`
+porque esa rama no lo limpia — así que el barrido de `cerrarCampana` lo va a
+acreditar **otra vez** al cerrar. Doble pago latente.
+
+**4. `puntos_por_foto` vs `puntos_por_mision`.** Esta campaña tiene
+`puntos_por_foto = 0` y `puntos_por_mision = 200`. `aprobarFoto` tiene el
+fallback de una a la otra; las dos actions de validación de comercio
+(`aprobarComercio` y `aprobarComercioDistri`) leen **solo `puntos_por_foto`**.
+Aunque mañana existiera la misión, ese camino seguiría pagando 0 acá.
+
+### `comercios.validado` y `comercios.estado` — dos columnas para lo mismo
+
+**La app tiene CUATRO escrituras de "validar un comercio" y solo dos escriben las
+dos columnas.**
+
+| Action | Pantalla | Escribe | Acredita bounty |
+|---|---|---|---|
+| `aprobarComercio` | `/admin/comercios/pendientes` | `estado` + `validado` | sí |
+| `aprobarComercioDistri` | `/distribuidora/comercios/pendientes` | `estado` + `validado` | sí |
+| `toggleValidarComercio` | `/admin/comercios` | **solo `validado`** | no |
+| `validarComercio` | `/distribuidora/comercios` | **solo `validado`** | no |
+| (auto por checks GPS) | `registrarChecksGPS` | `estado` + `validado` | no |
+
+**Y las dos columnas alimentan pantallas distintas.** Las colas de pendientes
+—`/admin/comercios/pendientes`, `/distribuidora/comercios/pendientes` y el badge
+del layout de distribuidora— filtran por `estado='pendiente_validacion'`. Las
+listas, los contadores del tablero y los dos toggles filtran por `validado`.
+
+Así que un comercio "validado" desde la lista queda `validado=true` con
+`estado='pendiente_validacion'`: aprobado en una pantalla, pendiente en la otra,
+y con el bounty de su foto sin acreditar. **El 17/9/2026 pasó en prod con los
+tres comercios de la campaña `0ef27396`** — `updated_at` a las 12:27, ningún
+`movimientos_puntos` nuevo y el `bounty_estado` de la foto intacto, que es la
+huella que distingue cuál de las cuatro actions corrió.
+
+La trampa de navegación: `/admin/comercios` tiene un filtro llamado **"Sin
+validar (N)"** con un botón **"Validar"**. Es una lista de pendientes que no es
+*la* lista de pendientes, y el botón que parece el de aprobar es el que menos
+hace.
+
+Query para medir el desacuerdo:
+
+```sql
+SELECT estado, validado, count(*)
+FROM comercios
+GROUP BY estado, validado
+ORDER BY count(*) DESC;
+
+SELECT id, nombre, estado, validado, campana_id, updated_at
+FROM comercios
+WHERE (validado = true  AND estado <> 'activo')
+   OR (validado = false AND estado =  'activo')
+ORDER BY updated_at DESC;
+```
+
+Medido el 17/9/2026: **prod 4 en desacuerdo** (los tres de la campaña más
+"Kiosco EN" del 11/9, que muestra que el toggle viene produciendo esto desde
+antes), **dev 0**. Dev no lo tiene porque ahí nadie usó el toggle, no porque el
+código sea distinto.
+
+### PENDIENTE de UX — aprobar la foto de fachada NO valida el comercio
+
+En resultados de campaña aparecen las fotos de fachada para aprobar. Aprobarlas
+acredita puntos, pero **deja el comercio en `pendiente_validacion`**: es otra
+acción, en otra pantalla, con otro botón. Nada en pantalla dice que son dos
+cosas, y las dos se llaman "aprobar".
+
+Quien revisa cree que terminó. El comercio queda sin validar y —mientras siga
+existiendo el bug de la misión— el gondolero igual no cobra lo que corresponde.
+
+Es el mismo problema de fondo que las dos columnas: **"validar el comercio" está
+repartido en cuatro botones de cuatro pantallas y ninguno dice qué mitad hace.**
+Cualquier arreglo que toque solo una de las dos columnas va a reproducir esto.
