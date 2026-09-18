@@ -120,7 +120,9 @@ export default async function AdminTableroPage() {
       .order('created_at', { ascending: false })
       .limit(5),
     // Campañas todas (para breakdown por estado + top marcas)
-    admin.from('campanas').select('id, nombre, estado, marca_id'),
+    // `distri_id` alimenta la atribución del ranking de distribuidoras. Es una
+    // columna más en una consulta que ya corría, no una consulta nueva.
+    admin.from('campanas').select('id, nombre, estado, marca_id, distri_id'),
     // Gondoleros nuevos esta semana / anterior
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('tipo_actor', 'gondolero').gte('created_at', hace7d.toISOString()),
     admin.from('profiles').select('*', { count: 'exact', head: true }).eq('tipo_actor', 'gondolero').gte('created_at', hace14d.toISOString()).lt('created_at', hace7d.toISOString()),
@@ -218,39 +220,66 @@ export default async function AdminTableroPage() {
 
   // ── Rankings ──────────────────────────────────────────────────────────────
 
-  const distriMap            = new Map(distriList.map((d: { id: string; razon_social: string }) => [d.id, d.razon_social]))
-  const gondToDistri         = new Map(gondolerosProfiles.filter((g: { distri_id: string | null }) => g.distri_id).map((g: { id: string; distri_id: string }) => [g.id, g.distri_id]))
-  const gondolerosActivosSet = new Set(misionesEsteMes.filter(m => m.estado === 'aprobada').map(m => m.gondolero_id))
+  const distriMap = new Map(distriList.map((d: { id: string; razon_social: string }) => [d.id, d.razon_social]))
 
-  // Distri stats
-  const gondByDistri    = new Map<string, Set<string>>()
-  const misionByDistri  = new Map<string, number>()
-  const fotasByDistri   = new Map<string, number>()
+  // ── Ranking de distribuidoras: se atribuye por CAMPAÑA ─────────────────────
+  //
+  // Una misión pertenece a una campaña, y la campaña tiene `distri_id`. Eso es
+  // un hecho. Antes se le preguntaba al gondolero —vía profiles.distri_id— a
+  // quién acreditarle el trabajo, y esa pregunta no tiene respuesta correcta:
+  // un gondolero puede trabajar para varias distribuidoras a la vez, y la
+  // columna guarda una sola.
+  //
+  // Dos consecuencias de mirar la campaña, las dos deseadas:
+  //
+  //  · Lo que se hizo EN campañas de una distri le cuenta a esa distri aunque
+  //    el gondolero "figure" en otra. Medido en dev: Biomega pasaba de 28 a 58
+  //    misiones del mes — más de la mitad de su propio trabajo no se le
+  //    contaba.
+  //  · Las campañas de marca y las de GondolApp tienen `distri_id` en null
+  //    (3 de 9 en prod, 4 de 18 en dev) y ya no se le acreditan a nadie. Antes
+  //    caían en la distri del gondolero, que no tuvo nada que ver con esa
+  //    campaña.
+  const campanaToDistri = new Map<string, string>(
+    campanasAll
+      .filter((c: { distri_id: string | null }) => c.distri_id)
+      .map((c: { id: string; distri_id: string }) => [c.id, c.distri_id])
+  )
 
-  for (const g of gondolerosProfiles) {
-    if (!g.distri_id) continue
-    if (!gondByDistri.has(g.distri_id)) gondByDistri.set(g.distri_id, new Set())
-    gondByDistri.get(g.distri_id)!.add(g.id)
-  }
+  const misionByDistri   = new Map<string, number>()
+  const fotasByDistri    = new Map<string, number>()
+  // Gondoleros distintos con al menos una misión aprobada del mes EN campañas
+  // de esa distri. Se deriva de las mismas misiones, así que no hace falta
+  // saber a qué distribuidora "pertenece" cada uno.
+  const gondActivosByDistri = new Map<string, Set<string>>()
+
   for (const m of misionesEsteMes) {
-    if (m.estado !== 'aprobada') continue
-    const dId = gondToDistri.get(m.gondolero_id)
-    if (dId) misionByDistri.set(dId, (misionByDistri.get(dId) ?? 0) + 1)
+    if (m.estado !== 'aprobada' || !m.campana_id) continue
+    const dId = campanaToDistri.get(m.campana_id)
+    if (!dId) continue
+    misionByDistri.set(dId, (misionByDistri.get(dId) ?? 0) + 1)
+    if (!gondActivosByDistri.has(dId)) gondActivosByDistri.set(dId, new Set())
+    gondActivosByDistri.get(dId)!.add(m.gondolero_id)
   }
   for (const f of fotosEsteMes) {
-    const dId = gondToDistri.get(f.gondolero_id)
+    if (!f.campana_id) continue
+    const dId = campanaToDistri.get(f.campana_id)
     if (dId) fotasByDistri.set(dId, (fotasByDistri.get(dId) ?? 0) + 1)
   }
 
-  const topDistris = Array.from(gondByDistri.keys())
-    .map(dId => ({
-      id:                dId,
-      nombre:            (distriMap.get(dId) ?? 'Sin nombre') as string,
-      gondolerosActivos: [...(gondByDistri.get(dId) ?? new Set())].filter(gId => gondolerosActivosSet.has(gId)).length,
-      misiones:          misionByDistri.get(dId) ?? 0,
-      fotos:             fotasByDistri.get(dId) ?? 0,
+  // Se recorren todas las distribuidoras, no solo las que tienen actividad: una
+  // distri sin misiones este mes tiene que poder aparecer con cero, igual que
+  // antes. Antes la lista salía de "las que tienen algún gondolero por
+  // columna", que era otra forma de la misma inferencia.
+  const topDistris = distriList
+    .map((d: { id: string; razon_social: string }) => ({
+      id:                d.id,
+      nombre:            d.razon_social ?? 'Sin nombre',
+      gondolerosActivos: gondActivosByDistri.get(d.id)?.size ?? 0,
+      misiones:          misionByDistri.get(d.id) ?? 0,
+      fotos:             fotasByDistri.get(d.id) ?? 0,
     }))
-    .sort((a, b) => b.misiones - a.misiones)
+    .sort((a: { misiones: number }, b: { misiones: number }) => b.misiones - a.misiones)
     .slice(0, 5)
 
   // ── Top marcas ─────────────────────────────────────────────────────────────
