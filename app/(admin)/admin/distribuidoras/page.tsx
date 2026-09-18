@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { tiempoRelativo } from '@/lib/utils'
 import { ValidarDistriBtn } from './validar-btn'
 import { NuevaDistriModal } from './nueva-distri-modal'
+import { contarGondolerosPorDistri } from '@/lib/utils-distri'
 
 function adminClient() {
   return createAdminClient(
@@ -25,18 +26,21 @@ export default async function DistribuidorasAdminPage() {
   const distriIds = distris.map((d: { id: string }) => d.id)
 
   // Gondoleros y campañas activas por distribuidora (en paralelo)
-  let gondoleroMap: Record<string, number> = {}
+  //
+  // El conteo de gondoleros sale de los vínculos, no de profiles.distri_id: esa
+  // columna guarda una sola distri, así que a la segunda distribuidora de un
+  // gondolero le faltaba uno en este número. Un gondolero que trabaja para dos
+  // cuenta en las dos, y eso hace que la suma de la columna pueda superar el
+  // total de gondoleros distintos. Ver lib/utils-distri.ts.
+  let gondoleroMap = new Map<string, number>()
   let campanasMap: Record<string, number> = {}
 
   if (distriIds.length > 0) {
-    const [{ data: gondolerosData }, { data: campanasData }] = await Promise.all([
-      admin.from('profiles').select('distri_id').in('distri_id', distriIds).eq('tipo_actor', 'gondolero'),
+    const [conteoGondoleros, { data: campanasData }] = await Promise.all([
+      contarGondolerosPorDistri(distriIds, admin),
       admin.from('campanas').select('distri_id').in('distri_id', distriIds).eq('estado', 'activa'),
     ])
-    gondoleroMap = ((gondolerosData ?? []) as { distri_id: string }[]).reduce(
-      (acc, p) => { acc[p.distri_id] = (acc[p.distri_id] ?? 0) + 1; return acc },
-      {} as Record<string, number>
-    )
+    gondoleroMap = conteoGondoleros
     campanasMap = ((campanasData ?? []) as { distri_id: string }[]).reduce(
       (acc, c) => { acc[c.distri_id] = (acc[c.distri_id] ?? 0) + 1; return acc },
       {} as Record<string, number>
@@ -104,7 +108,7 @@ export default async function DistribuidorasAdminPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3.5 text-sm text-gray-700">
-                    {gondoleroMap[d.id] ?? 0}
+                    {gondoleroMap.get(d.id) ?? 0}
                   </td>
                   <td className="px-4 py-3.5 text-sm text-gray-700">
                     {campanasMap[d.id] ?? 0}

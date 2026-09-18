@@ -7,6 +7,7 @@ import { tiempoRelativo } from '@/lib/utils'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 import type { TipoComercio } from '@/types'
 import { firmarFachadas } from '@/lib/storage-fotos'
+import { getGondolerosDeDistri } from '@/lib/utils-distri'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -65,16 +66,15 @@ export default async function ComerciosPage() {
 
   const distriId = profile?.distri_id ?? null
 
-  // IDs de gondoleros de esta distribuidora
-  let gondoleroIds: string[] = []
-  if (distriId) {
-    const { data: gondolerosData } = await admin
-      .from('profiles')
-      .select('id')
-      .eq('distri_id', distriId)
-      .eq('tipo_actor', 'gondolero')
-    gondoleroIds = (gondolerosData ?? []).map((g: { id: string }) => g.id)
-  }
+  // IDs de gondoleros de esta distribuidora.
+  //
+  // Alimenta `puedeValidar`, que es un PERMISO: la distri puede validar un
+  // comercio que registró alguien de su equipo. Por eso va sin histórico — a un
+  // gondolero desvinculado ya no se le administran los comercios. Y por eso
+  // importa que salga de los vínculos y no de profiles.distri_id: con la
+  // columna, la segunda distribuidora de un gondolero no podía validar nada de
+  // lo que él registrara. Ver lib/utils-distri.ts.
+  const gondoleroIds = distriId ? await getGondolerosDeDistri(distriId, admin) : []
 
   // Todos los comercios validados y sin validar
   const { data: comerciosData, error } = await admin

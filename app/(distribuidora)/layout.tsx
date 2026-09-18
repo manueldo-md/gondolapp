@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { DistriShell } from './distri-shell'
+import { getGondolerosDeDistri } from '@/lib/utils-distri'
 
 export default async function DistriLayout({
   children,
@@ -40,9 +41,12 @@ export default async function DistriLayout({
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    const [{ data: distri }, { data: gondRows }, { count: unreadCount }] = await Promise.all([
+    const [{ data: distri }, gondIds, { count: unreadCount }] = await Promise.all([
       admin.from('distribuidoras').select('razon_social').eq('id', profile.distri_id).single(),
-      admin.from('profiles').select('id').eq('distri_id', profile.distri_id).eq('tipo_actor', 'gondolero'),
+      // Los gondoleros vigentes. Antes salía de profiles.distri_id, que tiene
+      // lugar para una sola distri: al que trabaja para dos, la segunda no lo
+      // veía en este badge. Ver lib/utils-distri.ts.
+      getGondolerosDeDistri(profile.distri_id, admin),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (admin as any)
         .from('notificaciones')
@@ -96,7 +100,6 @@ export default async function DistriLayout({
       // ignorar si la columna aún no existe
     }
 
-    const gondIds = (gondRows ?? []).map((g: { id: string }) => g.id)
     if (gondIds.length > 0) {
       const sieteAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
       const { count } = await admin

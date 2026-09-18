@@ -8,6 +8,7 @@ import { tiempoRelativo } from '@/lib/utils'
 import { ValidarDistriBtn } from '../validar-btn'
 import { getConfig } from '@/lib/config'
 import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
+import { getGondolerosDeDistri } from '@/lib/utils-distri'
 
 function adminClient() {
   return createAdminClient(
@@ -28,13 +29,22 @@ export default async function DistriDetallePage({ params }: { params: { id: stri
 
   if (error || !distri) notFound()
 
-  // Gondoleros vinculados con stats
-  const { data: gondolerosRaw } = await admin
-    .from('profiles')
-    .select('id, alias, nombre, activo, created_at')
-    .eq('distri_id', params.id)
-    .eq('tipo_actor', 'gondolero')
-    .order('created_at', { ascending: false })
+  // Gondoleros vinculados con stats.
+  //
+  // Los IDs salen de gondolero_distri_solicitudes y no de profiles.distri_id:
+  // la columna tiene lugar para una sola distri, así que el gondolero que
+  // trabaja para dos figuraba en una y faltaba en la otra. Sin histórico: los
+  // desvinculados tienen su propia sección en el panel de la distri, esta tabla
+  // es de los vigentes. Ver lib/utils-distri.ts.
+  const vinculadosIds = await getGondolerosDeDistri(params.id, admin)
+
+  const { data: gondolerosRaw } = vinculadosIds.length > 0
+    ? await admin
+        .from('profiles')
+        .select('id, alias, nombre, activo, created_at')
+        .in('id', vinculadosIds)
+        .order('created_at', { ascending: false })
+    : { data: [] }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gondoleros = (gondolerosRaw ?? []) as any[]
