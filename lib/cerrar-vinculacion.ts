@@ -23,8 +23,9 @@
  * estado `'cerrada'` (migración 20260918170000). No `'completada'`, que afirma
  * un trabajo que no terminó, ni `'abandonada'`, que le echa la culpa a él.
  *
- * **2. Paga los bounties retenidos que estén APROBADOS**, aunque no se haya
- * llegado a `min_comercios_para_cobrar`.
+ * **2. Paga los bounties retenidos que estén APROBADOS** —solo si cortó la
+ * distri, ver `iniciadoPor` más abajo— aunque no se haya llegado a
+ * `min_comercios_para_cobrar`.
  *
  * El mínimo es un umbral de CANTIDAD, no de calidad: separa "contestó" de
  * "cobró", y no mira el contenido. Si el trabajo está aprobado, está aprobado.
@@ -41,28 +42,29 @@
  * un segundo escritor sobre las mismas filas: si su filtro no es idéntico, el
  * agujero vuelve por la puerta de al lado.
  *
- * ── EL ABUSO QUE ESTO ABRE, Y NO ESTÁ MITIGADO ──────────────────────────────
- * Pagar al cerrar convierte a la desvinculación en una forma de cobrar por
- * debajo del mínimo. Del lado de la DISTRI no preocupa: el que desvincula es el
- * que paga.
+ * ── QUIÉN CORTA DECIDE SI SE PAGA (`iniciadoPor`) ───────────────────────────
  *
- * **Del lado del GONDOLERO sí, y el argumento que justifica el pago no le
- * aplica.** La razón para pagar es que la desvinculación "no es decisión suya";
- * cuando es él quien se desvincula, sí lo es. El camino queda abierto: hace una
- * misión de una campaña con mínimo 3, se desvincula, cobra, pide que lo
- * re-inviten y repite. El mínimo pasa a ser optativo para cualquiera dispuesto a
- * desvincularse.
+ *   · 'distri'     → los retenidos aprobados **se pagan**
+ *   · 'gondolero'  → **quedan retenidos**
  *
- * Hoy la fricción es que **no existe forma de que el gondolero se auto-vincule**
- * (`solicitarVinculacion` no tiene ningún llamador), así que volver depende de
- * que la distri lo invite. Eso lo hace lento, no imposible.
+ * El argumento que justifica el pago es que la desvinculación no es decisión del
+ * gondolero: dejarle plata retenida por algo que no controla es la peor versión
+ * del sistema. **Cuando es él quien se va, sí la controla, y el argumento no le
+ * aplica.**
  *
- * Se implementa igual en los dos caminos porque es la decisión tomada —un solo
- * comportamiento para el mismo hecho— y porque distinguirlos también tiene un
- * costo: castigar al que se va por su cuenta con la plata que ya ganó. Si algún
- * día hay que cerrarlo, el lugar es `iniciadoPor`: está en la firma y no se usa
- * para decidir, justamente para que restringirlo sea cambiar una condición acá
- * adentro y nada más.
+ * Sin esa distinción, la desvinculación es una forma de cobrar por debajo del
+ * mínimo: una misión de una campaña con mínimo 3, se desvincula, cobra, pide que
+ * lo re-inviten y repite. El mínimo pasaría a ser optativo para cualquiera
+ * dispuesto a desvincularse.
+ *
+ * **Las participaciones se cierran igual en los dos casos.** Lo que cambia es el
+ * dinero, no el estado del trabajo: una campaña a la que ya no puede entrar tiene
+ * que cerrarse venga de donde venga el corte.
+ *
+ * **Y la decisión tiene que ser informada ANTES de confirmar.** El gondolero que
+ * se va por su cuenta ve cuántos puntos deja retenidos y por qué; ver
+ * lib/mensaje-desvinculacion.ts. Enterarse después de apretar sería la misma
+ * trampa que evitamos en todo el resto del sistema.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,17 +79,27 @@ export interface ResumenCierre {
   participacionesCerradas: number
   /** Nombres de esas campañas, para el mensaje al gondolero. */
   campanasCerradas: string[]
-  /** Misiones aprobadas cuyo bounty se liberó por debajo del mínimo. */
-  misionesLiberadas: number
-  /** Puntos acreditados por ese concepto. */
-  puntosLiberados: number
+  /** Misiones aprobadas con bounty retenido por debajo del mínimo. */
+  misionesRetenidas: number
+  /** Puntos de esas misiones. Se pagan o no según `seLiquidan`. */
+  puntosRetenidos: number
+  /**
+   * `true` = esos puntos se acreditan (cortó la distri).
+   * `false` = quedan retenidos (se fue el gondolero).
+   *
+   * Está en el resumen y no se deduce en cada pantalla a propósito: el mensaje
+   * que ve el gondolero dice cosas opuestas según el caso, y una pantalla que
+   * infiera mal le promete plata que no va a llegar.
+   */
+  seLiquidan: boolean
 }
 
 export const RESUMEN_VACIO: ResumenCierre = {
   participacionesCerradas: 0,
   campanasCerradas: [],
-  misionesLiberadas: 0,
-  puntosLiberados: 0,
+  misionesRetenidas: 0,
+  puntosRetenidos: 0,
+  seLiquidan: false,
 }
 
 type Resultado =
@@ -105,8 +117,11 @@ export async function previsualizarCierre(params: {
   gondoleroId: string
   distriId: string
   admin: Admin
+  /** Decide si el resumen dice "se pagan" o "quedan retenidos". */
+  iniciadoPor: 'distri' | 'gondolero'
 }): Promise<ResumenCierre> {
-  const { gondoleroId, distriId, admin } = params
+  const { gondoleroId, distriId, admin, iniciadoPor } = params
+  const seLiquidan = iniciadoPor === 'distri'
   try {
     const campanas = await campanasDeLaDistri(distriId, admin)
     if (campanas.length === 0) return RESUMEN_VACIO
@@ -134,8 +149,9 @@ export async function previsualizarCierre(params: {
     return {
       participacionesCerradas: parts.length,
       campanasCerradas: parts.map(p => nombres.get(p.campana_id) ?? 'una campaña'),
-      misionesLiberadas: mis.length,
-      puntosLiberados: mis.reduce((s, m) => s + (m.puntos_total ?? 0), 0),
+      misionesRetenidas: mis.length,
+      puntosRetenidos: Math.round(mis.reduce((s, m) => s + (m.puntos_total ?? 0), 0)),
+      seLiquidan,
     }
   } catch (err) {
     console.error('[cerrar-vinculacion] error en la previsualización:', err)
@@ -158,10 +174,11 @@ export async function cerrarVinculacion(params: {
   gondoleroId: string
   distriId: string
   admin: Admin
-  /** Quién cortó. Hoy no cambia el comportamiento — ver el docstring del archivo. */
+  /** Quién cortó. DECIDE si los retenidos se pagan. Ver el docstring del archivo. */
   iniciadoPor: 'distri' | 'gondolero'
 }): Promise<Resultado> {
-  const { gondoleroId, distriId, admin } = params
+  const { gondoleroId, distriId, admin, iniciadoPor } = params
+  const seLiquidan = iniciadoPor === 'distri'
 
   try {
     const campanas = await campanasDeLaDistri(distriId, admin)
@@ -193,10 +210,14 @@ export async function cerrarVinculacion(params: {
       if (errCerrar) return { ok: false, error: 'No se pudieron cerrar las campañas en curso: ' + errCerrar.message }
     }
 
-    // ── 2. Liquidar los bounties retenidos que estén aprobados ──────────────
+    // ── 2. Los bounties retenidos: se pagan SOLO si cortó la distri ─────────
     // El filtro es el mismo que el de `aprobarMisionCore`, y tiene que seguir
     // siéndolo: los dos escriben sobre las mismas filas y el movimiento de
     // puntos tiene que cuadrar con lo que queda acreditado.
+    //
+    // Se leen SIEMPRE, se pagan solo con `seLiquidan`. Leerlos también cuando se
+    // va el gondolero no es de más: el resumen se lo dice —"dejás N puntos
+    // retenidos"— y esa frase necesita el número.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filtroLiberables = (q: any) => q
       .eq('gondolero_id',  gondoleroId)
@@ -213,7 +234,7 @@ export async function cerrarVinculacion(params: {
     const mis = retenidas ?? []
     const puntos = Math.round(mis.reduce((s, m) => s + (m.puntos_total ?? 0), 0))
 
-    if (mis.length > 0) {
+    if (mis.length > 0 && seLiquidan) {
       const { error: errLiberar } = await filtroLiberables(
         admin.from('misiones').update({ bounty_estado: 'acreditado' })
       )
@@ -242,8 +263,9 @@ export async function cerrarVinculacion(params: {
       resumen: {
         participacionesCerradas: parts.length,
         campanasCerradas: parts.map(p => nombres.get(p.campana_id) ?? 'una campaña'),
-        misionesLiberadas: mis.length,
-        puntosLiberados: puntos,
+        misionesRetenidas: mis.length,
+        puntosRetenidos: puntos,
+        seLiquidan,
       },
     }
   } catch (err) {

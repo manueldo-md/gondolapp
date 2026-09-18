@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { Loader2, CheckCircle2 } from 'lucide-react'
-import { desvincularseDeDistri, aceptarVinculacionDistri, rechazarVinculacionDistri, aceptarVinculacionRepo, rechazarVinculacionRepo, aceptarVinculacionDistri_Fixer, rechazarVinculacionDistri_Fixer } from './distri-actions'
+import { previsualizarDesvincularme, desvincularseDeDistri, aceptarVinculacionDistri, rechazarVinculacionDistri, aceptarVinculacionRepo, rechazarVinculacionRepo, aceptarVinculacionDistri_Fixer, rechazarVinculacionDistri_Fixer } from './distri-actions'
+import { resumenParaDesvincularme } from '@/lib/mensaje-desvinculacion'
 
 interface DistriActiva {
   solicitudId: string
@@ -56,6 +57,21 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [confirmDesvincular, setConfirmDesvincular] = useState<string | null>(null) // distri_id confirmando
+  // Qué deja atrás si se va. Se pide al abrir la confirmación, no al montar:
+  // son dos consultas y la mayoría de las veces nadie toca "Desvincularme".
+  const [consecuencias, setConsecuencias] = useState<string[]>([])
+  const [cargandoConsecuencias, setCargandoConsecuencias] = useState(false)
+
+  const abrirConfirmacion = (distri: DistriActiva) => {
+    setConfirmDesvincular(distri.distri_id)
+    setConsecuencias([])
+    setCargandoConsecuencias(true)
+    startTransition(async () => {
+      const resumen = await previsualizarDesvincularme(distri.distri_id)
+      setConsecuencias(resumenParaDesvincularme(distri.distri_nombre, resumen))
+      setCargandoConsecuencias(false)
+    })
+  }
   const [distrisActivas, setDistrisActivas] = useState<DistriActiva[]>(initialDistrisActivas)
   const [invitaciones, setInvitaciones] = useState<Invitacion[]>(initialInvitaciones)
   const [procesandoId, setProcesandoId] = useState<string | null>(null)
@@ -280,7 +296,7 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
               </div>
               {confirmDesvincular !== distri.distri_id ? (
                 <button
-                  onClick={() => setConfirmDesvincular(distri.distri_id)}
+                  onClick={() => abrirConfirmacion(distri)}
                   disabled={isPending}
                   className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                 >
@@ -291,6 +307,18 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
                   <p className="text-xs text-red-700 font-medium mb-2">
                     ¿Confirmás que querés desvincularte de {distri.distri_nombre}?
                   </p>
+                  {/* Las consecuencias ANTES de confirmar: irse deja los puntos
+                      retenidos sin cobrar, y eso tiene que verlo mientras
+                      todavía puede no apretar. Ver lib/mensaje-desvinculacion.ts. */}
+                  {cargandoConsecuencias && (
+                    <p className="text-xs text-red-500 mb-2 flex items-center gap-1">
+                      <Loader2 size={11} className="animate-spin" />
+                      Revisando qué tenés en curso…
+                    </p>
+                  )}
+                  {consecuencias.map((linea, i) => (
+                    <p key={i} className="text-xs text-red-600 mb-2">{linea}</p>
+                  ))}
                   <div className="flex gap-2">
                     <button onClick={() => setConfirmDesvincular(null)} disabled={procesandoId === distri.distri_id}
                       className="flex-1 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">

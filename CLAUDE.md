@@ -3366,25 +3366,47 @@ colgado igual. Ahora `previsualizarCierre` cuenta lo mismo para **avisarlo** en
 la confirmación, y el texto dice qué campañas se cierran y cuántos puntos se
 pagan antes de apretar.
 
-### El abuso que abre pagar al cerrar, y por qué se aceptó
+### Quién corta decide si los retenidos se pagan
 
-Pagar los retenidos convierte la desvinculación en una forma de cobrar por debajo
-del mínimo. Del lado de la DISTRI no preocupa: el que desvincula es el que paga.
+```
+iniciadoPor = 'distri'     → los retenidos aprobados SE PAGAN
+iniciadoPor = 'gondolero'  → QUEDAN RETENIDOS
+```
 
-**Del lado del GONDOLERO sí, y el argumento que justifica el pago no le aplica.**
-La razón para pagar es que la desvinculación "no es decisión suya"; cuando es él
-quien se va, sí lo es. El camino queda abierto: una misión de una campaña con
-mínimo 3, se desvincula, cobra, pide que lo re-inviten y repite.
+**Las participaciones se cierran igual en los dos casos.** Lo que cambia es el
+dinero, no el estado del trabajo: una campaña a la que ya no puede entrar tiene
+que cerrarse venga de donde venga el corte.
 
-La fricción que hoy lo hace lento es que **`solicitarVinculacion` no tiene ningún
-llamador**: el gondolero no puede auto-vincularse desde ninguna pantalla, así que
-volver depende de que la distri lo invite.
+El argumento que justifica el pago es que la desvinculación **no es decisión del
+gondolero**: dejarle plata retenida por algo que no controla es la peor versión
+del sistema. **Cuando es él quien se va, sí la controla, y el argumento no le
+aplica.**
 
-Se implementó igual en los dos caminos —un solo comportamiento para el mismo
-hecho— y porque distinguirlos también cuesta: castigar al que se va por su cuenta
-con plata que ya ganó. **Si algún día hay que cerrarlo, el lugar es `iniciadoPor`:
-está en la firma de `cerrarVinculacion` y no se usa para decidir, justamente para
-que restringirlo sea cambiar una condición ahí adentro y nada más.**
+Sin esa distinción, desvincularse es una forma de cobrar por debajo del mínimo:
+una misión de una campaña con mínimo 3, se desvincula, cobra, pide que lo
+re-inviten y repite. El mínimo pasaría a ser optativo para cualquiera dispuesto a
+desvincularse.
+
+La primera versión del 18/9 pagaba en los dos caminos, con el argumento de que un
+solo comportamiento para el mismo hecho es mejor que dos. **Se corrigió el mismo
+día**: el hecho NO es el mismo, porque en un caso la decisión es suya y en el
+otro no.
+
+**Y la decisión tiene que ser informada ANTES de confirmar.** El gondolero que se
+va ve, en la misma pantalla y antes de apretar:
+
+> *"Si te vas ahora, los 150 puntos que tenés retenidos en esa campaña se quedan
+> retenidos, porque no llegaste al mínimo para cobrarlos."*
+
+El **porqué** va en el texto a propósito: sin él parece un castigo arbitrario, y
+no lo es — esos puntos se liberan al completar el mínimo, y él eligió irse antes.
+Enterarse después, por un saldo que no se movió, sería la misma trampa del
+rechazo tardío que sacamos de todo el resto del sistema.
+
+Los textos viven en `lib/mensaje-desvinculacion.ts` y **no se escriben en cada
+pantalla**: son tres caminos que cortan el mismo vínculo y dicen cosas OPUESTAS
+según quién corta. La condición es `resumen.seLiquidan`, que la calcula
+`cerrarVinculacion` — la pantalla no la deduce.
 
 ### Los CHECK que importan para esto (medidos 18/9/2026)
 

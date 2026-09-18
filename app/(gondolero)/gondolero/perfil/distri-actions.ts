@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { cerrarVinculacion } from '@/lib/cerrar-vinculacion'
+import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
 
 function adminClient() {
   return createSupabaseClient(
@@ -188,6 +188,23 @@ export async function rechazarVinculacionDistri_Fixer(
 
   revalidatePath('/gondolero/perfil')
   return {}
+}
+
+/**
+ * Qué deja atrás si se va. Se muestra ANTES de confirmar.
+ *
+ * `iniciadoPor: 'gondolero'` no es un detalle: hace que el resumen diga que los
+ * puntos retenidos **se quedan retenidos**, que es lo que efectivamente va a
+ * pasar por este camino. Ver lib/cerrar-vinculacion.ts.
+ */
+export async function previsualizarDesvincularme(distriId: string): Promise<ResumenCierre> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  return previsualizarCierre({
+    gondoleroId: user.id, distriId, admin: adminClient(), iniciadoPor: 'gondolero',
+  })
 }
 
 export async function desvincularseDeDistri(distriId: string): Promise<{ error?: string }> {

@@ -26,7 +26,7 @@ export async function previsualizarDesvincularFixer(
   fixerId: string,
   distriId: string,
 ): Promise<ResumenCierre> {
-  return previsualizarCierre({ gondoleroId: fixerId, distriId, admin: adminClient() })
+  return previsualizarCierre({ gondoleroId: fixerId, distriId, admin: adminClient(), iniciadoPor: 'distri' })
 }
 
 export async function verificarDesvincularFixer(

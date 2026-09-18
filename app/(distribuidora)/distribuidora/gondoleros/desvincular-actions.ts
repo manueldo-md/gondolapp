@@ -35,7 +35,7 @@ export async function previsualizarDesvincularGondolero(
   gondoleroId: string,
   distriId: string
 ): Promise<ResumenCierre> {
-  return previsualizarCierre({ gondoleroId, distriId, admin: adminClient() })
+  return previsualizarCierre({ gondoleroId, distriId, admin: adminClient(), iniciadoPor: 'distri' })
 }
 
 /**
