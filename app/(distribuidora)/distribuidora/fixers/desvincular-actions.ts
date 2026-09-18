@@ -29,36 +29,14 @@ export async function previsualizarDesvincularFixer(
   return previsualizarCierre({ gondoleroId: fixerId, distriId, admin: adminClient(), iniciadoPor: 'distri' })
 }
 
-export async function verificarDesvincularFixer(
-  fixerId: string,
-  distriId: string
-): Promise<{ campanasBloqueantes: { id: string; nombre: string }[] }> {
-  const admin = adminClient()
-
-  // Campañas activas de esta distribuidora
-  const { data: campanasDistri } = await admin
-    .from('campanas')
-    .select('id, nombre')
-    .eq('distri_id', distriId)
-    .eq('estado', 'activa')
-
-  if (!campanasDistri || campanasDistri.length === 0) return { campanasBloqueantes: [] }
-
-  const campanaIds = campanasDistri.map((c: { id: string }) => c.id)
-
-  // Participaciones activas del fixer en esas campañas
-  const { data: partsActivas } = await admin
-    .from('participaciones')
-    .select('campana_id')
-    .eq('gondolero_id', fixerId)
-    .eq('estado', 'activa')
-    .in('campana_id', campanaIds)
-
-  const idsConParticipacion = new Set((partsActivas ?? []).map((p: { campana_id: string }) => p.campana_id))
-  const bloqueantes = campanasDistri.filter((c: { id: string; nombre: string }) => idsConParticipacion.has(c.id))
-
-  return { campanasBloqueantes: bloqueantes as { id: string; nombre: string }[] }
-}
+// `verificarDesvincularFixer` se borró el 18/9/2026. Bloqueaba la desvinculación
+// cuando el fixer tenía participaciones activas, que es lo contrario de lo que
+// hace el sistema ahora: el trabajo en curso SE CIERRA. Su reemplazo es
+// `previsualizarDesvincularFixer`, acá arriba, que cuenta lo mismo para avisarlo.
+//
+// Quedó sin llamadores entre el commit que cableó `cerrarVinculacion` y el que
+// arregló el botón — o sea que durante ese rato la action cerraba el trabajo y el
+// botón seguía bloqueando. Se borra para que no vuelva a enchufarse por error.
 
 /**
  * Desvincula al fixer de la distribuidora:

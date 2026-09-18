@@ -3408,6 +3408,27 @@ pantalla**: son tres caminos que cortan el mismo vínculo y dicen cosas OPUESTAS
 según quién corta. La condición es `resumen.seLiquidan`, que la calcula
 `cerrarVinculacion` — la pantalla no la deduce.
 
+### Lo único reversible es el vínculo
+
+Los dos botones de desvincular de la distri —gondoleros y fixers— cerraban su
+confirmación con *"esta acción puede revertirse si el gondolero solicita
+vinculación nuevamente"*. **Era falso en las dos mitades que importan:**
+revincular no reabre las participaciones `'cerrada'` ni vuelve a retener los
+puntos ya acreditados. Prometía reversibilidad justo sobre lo que no lo es.
+
+Ahora dice: *"Podés volver a vincularlo después, pero las campañas cerradas no se
+reabren."*
+
+El texto entero de esa confirmación vive en `descripcionConfirmarDesvincular()`
+de `lib/mensaje-desvinculacion.ts` y lo usan los dos botones. Estaba copiado, y
+por eso la misma mentira estaba escrita dos veces.
+
+**De paso salió un bug que yo mismo había dejado:** el botón de fixers seguía
+llamando a `verificarDesvincularFixer` —el guard que BLOQUEA— mientras su action
+ya cerraba el trabajo en curso. El commit que cableó `cerrarVinculacion` en el
+camino de fixers agregó `previsualizarDesvincularFixer` y **no enchufó el botón**.
+La función vieja se borró para que no vuelva a usarse por error.
+
 ### Los CHECK que importan para esto (medidos 18/9/2026)
 
 ```

@@ -58,6 +58,42 @@ export function mensajeDesvinculacion(
 }
 
 /**
+ * Lo único que la revinculación deshace es el VÍNCULO.
+ *
+ * El texto viejo del botón de desvincular decía *"esta acción puede revertirse
+ * si el gondolero solicita vinculación nuevamente"*, y era falso en las dos
+ * mitades que importan: volver a vincularlo **no reabre las participaciones
+ * cerradas** —quedan en `'cerrada'` para siempre— **ni vuelve a retener los
+ * puntos ya acreditados**. Prometía reversibilidad sobre lo único que no lo es.
+ *
+ * Estaba escrito idéntico en los dos botones de la distri (gondoleros y
+ * fixers), que es por qué vive acá y no en cada pantalla.
+ */
+export const REVERSIBILIDAD =
+  'Podés volver a vincularlo después, pero las campañas cerradas no se reabren.'
+
+/**
+ * La descripción completa del modal de confirmación de la DISTRI.
+ *
+ * Toma `quien` y `queEs` porque es la misma para gondoleros y fixers: los dos
+ * botones tenían el mismo texto copiado, con la misma promesa falsa al final.
+ */
+export function descripcionConfirmarDesvincular(params: {
+  quien: string
+  queEs: 'gondolero' | 'fixer'
+  distriNombre: string
+  resumen: ResumenCierre | null
+}): string {
+  const { quien, queEs, distriNombre, resumen } = params
+  return [
+    `Vas a desvincular a ${quien} de ${distriNombre}.`,
+    `El ${queEs} va a perder acceso a las campañas de esta distribuidora.`,
+    resumen ? resumenParaConfirmar(quien, resumen) : null,
+    REVERSIBILIDAD,
+  ].filter(Boolean).join(' ')
+}
+
+/**
  * La confirmación del panel de la DISTRI, en tercera persona.
  * `null` cuando no hay nada que contar.
  */

@@ -2,10 +2,14 @@
 
 import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
-import { verificarDesvincularFixer, desvincularFixer } from './desvincular-actions'
+import { previsualizarDesvincularFixer, desvincularFixer } from './desvincular-actions'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
+import { descripcionConfirmarDesvincular } from '@/lib/mensaje-desvinculacion'
+import type { ResumenCierre } from '@/lib/cerrar-vinculacion'
 
-type Estado = 'idle' | 'verificando' | 'bloqueado' | 'confirmando'
+// Sin 'bloqueado': el trabajo en curso ya no impide desvincular, se cierra.
+// Ver lib/cerrar-vinculacion.ts.
+type Estado = 'idle' | 'verificando' | 'confirmando'
 
 interface Props {
   fixerId: string
@@ -16,20 +20,16 @@ interface Props {
 
 export function FixerDesvincularBtn({ fixerId, distriId, distriNombre, fixerAlias }: Props) {
   const [estado, setEstado] = useState<Estado>('idle')
-  const [campanasBloqueantes, setCampanasBloqueantes] = useState<{ id: string; nombre: string }[]>([])
+  const [resumen, setResumen] = useState<ResumenCierre | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   async function handleClickDesvincular() {
     setEstado('verificando')
     setError(null)
-    const res = await verificarDesvincularFixer(fixerId, distriId)
-    if (res.campanasBloqueantes.length > 0) {
-      setCampanasBloqueantes(res.campanasBloqueantes)
-      setEstado('bloqueado')
-    } else {
-      setEstado('confirmando')
-    }
+    // La previsualización ya no decide si se puede: decide qué se le avisa.
+    setResumen(await previsualizarDesvincularFixer(fixerId, distriId))
+    setEstado('confirmando')
   }
 
   function handleConfirmar() {
@@ -44,9 +44,13 @@ export function FixerDesvincularBtn({ fixerId, distriId, distriNombre, fixerAlia
     })
   }
 
-  const descBloqueado = campanasBloqueantes.length === 1
-    ? `${fixerAlias} está activo en la campaña "${campanasBloqueantes[0].nombre}". Debe darse de baja de la campaña antes de ser desvinculado.`
-    : `${fixerAlias} está activo en ${campanasBloqueantes.length} campañas: ${campanasBloqueantes.map(c => `"${c.nombre}"`).join(', ')}. Debe darse de baja primero.`
+  // Mismo texto que el botón de gondoleros, y de la misma fuente. Los dos lo
+  // tenían copiado y los dos terminaban prometiendo que la acción era
+  // reversible: revincular devuelve el vínculo, no reabre las campañas cerradas
+  // ni vuelve a retener los puntos acreditados.
+  const descConfirmar = descripcionConfirmarDesvincular({
+    quien: fixerAlias, queEs: 'fixer', distriNombre, resumen,
+  })
 
   return (
     <>
@@ -64,21 +68,11 @@ export function FixerDesvincularBtn({ fixerId, distriId, distriNombre, fixerAlia
         {error && <p className="text-[10px] text-red-500">{error}</p>}
       </div>
 
-      {/* Modal bloqueante */}
-      <ConfirmModal
-        open={estado === 'bloqueado'}
-        mode="alert"
-        title="No se puede desvincular"
-        description={descBloqueado}
-        onConfirm={() => {}}
-        onCancel={() => setEstado('idle')}
-      />
-
       {/* Modal de confirmación */}
       <ConfirmModal
         open={estado === 'confirmando'}
         title="¿Desvincular este fixer?"
-        description={`Vas a desvincular a ${fixerAlias} de ${distriNombre}. El fixer perderá acceso a las campañas de esta distribuidora. Esta acción puede revertirse si el fixer solicita vinculación nuevamente.`}
+        description={descConfirmar}
         confirmLabel="Desvincular"
         onConfirm={handleConfirmar}
         onCancel={() => setEstado('idle')}

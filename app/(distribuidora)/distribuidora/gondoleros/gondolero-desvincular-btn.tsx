@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
 import { previsualizarDesvincularGondolero, desvincularGondolero } from './desvincular-actions'
-import { resumenParaConfirmar } from '@/lib/mensaje-desvinculacion'
+import { descripcionConfirmarDesvincular } from '@/lib/mensaje-desvinculacion'
 import type { ResumenCierre } from '@/lib/cerrar-vinculacion'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
 
@@ -47,12 +47,13 @@ export function GondoleroDesvincularBtn({ gondoleroId, distriId, distriNombre, g
   // Las consecuencias concretas van en la confirmación, no después: quien
   // desvincula tiene que saber qué campañas cierra y cuántos puntos paga ANTES
   // de apretar, no enterarse por un movimiento suelto en el historial.
-  const consecuencias = resumen ? resumenParaConfirmar(gondoleroAlias, resumen) : null
-  const descConfirmar = [
-    `Vas a desvincular a ${gondoleroAlias} de ${distriNombre}.`,
-    consecuencias,
-    `Puede revertirse si volvés a vincularlo.`,
-  ].filter(Boolean).join(' ')
+  //
+  // El texto entero sale de lib/mensaje-desvinculacion.ts, incluido el cierre
+  // sobre qué se puede deshacer y qué no. Este botón y el de fixers lo tenían
+  // copiado, y la copia decía que la acción era reversible.
+  const descConfirmar = descripcionConfirmarDesvincular({
+    quien: gondoleroAlias, queEs: 'gondolero', distriNombre, resumen,
+  })
 
   return (
     <>
