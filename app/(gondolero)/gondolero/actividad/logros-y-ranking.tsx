@@ -23,23 +23,38 @@ export interface RankingEntry {
   posicion: number
 }
 
+/**
+ * El ranking de UNA distribuidora del gondolero.
+ *
+ * Es un array y no un solo objeto porque un gondolero puede trabajar para varias
+ * a la vez: el Walled Garden protege los datos de cada distri, no la
+ * exclusividad de la persona. Con una sola distri quedaba bien un `distri:
+ * RankingEntry[]`; con dos, elegir cuál mostrar era volver a inventar "la distri
+ * principal" que este tramo vino a borrar.
+ */
+export interface RankingDistri {
+  distriId:   string
+  nombre:     string
+  entries:    RankingEntry[]
+  miPosicion: number | null
+}
+
 export interface LogrosYRankingProps {
   logros: LogroUI[]
   rankings: {
     nacional:  RankingEntry[]
-    distri:    RankingEntry[]
+    /** Una por cada distribuidora con vínculo aprobado. Puede venir vacío. */
+    distris:   RankingDistri[]
     zona:      RankingEntry[]
     provincia: RankingEntry[]
   }
   misPosiciones: {
     nacional:  number | null
-    distri:    number | null
     zona:      number | null
     provincia: number | null
   }
   gondoleroId: string
   mesLabel: string
-  hayDistri: boolean
   hayZona: boolean
   hayProvincia: boolean
 }
@@ -176,7 +191,21 @@ function RankingTab({
 
 // ── LogrosYRanking (export) ────────────────────────────────────────────────────
 
-type TabRanking = 'nacional' | 'distri' | 'zona' | 'provincia'
+/**
+ * El ranking nacional está OCULTO desde el 18/9/2026.
+ *
+ * Con 24 gondoleros un ranking nacional no motiva a nadie —quedar 19º de 24 no
+ * es una competencia, es una estadística— y de paso publica cuántos somos en
+ * total a cualquiera que abra la pantalla.
+ *
+ * El código se deja entero a propósito: la solapa vuelve poniendo esto en true
+ * el día que competir a ese nivel signifique algo. Borrarlo obligaría a
+ * reconstruir el ranking, el cálculo de posición y el texto del vacío.
+ */
+const MOSTRAR_RANKING_NACIONAL = false
+
+/** `distri:<uuid>` para las solapas por distribuidora. */
+type TabRanking = 'nacional' | 'zona' | 'provincia' | `distri:${string}`
 
 export function LogrosYRanking({
   logros,
@@ -184,22 +213,40 @@ export function LogrosYRanking({
   misPosiciones,
   gondoleroId,
   mesLabel,
-  hayDistri,
   hayZona,
   hayProvincia,
 }: LogrosYRankingProps) {
-  const [tabRanking, setTabRanking] = useState<TabRanking>(
-    hayDistri ? 'distri' : hayZona ? 'zona' : 'nacional'
-  )
-
-  const desbloqueados = logros.filter(l => l.desbloqueado).length
+  const distris = rankings.distris
 
   const tabs: Array<{ key: TabRanking; label: string; activo: boolean }> = [
-    { key: 'distri',    label: 'Mi Distri',   activo: hayDistri },
-    { key: 'zona',      label: 'Mi Zona',     activo: hayZona },
-    { key: 'provincia', label: 'Provincia',   activo: hayProvincia },
-    { key: 'nacional',  label: 'Nacional',    activo: true },
+    // Con UNA sola distribuidora la solapa se llama "Mi Distri", como siempre:
+    // poner el nombre de la empresa no agrega nada cuando no hay con qué
+    // confundirla. Con dos o más, el nombre ES la elección.
+    ...distris.map(d => ({
+      key:    `distri:${d.distriId}` as TabRanking,
+      label:  distris.length === 1 ? 'Mi Distri' : d.nombre,
+      activo: true,
+    })),
+    { key: 'zona',      label: 'Mi Zona',   activo: hayZona },
+    { key: 'provincia', label: 'Provincia', activo: hayProvincia },
+    { key: 'nacional',  label: 'Nacional',  activo: MOSTRAR_RANKING_NACIONAL },
   ]
+
+  const tabsActivos = tabs.filter(t => t.activo)
+
+  const [tabRanking, setTabRanking] = useState<TabRanking>(
+    tabsActivos[0]?.key ?? 'nacional'
+  )
+
+  // Una sola solapa no es una elección: mostrarla como pestaña le pide al
+  // gondolero que elija entre una opción. Se va la barra y queda el ranking.
+  const mostrarSolapas = tabsActivos.length > 1
+
+  const distriActiva = tabRanking.startsWith('distri:')
+    ? distris.find(d => `distri:${d.distriId}` === tabRanking) ?? null
+    : null
+
+  const desbloqueados = logros.filter(l => l.desbloqueado).length
 
   return (
     <div className="space-y-4">
@@ -234,24 +281,35 @@ export function LogrosYRanking({
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-4 overflow-x-auto">
-          {tabs.filter(t => t.activo).map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setTabRanking(tab.key)}
-              className={`flex-1 min-w-fit text-xs font-semibold px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
-                tabRanking === tab.key
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {mostrarSolapas && (
+          <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-4 overflow-x-auto">
+            {tabsActivos.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setTabRanking(tab.key)}
+                className={`flex-1 min-w-fit text-xs font-semibold px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
+                  tabRanking === tab.key
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Contenido */}
-        {tabRanking === 'nacional' && (
+        {tabsActivos.length === 0 && (
+          // Sin distribuidora y sin zona no queda ningún ranking que mostrar
+          // desde que el nacional está oculto. Decir por qué es mejor que dejar
+          // la tarjeta vacía, que se lee como una pantalla rota.
+          <p className="text-xs text-gray-400 text-center py-6 leading-relaxed">
+            El ranking aparece cuando estés vinculado a una distribuidora.<br />
+            Podés pedir la vinculación desde tu perfil.
+          </p>
+        )}
+        {tabRanking === 'nacional' && MOSTRAR_RANKING_NACIONAL && (
           <RankingTab
             entries={rankings.nacional}
             miPosicion={misPosiciones.nacional}
@@ -260,13 +318,17 @@ export function LogrosYRanking({
             vacio="Todavía no hay fotos aprobadas este mes."
           />
         )}
-        {tabRanking === 'distri' && (
+        {distriActiva && (
           <RankingTab
-            entries={rankings.distri}
-            miPosicion={misPosiciones.distri}
+            entries={distriActiva.entries}
+            miPosicion={distriActiva.miPosicion}
             gondoleroId={gondoleroId}
             mesLabel={mesLabel}
-            vacio="No hay otros gondoleros de tu distribuidora todavía."
+            vacio={
+              distris.length === 1
+                ? 'No hay otros gondoleros de tu distribuidora todavía.'
+                : `No hay otros gondoleros de ${distriActiva.nombre} todavía.`
+            }
           />
         )}
         {tabRanking === 'zona' && (

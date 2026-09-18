@@ -87,6 +87,7 @@ export default async function AdminTableroPage() {
     campanasPendAprobRes,
     marcasListRes,
     marcaDistriRelRes,
+    vinculosGondDistriRes,
     config,
   ] = await Promise.all([
     // Totales globales
@@ -100,7 +101,10 @@ export default async function AdminTableroPage() {
     admin.from('movimientos_puntos').select('monto').eq('tipo', 'credito').gte('created_at', mesInicio.toISOString()),
     admin.from('movimientos_puntos').select('monto').eq('tipo', 'debito').gte('created_at', mesInicio.toISOString()),
     // Gondoleros + distribuidoras (para rankings)
-    admin.from('profiles').select('id, alias, nombre, distri_id').eq('tipo_actor', 'gondolero'),
+    // Sin `distri_id`: la pertenencia sale de gondolero_distri_solicitudes y esta
+    // columna ya no la lee nadie acá. Una columna que sobrevive en un select sin
+    // lectores es lo que rompió el perfil del gondolero al dropear `nivel`.
+    admin.from('profiles').select('id, alias, nombre').eq('tipo_actor', 'gondolero'),
     admin.from('distribuidoras').select('id, razon_social'),
     // Feed reciente
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,6 +149,12 @@ export default async function AdminTableroPage() {
     // Relaciones marca-distri activas (para contar distribuidoras por marca)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any).from('marca_distri_relaciones').select('marca_id, distri_id').eq('estado', 'activa'),
+    // Vínculos gondolero ↔ distri, para la columna "distri" del ranking de
+    // gondoleros. Antes salía de profiles.distri_id, que guarda una sola: al que
+    // trabaja para dos le mostraba una y omitía la otra. Son ~20 filas.
+    admin.from('gondolero_distri_solicitudes')
+      .select('gondolero_id, distri_id')
+      .eq('estado', 'aprobada'),
     // Umbrales de nivel: la insignia del ranking se deriva de las misiones del mes.
     getConfig(),
   ])
@@ -221,6 +231,23 @@ export default async function AdminTableroPage() {
   // ── Rankings ──────────────────────────────────────────────────────────────
 
   const distriMap = new Map(distriList.map((d: { id: string; razon_social: string }) => [d.id, d.razon_social]))
+
+  // gondolero → TODAS sus distribuidoras, no una.
+  //
+  // La columna del ranking decía "Del Valle" para alguien vinculado también a
+  // Biomega, porque salía de profiles.distri_id. No era falso —esa distri es
+  // suya— pero omitía justo lo que este tramo vino a dejar de esconder. Se
+  // muestran separadas por coma: con dos o tres entra bien, y un "+1" volvería a
+  // tapar el dato.
+  const distrisDeGondolero = new Map<string, string[]>()
+  for (const v of (vinculosGondDistriRes.data ?? []) as { gondolero_id: string; distri_id: string }[]) {
+    const nombre = distriMap.get(v.distri_id) as string | undefined
+    if (!nombre) continue
+    const lista = distrisDeGondolero.get(v.gondolero_id) ?? []
+    lista.push(nombre)
+    distrisDeGondolero.set(v.gondolero_id, lista)
+  }
+  for (const lista of distrisDeGondolero.values()) lista.sort((a, b) => a.localeCompare(b, 'es'))
 
   // ── Ranking de distribuidoras: se atribuye por CAMPAÑA ─────────────────────
   //
@@ -347,7 +374,7 @@ export default async function AdminTableroPage() {
 
   const topGondoleros = gondolerosProfiles
     .filter((g: { id: string }) => (gondMisionMap.get(g.id) ?? 0) > 0)
-    .map((g: { id: string; alias: string | null; nombre: string | null; distri_id: string | null }) => {
+    .map((g: { id: string; alias: string | null; nombre: string | null }) => {
       const fotas = gondFotaMap.get(g.id)
       const tasa  = fotas && fotas.total > 0 ? Math.round((fotas.aprobadas / fotas.total) * 100) : null
       return {
@@ -356,7 +383,7 @@ export default async function AdminTableroPage() {
         // La insignia sale de las misiones aprobadas del mes, igual que en la
         // pantalla del gondolero. `profiles.nivel` no la escribía nadie.
         nivel:   nivelPorMisiones(gondMisionMap.get(g.id) ?? 0, config.niveles.fotosCasualAActivo, config.niveles.fotosActivoAPro),
-        distri:  g.distri_id ? ((distriMap.get(g.distri_id) ?? 'Sin distri') as string) : 'Independiente',
+        distri:  distrisDeGondolero.get(g.id)?.join(', ') ?? 'Independiente',
         misiones: gondMisionMap.get(g.id) ?? 0,
         tasa,
       }

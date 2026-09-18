@@ -13,6 +13,7 @@ import {
   misionesParaSiguienteNivel,
 } from '@/lib/nivel-mensual'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
+import { getDistrisDeGondolero } from '@/lib/utils-distri'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
 import { MarcarLogrosVistos } from './marcar-vistos'
@@ -75,7 +76,11 @@ export default async function LogrosPage() {
     mejorMes,
   ] = await Promise.all([
     admin.from('profiles')
-      .select('puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, distri_id, alias, nombre')
+      // `distri_id` salió de acá el 18/9/2026: el ranking de la distri ahora se
+      // arma con getDistrisDeGondolero. Una columna que queda en un select y no
+      // usa nadie es exactamente lo que dejó el perfil del gondolero sin datos
+      // cuando se dropeó `nivel`.
+      .select('puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, alias, nombre')
       .eq('id', user.id)
       .single(),
     admin.from('fotos')
@@ -115,7 +120,6 @@ export default async function LogrosPage() {
     puntos_disponibles: number
     puntos_totales_ganados: number
     tasa_aprobacion: number
-    distri_id: string | null
     alias: string | null
     nombre: string | null
   } | null
@@ -186,16 +190,20 @@ export default async function LogrosPage() {
 
   // ── FASE 2: Ranking ───────────────────────────────────────────────────────
   const misZonaIds = (misZonasRes.data ?? []).map((z: { zona_id: string }) => z.zona_id)
-  const miDistriId = profile?.distri_id ?? null
 
   // El ranking usa el mismo conteo que el nivel: si ordenara por fotos y la
   // insignia saliera de misiones, la fila mostraría dos medidas que no cuadran.
   const todosIds = [...misionesDelMes.keys()]
 
-  const [perfilesRankingRes, zonaColegasRes, zonasDataRes] = await Promise.all([
+  // Las distribuidoras del gondolero salen de los vínculos, no de
+  // profiles.distri_id: esa columna guarda UNA sola, así que al que trabaja para
+  // dos le escondía el ranking de la segunda. Ver lib/utils-distri.ts.
+  const misDistriIds = await getDistrisDeGondolero(user.id, admin)
+
+  const [perfilesRankingRes, zonaColegasRes, zonasDataRes, vinculosRes, distrisRes] = await Promise.all([
     todosIds.length > 0
       ? admin.from('profiles')
-          .select('id, alias, distri_id')
+          .select('id, alias')
           .in('id', todosIds)
           .eq('tipo_actor', 'gondolero')
       : Promise.resolve({ data: [] }),
@@ -204,6 +212,19 @@ export default async function LogrosPage() {
       : Promise.resolve({ data: [] }),
     misZonaIds.length > 0
       ? admin.from('zonas').select('id, tipo').in('id', misZonaIds)
+      : Promise.resolve({ data: [] }),
+    // A qué distribuidoras pertenece cada gondolero del ranking. Antes salía de
+    // `profiles.distri_id`, que traía una sola: un colega vinculado a dos
+    // aparecía en el ranking de una y faltaba en el de la otra.
+    todosIds.length > 0 && misDistriIds.length > 0
+      ? admin.from('gondolero_distri_solicitudes')
+          .select('gondolero_id, distri_id')
+          .in('gondolero_id', todosIds)
+          .in('distri_id', misDistriIds)
+          .eq('estado', 'aprobada')
+      : Promise.resolve({ data: [] }),
+    misDistriIds.length > 0
+      ? admin.from('distribuidoras').select('id, razon_social').in('id', misDistriIds)
       : Promise.resolve({ data: [] }),
   ])
 
@@ -215,7 +236,7 @@ export default async function LogrosPage() {
     ? await admin.from('gondolero_zonas').select('gondolero_id').in('zona_id', misProvincias)
     : { data: [] }
 
-  type PerfilRanking = { id: string; alias: string | null; distri_id: string | null }
+  type PerfilRanking = { id: string; alias: string | null }
   const perfiles = (perfilesRankingRes.data ?? []) as PerfilRanking[]
 
   const buildRanking = (lista: PerfilRanking[]): RankingEntry[] =>
@@ -243,7 +264,30 @@ export default async function LogrosPage() {
     return idx >= 0 ? idx + 1 : null
   }
 
-  const perfilesDistri = miDistriId ? perfiles.filter(p => p.distri_id === miDistriId) : []
+  // Un ranking por cada distribuidora del gondolero. Los colegas de cada una
+  // salen de los vínculos aprobados, así que alguien que trabaja para dos
+  // aparece en los dos rankings — que es exactamente lo que corresponde.
+  const colegasPorDistri = new Map<string, Set<string>>()
+  for (const v of (vinculosRes.data ?? []) as { gondolero_id: string; distri_id: string }[]) {
+    if (!colegasPorDistri.has(v.distri_id)) colegasPorDistri.set(v.distri_id, new Set())
+    colegasPorDistri.get(v.distri_id)!.add(v.gondolero_id)
+  }
+  const nombreDistri = new Map(
+    ((distrisRes.data ?? []) as { id: string; razon_social: string | null }[])
+      .map(d => [d.id, d.razon_social ?? 'Mi distribuidora'])
+  )
+
+  const rankingsDistri = misDistriIds.map(distriId => {
+    const colegas = colegasPorDistri.get(distriId) ?? new Set<string>()
+    const lista   = perfiles.filter(p => colegas.has(p.id))
+    return {
+      distriId,
+      nombre:     nombreDistri.get(distriId) ?? 'Mi distribuidora',
+      entries:    buildRanking(lista),
+      miPosicion: getPosicion(lista),
+    }
+  }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+
   const zonaIds2       = new Set((zonaColegasRes.data ?? []).map((z: { gondolero_id: string }) => z.gondolero_id))
   const perfilesZona   = perfiles.filter(p => zonaIds2.has(p.id))
   const provIds        = new Set((provColegasRes.data ?? []).map((z: { gondolero_id: string }) => z.gondolero_id))
@@ -251,13 +295,12 @@ export default async function LogrosPage() {
 
   const rankings = {
     nacional:  buildRanking(perfiles),
-    distri:    buildRanking(perfilesDistri),
+    distris:   rankingsDistri,
     zona:      buildRanking(perfilesZona),
     provincia: buildRanking(perfilesProv),
   }
   const misPosiciones = {
     nacional:  getPosicion(perfiles),
-    distri:    miDistriId ? getPosicion(perfilesDistri) : null,
     zona:      misZonaIds.length > 0 ? getPosicion(perfilesZona) : null,
     provincia: misProvincias.length > 0 ? getPosicion(perfilesProv) : null,
   }
@@ -456,7 +499,6 @@ export default async function LogrosPage() {
           misPosiciones={misPosiciones}
           gondoleroId={user.id}
           mesLabel={mesLabel}
-          hayDistri={!!miDistriId}
           hayZona={misZonaIds.length > 0}
           hayProvincia={misProvincias.length > 0}
         />
