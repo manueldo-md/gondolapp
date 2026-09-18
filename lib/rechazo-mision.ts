@@ -35,6 +35,15 @@ export type CodigoRechazoMision =
   | 'fuera_de_radio'
   /** Otro gondolero registró una misión viva sobre ese par (campaña, comercio). */
   | 'comercio_duplicado'
+  /**
+   * No tiene (ni tenía al capturar) vínculo con quien financia la campaña.
+   *
+   * Cubre los cuatro motivos de `lib/acceso-campana.ts`: el vínculo cortado, el
+   * tipo de actor equivocado y la campaña sin financiador. Se agrupan en un
+   * código porque el cliente hace lo mismo con los cuatro —no ofrecer
+   * Reintentar— y el texto, que es lo que cambia, viaja en `motivo`.
+   */
+  | 'vinculo_cortado'
 
 /**
  * ¿Reintentar este rechazo puede terminar distinto alguna vez?
@@ -67,6 +76,12 @@ export function rechazoEsDefinitivo(
     case 'campana_vencida':
     case 'captura_muy_vieja':
     case 'comercio_duplicado':
+    // El vínculo puede volver, pero reintentar NO lo trae: el botón subiría
+    // todas las fotos de nuevo para recibir el mismo rechazo. Y si se lo
+    // revinculan, la captura vieja tampoco revive — el gate la juzga por el
+    // momento en que se hizo, y ese momento cae dentro del corte. Ofrecer
+    // "Reintentar" acá sería prometer algo que no puede pasar.
+    case 'vinculo_cortado':
       return true
     case 'cupo_propio_lleno':
     case 'fuera_de_radio':

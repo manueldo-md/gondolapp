@@ -1,4 +1,9 @@
+import type { ContextoAcceso } from './acceso-campana'
+
 // ── Helpers para relaciones gondolero ↔ distribuidora ────────────────────────
+//
+// El tipo se importa solo como TIPO: `lib/acceso-campana.ts` no importa nada y
+// este archivo tampoco carga runtime ajeno.
 //
 // Fuente de verdad: gondolero_distri_solicitudes. NO profiles.distri_id.
 //
@@ -114,8 +119,75 @@ export async function contarGondolerosPorDistri(
 }
 
 /**
+ * Las distribuidoras de un ACTOR, gondolero o fixer.
+ *
+ * Los fixers tienen su propia tabla —`fixer_distri_solicitudes`— así que
+ * `getDistrisDeGondolero` les devuelve `[]` y los deja afuera de todo. Esta es
+ * la que usan los gates, que corren para los dos.
+ *
+ * ── `momentoMs`: EL TRABAJO HECHO EN REGLA SE PAGA ──────────────────────────
+ * Sin parámetro devuelve los vínculos vigentes AHORA. Con `momentoMs` incluye
+ * además los que se terminaron DESPUÉS de ese momento, o sea los que el actor
+ * tenía en ese instante.
+ *
+ * Existe por la cola offline: el gondolero capturó mientras estaba vinculado,
+ * lo desvincularon, y sincroniza después. Ese trabajo se hizo en regla y
+ * rechazarlo sería el mismo castigo tardío que ya sacamos del vencimiento —que
+ * juzga por `capturadoAt` y no por la llegada— y del bloqueo por distancia.
+ *
+ * ── LÍMITE CONOCIDO ─────────────────────────────────────────────────────────
+ * `UNIQUE (gondolero_id, distri_id)` deja UNA fila por par, así que `updated_at`
+ * es la ÚLTIMA terminación y no hay historial de períodos. Si alguien se
+ * vinculó, se fue, volvió y se fue de nuevo, una captura hecha durante el hueco
+ * del medio pasa igual. Hoy no puede ocurrir —no hay ningún par con más de un
+ * período en ninguna base— y el historial append-only ya está anotado como
+ * pendiente. Sale caro y el error es a favor del gondolero.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getDistrisDeActor(
+  actorId: string,
+  tipoActor: string | null | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  momentoMs?: number,
+): Promise<string[]> {
+  const esFixer = tipoActor === 'fixer'
+  const tabla   = esFixer ? 'fixer_distri_solicitudes' : 'gondolero_distri_solicitudes'
+  const columna = esFixer ? 'fixer_id' : 'gondolero_id'
+
+  // Se piden las dos y se filtra en JS: `.or()` de PostgREST con una condición
+  // sobre updated_at dentro es frágil, y son pocas filas por actor.
+  const { data, error } = await adminClient
+    .from(tabla)
+    .select('distri_id, estado, updated_at')
+    .eq(columna, actorId)
+    .in('estado', ESTADOS_CON_HISTORICO)
+
+  if (error) {
+    console.error(
+      '[getDistrisDeActor] no se pudo leer los vínculos.',
+      'actorId:', actorId, 'tipo:', tipoActor, '—', error.message,
+    )
+    return []
+  }
+
+  type Fila = { distri_id: string; estado: string; updated_at: string | null }
+  return (data ?? [])
+    .filter((v: Fila) => {
+      if (v.estado === 'aprobada') return true
+      if (momentoMs === undefined) return false
+      // Terminada: contaba si el corte fue DESPUÉS de la captura.
+      if (!v.updated_at) return false
+      return new Date(v.updated_at).getTime() > momentoMs
+    })
+    .map((v: Fila) => v.distri_id)
+}
+
+/**
  * Las distribuidoras de un gondolero. Devuelve varias: es la forma que espera
  * el lado del gondolero, que filtra campañas con `.in('distri_id', ...)`.
+ *
+ * Para los gates usar `getDistrisDeActor`, que también cubre fixers.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getDistrisDeGondolero(
@@ -138,4 +210,101 @@ export async function getDistrisDeGondolero(
   }
 
   return (data ?? []).map((d: { distri_id: string }) => d.distri_id)
+}
+
+/**
+ * Arma el `ContextoAcceso` que pide `accesoACampana`.
+ *
+ * Las dos consultas que hacen falta, en un solo lugar: los vínculos del actor y
+ * las relaciones marca↔distri de esas distribuidoras. Antes cada puerta las
+ * escribía a mano y por eso la del detalle se había quedado sin la segunda —
+ * mostraba como disponible una campaña que `unirse` rechazaba al apretar.
+ *
+ * `momentoMs` se pasa SOLO desde la cola offline: ver `getDistrisDeActor`.
+ */
+export async function contextoAcceso(params: {
+  actorId: string
+  tipoActor: string | null | undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any
+  momentoMs?: number
+}): Promise<ContextoAcceso> {
+  const { actorId, tipoActor, admin, momentoMs } = params
+  const esFixer = tipoActor === 'fixer'
+
+  // Los dos ejes. Un gondolero no tiene repositoras, así que esa consulta se
+  // hace solo para fixers — donde además es LA que importa: sus campañas llevan
+  // `repositora_id` y su vínculo vive en `fixer_repo_solicitudes`.
+  const [misDistriIds, misRepoIds] = await Promise.all([
+    getDistrisDeActor(actorId, tipoActor, admin, momentoMs),
+    esFixer ? getReposDeFixer(actorId, admin, momentoMs) : Promise.resolve([]),
+  ])
+
+  if (misDistriIds.length === 0) {
+    return { esFixer, misDistriIds: [], misRepoIds, relacionesMarcaDistri: [] }
+  }
+
+  const { data, error } = await admin
+    .from('marca_distri_relaciones')
+    .select('marca_id, distri_id')
+    .in('distri_id', misDistriIds)
+    .eq('estado', 'activa')
+
+  if (error) {
+    // Se loguea y se sigue con la lista vacía: el efecto es que las campañas de
+    // marca sin distribuidora ejecutora quedan sin acceso. Es el lado seguro, y
+    // sin este log "no tengo acceso" sería indistinguible de "falló la query".
+    console.error(
+      '[contextoAcceso] no se pudieron leer las relaciones marca-distri.',
+      'actorId:', actorId, '—', error.message,
+    )
+  }
+
+  return {
+    esFixer,
+    misDistriIds,
+    misRepoIds,
+    relacionesMarcaDistri: (data ?? []) as { marca_id: string; distri_id: string }[],
+  }
+}
+
+/**
+ * Las repositoras de un fixer. El eje paralelo a `getDistrisDeActor`.
+ *
+ * Existe porque los fixers se vinculan por `fixer_repo_solicitudes` y no por
+ * `fixer_distri_solicitudes`: al 18/9/2026, los 6 fixers con misiones de prod
+ * están todos ahí y ninguno en la de distribuidoras. Las campañas de fixers
+ * llevan `repositora_id`, no `distri_id`.
+ *
+ * `momentoMs` funciona igual que en `getDistrisDeActor`: el trabajo capturado
+ * antes del corte se honra.
+ */
+export async function getReposDeFixer(
+  fixerId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  adminClient: any,
+  momentoMs?: number,
+): Promise<string[]> {
+  const { data, error } = await adminClient
+    .from('fixer_repo_solicitudes')
+    .select('repositora_id, estado, updated_at')
+    .eq('fixer_id', fixerId)
+    .in('estado', ESTADOS_CON_HISTORICO)
+
+  if (error) {
+    console.error(
+      '[getReposDeFixer] no se pudo leer los vínculos con repositoras.',
+      'fixerId:', fixerId, '—', error.message,
+    )
+    return []
+  }
+
+  type Fila = { repositora_id: string; estado: string; updated_at: string | null }
+  return (data ?? [])
+    .filter((v: Fila) => {
+      if (v.estado === 'aprobada') return true
+      if (momentoMs === undefined || !v.updated_at) return false
+      return new Date(v.updated_at).getTime() > momentoMs
+    })
+    .map((v: Fila) => v.repositora_id)
 }

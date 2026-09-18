@@ -7,6 +7,103 @@ import { revalidatePath } from 'next/cache'
 import { getConfig } from '@/lib/config'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import { nivelMaximoAlcanzado } from '@/lib/nivel-maximo'
+import { accesoACampana } from '@/lib/acceso-campana'
+import { contextoAcceso } from '@/lib/utils-distri'
+
+/**
+ * Todo lo que hay que cumplir para entrar a una campaña, en un solo lugar.
+ *
+ * ── POR QUÉ SE EXTRAJO ──────────────────────────────────────────────────────
+ * `unirseACampana` tenía seis controles y `soloUnirse` —la otra acción de este
+ * mismo archivo, la que llama el botón de "Unirme"— **no tenía ninguno**: creaba
+ * o reactivaba la participación y listo. Ni campaña activa, ni vigencia, ni
+ * nivel, ni vínculo. Una puerta sin control al lado de otra con seis no tiene
+ * defensa: la que se usa termina siendo la que no valida.
+ *
+ * El acceso según financiador ya no se resuelve acá: vive en
+ * `lib/acceso-campana.ts` porque estaba escrito tres veces —esta, la lista y el
+ * detalle— y las tres diferían.
+ */
+async function validarUnion(
+  campanaId: string,
+  userId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+): Promise<{ error?: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: campana } = await (admin as any)
+    .from('campanas')
+    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados, nivel_minimo, financiada_por, via_ejecucion, distri_id, repositora_id, marca_id, actor_campana')
+    .eq('id', campanaId)
+    .eq('estado', 'activa')
+    .maybeSingle() as {
+      data: {
+        id: string
+        fecha_limite_inscripcion: string | null
+        tope_total_comercios: number | null
+        comercios_relevados: number
+        nivel_minimo: string | null
+        financiada_por: string | null
+        via_ejecucion: string | null
+        distri_id: string | null
+        repositora_id: string | null
+        marca_id: string | null
+        actor_campana: string | null
+      } | null
+    }
+
+  if (!campana) return { error: 'La campaña no está disponible.' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: perfilUsuario } = await (admin as any)
+    .from('profiles')
+    .select('tipo_actor')
+    .eq('id', userId)
+    .maybeSingle() as { data: { tipo_actor: string | null } | null }
+
+  // ── Acceso: tipo de actor + financiador ───────────────────────────────────
+  const acceso = accesoACampana(
+    campana,
+    await contextoAcceso({ actorId: userId, tipoActor: perfilUsuario?.tipo_actor, admin }),
+  )
+  if (!acceso.ok) return { error: acceso.mensaje }
+
+  // ── Fecha límite de inscripción ───────────────────────────────────────────
+  if (campana.fecha_limite_inscripcion && new Date(campana.fecha_limite_inscripcion) < new Date()) {
+    return { error: 'El período de inscripción ya cerró.' }
+  }
+
+  // ── Tope total de comercios ───────────────────────────────────────────────
+  if (campana.tope_total_comercios != null && campana.comercios_relevados >= campana.tope_total_comercios) {
+    return { error: 'Esta campaña ya alcanzó su cupo máximo.' }
+  }
+
+  // ── Nivel ─────────────────────────────────────────────────────────────────
+  //
+  // El nivel que abre el gate es el MÁXIMO alcanzado —el mejor mes de toda su
+  // historia—, no el del mes en curso: el privilegio ganado no se pierde por
+  // dejar de trabajar un mes. Ver lib/nivel-maximo.ts.
+  const nivelMinimo = campana.nivel_minimo ?? 'casual'
+  if (nivelMinimo !== 'casual') {
+    const config = await getConfig()
+    const gondoleroNivel = await nivelMaximoAlcanzado(userId, admin, {
+      activo: config.niveles.fotosCasualAActivo,
+      pro:    config.niveles.fotosActivoAPro,
+    })
+
+    // `null` no es "casual": es que la consulta falló. Acusarlo de no tener el
+    // nivel sería rechazarlo tardíamente por un problema de infraestructura, con
+    // un mensaje que además le echa la culpa. El error dice lo que pasó.
+    if (gondoleroNivel === null) {
+      return { error: 'No pudimos verificar tu nivel en este momento. Probá de nuevo en unos segundos.' }
+    }
+    if (!cumpleNivelMinimo(gondoleroNivel, nivelMinimo)) {
+      return { error: `Esta campaña requiere nivel ${NIVEL_LABEL[nivelMinimo] ?? nivelMinimo}. Tu nivel actual es ${NIVEL_LABEL[gondoleroNivel] ?? gondoleroNivel}.` }
+    }
+  }
+
+  return {}
+}
 
 export async function unirseACampana(campanaId: string): Promise<{ error: string } | void> {
   const supabase = await createClient()
@@ -19,150 +116,8 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Verificar campaña activa y validar restricciones
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: campana } = await (admin as any)
-    .from('campanas')
-    .select('id, fecha_limite_inscripcion, tope_total_comercios, comercios_relevados, nivel_minimo, financiada_por, distri_id, marca_id, actor_campana')
-    .eq('id', campanaId)
-    .eq('estado', 'activa')
-    .single() as {
-      data: {
-        id: string
-        fecha_limite_inscripcion: string | null
-        tope_total_comercios: number | null
-        comercios_relevados: number
-        nivel_minimo: string | null
-        financiada_por: string
-        distri_id: string | null
-        marca_id: string | null
-        actor_campana: string | null
-      } | null
-    }
-
-  if (!campana) return { error: 'La campaña no está disponible.' }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: perfilUsuario } = await (admin as any)
-    .from('profiles')
-    .select('tipo_actor')
-    .eq('id', user.id)
-    .single() as { data: { tipo_actor: string } | null }
-
-  const esFixer = perfilUsuario?.tipo_actor === 'fixer'
-
-  // ── Validar que el tipo de actor coincide con la campaña ─────────────────────
-  if (campana.actor_campana === 'fixer' && !esFixer) {
-    return { error: 'Esta campaña es exclusiva para fixers.' }
-  }
-  if (campana.actor_campana === 'gondolero' && esFixer) {
-    return { error: 'Esta campaña es exclusiva para gondoleros.' }
-  }
-
-  // ── Validar acceso según financiador ─────────────────────────────────────────
-  // Usa la tabla de vinculación correcta según tipo_actor
-  const tablaVinculacion = esFixer ? 'fixer_distri_solicitudes' : 'gondolero_distri_solicitudes'
-  const columnaId = esFixer ? 'fixer_id' : 'gondolero_id'
-
-  if (campana.financiada_por === 'distri' && campana.distri_id) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: vinculacion } = await (admin as any)
-      .from(tablaVinculacion)
-      .select('id')
-      .eq(columnaId, user.id)
-      .eq('distri_id', campana.distri_id)
-      .eq('estado', 'aprobada')
-      .maybeSingle()
-
-    if (!vinculacion) {
-      return { error: esFixer
-        ? 'Esta campaña es exclusiva para fixers vinculados a esa distribuidora.'
-        : 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.' }
-    }
-  }
-
-  if (campana.financiada_por === 'marca') {
-    if (campana.distri_id) {
-      // Campaña ejecutada por una distri específica → el participante debe estar vinculado a ESA distri
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: vinculacion } = await (admin as any)
-        .from(tablaVinculacion)
-        .select('id')
-        .eq(columnaId, user.id)
-        .eq('distri_id', campana.distri_id)
-        .eq('estado', 'aprobada')
-        .maybeSingle()
-
-      if (!vinculacion) {
-        return { error: esFixer
-          ? 'Esta campaña es exclusiva para fixers de la distribuidora que la ejecuta.'
-          : 'Esta campaña es exclusiva para gondoleros de la distribuidora que la ejecuta.' }
-      }
-    } else if (campana.marca_id) {
-      // Campaña de marca sin distri específica → cualquier distri vinculada a esa marca
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: misDistrisRows } = await (admin as any)
-        .from(tablaVinculacion)
-        .select('distri_id')
-        .eq(columnaId, user.id)
-        .eq('estado', 'aprobada')
-
-      const misDistriIds = ((misDistrisRows ?? []) as { distri_id: string }[]).map(d => d.distri_id)
-
-      if (misDistriIds.length === 0) {
-        return { error: 'Esta campaña es exclusiva para participantes de distribuidoras vinculadas a esta marca.' }
-      }
-
-      const { data: relacion } = await admin
-        .from('marca_distri_relaciones')
-        .select('id')
-        .eq('marca_id', campana.marca_id)
-        .in('distri_id', misDistriIds)
-        .eq('estado', 'activa')
-        .limit(1)
-
-      if (!relacion?.length) {
-        return { error: 'Esta campaña es exclusiva para participantes de distribuidoras vinculadas a esta marca.' }
-      }
-    }
-  }
-  // ── Fin validación de acceso ─────────────────────────────────────────────────
-
-  // Validar fecha límite de inscripción
-  if (campana.fecha_limite_inscripcion && new Date(campana.fecha_limite_inscripcion) < new Date()) {
-    return { error: 'El período de inscripción ya cerró.' }
-  }
-
-  // Validar tope total de comercios
-  if (campana.tope_total_comercios != null && campana.comercios_relevados >= campana.tope_total_comercios) {
-    return { error: 'Esta campaña ya alcanzó su cupo máximo.' }
-  }
-
-  // Validar nivel del gondolero.
-  //
-  // El nivel que abre el gate es el MÁXIMO alcanzado —el mejor mes de toda su
-  // historia—, no el del mes en curso: el privilegio ganado no se pierde por
-  // dejar de trabajar un mes. Hasta el 17/9/2026 esto leía `profiles.nivel`, una
-  // columna que ningún camino de la app escribía. Ver lib/nivel-maximo.ts.
-  const nivelMinimo = campana.nivel_minimo ?? 'casual'
-  if (nivelMinimo !== 'casual') {
-    const config = await getConfig()
-    const gondoleroNivel = await nivelMaximoAlcanzado(user.id, admin, {
-      activo: config.niveles.fotosCasualAActivo,
-      pro:    config.niveles.fotosActivoAPro,
-    })
-
-    // `null` no es "casual": es que la consulta falló. Acusarlo de no tener el
-    // nivel sería rechazarlo tardíamente por un problema de infraestructura, con
-    // un mensaje que además le echa la culpa. El error dice lo que pasó.
-    if (gondoleroNivel === null) {
-      return { error: 'No pudimos verificar tu nivel en este momento. Probá de nuevo en unos segundos.' }
-    }
-
-    if (!cumpleNivelMinimo(gondoleroNivel, nivelMinimo)) {
-      return { error: `Esta campaña requiere nivel ${NIVEL_LABEL[nivelMinimo] ?? nivelMinimo}. Tu nivel actual es ${NIVEL_LABEL[gondoleroNivel] ?? gondoleroNivel}.` }
-    }
-  }
+  const permiso = await validarUnion(campanaId, user.id, admin)
+  if (permiso.error) return { error: permiso.error }
 
   // Buscar cualquier participación existente (cualquier estado)
   const { data: existente, error: existenteError } = await admin
@@ -215,7 +170,14 @@ export async function unirseACampana(campanaId: string): Promise<{ error: string
   redirect(`/gondolero/captura?campana=${campanaId}`)
 }
 
-// Acción temporal para probar unión sin redirect
+/**
+ * Unirse sin redirect. La llama el botón "Unirme" del detalle de campaña.
+ *
+ * Hasta el 18/9/2026 no validaba NADA: creaba la participación y devolvía ok.
+ * Ahora usa `validarUnion`, los mismos seis controles que `unirseACampana`.
+ * Dos puertas al mismo lugar no pueden pedir cosas distintas — la que se usa
+ * termina siendo la que no valida.
+ */
 export async function soloUnirse(campanaId: string): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -226,6 +188,9 @@ export async function soloUnirse(campanaId: string): Promise<{ error: string } |
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+
+  const permiso = await validarUnion(campanaId, user.id, admin)
+  if (permiso.error) return { error: permiso.error }
 
   const { data: existente } = await admin
     .from('participaciones')

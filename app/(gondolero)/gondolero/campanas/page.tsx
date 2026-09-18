@@ -8,11 +8,12 @@ import { MisionesPendientes } from '@/components/gondolero/misiones-pendientes'
 import { getConfig } from '@/lib/config'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { estaVencida } from '@/lib/campana-vigencia'
+import { tieneAccesoACampana, type CampanaAcceso } from '@/lib/acceso-campana'
 
 type CampanaRow = CampanaCardData
 
 const CAMPANA_SELECT = `
-  id, nombre, tipo, marca_id, distri_id, financiada_por, via_ejecucion, estado,
+  id, nombre, tipo, marca_id, distri_id, repositora_id, financiada_por, via_ejecucion, estado,
   puntos_por_foto, puntos_por_mision, fecha_fin, modalidad, visitas_por_semana,
   fecha_limite_inscripcion, minimo_comercios,
   tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
@@ -43,7 +44,7 @@ export default async function CampanasPage() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misionesRes, fotosRechazadasRes, config, mejorMes] = await Promise.all([
+  const [participacionesRes, profileRes, misDistrisGondoleroRes, misDistrisFixerRes, misReposFixerRes, misionesRes, fotosRechazadasRes, config, mejorMes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('participaciones')
@@ -67,6 +68,15 @@ export default async function CampanasPage() {
     (admin as any)
       .from('fixer_distri_solicitudes')
       .select('distri_id')
+      .eq('fixer_id', user.id)
+      .eq('estado', 'aprobada'),
+    // Las repositoras del fixer. Es SU eje: las campañas de fixers llevan
+    // `repositora_id` y el vínculo vive acá. Sin esto la lista les escondía las
+    // dos campañas de fixers que existen.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
+      .from('fixer_repo_solicitudes')
+      .select('repositora_id')
       .eq('fixer_id', user.id)
       .eq('estado', 'aprobada'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,6 +126,9 @@ export default async function CampanasPage() {
   const misDistriIds = esFixer
     ? (misDistrisFixerRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
     : (misDistrisGondoleroRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
+  const misRepoIds: string[] = esFixer
+    ? (misReposFixerRes.data ?? []).map((r: { repositora_id: string }) => r.repositora_id)
+    : []
 
   // Misiones: qué campañas tiene el gondolero y cuántas misiones por campaña.
   // misionCampanaIds se llena con TODAS las misiones (incluidas 'descartada')
@@ -177,17 +190,13 @@ export default async function CampanasPage() {
     relacionesMarcaDistri = (relRes ?? []) as { marca_id: string; distri_id: string }[]
   }
 
+  // La regla vive en lib/acceso-campana.ts. Estaba escrita acá, en el detalle y
+  // en `unirseACampana`, y las tres diferían: había campañas que esta lista no
+  // ofrecía y `unirse` aceptaba, y otras que el detalle mostraba disponibles y
+  // `unirse` rechazaba al apretar.
+  const ctxAcceso = { esFixer, misDistriIds, misRepoIds, relacionesMarcaDistri }
   function tieneAcceso(c: CampanaRow): boolean {
-    const fp = c.financiada_por
-    if (!fp || fp === 'gondolapp') return true
-    if ((c as unknown as { via_ejecucion: string | null }).via_ejecucion === 'gondolapp') return true
-    if (fp === 'distri') return !!c.distri_id && misDistriIds.includes(c.distri_id)
-    if (fp === 'marca') {
-      if (!c.marca_id) return true
-      if (c.distri_id) return misDistriIds.includes(c.distri_id)
-      return relacionesMarcaDistri.some(r => r.marca_id === c.marca_id)
-    }
-    return false
+    return tieneAccesoACampana(c as unknown as CampanaAcceso, ctxAcceso)
   }
 
   // ── Query de campañas activas (con filtro de zona) ────────────────────────────
@@ -266,13 +275,28 @@ export default async function CampanasPage() {
   const vigentes = listaActivas.filter(c => !estaVencida(c.fecha_fin))
   const vencidasActivas = listaActivas.filter(c => estaVencida(c.fecha_fin))
 
+  // ── Campañas que trabajó y a las que ya no tiene acceso ─────────────────────
+  //
+  // Se le cortó el vínculo con la distribuidora que las financia. Hasta el
+  // 18/9/2026 "En curso" NO aplicaba `tieneAcceso` —solo "Disponibles" lo
+  // hacía—, así que la campaña seguía ahí, el gondolero entraba, hacía la misión
+  // entera y recién al enviar se enteraba.
+  //
+  // No se esconden: bajan a "Finalizadas", que es donde está el trabajo que ya
+  // no continúa. Sacarlas de la pantalla le borraría lo que hizo.
+  const esMio = (c: CampanaRow) =>
+    participacionMap.has(c.id) || misionCampanaIds.has(c.id)
+  const sinAccesoPropias = vigentes.filter(c => esMio(c) && !tieneAcceso(c))
+  const sinAccesoIds = new Set(sinAccesoPropias.map(c => c.id))
+
   // ── Sección 1: En curso ──────────────────────────────────────────────────────
-  // REGLA: campana vigente AND (tiene participación OR tiene misiones)
+  // REGLA: campana vigente AND con acceso AND (tiene participación OR misiones)
   const misCampanas = vigentes
     .filter(c => {
       const estado = participacionMap.get(c.id)
       // abandonada → puede volver a unirse → va a disponibles, no a en_curso
       if (estado === 'abandonada') return false
+      if (sinAccesoIds.has(c.id)) return false
       return participacionMap.has(c.id) || misionCampanaIds.has(c.id)
     })
     // Primero lo que vence antes — pero las de SEGUIMIENTO arriba de todo.
@@ -351,7 +375,15 @@ export default async function CampanasPage() {
   //
   // Se filtran por las que tienen participación o misiones, igual que el resto
   // de la sección: una vencida que el gondolero nunca tocó no le interesa.
-  const vencidasPropias = vencidasActivas.filter(c => idsParaFinalizadas.has(c.id))
+  //
+  // Las que perdió por desvinculación entran por el mismo camino y por la misma
+  // razón: nadie las cerró, siguen diciendo 'activa', y si se les aplicara la
+  // ventana de 90 días desaparecerían en el mismo deploy que las saca de
+  // "En curso".
+  const vencidasPropias = [
+    ...vencidasActivas.filter(c => idsParaFinalizadas.has(c.id)),
+    ...sinAccesoPropias.filter(c => idsParaFinalizadas.has(c.id)),
+  ]
   if (vencidasPropias.length > 0) {
     finalizadas = [...finalizadas, ...vencidasPropias].sort((a, b) => {
       if (!a.fecha_fin && !b.fecha_fin) return 0

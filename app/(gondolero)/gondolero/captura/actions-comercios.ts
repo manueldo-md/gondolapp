@@ -11,6 +11,8 @@ import {
 } from '@/lib/comercios-relevados'
 import { requiereFotoFachada } from '@/lib/campana-altas'
 import { puedeRegistrarMision } from '@/lib/campana-vigencia'
+import { accesoACampana } from '@/lib/acceso-campana'
+import { contextoAcceso } from '@/lib/utils-distri'
 
 /**
  * Comercios que ya tienen una misión viva en esta campaña.
@@ -278,15 +280,38 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: campanaAlta } = await (admin as any)
     .from('campanas')
-    .select('tipo, estado, fecha_fin')
+    .select('tipo, estado, fecha_fin, financiada_por, via_ejecucion, distri_id, repositora_id, marca_id, actor_campana')
     .eq('id', params.campanaId)
-    .maybeSingle() as { data: { tipo: string | null; estado: string | null; fecha_fin: string | null } | null }
+    .maybeSingle() as { data: {
+      tipo: string | null; estado: string | null; fecha_fin: string | null
+      financiada_por: string | null; via_ejecucion: string | null
+      distri_id: string | null; repositora_id: string | null; marca_id: string | null; actor_campana: string | null
+    } | null }
 
   if (!campanaAlta) {
     return { error: 'Esta campaña ya no existe. Elegí otra de la lista.' }
   }
   if (campanaAlta.estado !== 'activa') {
     return { error: 'Esta campaña ya no está activa y no acepta comercios nuevos.' }
+  }
+
+  // ── Vínculo con quien financia ────────────────────────────────────────────
+  // El alta exige estar online, así que no hay caso offline: se juzga con los
+  // vínculos de ahora y sin `momentoMs`. Un desvinculado no puede seguir
+  // poblando el mapa de la distribuidora que lo dio de baja.
+  const { data: perfilAlta } = await (admin as any)
+    .from('profiles').select('tipo_actor').eq('id', user.id).maybeSingle() as
+    { data: { tipo_actor: string | null } | null }
+
+  const accesoAlta = accesoACampana(
+    campanaAlta,
+    await contextoAcceso({ actorId: user.id, tipoActor: perfilAlta?.tipo_actor, admin }),
+  )
+  if (!accesoAlta.ok) {
+    console.warn('[crearComercioNuevo] rechazado por acceso', {
+      campanaId: params.campanaId, gondoleroId: user.id, motivo: accesoAlta.motivo,
+    })
+    return { error: accesoAlta.mensaje }
   }
 
   // El alta exige estar online (la pantalla lo pide antes de llegar acá), así

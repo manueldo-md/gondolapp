@@ -16,6 +16,8 @@ import { resolverMisionDirecta } from '@/lib/misiones'
 import { sincronizarComerciosRelevados } from '@/lib/comercios-relevados'
 import { puedeRegistrarMision } from '@/lib/campana-vigencia'
 import type { CodigoRechazoMision } from '@/lib/rechazo-mision'
+import { accesoACampana } from '@/lib/acceso-campana'
+import { contextoAcceso } from '@/lib/utils-distri'
 import { calcularDistanciaMetros } from '@/lib/utils'
 
 // Los radios viven en lib/gps-radios.ts: el de bloqueo lo usan también el paso
@@ -178,7 +180,11 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
   // Verificar que la campaña existe y está activa
   const { data: campana, error: campanaErr } = await db0
     .from('campanas')
-    .select('id, estado, nombre, fecha_fin, max_comercios_por_gondolero, tope_total_comercios, comercios_relevados, distri_id, marca_id, min_comercios_para_cobrar')
+    // `financiada_por`, `via_ejecucion` y `actor_campana` alimentan el gate de
+    // vínculo. Verificadas contra las dos bases antes de agregarlas: PostgREST
+    // rechaza la consulta ENTERA si una columna no existe, y acá eso se vería
+    // como "la campaña no existe".
+    .select('id, estado, nombre, fecha_fin, max_comercios_por_gondolero, tope_total_comercios, comercios_relevados, distri_id, marca_id, min_comercios_para_cobrar, financiada_por, via_ejecucion, actor_campana, repositora_id')
     .eq('id', params.campanaId)
     .single()
 
@@ -258,6 +264,54 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
     if (existente) {
       console.log('[registrarMision] reintento idempotente — devolviendo misión existente:', existente.id)
       return { ok: true, misionId: existente.id, puntos: existente.puntos_total ?? params.puntosTotal }
+    }
+  }
+
+  // ── Gate de vínculo ─────────────────────────────────────────────────────────
+  // Va DESPUÉS de la idempotencia a propósito: si la misión ya se registró y el
+  // reintento llega con el vínculo cortado, el corto de idempotencia tiene que
+  // ganar. Si no, la cola marcaría como rechazado un trabajo que está guardado y
+  // el gondolero lo descartaría creyendo que lo perdió.
+  //
+  // Hasta el 18/9/2026 esto no se chequeaba en ningún lado: cortar el vínculo
+  // cerraba las participaciones pero no impedía volver, así que un gondolero
+  // desvinculado seguía relevando —y cobrando— en las campañas a las que ya
+  // había entrado. La desvinculación era parcial.
+  //
+  // `capturadoAt` hace que se juzgue por el momento de la CAPTURA: quien capturó
+  // mientras estaba vinculado hizo el trabajo en regla, aunque sincronice
+  // después del corte. Mismo criterio que el gate de vencimiento y que el de
+  // distancia. Ver getDistrisDeActor en lib/utils-distri.ts.
+  const { data: perfilActor } = await db
+    .from('profiles')
+    .select('tipo_actor')
+    .eq('id', user.id)
+    .maybeSingle() as { data: { tipo_actor: string | null } | null }
+
+  const ctxAcceso = await contextoAcceso({
+    actorId:   user.id,
+    tipoActor: perfilActor?.tipo_actor,
+    admin:     db,
+    momentoMs: params.capturadoAt,
+  })
+  const acceso = accesoACampana(campana, ctxAcceso)
+  if (!acceso.ok) {
+    console.warn('[registrarMision] rechazada por acceso', {
+      campanaId:   params.campanaId,
+      gondoleroId: user.id,
+      motivo:      acceso.motivo,
+      financiadaPor: campana.financiada_por,
+      distriCampana: campana.distri_id,
+      misDistris:  ctxAcceso.misDistriIds,
+      capturadoAt: params.capturadoAt,
+      desdeCola:   params.desdeCola ?? false,
+    })
+    return {
+      ok: false,
+      codigo: 'vinculo_cortado',
+      motivo:
+        `${acceso.mensaje} Esta misión no se puede registrar. ` +
+        'Si te vinculás de nuevo vas a poder trabajar en sus campañas, pero esta captura no se recupera.',
     }
   }
 

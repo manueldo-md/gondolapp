@@ -16,6 +16,7 @@ import { getConfig } from '@/lib/config'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
+import { accesoACampana, type CampanaAcceso } from '@/lib/acceso-campana'
 
 type BloqueFotoRow = {
   id: string
@@ -30,6 +31,8 @@ type CampanaDetalle = {
   nombre: string
   tipo: TipoCampana
   financiada_por: string
+  via_ejecucion: string | null
+  repositora_id: string | null
   distri_id: string | null
   marca_id: string | null
   puntos_por_foto: number
@@ -112,7 +115,7 @@ export default async function CampanaDetallePage({
   const { data: campanaData } = await (admin as any)
     .from('campanas')
     .select(`
-      id, nombre, tipo, financiada_por, distri_id, marca_id, estado, actor_campana,
+      id, nombre, tipo, financiada_por, via_ejecucion, distri_id, repositora_id, marca_id, estado, actor_campana,
       puntos_por_foto, puntos_por_mision, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
       minimo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
@@ -128,7 +131,7 @@ export default async function CampanaDetallePage({
 
   const campanaActiva = (campanaData as unknown as { estado: string }).estado === 'activa'
 
-  const [{ data: participacionData, error: participacionError }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misionesData }, config, mejorMes] = await Promise.all([
+  const [{ data: participacionData, error: participacionError }, { data: profileData }, { data: misDistrisGondoleroData }, { data: misDistrisFixerData }, { data: misReposFixerData }, { data: misionesData }, config, mejorMes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('participaciones')
@@ -153,6 +156,14 @@ export default async function CampanaDetallePage({
     (admin as any)
       .from('fixer_distri_solicitudes')
       .select('distri_id')
+      .eq('fixer_id', user.id)
+      .eq('estado', 'aprobada'),
+    // Las repositoras del fixer. Es SU eje: las campañas de fixers llevan
+    // `repositora_id` y su vínculo vive acá, no en fixer_distri_solicitudes.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin as any)
+      .from('fixer_repo_solicitudes')
+      .select('repositora_id')
       .eq('fixer_id', user.id)
       .eq('estado', 'aprobada'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,7 +193,32 @@ export default async function CampanaDetallePage({
   const misDistriIds = esFixer
     ? ((misDistrisFixerData ?? []) as { distri_id: string }[]).map(d => d.distri_id)
     : ((misDistrisGondoleroData ?? []) as { distri_id: string }[]).map(d => d.distri_id)
+  const misRepoIds = esFixer
+    ? ((misReposFixerData ?? []) as { repositora_id: string }[]).map(r => r.repositora_id)
+    : []
   const misiones = (misionesData as MisionRow[] | null) ?? []
+
+  // Las relaciones marca↔distri de SUS distribuidoras. Esta pantalla no las
+  // pedía, y por eso su control de acceso era el más permisivo de los tres: una
+  // campaña de marca sin distribuidora ejecutora la mostraba como disponible
+  // aunque ninguna de sus distris trabajara con esa marca.
+  //
+  // Solo hace falta si la campaña es de marca y no tiene ejecutora: en el resto
+  // de los casos `accesoACampana` ni la mira.
+  let relacionesMarcaDistri: { marca_id: string; distri_id: string }[] = []
+  if (c.financiada_por === 'marca' && !c.distri_id && c.marca_id && misDistriIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: relData, error: relError } = await (admin as any)
+      .from('marca_distri_relaciones')
+      .select('marca_id, distri_id')
+      .in('distri_id', misDistriIds)
+      .eq('estado', 'activa')
+    if (relError) {
+      console.error('[campana-detalle] no se pudieron leer las relaciones marca-distri —',
+        'la campaña va a mostrarse sin acceso:', relError.message)
+    }
+    relacionesMarcaDistri = (relData ?? []) as { marca_id: string; distri_id: string }[]
+  }
 
   const yaUnido        = participacion?.estado === 'activa' || participacion?.estado === 'completada'
   console.log('[campana-detalle] yaUnido:', yaUnido, 'misiones count:', misiones.length, 'participacion estado:', participacion?.estado)
@@ -199,27 +235,20 @@ export default async function CampanaDetallePage({
   const esGondolApp = c.financiada_por === 'gondolapp' || (!c.distri_id && !c.marca_id)
 
   // ── Control de acceso según actor y financiador ───────────────────────────────
-  let sinAcceso = false
-  let motivoSinAcceso: string | undefined
-
-  // Verificar que el tipo de actor coincide con el tipo de campaña
-  if (actorCampana === 'fixer' && !esFixer) {
-    sinAcceso = true
-    motivoSinAcceso = 'Esta campaña es exclusiva para fixers.'
-  } else if (actorCampana === 'gondolero' && esFixer) {
-    sinAcceso = true
-    motivoSinAcceso = 'Esta campaña es exclusiva para gondoleros.'
-  } else if (c.financiada_por === 'distri' && c.distri_id && !misDistriIds.includes(c.distri_id)) {
-    sinAcceso = true
-    motivoSinAcceso = esFixer
-      ? 'Esta campaña es exclusiva para fixers vinculados a esa distribuidora.'
-      : 'Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora.'
-  } else if (c.financiada_por === 'marca' && c.marca_id) {
-    if (misDistriIds.length === 0) {
-      sinAcceso = true
-      motivoSinAcceso = 'Esta campaña es exclusiva para participantes de distribuidoras vinculadas a esta marca.'
-    }
-  }
+  //
+  // La regla vive en lib/acceso-campana.ts. Esta pantalla tenía su propia
+  // versión y era la más permisiva de las tres: para las campañas de marca sin
+  // distribuidora ejecutora solo pedía `misDistriIds.length > 0`, sin mirar si
+  // alguna de esas distris trabaja con la marca. O sea que mostraba "Unirme"
+  // habilitado y `unirseACampana` rechazaba al apretar.
+  const acceso = accesoACampana(c as unknown as CampanaAcceso, {
+    esFixer,
+    misDistriIds,
+    misRepoIds,
+    relacionesMarcaDistri,
+  })
+  const sinAcceso = !acceso.ok
+  const motivoSinAcceso = acceso.ok ? undefined : acceso.mensaje
 
   // Restricciones operativas de acceso
   const nivelMinimo       = c.nivel_minimo ?? 'casual'
