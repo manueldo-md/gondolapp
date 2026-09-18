@@ -56,6 +56,14 @@ export type EstadoCanje =
   | 'entregado'
   | 'fallido'
 
+/**
+ * 'cerrada' (18/9/2026): la participación terminó porque se cortó el vínculo
+ * con la distribuidora, no por algo que hiciera el gondolero. 'completada'
+ * afirmaría un trabajo que no terminó y 'abandonada' le echaría la culpa a él.
+ * Ver lib/cerrar-vinculacion.ts.
+ */
+export type EstadoParticipacion = 'activa' | 'completada' | 'abandonada' | 'cerrada'
+
 export type FinanciadaPor = 'marca' | 'distri' | 'gondolapp'
 
 export type TipoContenidoBloque = 'propios' | 'competencia' | 'ambos' | 'ninguno'
@@ -181,7 +189,7 @@ export interface Participacion {
   id: string
   campana_id: string
   gondolero_id: string
-  estado: 'activa' | 'completada' | 'abandonada'
+  estado: EstadoParticipacion
   comercios_completados: number
   puntos_acumulados: number
   joined_at: string

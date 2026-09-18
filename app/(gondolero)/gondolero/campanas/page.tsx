@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { LayoutGrid } from 'lucide-react'
-import type { TipoCampana } from '@/types'
+import type { TipoCampana, EstadoParticipacion } from '@/types'
 import { CampanasSections, type CampanaCardData } from './campanas-sections'
 import { MisionesPendientes } from '@/components/gondolero/misiones-pendientes'
 import { getConfig } from '@/lib/config'
@@ -49,7 +49,10 @@ export default async function CampanasPage() {
       .from('participaciones')
       .select('campana_id, estado, comercios_completados')
       .eq('gondolero_id', user.id)
-      .in('estado', ['activa', 'completada', 'abandonada']),
+      // 'cerrada' entra: es una participación que terminó porque se cortó el
+      // vínculo con la distri. Sin ella, esas campañas desaparecían de
+      // "Finalizadas" y el trabajo hecho no se veía en ningún lado.
+      .in('estado', ['activa', 'completada', 'abandonada', 'cerrada']),
     supabase
       .from('profiles')
       .select('tipo_actor')
@@ -91,12 +94,12 @@ export default async function CampanasPage() {
     mejorMesDeMisiones(user.id, admin),
   ])
 
-  const participacionMap = new Map<string, 'activa' | 'completada' | 'abandonada'>()
+  const participacionMap = new Map<string, EstadoParticipacion>()
   const comerciosCompletadosMap = new Map<string, number>()
   const participacionesRaw = (participacionesRes.data ?? []) as { campana_id: string; estado: string; comercios_completados: number }[]
   for (const p of participacionesRaw) {
     if (!participacionMap.has(p.campana_id) || p.estado === 'activa') {
-      participacionMap.set(p.campana_id, p.estado as 'activa' | 'completada' | 'abandonada')
+      participacionMap.set(p.campana_id, p.estado as EstadoParticipacion)
       comerciosCompletadosMap.set(p.campana_id, p.comercios_completados ?? 0)
     }
   }

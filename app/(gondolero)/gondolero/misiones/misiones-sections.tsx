@@ -7,7 +7,7 @@ import {
   labelTipoCampana,  calcularPorcentaje,
   formatearPuntos,
 } from '@/lib/utils'
-import type { TipoCampana } from '@/types'
+import type { TipoCampana, EstadoParticipacion } from '@/types'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { AbandonarBtn } from './abandonar-btn'
 
@@ -20,7 +20,7 @@ export interface ParticipacionCardData {
   comercios_completados: number
   puntos_acumulados: number
   joined_at: string
-  estado: 'activa' | 'completada' | 'abandonada'
+  estado: EstadoParticipacion
   campana: {
     id: string
     nombre: string

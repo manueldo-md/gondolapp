@@ -3326,6 +3326,80 @@ Relacionado: el rechazo `comercio_duplicado` de `lib/rechazo-mision.ts` **depend
 de este índice**. Entre el 15 y el 18/9 ese código existía en prod y no se
 disparaba nunca.
 
+### Cortar el vínculo cierra el trabajo en curso (18/9/2026)
+
+Desde el Walled Garden un gondolero pertenece a UNA distribuidora a la vez, y
+para cambiar tiene que desvincularse primero. **Sin esto, el vínculo único sería
+una formalidad**: desvincular no sacaba al gondolero de las campañas en las que
+ya estaba, así que seguía relevando para la distri vieja mientras trabajaba para
+la nueva. Lo verificado:
+
+- `misCampanas` en campanas/page.tsx filtra por participación o misiones y **no
+  aplica `tieneAcceso`** — la campaña seguía en "En curso".
+- `captura/page.tsx` no chequea el vínculo.
+- `registrarMision` tampoco: sus siete rechazos no incluyen "ya no pertenecés".
+
+`lib/cerrar-vinculacion.ts` hace las dos cosas, y lo usan los **tres** caminos:
+la distri desvincula, el gondolero se va, y la distri desvincula un fixer.
+
+**1. Cierra las participaciones activas** con estado `cerrada` (migración
+20260918170000, que amplía el CHECK). `completada` afirmaría un trabajo que no
+terminó y `abandonada` le echaría la culpa a él.
+
+**2. Paga los bounties retenidos que estén APROBADOS**, aunque no se haya llegado
+a `min_comercios_para_cobrar`. El mínimo es un umbral de CANTIDAD, no de calidad.
+Y la liberación normal la dispara **la siguiente aprobación** de una misión de esa
+campaña: si el gondolero ya no puede trabajar ahí, esa próxima aprobación no llega
+nunca y los puntos quedan retenidos para siempre — la misma forma de falla que
+`lib/misiones-trabadas.ts`, pero sin reintento posible porque no falló nada.
+
+El filtro `estado = aprobada` **no es opcional**: es un segundo escritor sobre
+las mismas filas que `aprobarMisionCore`, y si el filtro no fuera idéntico
+volvería el agujero que se cerró el 16/9 —pagar trabajo sin revisar— por la
+puerta de al lado.
+
+**El guard viejo se reemplazó, no convive.** `verificarDesvincularGondolero`
+devolvía `campanasBloqueantes` y hacía imposible desvincular con trabajo en
+curso. Eso quedó al revés del Walled Garden: dejaba al gondolero atrapado, o lo
+empujaba al camino del perfil, que **no tenía ningún guard** y dejaba todo
+colgado igual. Ahora `previsualizarCierre` cuenta lo mismo para **avisarlo** en
+la confirmación, y el texto dice qué campañas se cierran y cuántos puntos se
+pagan antes de apretar.
+
+### El abuso que abre pagar al cerrar, y por qué se aceptó
+
+Pagar los retenidos convierte la desvinculación en una forma de cobrar por debajo
+del mínimo. Del lado de la DISTRI no preocupa: el que desvincula es el que paga.
+
+**Del lado del GONDOLERO sí, y el argumento que justifica el pago no le aplica.**
+La razón para pagar es que la desvinculación "no es decisión suya"; cuando es él
+quien se va, sí lo es. El camino queda abierto: una misión de una campaña con
+mínimo 3, se desvincula, cobra, pide que lo re-inviten y repite.
+
+La fricción que hoy lo hace lento es que **`solicitarVinculacion` no tiene ningún
+llamador**: el gondolero no puede auto-vincularse desde ninguna pantalla, así que
+volver depende de que la distri lo invite.
+
+Se implementó igual en los dos caminos —un solo comportamiento para el mismo
+hecho— y porque distinguirlos también cuesta: castigar al que se va por su cuenta
+con plata que ya ganó. **Si algún día hay que cerrarlo, el lugar es `iniciadoPor`:
+está en la firma de `cerrarVinculacion` y no se usa para decidir, justamente para
+que restringirlo sea cambiar una condición ahí adentro y nada más.**
+
+### Los CHECK que importan para esto (medidos 18/9/2026)
+
+```
+movimientos_puntos.concepto  → SIN CHECK, texto libre  ✓ el concepto nuevo no
+                                                         necesita migración
+movimientos_puntos.monto     → CHECK (monto > 0)       ⚠ no insertar con 0
+participaciones.estado       → CHECK IN (activa, completada, abandonada)
+                                                        ⚠ cerrada NO entraba
+```
+
+El que bloqueaba era el de `participaciones`, no el del concepto. **La migración
+20260918170000 va ANTES del deploy**, al revés que el DROP de columnas: acá el
+código nuevo escribe un valor que la base rechazaba.
+
 ### Pendiente de producto — el umbral de 50 misiones es inalcanzable
 
 `configuracion.nivel_fotos_casual_a_activo` vale **50** en las dos bases (no el 20

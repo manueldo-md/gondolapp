@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
 
 function adminClient() {
   return createAdminClient(
@@ -17,6 +18,17 @@ function adminClient() {
  * Verifica si el fixer puede ser desvinculado de la distribuidora.
  * Bloquea si tiene participaciones activas en campañas de esa distri con actor_campana='fixer'.
  */
+// Ya no bloquea: el trabajo en curso se cierra. Misma decisión y mismo helper
+// que el lado gondolero — ver lib/cerrar-vinculacion.ts. El nombre viejo queda
+// para no tocar el botón en este tramo; lo que cambió es que nadie lo usa para
+// impedir nada.
+export async function previsualizarDesvincularFixer(
+  fixerId: string,
+  distriId: string,
+): Promise<ResumenCierre> {
+  return previsualizarCierre({ gondoleroId: fixerId, distriId, admin: adminClient() })
+}
+
 export async function verificarDesvincularFixer(
   fixerId: string,
   distriId: string
@@ -77,6 +89,12 @@ export async function desvincularFixer(
   }
 
   const now = new Date().toISOString()
+
+  // Cerrar el trabajo en curso antes de cortar el vínculo, igual que del lado
+  // gondolero. Un fixer participa de campañas con la misma tabla y las mismas
+  // columnas: el helper es el mismo. Ver lib/cerrar-vinculacion.ts.
+  const cierre = await cerrarVinculacion({ gondoleroId: fixerId, distriId, admin, iniciadoPor: 'distri' })
+  if (!cierre.ok) return { error: cierre.error }
 
   const [solRes, profileRes] = await Promise.all([
     // Terminar la solicitud en fixer_distri_solicitudes

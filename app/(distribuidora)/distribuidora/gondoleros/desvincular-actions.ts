@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
+import { mensajeDesvinculacion } from '@/lib/mensaje-desvinculacion'
 
 function adminClient() {
   return createAdminClient(
@@ -14,38 +16,26 @@ function adminClient() {
 }
 
 /**
- * Verifica si el gondolero puede ser desvinculado de la distribuidora.
- * Bloquea si tiene participaciones activas en campañas de esa distri.
+ * Qué se va a cerrar si se desvincula. **Ya no bloquea.**
+ *
+ * Hasta el 18/9/2026 esta función se llamaba `verificarDesvincularGondolero` y
+ * devolvía `campanasBloqueantes`: con una participación activa, la
+ * desvinculación era imposible y el botón pedía que el gondolero "se diera de
+ * baja de la campaña primero".
+ *
+ * Eso quedó al revés del Walled Garden. Para cambiar de distribuidora hay que
+ * desvincularse, y si desvincular está bloqueado por el trabajo en curso, el
+ * gondolero queda atrapado — o peor, usa el camino del perfil, que no tenía
+ * ningún guard, y deja todo colgado igual.
+ *
+ * Ahora el trabajo en curso **se cierra**, y esto sirve para contarlo antes.
+ * Ver lib/cerrar-vinculacion.ts.
  */
-export async function verificarDesvincularGondolero(
+export async function previsualizarDesvincularGondolero(
   gondoleroId: string,
   distriId: string
-): Promise<{ campanasBloqueantes: { id: string; nombre: string }[] }> {
-  const admin = adminClient()
-
-  // Campañas activas de esta distribuidora
-  const { data: campanasDistri } = await admin
-    .from('campanas')
-    .select('id, nombre')
-    .eq('distri_id', distriId)
-    .eq('estado', 'activa')
-
-  if (!campanasDistri || campanasDistri.length === 0) return { campanasBloqueantes: [] }
-
-  const campanaIds = campanasDistri.map((c: { id: string }) => c.id)
-
-  // Participaciones activas del gondolero en esas campañas
-  const { data: partsActivas } = await admin
-    .from('participaciones')
-    .select('campana_id')
-    .eq('gondolero_id', gondoleroId)
-    .eq('estado', 'activa')
-    .in('campana_id', campanaIds)
-
-  const idsConParticipacion = new Set((partsActivas ?? []).map((p: { campana_id: string }) => p.campana_id))
-  const bloqueantes = campanasDistri.filter((c: { id: string; nombre: string }) => idsConParticipacion.has(c.id))
-
-  return { campanasBloqueantes: bloqueantes as { id: string; nombre: string }[] }
+): Promise<ResumenCierre> {
+  return previsualizarCierre({ gondoleroId, distriId, admin: adminClient() })
 }
 
 /**
@@ -78,6 +68,15 @@ export async function desvincularGondolero(
 
   const now = new Date().toISOString()
 
+  // Cerrar el trabajo en curso ANTES de cortar el vínculo.
+  //
+  // El orden importa: si el vínculo se corta primero y esto falla, queda un
+  // gondolero desvinculado con participaciones activas y bounties retenidos que
+  // ya nadie va a liberar — exactamente el estado que este tramo vino a evitar.
+  // Al revés, un fallo deja el vínculo intacto y se puede reintentar.
+  const cierre = await cerrarVinculacion({ gondoleroId, distriId, admin, iniciadoPor: 'distri' })
+  if (!cierre.ok) return { error: cierre.error }
+
   const [solRes, profileRes] = await Promise.all([
     // Terminar la solicitud en gondolero_distri_solicitudes
     admin
@@ -106,7 +105,7 @@ export async function desvincularGondolero(
       actor_tipo:   'gondolero',
       tipo:         'desvinculacion_distri',
       titulo:       'Fuiste desvinculado',
-      mensaje:      `Tu relación con ${distriNombre} fue terminada. Podés solicitar vinculación a otra distribuidora desde tu perfil.`,
+      mensaje:      mensajeDesvinculacion(distriNombre, cierre.resumen),
       leida:        false,
     })
   } catch { /* ignorar si la notificación falla */ }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { cerrarVinculacion } from '@/lib/cerrar-vinculacion'
 
 function adminClient() {
   return createSupabaseClient(
@@ -195,6 +196,20 @@ export async function desvincularseDeDistri(distriId: string): Promise<{ error?:
   if (!user) redirect('/auth')
 
   const admin = adminClient()
+
+  // Cerrar el trabajo en curso ANTES de cortar el vínculo.
+  //
+  // Hasta el 18/9/2026 este camino no cerraba nada: el gondolero se iba solo y
+  // dejaba participaciones activas y bounties retenidos que ya nadie iba a
+  // liberar. El camino de la distri, en cambio, ni siquiera dejaba desvincular
+  // si había trabajo en curso. Dos comportamientos opuestos para el mismo hecho.
+  //
+  // Ahora los dos hacen lo mismo. Ver lib/cerrar-vinculacion.ts, incluido el
+  // abuso que abre pagar los retenidos cuando el que se va es él.
+  const cierre = await cerrarVinculacion({
+    gondoleroId: user.id, distriId, admin, iniciadoPor: 'gondolero',
+  })
+  if (!cierre.ok) return { error: cierre.error }
 
   // Marcar la vinculación como terminada (histórico permanente)
   const { error } = await admin

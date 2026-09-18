@@ -2,10 +2,14 @@
 
 import { useState, useTransition } from 'react'
 import { Loader2 } from 'lucide-react'
-import { verificarDesvincularGondolero, desvincularGondolero } from './desvincular-actions'
+import { previsualizarDesvincularGondolero, desvincularGondolero } from './desvincular-actions'
+import { resumenParaConfirmar } from '@/lib/mensaje-desvinculacion'
+import type { ResumenCierre } from '@/lib/cerrar-vinculacion'
 import { ConfirmModal } from '@/components/shared/confirm-modal'
 
-type Estado = 'idle' | 'verificando' | 'bloqueado' | 'confirmando'
+// Sin 'bloqueado': el trabajo en curso ya no impide desvincular, se cierra.
+// Ver lib/cerrar-vinculacion.ts.
+type Estado = 'idle' | 'verificando' | 'confirmando'
 
 interface Props {
   gondoleroId: string
@@ -16,20 +20,16 @@ interface Props {
 
 export function GondoleroDesvincularBtn({ gondoleroId, distriId, distriNombre, gondoleroAlias }: Props) {
   const [estado, setEstado] = useState<Estado>('idle')
-  const [campanasBloqueantes, setCampanasBloqueantes] = useState<{ id: string; nombre: string }[]>([])
+  const [resumen, setResumen] = useState<ResumenCierre | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   async function handleClickDesvincular() {
     setEstado('verificando')
     setError(null)
-    const res = await verificarDesvincularGondolero(gondoleroId, distriId)
-    if (res.campanasBloqueantes.length > 0) {
-      setCampanasBloqueantes(res.campanasBloqueantes)
-      setEstado('bloqueado')
-    } else {
-      setEstado('confirmando')
-    }
+    // La previsualización ya no decide si se puede: decide qué se le avisa.
+    setResumen(await previsualizarDesvincularGondolero(gondoleroId, distriId))
+    setEstado('confirmando')
   }
 
   function handleConfirmar() {
@@ -44,9 +44,15 @@ export function GondoleroDesvincularBtn({ gondoleroId, distriId, distriNombre, g
     })
   }
 
-  const descBloqueado = campanasBloqueantes.length === 1
-    ? `${gondoleroAlias} está activo en la campaña "${campanasBloqueantes[0].nombre}". Debe darse de baja de la campaña antes de ser desvinculado.`
-    : `${gondoleroAlias} está activo en ${campanasBloqueantes.length} campañas: ${campanasBloqueantes.map(c => `"${c.nombre}"`).join(', ')}. Debe darse de baja primero.`
+  // Las consecuencias concretas van en la confirmación, no después: quien
+  // desvincula tiene que saber qué campañas cierra y cuántos puntos paga ANTES
+  // de apretar, no enterarse por un movimiento suelto en el historial.
+  const consecuencias = resumen ? resumenParaConfirmar(gondoleroAlias, resumen) : null
+  const descConfirmar = [
+    `Vas a desvincular a ${gondoleroAlias} de ${distriNombre}.`,
+    consecuencias,
+    `Puede revertirse si volvés a vincularlo.`,
+  ].filter(Boolean).join(' ')
 
   return (
     <>
@@ -64,21 +70,11 @@ export function GondoleroDesvincularBtn({ gondoleroId, distriId, distriNombre, g
         {error && <p className="text-[10px] text-red-500">{error}</p>}
       </div>
 
-      {/* Modal bloqueante */}
-      <ConfirmModal
-        open={estado === 'bloqueado'}
-        mode="alert"
-        title="No se puede desvincular"
-        description={descBloqueado}
-        onConfirm={() => {}}
-        onCancel={() => setEstado('idle')}
-      />
-
       {/* Modal de confirmación */}
       <ConfirmModal
         open={estado === 'confirmando'}
         title="¿Desvincular este gondolero?"
-        description={`Vas a desvincular a ${gondoleroAlias} de ${distriNombre}. El gondolero perderá acceso a las campañas de esta distribuidora. Esta acción puede revertirse si el gondolero solicita vinculación nuevamente.`}
+        description={descConfirmar}
         confirmLabel="Desvincular"
         onConfirm={handleConfirmar}
         onCancel={() => setEstado('idle')}

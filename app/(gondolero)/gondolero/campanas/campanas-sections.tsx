@@ -13,7 +13,7 @@ import {
   calcularPorcentaje,
   formatearPuntos,
 } from '@/lib/utils'
-import type { TipoCampana, NivelGondolero } from '@/types'
+import type { TipoCampana, NivelGondolero, EstadoParticipacion } from '@/types'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import {
@@ -86,7 +86,7 @@ function CampanaCard({
   esCacheada = false,
 }: {
   campana: CampanaCardData
-  participacionEstado?: 'activa' | 'completada' | 'abandonada'
+  participacionEstado?: EstadoParticipacion
   gondoleroNivel: NivelGondolero | null
   misDistriIds: string[]
   gondoleroComerciosCompletados?: number
