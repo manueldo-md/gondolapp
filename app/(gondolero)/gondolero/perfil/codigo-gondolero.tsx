@@ -3,7 +3,20 @@
 import { useState } from 'react'
 import { Copy, Check } from 'lucide-react'
 
-export function CodigoGondolero({ codigo }: { codigo: string | null }) {
+/**
+ * El código personal, con copiar y WhatsApp.
+ *
+ * Lo usan el perfil y el vacío del ranking de Logros. `className` existe solo
+ * para que el segundo pueda sacarle el margen inferior cuando va al final de
+ * una tarjeta; el resto es idéntico a propósito, porque es la misma pieza.
+ */
+export function CodigoGondolero({
+  codigo,
+  className = 'mb-4',
+}: {
+  codigo: string | null
+  className?: string
+}) {
   const [copiado, setCopiado] = useState(false)
 
   const handleCopiar = async () => {
@@ -22,7 +35,7 @@ export function CodigoGondolero({ codigo }: { codigo: string | null }) {
   }
 
   return (
-    <div className="bg-gray-50 rounded-xl border border-gray-100 p-4 mb-4">
+    <div className={`bg-gray-50 rounded-xl border border-gray-100 p-4 ${className}`}>
       <p className="text-xs text-gray-500 mb-1">Tu código personal</p>
 
       {codigo ? (

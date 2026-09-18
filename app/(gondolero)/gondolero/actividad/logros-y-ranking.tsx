@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { NivelGondolero } from '@/types'
+import { CodigoGondolero } from '../perfil/codigo-gondolero'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,8 @@ export interface LogrosYRankingProps {
   mesLabel: string
   hayZona: boolean
   hayProvincia: boolean
+  /** Para el vacío: es lo único que el gondolero sin distri puede hacer. */
+  codigoGondolero: string | null
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -215,6 +218,7 @@ export function LogrosYRanking({
   mesLabel,
   hayZona,
   hayProvincia,
+  codigoGondolero,
 }: LogrosYRankingProps) {
   const distris = rankings.distris
 
@@ -304,10 +308,19 @@ export function LogrosYRanking({
           // Sin distribuidora y sin zona no queda ningún ranking que mostrar
           // desde que el nacional está oculto. Decir por qué es mejor que dejar
           // la tarjeta vacía, que se lee como una pantalla rota.
-          <p className="text-xs text-gray-400 text-center py-6 leading-relaxed">
-            El ranking aparece cuando estés vinculado a una distribuidora.<br />
-            Podés pedir la vinculación desde tu perfil.
-          </p>
+          //
+          // Y lo que se le pide tiene que ser algo que PUEDA hacer. "Pedí la
+          // vinculación desde tu perfil" sonaba razonable y no existe:
+          // `solicitarVinculacion` no tiene un solo llamador en la app. El
+          // camino que sí funciona es al revés — la distribuidora lo invita por
+          // link o carga su código personal— así que acá va el código, con el
+          // botón de WhatsApp que ya manda el mensaje correcto.
+          <div className="pt-2">
+            <p className="text-xs text-gray-500 text-center mb-3 leading-relaxed">
+              El ranking aparece cuando una distribuidora te vincule.
+            </p>
+            <CodigoGondolero codigo={codigoGondolero} className="" />
+          </div>
         )}
         {tabRanking === 'nacional' && MOSTRAR_RANKING_NACIONAL && (
           <RankingTab

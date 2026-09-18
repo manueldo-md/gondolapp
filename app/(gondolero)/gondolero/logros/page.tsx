@@ -80,7 +80,9 @@ export default async function LogrosPage() {
       // arma con getDistrisDeGondolero. Una columna que queda en un select y no
       // usa nadie es exactamente lo que dejó el perfil del gondolero sin datos
       // cuando se dropeó `nivel`.
-      .select('puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, alias, nombre')
+      // `codigo_gondolero` lo usa el vacío del ranking: sin distribuidora, pasar
+      // el código es lo único que el gondolero puede hacer para conseguir una.
+      .select('puntos_disponibles, puntos_totales_ganados, tasa_aprobacion, alias, nombre, codigo_gondolero')
       .eq('id', user.id)
       .single(),
     admin.from('fotos')
@@ -122,6 +124,7 @@ export default async function LogrosPage() {
     tasa_aprobacion: number
     alias: string | null
     nombre: string | null
+    codigo_gondolero: string | null
   } | null
 
   const fotosAprobadas    = fotosRes.count ?? 0
@@ -501,6 +504,7 @@ export default async function LogrosPage() {
           mesLabel={mesLabel}
           hayZona={misZonaIds.length > 0}
           hayProvincia={misProvincias.length > 0}
+          codigoGondolero={profile?.codigo_gondolero ?? null}
         />
 
         {/* ── SECCIÓN 5 — Canjear puntos ── */}
