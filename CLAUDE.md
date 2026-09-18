@@ -3443,6 +3443,56 @@ El que bloqueaba era el de `participaciones`, no el del concepto. **La migració
 20260918170000 va ANTES del deploy**, al revés que el DROP de columnas: acá el
 código nuevo escribe un valor que la base rechazaba.
 
+### Un DROP se verifica con un grep DESPUÉS de escribir el código, no antes
+
+El 18/9/2026, horas después de correr el DROP de `profiles.nivel` en dev y prod,
+el perfil del gondolero mostraba **"Gondolero"** en vez del alias y **"Sin código
+asignado. Contactá al administrador"** a alguien que tenía código. Los dos datos
+estaban en la base.
+
+La causa: `perfil/page.tsx` seguía pidiendo `nivel` en su select. En el
+relevamiento del tramo yo mismo había escrito *"selects ya muertos (2):
+logros/page.tsx y perfil/page.tsx traían `nivel` sin usarlo"* — y saqué el de
+logros y no el de perfil. **Confié en haber hecho el cambio en vez de volver a
+verificarlo.**
+
+**La regla: después de terminar el código y ANTES de decir que está listo, se
+vuelve a grepear el nombre de la columna.** El grep previo sirve para dimensionar
+el trabajo; el posterior es el único que prueba que se hizo. Ni el typecheck ni
+el build lo agarran, porque un nombre de columna es un string.
+
+### PostgREST rechaza la consulta ENTERA por una columna inexistente
+
+Esto es lo que hace que el bug no se parezca a su causa, y vale para cualquier
+DROP futuro:
+
+```
+.select('nombre, alias, nivel, codigo_gondolero, tipo_actor')
+  → data : null
+  → error: column profiles.nivel does not exist
+```
+
+**No devuelve la fila sin esa columna: no devuelve nada.** Así que el síntoma no
+es "falta un dato" sino **"no existe el perfil"**, y todos los
+`profile?.x ?? fallback` de la pantalla se disparan a la vez. Lo que se ve es un
+nombre genérico, un alias que no aparece, un código que "no está" y —lo que menos
+se nota— `tipo_actor === 'fixer'` dando false para un fixer, que le muestra las
+secciones del gondolero.
+
+Buscar el bug en los fallbacks es buscarlo donde no está: los fallbacks están
+funcionando bien sobre una fila nula.
+
+### Y el error de la lectura no se miraba
+
+`profileRes.error` no se chequeaba en ningún lado, así que el fallo fue
+**invisible durante 24 horas**. Es el mismo patrón de las 137 escrituras sin
+chequear —supabase-js devuelve el error en `.error` y no lo lanza— pero en una
+LECTURA, que es una superficie que ese inventario ni siquiera cuenta.
+
+Ahora el perfil loguea con el `userId` y el mensaje. **Al tocar un select de una
+pantalla que depende de una sola fila, chequear el `.error` no es opcional**: sin
+eso, un fallo de consulta es indistinguible de un registro vacío.
+
 ### Pendiente de producto — el umbral de 50 misiones es inalcanzable
 
 `configuracion.nivel_fotos_casual_a_activo` vale **50** en las dos bases (no el 20

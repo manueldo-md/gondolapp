@@ -40,7 +40,11 @@ export default async function PerfilPage() {
 
   const [profileRes, gondoleroLocalidadesRes, misionesEsteMesRes, config] = await Promise.all([
     admin.from('profiles')
-      .select('nombre, alias, nivel, distri_id, celular, codigo_gondolero, tipo_actor')
+      // OJO al tocar esta lista: PostgREST rechaza la consulta ENTERA si una
+      // columna no existe, así que un nombre de más deja `data` en null y la
+      // pantalla se comporta como si el gondolero no tuviera perfil. Pasó el
+      // 18/9/2026 con `nivel`, que había quedado acá después del DROP.
+      .select('nombre, alias, distri_id, celular, codigo_gondolero, tipo_actor')
       .eq('id', user.id).single(),
     admin.from('gondolero_localidades').select('localidad_id').eq('gondolero_id', user.id),
     // MISIONES aprobadas del mes, no fotos: el nivel tiene que contar también
@@ -53,6 +57,19 @@ export default async function PerfilPage() {
     getConfig(),
   ])
 
+  // El error se MIRA. supabase-js no lanza: lo devuelve en `.error`, y sin este
+  // chequeo un fallo de la consulta es indistinguible de un perfil vacío —
+  // `profile` queda null y los `?? 'Gondolero'` de abajo se disparan todos
+  // juntos, así que el síntoma no se parece en nada a la causa.
+  //
+  // Es el mismo patrón de las 137 escrituras sin chequear (ver CLAUDE.md), esta
+  // vez en una LECTURA. Fue lo que dejó el bug de `nivel` invisible 24 horas.
+  if (profileRes.error) {
+    console.error(
+      '[perfil] no se pudo leer el perfil — la pantalla va a mostrar datos vacíos.',
+      'userId:', user.id, '—', profileRes.error.message,
+    )
+  }
   const profile = profileRes.data
   const localidadesActuales = (gondoleroLocalidadesRes.data ?? []).map((gl: { localidad_id: number }) => gl.localidad_id)
 
