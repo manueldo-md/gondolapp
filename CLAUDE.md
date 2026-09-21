@@ -4196,3 +4196,117 @@ vínculo, el botón, y el camino de aprobación del lado del ejecutor.
   sin una tabla nueva.
 - Qué ve el fixer de una campaña a la que todavía no entró. Hoy el detalle le
   muestra todo; una oferta abierta probablemente tenga que mostrar menos.
+
+---
+
+## Tramos abiertos después del dashboard de cobertura (21/9/2026)
+
+En este orden de prioridad. Los tres salieron de probar el flujo offline en dev.
+
+### 1. GPS sin señal — PRIMERO
+
+Trabajar sin señal es el caso **normal** en el interior, no el raro, y hoy el
+paso de comercios cercanos falla en modo avión con *"No pudimos obtener tu
+ubicación"* aunque el GPS funcione: unos pasos después, el chequeo de distancia
+valida bien.
+
+**La causa no es la lista** —`captura/page.tsx` tiene una rama offline correcta
+que filtra desde el caché— **sino `useGPS`** (`lib/hooks/index.ts`):
+
+```ts
+{ enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+```
+
+En modo avión se corta el **A-GPS**: el teléfono no puede usar torres ni wifi
+para asistir al chip, así que el primer *fix* pasa de 2-3 segundos a 30-60. A
+los 15 segundos se declara error. `maximumAge: 5000` empeora el cuadro — rechaza
+cualquier posición cacheada de más de 5 segundos y obliga a un fix fresco justo
+cuando es más caro. Después funciona porque el chip ya quedó caliente.
+
+Detalle que lo confirma: `watchPosition` **sigue observando después del error**,
+así que el fix probablemente llegaba solo unos segundos más tarde — pero la
+pantalla ya había mostrado el error y un botón de reintentar.
+
+**Qué hacer:** timeout más largo cuando no hay red, `maximumAge` alto (una
+posición de hace un minuto sirve de sobra para filtrar comercios a 200 m), y
+**no pintar error mientras el `watch` sigue vivo**. *"Buscando señal GPS, puede
+tardar"* es la verdad; el error es mentira mientras el watch sigue buscando.
+
+### 2. Precache al unirse, y TTL del caché de campañas
+
+El precache de campañas (`campanas-sections.tsx`, useEffect 2) recorre
+`misCampanas` —o sea "En curso"— así que **sí cubre las campañas a las que se
+unió sin abrirlas**. Las de "Disponibles" no se precachean, y está bien.
+
+Lo que falla es **cuándo** corre: en el `useEffect` de la pantalla de la LISTA.
+La secuencia que rompe es `detalle → Unirme → captura → modo avión`, sin volver
+a la lista con conexión.
+
+Tres cosas para arreglar juntas:
+
+- **Precachear al unirse.** `soloUnirse` y `unirseACampana` ya saben el
+  `campanaId`.
+- **TTL.** `if (already) continue` no refresca nunca: una campaña cacheada hace
+  dos semanas se captura offline con los bloques y campos viejos. El caché de
+  comercios ya tiene timestamp; éste no.
+- El efecto **no depende de `misCampanas`**, solo corre al montar. Volver con el
+  back puede reusar la pantalla sin re-ejecutarlo.
+
+### 3. Zona horaria en lo que ya existe — C y C′, separados
+
+`lib/fecha-ar.ts` existe desde el 21/9/2026 y **no está cableado en ningún
+lado**. Van en dos tramos y no en uno: un rollback por un problema de plata no
+puede llevarse puestas 28 pantallas de cosmética, ni al revés.
+
+**C — las decisiones. Primero, porque toca plata.**
+
+| Dónde | Qué decide |
+|---|---|
+| `lib/campana-vigencia.ts` | el gate de vencimiento |
+| `campanas/[id]/actions.ts:72` y `[id]/page.tsx` | `fecha_limite_inscripcion` |
+| `lib/nivel-mensual.ts` | el corte del mes del nivel y del ranking |
+| `lib/logros.ts` | la racha de días seguidos y el inicio de mes |
+
+En SQL **no hay nada**: cero funciones con `CURRENT_DATE` o `CURRENT_TIMESTAMP`,
+verificado contra la base. El problema es enteramente de JS.
+
+Cambiar esto **mueve la frontera de un día**: antes hay que mirar si alguna
+campaña cierra justo en esa ventana.
+
+**C′ — la presentación. 87 usos en 28 server components.**
+
+Y no es poner `timeZone` y listo, porque **un `date` y un `timestamptz`
+necesitan tratamiento opuesto**:
+
+```
+timestamptz, misión de las 22:30 AR del 20  →  sin zona (UTC): 21/09   MAL
+                                            →  con zona AR   : 20/09   bien
+
+date '2026-09-30' (fecha_fin)               →  sin zona (UTC): 30/09   bien
+                                            →  con zona AR   : 29/09   MAL
+```
+
+`new Date('2026-09-30')` se parsea como medianoche **UTC**; convertirlo a hora
+argentina lo retrocede un día. Poner la zona a ciegas arregla las fechas de
+misiones y **rompe las de campañas**, con un error nuevo más visible que el que
+corrige.
+
+Hacen falta **dos** funciones:
+
+- `formatearDia(date)` — para `fecha_inicio`, `fecha_fin` y
+  `fecha_limite_inscripcion`, las tres únicas columnas `date` del schema.
+  Formatea el string tal cual, sin pasar por `Date`.
+- `formatearInstante(timestamptz)` — con `timeZone: ZONA_AR`, para todo lo demás.
+
+Y después revisar los 87 usos uno por uno decidiendo cuál es cuál. No se puede
+automatizar: el tipo no está en el nombre.
+
+Los client components no tienen el problema — el navegador del gondolero ya está
+en hora argentina.
+
+### Y después del dashboard: que el gondolero sepa su frecuencia
+
+El dashboard mide contra una regla que **hoy solo conoce quien creó la
+campaña**. El gondolero no tiene forma de saber cuántas visitas se esperan de él
+esta semana ni en qué comercio. Es el tramo siguiente a la etapa E, y sin él la
+frecuencia es una vara con la que se lo mide sin habérsela mostrado.
