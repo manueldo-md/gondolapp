@@ -4310,3 +4310,57 @@ El dashboard mide contra una regla que **hoy solo conoce quien creó la
 campaña**. El gondolero no tiene forma de saber cuántas visitas se esperan de él
 esta semana ni en qué comercio. Es el tramo siguiente a la etapa E, y sin él la
 frecuencia es una vara con la que se lo mide sin habérsela mostrado.
+
+---
+
+## Pendiente — el DROP de las columnas de precio (21/9/2026)
+
+El código ya no las lee. Falta el `DROP COLUMN`, que va **después** de
+verificar este deploy en producción, igual que con `nivel` y
+`fotos_aprobadas`.
+
+| Columna | Estado |
+|---|---|
+| `bloques_foto.solicitar_precio` | sin lectores ni escritores |
+| `bloque_campos.solicitar_precio` | sin lectores ni escritores |
+| `fotos.precio_confirmado` | **sigue escribiéndose**, ver abajo |
+| `fotos.precio_detectado` | sin lectores ni escritores (la IA de visión nunca se activó) |
+
+**La casilla "Pedirle precio al gondolero" nunca funcionó.** Escribía
+`bloques_foto.solicitar_precio` y el input de la captura miraba
+`bloque_campos.solicitar_precio` — **dos columnas distintas con el mismo
+nombre**. La segunda no está en ninguna migración (se creó a mano en Supabase,
+como el resto de `bloque_campos`) y **ningún código la escribía**.
+
+Medido antes de sacarla, en las dos bases:
+
+```
+                                DEV        PROD
+bloques_foto true                 0 de 18    0 de 9
+bloque_campos true                1 de 36    0 de 13   ← puesta a mano en Supabase
+fotos.precio_confirmado           0 de 258   0 de 194
+fotos.precio_detectado            0 de 258   0 de 194
+```
+
+Por eso cambiar de fuente no perdió nada: no había nada.
+
+**Lo que falta para poder dropear `fotos.precio_confirmado`:** la pantalla de
+captura todavía guarda `precio` por bloque en IndexedDB y
+`cola-sync-offline.tsx` lo lee, así que una misión encolada **antes** de este
+deploy todavía lo trae y lo manda. Esa plomería —el estado `precio` de
+`captura/page.tsx`, el campo en la entrada de la cola y el parámetro de
+`registrarMision`— se saca cuando la cola haya drenado: el TTL es de 7 días.
+
+**El precio ahora sale de una pregunta tipificada con la métrica Precio**
+(`lib/precios-relevados.ts`), y se muestra al lado de la foto en las tres
+galerías de revisión. Eso no es cosmético: es la mitad barata del pendiente de
+validación de rangos — un 0 o un 7777 se ven mirando la góndola. Dev tiene los
+dos casos en datos reales.
+
+**Si una misión tiene más de una pregunta tipificada como Precio se muestran
+todas**, con su pregunta al lado. Quedarse con una sería elegir por el que
+revisa cuál de los dos productos importa.
+
+**Límite conocido:** una campaña de solo preguntas no tiene galería, así que su
+precio solo se ve en el panel de resultados. En dev le pasa a "Precio de
+mantecol:", que tiene 5 respuestas y 0 fotos.

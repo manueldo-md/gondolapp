@@ -2,6 +2,13 @@ export interface RespuestaItem {
   pregunta: string
   tipo: string
   valor: unknown
+  /**
+   * `bloque_campos.metrica_id`. Acá no se usa para nada —esta lista muestra
+   * todas las respuestas igual— pero viaja junto con ellas porque las tres
+   * galerías derivan de la MISMA lista el badge de precio, con
+   * `preciosDeRespuestas`. Tenerlo acá evita una segunda consulta por pantalla.
+   */
+  metricaId?: string | null
 }
 
 function formatearValor(tipo: string, valor: unknown): string {

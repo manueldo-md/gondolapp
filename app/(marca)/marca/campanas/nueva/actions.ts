@@ -130,13 +130,11 @@ export async function crearCampana(formData: FormData) {
   const campanaId = campana.id
 
   const tipoContenido = (formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios'
-  const solicitarPrecio = formData.get('solicitar_precio') === 'true'
   const { data: bloque } = await admin.from('bloques_foto').insert({
     campana_id:       campanaId,
     orden:            1,
     instruccion:      (formData.get('instruccion') as string) || '',
     tipo_contenido:   tipoContenido,
-    solicitar_precio: solicitarPrecio,
   }).select('id').single()
 
   if (bloque?.id && camposValidos.length > 0) {

@@ -1,5 +1,6 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { FotosGrid } from './fotos-grid'
+import { preciosDeRespuestas, idMetricaPrecio } from '@/lib/precios-relevados'
 
 function adminClient() {
   return createAdminClient(
@@ -20,7 +21,7 @@ export default async function FotosAdminPage({
   let query = admin
     .from('fotos')
     .select(`
-      id, mision_id, url, storage_path, estado, declaracion, puntos_otorgados, precio_detectado, precio_confirmado, distancia_metros, created_at,
+      id, mision_id, url, storage_path, estado, declaracion, puntos_otorgados, distancia_metros, created_at,
       gondolero:profiles!gondolero_id(nombre, alias),
       comercio:comercios(nombre),
       campana:campanas(nombre)
@@ -66,14 +67,18 @@ export default async function FotosAdminPage({
   // listas en el mismo mapa sin deduplicar, así que cada respuesta se mostraba
   // repetida. Las 47 filas de la tabla legacy tienen equivalente en
   // mision_respuestas con el valor idéntico, así que no aportaba nada propio.
-  const respuestasMap: Record<string, { pregunta: string; tipo: string; valor: unknown }[]> = {}
+  // De esta MISMA lista sale el badge de precio: las respuestas ya vienen con
+  // su `metrica_id`, así que no hace falta una segunda consulta por foto.
+  const metricaPrecioId = await idMetricaPrecio(admin)
+
+  const respuestasMap: Record<string, { pregunta: string; tipo: string; valor: unknown; metricaId: string | null }[]> = {}
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const misionIds = [...new Set((fotos as any[]).map((f: { mision_id: string | null }) => f.mision_id).filter(Boolean) as string[])]
   if (misionIds.length > 0) {
     const { data: misionRespsData } = await admin
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('mision_respuestas' as any)
-      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo, metrica_id)')
       .in('mision_id', misionIds)
       .is('reemplazada_por', null)   // solo la versión vigente de cada respuesta
     if (misionRespsData) {
@@ -84,12 +89,12 @@ export default async function FotosAdminPage({
         if (!misionToFotoIds.has(f.mision_id)) misionToFotoIds.set(f.mision_id, [])
         misionToFotoIds.get(f.mision_id)!.push(f.id)
       })
-      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string; metrica_id: string | null } | { pregunta: string; tipo: string; metrica_id: string | null }[] | null }[]) {
         const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
         if (!campo) continue
         for (const fid of (misionToFotoIds.get(r.mision_id) ?? [])) {
           if (!respuestasMap[fid]) respuestasMap[fid] = []
-          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor, metricaId: campo.metrica_id ?? null })
         }
       }
     }
@@ -108,8 +113,7 @@ export default async function FotosAdminPage({
     comercioNombre:  Array.isArray(f.comercio)  ? f.comercio[0]?.nombre  : f.comercio?.nombre,
     campanaNombre:   Array.isArray(f.campana)   ? f.campana[0]?.nombre   : f.campana?.nombre,
     createdAt:       f.created_at,
-    precioConfirmado: f.precio_confirmado ?? null,
-    precioDetectado:  f.precio_detectado ?? null,
+    precios:         preciosDeRespuestas(respuestasMap[f.id], metricaPrecioId),
     distanciaMetros:  f.distancia_metros ?? null,
     respuestas:      respuestasMap[f.id] ?? [],
   }))

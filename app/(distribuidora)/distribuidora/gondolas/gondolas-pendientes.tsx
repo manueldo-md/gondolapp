@@ -8,6 +8,8 @@ import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { aprobarFoto, rechazarFoto, accionMasivaDistri } from './actions'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
+import { PreciosFoto } from '@/components/shared/precios-foto'
+import { preciosDeRespuestas } from '@/lib/precios-relevados'
 import { FotoDistancia } from '@/components/shared/foto-distancia'
 import { SelectorMotivoRechazo } from '@/components/shared/selector-motivo-rechazo'
 
@@ -28,7 +30,6 @@ interface FotoPendiente {
   signedUrl: string | null
   url: string | null
   declaracion: DeclaracionFoto
-  precio_detectado: number | null
   /**
    * Metros al comercio al capturar. null = foto anterior al 15/9/2026.
    * El dato ya venía en el objeto que manda page.tsx (spread completo): faltaba
@@ -43,7 +44,13 @@ interface FotoPendiente {
   respuestas?: RespuestaItem[]
 }
 
-export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
+export function GondolasPendientes({
+  fotos,
+  metricaPrecioId,
+}: {
+  fotos: FotoPendiente[]
+  metricaPrecioId: string | null
+}) {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
   // Rechazo masivo: un solo motivo para todas las seleccionadas. El motivo es
@@ -244,10 +251,9 @@ export function GondolasPendientes({ fotos }: { fotos: FotoPendiente[] }) {
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
-                  {foto.precio_detectado != null
-                    ? <span className="font-medium text-gray-600">${foto.precio_detectado}</span>
-                    : <span />
-                  }
+                  {/* El precio, acá, es la mitad barata de la validación de
+                      rangos: un 0 o un 7777 se ven mirando la góndola. */}
+                  <PreciosFoto precios={preciosDeRespuestas(foto.respuestas, metricaPrecioId)} />
                   <div className="flex items-center gap-1">
                     <Clock size={11} />
                     <span>{formatearFechaHora(foto.created_at)}</span>

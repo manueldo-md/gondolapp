@@ -90,7 +90,6 @@ export function validarBloqueCampana(params: {
 export const BLOQUE_ALTAS = {
   tipoContenido: 'ninguno' as const,
   instruccion:   'Fotografiá la fachada del comercio',
-  solicitarPrecio: false,
 } as const
 
 /**

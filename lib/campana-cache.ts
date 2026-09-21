@@ -31,14 +31,12 @@ export interface CampoBloque {
   /** Solo aplica cuando tipo='foto'. Default DB: true. */
   blur_requerido?: boolean
   /** Solo aplica cuando tipo='foto'. Default DB: false. */
-  solicitar_precio?: boolean
 }
 
 export interface BloqueData {
   id: string
   tipoContenido: string
   instruccion: string
-  solicitarPrecio: boolean
   campos: CampoBloque[]
 }
 
@@ -74,8 +72,8 @@ export const CAMPANA_CACHE_SELECT =
   // gondolero saque la primera foto. Sin ella, la única barrera era el gate del
   // servidor al enviar: rechazo tardío sobre una misión ya hecha entera.
   'id, nombre, tipo, modalidad, fecha_fin, puntos_por_foto, puntos_por_mision, ' +
-  'bloques_foto ( id, tipo_contenido, instruccion, solicitar_precio, orden, ' +
-  'bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido, solicitar_precio ) )'
+  'bloques_foto ( id, tipo_contenido, instruccion, orden, ' +
+  'bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido ) )'
 
 // ── Helpers de comercios (único acceso a COMERCIOS_CACHE_KEY) ─────────────────
 //
@@ -183,7 +181,6 @@ export function toCampanaData(raw: any): CampanaData {
     id: string
     tipo_contenido: string
     instruccion: string | null
-    solicitar_precio: boolean | null
     orden?: number
     bloque_campos: CampoBloque[] | null
   }[]
@@ -192,7 +189,6 @@ export function toCampanaData(raw: any): CampanaData {
     id: b.id,
     tipoContenido: b.tipo_contenido ?? 'propios',
     instruccion: b.instruccion ?? 'el producto',
-    solicitarPrecio: b.solicitar_precio ?? false,
     campos: [...(b.bloque_campos ?? [])].sort((a, b) => a.orden - b.orden),
   }))
   return {

@@ -6,6 +6,8 @@ import {
   CheckCircle2, XCircle, Archive, Clock, RotateCcw, Eye, X,
 } from 'lucide-react'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
+import { PreciosFoto } from '@/components/shared/precios-foto'
+import type { PrecioRelevado } from '@/lib/precios-relevados'
 import { tiempoRelativo } from '@/lib/utils'
 import { accionMasiva, cambiarEstadoFoto } from './actions'
 import { FotoRespuestas } from '@/components/shared/foto-respuestas'
@@ -22,8 +24,8 @@ export interface FotoItem {
   comercioNombre: string | null
   campanaNombre: string | null
   createdAt: string
-  precioConfirmado: number | null
-  precioDetectado: number | null
+  /** Precios de las preguntas tipificadas con la métrica Precio. Todas. */
+  precios: PrecioRelevado[]
   /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
   distanciaMetros: number | null
   respuestas?: { pregunta: string; tipo: string; valor: unknown }[]
@@ -492,19 +494,7 @@ function FotoCard({
           <span>{tiempoRelativo(foto.createdAt)}</span>
         </div>
         <FotoDistancia metros={foto.distanciaMetros} />
-        {(foto.precioConfirmado != null || foto.precioDetectado != null) && (
-          <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
-            {foto.precioConfirmado != null && (
-              <span className="font-medium text-gray-700">💲 ${foto.precioConfirmado}</span>
-            )}
-            {foto.precioDetectado != null && (
-              <span className="text-gray-400">(IA: ${foto.precioDetectado})</span>
-            )}
-            {foto.precioDetectado === null && foto.precioConfirmado != null && (
-              <span className="text-gray-400 text-[10px]">IA pendiente</span>
-            )}
-          </div>
-        )}
+        <PreciosFoto precios={foto.precios} className="mt-0.5" />
         {foto.respuestas && foto.respuestas.length > 0 && (
           <FotoRespuestas respuestas={foto.respuestas} />
         )}

@@ -140,7 +140,6 @@ export async function crearCampanaInterna(formData: FormData) {
   const tipoContenido = esAltas
     ? BLOQUE_ALTAS.tipoContenido
     : ((formData.get('tipo_contenido') as string) || 'propios')
-  const solicitarPrecio = esAltas ? BLOQUE_ALTAS.solicitarPrecio : formData.get('solicitar_precio') === 'true'
   const instruccionBloque = esAltas
     ? BLOQUE_ALTAS.instruccion
     : ((formData.get('instruccion') as string) || '')
@@ -150,7 +149,6 @@ export async function crearCampanaInterna(formData: FormData) {
     orden:            1,
     instruccion:      instruccionBloque,
     tipo_contenido:   tipoContenido,
-    solicitar_precio: solicitarPrecio,
   }).select('id').single()
 
   if (bloque?.id && camposValidos.length > 0) {

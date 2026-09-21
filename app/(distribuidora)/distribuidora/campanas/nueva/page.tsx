@@ -52,7 +52,6 @@ export default function NuevaCampanaPage() {
   const [isPending, startTransition] = useTransition()
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoZona[]>([])
-  const [solicitarPrecio, setSolicitarPrecio] = useState(false)
 
   const [campos, setCampos] = useState<CampoBloque[]>([])
 
@@ -144,7 +143,6 @@ export default function NuevaCampanaPage() {
     const fd = new FormData()
     Object.entries(form).forEach(([k, v]) => fd.set(k, v))
     grupos.flatMap(g => g.localidadIds).forEach(id => fd.append('localidad_ids', String(id)))
-    fd.set('solicitar_precio', solicitarPrecio ? 'true' : 'false')
     fd.set('campos_json', JSON.stringify(campos))
 
     startTransition(async () => {
@@ -270,20 +268,6 @@ export default function NuevaCampanaPage() {
               <option value="ninguno">Sin productos (stands, comercios, etc.)</option>
             </select>
           </div>}
-
-          {/* Solicitar precio — no aplica a una campaña de altas */}
-          {!esAltas && <label className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={solicitarPrecio}
-              onChange={e => setSolicitarPrecio(e.target.checked)}
-              className="w-4 h-4 accent-gondo-amber-400"
-            />
-            <div>
-              <span className="text-sm font-medium text-gray-700">Pedir precio al gondolero</span>
-              <p className="text-xs text-gray-400 mt-0.5">El gondolero deberá ingresar el precio cuando encuentre el producto</p>
-            </div>
-          </label>}
 
           {/* Puntos */}
           <div>

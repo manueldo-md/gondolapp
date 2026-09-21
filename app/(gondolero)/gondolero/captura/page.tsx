@@ -768,6 +768,14 @@ function CapturaContent() {
   const [comercio, setComercio] = useState<ComercioRow | null>(null)
   const [fotoBlob, setFotoBlob] = useState<Blob | null>(null)
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+  // `precio` ya no tiene input que lo llene: la casilla "Pedirle precio al
+  // gondolero" se sacó el 21/9/2026 y el precio se pide con una pregunta
+  // tipificada con la métrica Precio, que viaja en `respuestas`.
+  //
+  // El estado y su plomería siguen porque la cola offline guarda `precio` por
+  // bloque en IndexedDB, y `cola-sync-offline` lo lee: una misión encolada
+  // antes de este deploy todavía lo trae. Se va junto con el DROP de
+  // `fotos.precio_confirmado`, cuando la cola haya drenado (TTL 7 días).
   const [precio, setPrecio] = useState('')
   const [respuestas, setRespuestas] = useState<Record<string, unknown>>({})
   const [enviando, setEnviando] = useState(false)
@@ -908,7 +916,7 @@ function CapturaContent() {
               bloque: b.id,
               campos: b.campos.map(c => ({
                 id: c.id, tipo: c.tipo, pregunta: c.pregunta,
-                blur_requerido: c.blur_requerido, solicitar_precio: c.solicitar_precio,
+                blur_requerido: c.blur_requerido,
               })),
             })))
             await set(CAMPANA_CACHE_PREFIX + campanaId, campanaData)
@@ -3526,26 +3534,6 @@ function CapturaContent() {
               )
             })()}
 
-            {/* Precio — si el campo tipo='foto' del bloque lo requiere y no hay formulario */}
-            {(bloqueActual?.campos.find(c => c.tipo === 'foto')?.solicitar_precio ?? false) && !tieneCampos && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  ¿A cuánto está {bloqueActual?.instruccion}?
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={precio}
-                    onChange={e => setPrecio(e.target.value)}
-                    placeholder="0"
-                    className="w-full pl-7 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gondo-verde-400 text-base"
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Datos */}
             <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50">
               <div className="flex items-center gap-3 p-3">
@@ -3555,15 +3543,6 @@ function CapturaContent() {
                   <p className="text-sm font-medium text-gray-900">{comercio.nombre}</p>
                 </div>
               </div>
-              {bloqueActual?.solicitarPrecio && precio && (
-              <div className="flex items-center gap-3 p-3">
-                <span className="text-lg shrink-0">💲</span>
-                <div>
-                  <p className="text-xs text-gray-400">Precio relevado</p>
-                  <p className="text-sm font-medium text-gray-900">${precio}</p>
-                </div>
-              </div>
-              )}
               <div className="flex items-center gap-3 p-3">
                 <Star size={16} className="text-gondo-verde-400 fill-gondo-verde-400 shrink-0" />
                 <div>

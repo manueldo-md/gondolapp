@@ -18,7 +18,6 @@ interface Step1 {
   instruccion: string
   tipo_contenido: TipoContenidoBloque
   puntos_por_mision: string
-  solicitar_precio: boolean
   actor_campana: 'gondolero' | 'fixer'
 }
 
@@ -72,7 +71,6 @@ export default function NuevaCampanaAdminPage() {
     instruccion:       '',
     tipo_contenido:    'propios',
     puntos_por_mision: '50',
-    solicitar_precio:  false,
     actor_campana:     'gondolero' as 'gondolero' | 'fixer',
   })
 
@@ -102,9 +100,8 @@ export default function NuevaCampanaAdminPage() {
     setErrorMsg(null)
     const fd = new FormData()
     Object.entries(s1).forEach(([k, v]) => {
-      if (k !== 'solicitar_precio' && k !== 'actor_campana') fd.set(k, v as string)
+      if (k !== 'actor_campana') fd.set(k, v as string)
     })
-    fd.set('solicitar_precio', s1.solicitar_precio ? 'true' : 'false')
     fd.set('actor_campana', s1.actor_campana)
     Object.entries(s2).forEach(([k, v]) => fd.set(k, v))
     grupos.flatMap(g => g.localidadIds).forEach(id => fd.append('localidad_ids', String(id)))
@@ -255,20 +252,6 @@ export default function NuevaCampanaAdminPage() {
                 ))}
               </div>
             </div>}
-
-            {/* Solicitar precio — no aplica a una campaña de altas */}
-            {!esAltas && <label className="flex items-center gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={s1.solicitar_precio}
-                onChange={e => setS1(p => ({ ...p, solicitar_precio: e.target.checked }))}
-                className="accent-[#1E1B4B] w-4 h-4"
-              />
-              <div>
-                <span className="text-sm font-medium text-gray-700">Pedir precio al gondolero</span>
-                <p className="text-xs text-gray-400 mt-0.5">El gondolero deberá ingresar el precio cuando encuentre el producto</p>
-              </div>
-            </label>}
 
             {/* Puntos por foto */}
             <div>

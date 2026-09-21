@@ -12,6 +12,8 @@ import { FiltrosArchivo } from './filtros-archivo'
 import { GondolasPendientes } from './gondolas-pendientes'
 import { FotoAcciones } from './foto-acciones'
 import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
+import { PreciosFoto } from '@/components/shared/precios-foto'
+import { preciosDeRespuestas, idMetricaPrecio } from '@/lib/precios-relevados'
 import { FotoDistancia } from '@/components/shared/foto-distancia'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -22,8 +24,6 @@ interface FotoPendienteRaw {
   url: string
   storage_path: string | null
   declaracion: DeclaracionFoto
-  precio_detectado: number | null
-  precio_confirmado: number | null
   /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
   distancia_metros: number | null
   created_at: string
@@ -58,11 +58,15 @@ function FotoCard({
   foto,
   mostrarAcciones,
   respuestas,
+  metricaPrecioId,
 }: {
   foto: FotoPendiente & { campana_id: string }
   mostrarAcciones: boolean
   respuestas?: RespuestaItem[]
+  metricaPrecioId: string | null
 }) {
+  // Los precios salen de las respuestas que la card ya recibe.
+  const precios = preciosDeRespuestas(respuestas, metricaPrecioId)
   const gondoleroNombre = foto.gondolero?.alias ?? foto.gondolero?.nombre ?? 'Gondolero'
   const decl = foto.declaracion
   const imgSrc = foto.signedUrl ?? foto.url
@@ -127,14 +131,7 @@ function FotoCard({
         </div>
 
         <div className="flex items-center justify-between text-xs text-gray-400 mt-auto">
-          {foto.precio_confirmado != null ? (
-            <span className="font-medium text-gray-600">
-              💲 ${foto.precio_confirmado}
-              {(foto.bloque as { instruccion: string | null } | null)?.instruccion && (
-                <span className="text-gray-400 font-normal"> · {(foto.bloque as { instruccion: string | null }).instruccion}</span>
-              )}
-            </span>
-          ) : <span />}
+          <PreciosFoto precios={precios} />
           <div className="flex items-center gap-1">
             <Clock size={11} />
             <span>{formatearFechaHora(foto.created_at)}</span>
@@ -259,7 +256,7 @@ export default async function GondolasPage({
   let query = admin
     .from('fotos')
     .select(`
-      id, mision_id, url, storage_path, declaracion, precio_detectado, precio_confirmado, distancia_metros, created_at, campana_id,
+      id, mision_id, url, storage_path, declaracion, distancia_metros, created_at, campana_id,
       gondolero:profiles ( nombre, alias ),
       comercio:comercios  ( nombre, direccion ),
       campana:campanas    ( nombre, tipo ),
@@ -313,13 +310,17 @@ export default async function GondolasPage({
   // listas en el mismo mapa sin deduplicar, así que cada respuesta se mostraba
   // repetida. Las 47 filas de la tabla legacy tienen equivalente en
   // mision_respuestas con el valor idéntico, así que no aportaba nada propio.
+  // De esta MISMA lista sale el badge de precio: las respuestas ya vienen con
+  // su `metrica_id`, así que no hace falta una segunda consulta por foto.
+  const metricaPrecioId = await idMetricaPrecio(admin)
+
   const respuestasMap: Record<string, RespuestaItem[]> = {}
   const misionIds = [...new Set((fotos as FotoPendiente[]).map(f => f.mision_id).filter(Boolean) as string[])]
   if (misionIds.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: misionRespsData } = await (admin as any)
       .from('mision_respuestas')
-      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo, metrica_id)')
       .in('mision_id', misionIds)
       .is('reemplazada_por', null)   // solo la versión vigente de cada respuesta
     if (misionRespsData) {
@@ -329,12 +330,12 @@ export default async function GondolasPage({
         if (!misionToFotoIds.has(f.mision_id)) misionToFotoIds.set(f.mision_id, [])
         misionToFotoIds.get(f.mision_id)!.push(f.id)
       })
-      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string; metrica_id: string | null } | { pregunta: string; tipo: string; metrica_id: string | null }[] | null }[]) {
         const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
         if (!campo) continue
         for (const fid of (misionToFotoIds.get(r.mision_id) ?? [])) {
           if (!respuestasMap[fid]) respuestasMap[fid] = []
-          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor, metricaId: campo.metrica_id ?? null })
         }
       }
     }
@@ -422,6 +423,7 @@ export default async function GondolasPage({
             url: f.url ?? null,
             respuestas: respuestasMap[f.id] ?? [],
           }))}
+          metricaPrecioId={metricaPrecioId}
         />
       ) : fotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -445,6 +447,7 @@ export default async function GondolasPage({
               foto={foto}
               mostrarAcciones={false}
               respuestas={respuestasMap[foto.id]}
+              metricaPrecioId={metricaPrecioId}
             />
           ))}
         </div>

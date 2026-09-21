@@ -8,6 +8,8 @@ import type { EstadoFoto, DeclaracionFoto, TipoCampana } from '@/types'
 import { GondolasFilter } from './gondolas-filter'
 import { MarcaFotoAcciones } from './foto-acciones'
 import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-respuestas'
+import { PreciosFoto } from '@/components/shared/precios-foto'
+import { preciosDeRespuestas, idMetricaPrecio } from '@/lib/precios-relevados'
 import { FotoDistancia } from '@/components/shared/foto-distancia'
 
 interface FotoRow {
@@ -18,7 +20,6 @@ interface FotoRow {
   declaracion: DeclaracionFoto
   estado: EstadoFoto
   created_at: string
-  precio_confirmado: number | null
   /** Metros al comercio al capturar. null = foto anterior al 15/9/2026. */
   distancia_metros: number | null
   comercio: { nombre: string } | null
@@ -116,7 +117,7 @@ export default async function GondolasPage({
   // Query de fotos — sin filtro campo_id: el modelo nuevo asigna campo_id a toda foto
   let query = admin
     .from('fotos')
-    .select('id, mision_id, storage_path, url, declaracion, estado, created_at, precio_confirmado, distancia_metros, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
+    .select('id, mision_id, storage_path, url, declaracion, estado, created_at, distancia_metros, comercio:comercios(nombre), gondolero:profiles(nombre, alias), bloque:bloques_foto(instruccion)')
     .order('mision_id', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(100)
@@ -154,6 +155,11 @@ export default async function GondolasPage({
   // listas en el mismo mapa sin deduplicar, así que cada respuesta se mostraba
   // repetida. Las 47 filas de la tabla legacy tienen equivalente en
   // mision_respuestas con el valor idéntico, así que no aportaba nada propio.
+  //
+  // De esta MISMA lista sale el badge de precio: las respuestas ya vienen con
+  // su `metrica_id`, así que no hace falta una segunda consulta por foto.
+  const metricaPrecioId = await idMetricaPrecio(admin)
+
   const respuestasMap: Record<string, RespuestaItem[]> = {}
   // Agrupadas por misión → distribuidas a las fotos de esa misión
   const misionIds = [...new Set(fotos.map(f => f.mision_id).filter(Boolean) as string[])]
@@ -161,7 +167,7 @@ export default async function GondolasPage({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: misionRespsData } = await (admin as any)
       .from('mision_respuestas')
-      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo)')
+      .select('mision_id, valor, campo:bloque_campos(pregunta, tipo, metrica_id)')
       .in('mision_id', misionIds)
       .is('reemplazada_por', null)   // solo la versión vigente de cada respuesta
     if (misionRespsData) {
@@ -172,12 +178,12 @@ export default async function GondolasPage({
         if (!misionToFotoIds.has(f.mision_id)) misionToFotoIds.set(f.mision_id, [])
         misionToFotoIds.get(f.mision_id)!.push(f.id)
       })
-      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string } | { pregunta: string; tipo: string }[] | null }[]) {
+      for (const r of misionRespsData as { mision_id: string; valor: unknown; campo: { pregunta: string; tipo: string; metrica_id: string | null } | { pregunta: string; tipo: string; metrica_id: string | null }[] | null }[]) {
         const campo = Array.isArray(r.campo) ? r.campo[0] : r.campo
         if (!campo) continue
         for (const fid of (misionToFotoIds.get(r.mision_id) ?? [])) {
           if (!respuestasMap[fid]) respuestasMap[fid] = []
-          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor })
+          respuestasMap[fid].push({ pregunta: campo.pregunta, tipo: campo.tipo, valor: r.valor, metricaId: campo.metrica_id ?? null })
         }
       }
     }
@@ -240,14 +246,10 @@ export default async function GondolasPage({
                     ?? (f.gondolero as { nombre: string | null; alias: string | null } | null)?.nombre
                     ?? '—'}
                 </p>
-                {(f.precio_confirmado != null) && (
-                  <p className="text-[10px] text-gray-500 font-medium mt-0.5">
-                    💲 ${f.precio_confirmado}
-                    {(f.bloque as { instruccion: string | null } | null)?.instruccion && (
-                      <span className="text-gray-400 font-normal"> · {(f.bloque as { instruccion: string | null }).instruccion}</span>
-                    )}
-                  </p>
-                )}
+                <PreciosFoto
+                  precios={preciosDeRespuestas(respuestasMap[f.id], metricaPrecioId)}
+                  className="mt-0.5"
+                />
                 <p className="text-[10px] text-gray-400">
                   {formatearFechaHora(f.created_at)}
                 </p>
