@@ -44,7 +44,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
       minimo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       puntos_por_foto, puntos_por_mision, instruccion, es_abierta, marca_id, created_at, updated_at,
       tiene_draft, draft_descripcion, draft_bounty, draft_zonas, draft_bloques,
-      bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
+      bloques_foto ( id, orden, instruccion, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
       campana_localidades ( localidad_id, localidades ( id, nombre ) )
     `)
     .eq('id', params.id)
@@ -291,7 +291,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
         draftBloquesGuardados={c.draft_bloques ?? null}
         zonasActuales={zonasActuales}
         zonasDisponibles={zonasDisponibles}
-        bloquesActuales={bloques.map((b: any) => ({ id: b.id, instruccion: b.instruccion, tipo_contenido: b.tipo_contenido, campos: ((b.bloque_campos ?? []) as any[]).sort((a: any, x: any) => (a.orden ?? 0) - (x.orden ?? 0)) }))}
+        bloquesActuales={bloques.map((b: any) => ({ id: b.id, instruccion: b.instruccion, campos: ((b.bloque_campos ?? []) as any[]).sort((a: any, x: any) => (a.orden ?? 0) - (x.orden ?? 0)) }))}
         localidadesIds={[...localidadIdsActuales]}
         accentColor="indigo"
         guardarBorradorFn={guardarBorradorMarca}

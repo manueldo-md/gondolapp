@@ -6,7 +6,7 @@ import { validarFechasCampana } from '@/lib/campana-fechas'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import type { TipoCampana, TipoContenidoBloque } from '@/types'
+import type { TipoCampana } from '@/types'
 import { crearNotificacionAdmin } from '@/lib/notificaciones'
 import { validarBloqueCampana, parsearCamposBloque, filaBloqueCampo, TIPOS_POR_PANEL } from '@/lib/campana-altas'
 
@@ -129,12 +129,10 @@ export async function crearCampana(formData: FormData) {
 
   const campanaId = campana.id
 
-  const tipoContenido = (formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios'
   const { data: bloque } = await admin.from('bloques_foto').insert({
     campana_id:       campanaId,
     orden:            1,
     instruccion:      (formData.get('instruccion') as string) || '',
-    tipo_contenido:   tipoContenido,
   }).select('id').single()
 
   if (bloque?.id && camposValidos.length > 0) {

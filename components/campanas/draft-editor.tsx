@@ -25,18 +25,13 @@ interface ZonaNueva {
 interface BloqueNuevo {
   tempId: string
   instruccion: string
-  tipo_contenido: string
   campos: CampoBloque[]
-}
-
-const TIPO_CONTENIDO_LABEL: Record<string, string> = {
-  propios: 'Productos propios', competencia: 'Competencia',
-  ambos: 'Ambos', ninguno: 'Sin productos',
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
+  bloquesActuales: { id: string; instruccion: string; campos?: CampoExistente[] }[]
   campanaId: string
   instruccionActual: string | null
   puntosActual: number
@@ -51,7 +46,6 @@ interface Props {
   zonasDisponibles: { id: string; nombre: string }[]
   /** IDs (string de integer) de las localidades ya configuradas en la campaña */
   localidadesIds?: string[]
-  bloquesActuales: { id: string; instruccion: string; tipo_contenido: string; campos?: CampoExistente[] }[]
   accentColor: 'indigo' | 'amber'
   guardarBorradorFn: (campanaId: string, data: DraftData) => Promise<void>
   republicarFn: (campanaId: string) => Promise<{ error?: string }>
@@ -110,7 +104,7 @@ export function CampanaDraftEditor({
   // ── UI state ──────────────────────────────────────────────────────────────────
   const [agregandoBloque, setAgregandoBloque] = useState(false)
   const [bloqueTemp, setBloqueTemp] = useState<Omit<BloqueNuevo, 'tempId'>>({
-    instruccion: '', tipo_contenido: 'propios', campos: [],
+    instruccion: '', campos: [],
   })
   const [confirmRepublicar, setConfirmRepublicar] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -138,7 +132,6 @@ export function CampanaDraftEditor({
       nuevasZonas,
       nuevosBloques: nuevosBloques.map(b => ({
         instruccion: b.instruccion,
-        tipo_contenido: b.tipo_contenido,
         campos: b.campos,
       })),
     }
@@ -206,7 +199,7 @@ export function CampanaDraftEditor({
       ...bloqueTemp,
       tempId: `bloque_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     }])
-    setBloqueTemp({ instruccion: '', tipo_contenido: 'propios', campos: [] })
+    setBloqueTemp({ instruccion: '', campos: [] })
     setAgregandoBloque(false)
   }
 
@@ -340,7 +333,6 @@ export function CampanaDraftEditor({
                 <span className="text-xs font-bold text-gray-400 w-5 shrink-0 pt-0.5">{i + 1}</span>
                 <div className="min-w-0">
                   <p className="text-sm text-gray-900">{b.instruccion}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{TIPO_CONTENIDO_LABEL[b.tipo_contenido] ?? b.tipo_contenido}</p>
                   {b.campos && b.campos.length > 0 && (
                     <div className="mt-1.5 space-y-0.5 pl-2 border-l border-gray-100">
                       {[...b.campos].sort((a, x) => (a.orden ?? 0) - (x.orden ?? 0)).map(campo => (
@@ -368,7 +360,6 @@ export function CampanaDraftEditor({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-900">{b.instruccion}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{TIPO_CONTENIDO_LABEL[b.tipo_contenido] ?? b.tipo_contenido}</p>
                   {b.campos.length > 0 && (
                     <p className="text-xs text-green-600 mt-0.5">{b.campos.length} pregunta{b.campos.length !== 1 ? 's' : ''}</p>
                   )}
@@ -409,20 +400,6 @@ export function CampanaDraftEditor({
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Contenido</label>
-              <select
-                value={bloqueTemp.tipo_contenido}
-                onChange={e => setBloqueTemp(p => ({ ...p, tipo_contenido: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm bg-white"
-              >
-                <option value="propios">Productos propios</option>
-                <option value="competencia">Competencia</option>
-                <option value="ambos">Ambos</option>
-                <option value="ninguno">Sin productos</option>
-              </select>
-            </div>
-
             <CamposBloqueBuilder
               campos={bloqueTemp.campos}
               onChange={campos => setBloqueTemp(p => ({ ...p, campos }))}
@@ -442,7 +419,7 @@ export function CampanaDraftEditor({
                 type="button"
                 onClick={() => {
                   setAgregandoBloque(false)
-                  setBloqueTemp({ instruccion: '', tipo_contenido: 'propios', campos: [] })
+                  setBloqueTemp({ instruccion: '', campos: [] })
                 }}
                 className="px-4 py-2 bg-gray-100 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors"
               >

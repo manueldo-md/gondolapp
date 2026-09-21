@@ -82,13 +82,13 @@ export function validarBloqueCampana(params: {
 /**
  * Defaults del bloque de una campaña de altas.
  *
- * `tipo_contenido: 'ninguno'` es el valor cuya etiqueta en el editor dice
- * literalmente "Sin productos (stands, comercios, etc.)". La campaña sembrada en
- * prod tiene `'ambos'` —"Mis productos y competencia"— en una campaña que no
- * tiene productos: es lo que pasa cuando el editor no sabe qué está creando.
+ * Hasta el 21/9/2026 esto forzaba `tipo_contenido: 'ninguno'`, y **ese valor
+ * nunca existió**: el CHECK de `bloques_foto` acepta solo
+ * `('propios','competencia','ambos')`. Medido en las dos bases — el INSERT
+ * rebotaba, el error no se chequeaba, y la campaña de altas quedaba sin bloque.
+ * La columna se sacó entera en ese mismo tramo.
  */
 export const BLOQUE_ALTAS = {
-  tipoContenido: 'ninguno' as const,
   instruccion:   'Fotografiá la fachada del comercio',
 } as const
 

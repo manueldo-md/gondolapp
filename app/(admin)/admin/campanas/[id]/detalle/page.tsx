@@ -66,7 +66,7 @@ export default async function AdminCampanaDetallePage({
       puntos_por_foto, instruccion, nivel_minimo, es_abierta, created_at,
       marca:marcas ( razon_social ),
       distri:distribuidoras ( razon_social ),
-      bloques_foto ( id, orden, instruccion, tipo_contenido,
+      bloques_foto ( id, orden, instruccion,
         bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio )
       ),
       campana_localidades ( localidad_id, localidades ( nombre ) )
@@ -352,11 +352,6 @@ export default async function AdminCampanaDetallePage({
               <div key={bloque.id} className="border border-gray-100 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-gray-400">Bloque {bloque.orden ?? idx + 1}</span>
-                  {bloque.tipo_contenido && (
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium capitalize">
-                      {bloque.tipo_contenido}
-                    </span>
-                  )}
                 </div>
                 {bloque.instruccion && (
                   <p className="text-sm text-gray-700">{bloque.instruccion}</p>

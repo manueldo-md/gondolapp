@@ -53,7 +53,7 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
       puntos_por_foto, puntos_por_mision, instruccion,
       distri_id, marca_id, repositora_id, created_at, updated_at,
       marca:marcas ( razon_social ),
-      bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
+      bloques_foto ( id, orden, instruccion, bloque_campos ( id, orden, tipo, pregunta, opciones, obligatorio ) ),
       campana_localidades ( localidad_id, localidades ( id, nombre ) )
     `)
     .eq('id', params.id)

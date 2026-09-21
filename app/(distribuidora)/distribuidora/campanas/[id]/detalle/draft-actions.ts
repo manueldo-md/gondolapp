@@ -17,7 +17,7 @@ export interface DraftData {
   instruccion: string
   puntos: number
   nuevasZonas: { id: string; nombre: string }[]
-  nuevosBloques: { instruccion: string; tipo_contenido: string; campos: CampoBloque[] }[]
+  nuevosBloques: { instruccion: string; campos: CampoBloque[] }[]
 }
 
 export async function guardarBorradorDistri(campanaId: string, data: DraftData) {
@@ -87,7 +87,6 @@ export async function republicarCampanaDistri(campanaId: string): Promise<{ erro
       const { data: bloque } = await admin().from('bloques_foto').insert({
         campana_id: campanaId,
         instruccion: b.instruccion,
-        tipo_contenido: b.tipo_contenido,
         orden: maxOrden + i + 1,
       }).select('id').single()
 

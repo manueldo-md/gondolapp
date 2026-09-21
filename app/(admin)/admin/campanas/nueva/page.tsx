@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { crearCampanaAdmin } from './actions'
-import type { TipoCampana, TipoContenidoBloque } from '@/types'
+import type { TipoCampana } from '@/types'
 import { CamposBloqueBuilder, type CampoBloque } from '@/components/shared/campos-bloque-builder'
 import { esCampanaDeAltas, validarBloqueCampana, TIPOS_POR_PANEL } from '@/lib/campana-altas'
 import { SelectorZona, type GrupoZona } from '@/components/shared/selector-zona'
@@ -16,7 +16,6 @@ interface Step1 {
   nombre: string
   tipo: TipoCampana
   instruccion: string
-  tipo_contenido: TipoContenidoBloque
   puntos_por_mision: string
   actor_campana: 'gondolero' | 'fixer'
 }
@@ -48,13 +47,6 @@ const LABEL_TIPO: Record<TipoCampana, string> = {
 const TIPOS: { value: TipoCampana; label: string }[] =
   TIPOS_POR_PANEL.admin.map(v => ({ value: v, label: LABEL_TIPO[v] }))
 
-const TIPO_CONTENIDO: { value: TipoContenidoBloque; label: string }[] = [
-  { value: 'propios',     label: 'Solo mis productos'                      },
-  { value: 'competencia', label: 'Solo competencia'                        },
-  { value: 'ambos',       label: 'Mis productos y competencia'             },
-  { value: 'ninguno',     label: 'Sin productos (stands, comercios, etc.)' },
-]
-
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function NuevaCampanaAdminPage() {
@@ -69,7 +61,6 @@ export default function NuevaCampanaAdminPage() {
     nombre:            '',
     tipo:              'relevamiento',
     instruccion:       '',
-    tipo_contenido:    'propios',
     puntos_por_mision: '50',
     actor_campana:     'gondolero' as 'gondolero' | 'fixer',
   })
@@ -230,28 +221,6 @@ export default function NuevaCampanaAdminPage() {
                 </p>
               </div>
             )}
-
-            {/* Tipo de contenido */}
-            {!esAltas && <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Contenido a fotografiar
-              </label>
-              <div className="space-y-2">
-                {TIPO_CONTENIDO.map(tc => (
-                  <label key={tc.value} className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="tipo_contenido"
-                      value={tc.value}
-                      checked={s1.tipo_contenido === tc.value}
-                      onChange={() => setS1(p => ({ ...p, tipo_contenido: tc.value }))}
-                      className="accent-[#1E1B4B]"
-                    />
-                    <span className="text-sm text-gray-700">{tc.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>}
 
             {/* Puntos por foto */}
             <div>

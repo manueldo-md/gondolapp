@@ -6,7 +6,7 @@ import { validarFechasCampana } from '@/lib/campana-fechas'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import type { TipoCampana, TipoContenidoBloque } from '@/types'
+import type { TipoCampana } from '@/types'
 import {
   esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque, filaBloqueCampo, BLOQUE_ALTAS,
 } from '@/lib/campana-altas'
@@ -110,9 +110,6 @@ export async function crearCampanaAdmin(formData: FormData) {
   // El bloque SÍ va siempre, también en una campaña de altas: `crearComercioNuevo`
   // lo busca por `campana_id` para colgarle la foto de fachada. Lo que no van
   // son los campos.
-  const tipoContenido: TipoContenidoBloque = esAltas
-    ? BLOQUE_ALTAS.tipoContenido
-    : ((formData.get('tipo_contenido') as TipoContenidoBloque) || 'propios')
   const instruccionBloque = esAltas
     ? BLOQUE_ALTAS.instruccion
     : ((formData.get('instruccion') as string) || '')
@@ -121,7 +118,6 @@ export async function crearCampanaAdmin(formData: FormData) {
     campana_id:       campanaId,
     orden:            1,
     instruccion:      instruccionBloque,
-    tipo_contenido:   tipoContenido,
   }).select('id').single()
 
   if (bloque?.id && camposValidos.length > 0) {

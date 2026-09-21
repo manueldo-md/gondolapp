@@ -35,7 +35,6 @@ export interface CampoBloque {
 
 export interface BloqueData {
   id: string
-  tipoContenido: string
   instruccion: string
   campos: CampoBloque[]
 }
@@ -72,7 +71,7 @@ export const CAMPANA_CACHE_SELECT =
   // gondolero saque la primera foto. Sin ella, la única barrera era el gate del
   // servidor al enviar: rechazo tardío sobre una misión ya hecha entera.
   'id, nombre, tipo, modalidad, fecha_fin, puntos_por_foto, puntos_por_mision, ' +
-  'bloques_foto ( id, tipo_contenido, instruccion, orden, ' +
+  'bloques_foto ( id, instruccion, orden, ' +
   'bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido ) )'
 
 // ── Helpers de comercios (único acceso a COMERCIOS_CACHE_KEY) ─────────────────
@@ -179,7 +178,6 @@ export async function leerRelevados(campanaId: string): Promise<EstadoComerciosC
 export function toCampanaData(raw: any): CampanaData {
   const bloques = raw.bloques_foto as {
     id: string
-    tipo_contenido: string
     instruccion: string | null
     orden?: number
     bloque_campos: CampoBloque[] | null
@@ -187,7 +185,6 @@ export function toCampanaData(raw: any): CampanaData {
   const bloquesOrdenados = [...(bloques ?? [])].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
   const bloquesData: BloqueData[] = bloquesOrdenados.map(b => ({
     id: b.id,
-    tipoContenido: b.tipo_contenido ?? 'propios',
     instruccion: b.instruccion ?? 'el producto',
     campos: [...(b.bloque_campos ?? [])].sort((a, b) => a.orden - b.orden),
   }))

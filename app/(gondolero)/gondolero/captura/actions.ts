@@ -1198,7 +1198,6 @@ export async function asegurarBloqueGenerico(campanaId: string): Promise<string>
       campana_id:     campanaId,
       orden:          1,
       instruccion:    'Fotografiá la góndola completa',
-      tipo_contenido: 'ambos',
     })
     .select('id')
     .single()

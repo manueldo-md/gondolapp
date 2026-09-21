@@ -106,7 +106,6 @@ export const schemaCampanaPaso1 = z.object({
         .string()
         .min(5, 'La instrucción del bloque es muy corta')
         .max(200, 'La instrucción es demasiado larga'),
-      tipo_contenido: z.enum(['propios', 'competencia', 'ambos']),
     }))
     .min(1, 'Agregá al menos un bloque de foto'),
 })

@@ -23,7 +23,6 @@ type BloqueFotoRow = {
   id: string
   orden: number
   instruccion: string
-  tipo_contenido: string
   bloque_campos: { tipo: string; pregunta: string | null }[] | null
 }
 
@@ -124,7 +123,7 @@ export default async function CampanaDetallePage({
       minimo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
       marca:marcas ( razon_social ),
-      bloques_foto ( id, orden, instruccion, tipo_contenido, bloque_campos ( tipo, pregunta ) )
+      bloques_foto ( id, orden, instruccion, bloque_campos ( tipo, pregunta ) )
     `)
     .eq('id', params.id)
     .single()

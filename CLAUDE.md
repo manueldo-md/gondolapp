@@ -4321,6 +4321,7 @@ verificar este deploy en producción, igual que con `nivel` y
 
 | Columna | Estado |
 |---|---|
+| `bloques_foto.tipo_contenido` | sin lectores ni escritores (ver abajo) |
 | `bloques_foto.solicitar_precio` | sin lectores ni escritores |
 | `bloque_campos.solicitar_precio` | sin lectores ni escritores |
 | `fotos.precio_confirmado` | **sigue escribiéndose**, ver abajo |
@@ -4364,3 +4365,56 @@ revisa cuál de los dos productos importa.
 **Límite conocido:** una campaña de solo preguntas no tiene galería, así que su
 precio solo se ve en el panel de resultados. En dev le pasa a "Precio de
 mantecol:", que tiene 5 respuestas y 0 fotos.
+
+### Y `bloques_foto.tipo_contenido` se fue con ellas (21/9/2026)
+
+Con la tipificación por pregunta quedaba redundante y podía **contradecirla**:
+cada pregunta dice qué mide, y un segundo nivel en el bloque decía otra cosa.
+
+**Nunca decidió nada.** Se barrió el repo entero: las únicas comparaciones eran
+`s1.tipo_contenido === tc.value`, o sea el `checked` de su propio radio button.
+Ni un `if` de negocio. La captura ni siquiera lo leía — `lib/campana-cache.ts` lo
+metía en el caché del gondolero como `tipoContenido` y `captura/page.tsx` no lo
+menciona una sola vez. Lo mostraban dos lugares y los dos eran decorativos: un
+badge gris en el detalle de admin y una línea en el editor de draft.
+
+**Y el valor `'ninguno'` nunca existió.** El CHECK de la columna es:
+
+```sql
+CHECK (tipo_contenido IN ('propios', 'competencia', 'ambos'))
+```
+
+Pero `BLOQUE_ALTAS` lo forzaba a `'ninguno'` para las campañas de altas, los tres
+editores lo ofrecían como opción ("Sin productos (stands, comercios, etc.)") y
+`actions-comercios.ts` creaba con ese valor el bloque de respaldo del alta.
+**Los INSERT rebotaban**, verificado contra dev:
+
+```
+'propios'      ✓ entra
+'ambos'        ✓ entra
+'competencia'  ✓ entra
+'ninguno'      ✗ RECHAZADO — bloques_foto_tipo_contenido_check
+```
+
+Y ninguno de los dos caminos chequeaba el error —`const { data: bloque } = await
+admin.from('bloques_foto').insert(...)`, sin `error`— así que la campaña de altas
+se creaba **sin bloque** y nadie se enteraba. Es el patrón de las 137 escrituras
+sin chequear, esta vez sobre una tabla de configuración.
+
+No llegó a morder en producción porque la única campaña `tipo='comercios'` que
+hay es anterior al 17/9 y tiene `'ambos'`. Era latente: se disparaba con la
+próxima campaña de altas creada desde un editor.
+
+Distribución antes de sacarlo — `'ninguno'` y `'competencia'` con **cero filas en
+las dos bases**, o sea que la mitad del selector no se usó nunca:
+
+```
+              DEV   PROD
+propios        13     6
+ambos           6     3
+competencia     0     0
+ninguno         0     0
+```
+
+El INSERT del bloque ahora omite la columna y toma su `DEFAULT 'propios'`, así
+que las filas nuevas siguen siendo válidas hasta el DROP.

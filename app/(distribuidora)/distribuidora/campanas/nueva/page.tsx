@@ -59,7 +59,6 @@ export default function NuevaCampanaPage() {
     nombre:                      '',
     tipo:                        'interna' as 'interna' | 'comercios',
     instruccion:                 '',
-    tipo_contenido:              'propios',
     puntos_por_mision:           '50',
     modalidad:                   'puntual',
     fecha_inicio:                '',
@@ -94,7 +93,6 @@ export default function NuevaCampanaPage() {
       tipo,
       modalidad:          tipo === 'comercios' ? MODALIDAD_ALTAS : p.modalidad,
       visitas_por_semana: tipo === 'comercios' ? '' : p.visitas_por_semana,
-      tipo_contenido:     tipo === 'comercios' ? 'ninguno' : p.tipo_contenido,
     }))
 
   /**
@@ -251,23 +249,6 @@ export default function NuevaCampanaPage() {
               </p>
             </div>
           )}
-
-          {/* Tipo de contenido */}
-          {!esAltas && <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Tipo de contenido del bloque
-            </label>
-            <select
-              value={form.tipo_contenido}
-              onChange={set('tipo_contenido')}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gondo-amber-400/20 focus:border-gondo-amber-400 transition bg-white"
-            >
-              <option value="propios">Solo mis productos</option>
-              <option value="competencia">Solo competencia</option>
-              <option value="ambos">Mis productos y competencia</option>
-              <option value="ninguno">Sin productos (stands, comercios, etc.)</option>
-            </select>
-          </div>}
 
           {/* Puntos */}
           <div>

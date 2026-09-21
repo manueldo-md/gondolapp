@@ -137,9 +137,6 @@ export async function crearCampanaInterna(formData: FormData) {
 
   // El bloque va siempre, también en altas: `crearComercioNuevo` lo busca por
   // `campana_id` para colgarle la foto de fachada. Lo que no van son los campos.
-  const tipoContenido = esAltas
-    ? BLOQUE_ALTAS.tipoContenido
-    : ((formData.get('tipo_contenido') as string) || 'propios')
   const instruccionBloque = esAltas
     ? BLOQUE_ALTAS.instruccion
     : ((formData.get('instruccion') as string) || '')
@@ -148,7 +145,6 @@ export async function crearCampanaInterna(formData: FormData) {
     campana_id:       campana.id,
     orden:            1,
     instruccion:      instruccionBloque,
-    tipo_contenido:   tipoContenido,
   }).select('id').single()
 
   if (bloque?.id && camposValidos.length > 0) {

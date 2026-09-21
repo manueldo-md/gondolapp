@@ -511,7 +511,6 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
         campana_id:     params.campanaId,
         orden:          1,
         instruccion:    'Foto de fachada del comercio',
-        tipo_contenido: 'ninguno',
       })
       .select('id')
       .single()
