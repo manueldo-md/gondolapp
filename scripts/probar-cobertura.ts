@@ -97,7 +97,10 @@ console.log('\n── 4. la frontera: domingo 22:00 AR cuenta en la semana que t
       { comercio_id: 'c1', gondolero_id: 'g1', estado: 'aprobada', capturada_at: '2026-09-28T01:00:00.000Z' },
     ],
     nombresComercio: NOMBRES, visitasPorSemana: 1,
-    ahora: new Date('2026-09-27T23:00:00Z'),   // domingo 20:00 AR
+    // 23:30 AR del domingo: DESPUÉS de la visita de las 22:00. Antes este caso
+    // usaba las 20:00 —o sea, la visita caía en el futuro— y desde que las
+    // futuras se ignoran eso lo volvía un test que no probaba nada.
+    ahora: new Date('2026-09-28T02:30:00Z'),
   })
   ok('la visita del domingo a las 22 entra en su semana', r.comercios[0].visitas, 1)
   ok('y la semana es la del 21', r.semana.lunes, '2026-09-21')
@@ -295,6 +298,50 @@ console.log('\n── 12. coberturaPorComercio ──')
   ok('c3: una suya, sin cubrir, la descartada no cuenta',
     [m.get('c3')!.visitas, m.get('c3')!.cubierto, m.get('c3')!.hayDeOtro], [1, false, false])
   ok('la visita de la semana pasada no entra', m.get('c1')!.visitas, 2)
+}
+
+// ── 13. Visitas con fecha futura ─────────────────────────────────────────────
+console.log('\n── 13. una visita futura no ocurrió: no cuenta ──')
+{
+  const futuras = [v('c1', '2026-09-22'), v('c1', '2026-09-26')]   // la 2ª es sábado
+  const r = calcularCobertura({
+    misiones: futuras, nombresComercio: NOMBRES, visitasPorSemana: 2, ahora: VIERNES,
+  })
+  ok('solo cuenta la que ya ocurrió', r.comercios[0].visitas, 1)
+  ok('así que el comercio NO está al día', r.comercios[0].estado, 'va_bien')
+
+  const m = coberturaPorComercio({
+    misiones: futuras, gondoleroId: 'g1', visitasPorSemana: 2, ahora: VIERNES,
+  })
+  ok('la lista de captura tampoco la cuenta', m.get('c1')!.visitas, 1)
+  ok('y por eso no dice "Cubierto"', m.get('c1')!.cubierto, false)
+
+  const h = calcularHistorico({
+    misiones: futuras, nombresComercio: NOMBRES, visitasPorSemana: 2, semanas: 1, ahora: VIERNES,
+  })
+  ok('la tira histórica tampoco', h[0].semanas[0].visitas, 1)
+}
+
+// ── 14. Cuándo se avisa que lo visitó otro ───────────────────────────────────
+console.log('\n── 14. "lo visitó otro" SOLO si él no fue esta semana ──')
+{
+  const m = coberturaPorComercio({
+    misiones: [
+      // c1: fueron los dos → él participó, no hay nada que explicar
+      v('c1', '2026-09-21', 'aprobada', 'g1'),
+      v('c1', '2026-09-22', 'aprobada', 'g2'),
+      // c2: solo el otro → hay que decírselo, o parece que le perdieron la visita
+      v('c2', '2026-09-21', 'aprobada', 'g2'),
+      v('c2', '2026-09-22', 'aprobada', 'g2'),
+      // c3: solo él
+      v('c3', '2026-09-21', 'aprobada', 'g1'),
+    ],
+    gondoleroId: 'g1', visitasPorSemana: 2, ahora: VIERNES,
+  })
+  ok('fueron los dos: NO se avisa', m.get('c1')!.avisarQueFueOtro, false)
+  ok('pero el hecho se conserva', m.get('c1')!.hayDeOtro, true)
+  ok('solo el otro: SÍ se avisa', m.get('c2')!.avisarQueFueOtro, true)
+  ok('solo él: NO se avisa', m.get('c3')!.avisarQueFueOtro, false)
 }
 
 console.log(fallos === 0 ? '\nTODO OK' : `\n${fallos} FALLOS`)

@@ -67,6 +67,27 @@ function instante(dia, horaAR) {
   return new Date(base.getTime() + (horaAR + 3) * 3600_000).toISOString()
 }
 
+/**
+ * Un instante de la SEMANA EN CURSO, `horas` antes de ahora y nunca antes del
+ * lunes.
+ *
+ * ── POR QUÉ NO SE USA UN DÍA FIJO ───────────────────────────────────────────
+ * La primera versión sembraba "lunes + 1" y "lunes + 2". Corrido un LUNES eso
+ * cae en el futuro: la cabecera decía "4 de 8" contando visitas que todavía no
+ * habían pasado. El cálculo ahora ignora las futuras, así que esas misiones
+ * simplemente no contaban — o sea que el caso de prueba no probaba nada.
+ *
+ * El tope contra el lunes importa: un lunes a la mañana no se puede repartir
+ * dos visitas en días distintos de esta semana porque no hubo días distintos.
+ * Ahí caen las dos hoy, a horas distintas, que es lo único honesto.
+ */
+function enEstaSemana(lunes, horas) {
+  const tentativo = Date.now() - horas * 3600_000
+  const inicioSemana = new Date(`${lunes}T03:00:00Z`).getTime()   // 00:00 AR
+  // Un margen de una hora para que nunca quede exactamente en el borde.
+  return new Date(Math.max(tentativo, inicioSemana + 3600_000)).toISOString()
+}
+
 function sumarDias(dia, n) {
   const d = new Date(`${dia}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + n)
@@ -136,29 +157,34 @@ async function main() {
   // Frecuencia 2. Lo esperado depende del día en que se corra esto, así que los
   // comercios se siembran con 0, 1, 2 y 3 visitas de ESTA semana: siempre hay
   // uno de cada lado del prorrateo.
+  // Las visitas. Las de ESTA semana van como horas antes de ahora, nunca en el
+  // futuro; las de semanas pasadas, como día + hora fijos.
   const visitas = [
-    // c0 — AL DÍA: cumplió la semana
-    [comercios[0], gonds[0], lunes,               10],
-    [comercios[0], gonds[0], sumarDias(lunes, 1), 11],
-    // c1 — una sola visita: al día o va bien según el día
-    [comercios[1], gonds[1], sumarDias(lunes, 1), 15],
-    // c2 — ATRASADO: nada esta semana, última hace 10 días
-    [comercios[2], gonds[0], sumarDias(lunesPasada, 3), 12],
+    // c0 — AL DÍA: cumplió la semana (2 visitas, las dos ya ocurridas)
+    [comercios[0], gonds[0], enEstaSemana(lunes, 26)],
+    [comercios[0], gonds[0], enEstaSemana(lunes, 3)],
+    // c1 — DOS GONDOLEROS distintos en el mismo comercio. Para cada uno tiene
+    //      que decir "Cubierto" a secas: los dos participaron, no hay nada que
+    //      explicar. El aviso "lo visitó otro" es solo para quien NO fue.
+    [comercios[1], gonds[1], enEstaSemana(lunes, 20)],
+    [comercios[1], gonds[0], enEstaSemana(lunes, 5)],
+    // c2 — ATRASADO: nada esta semana, última la semana pasada
+    [comercios[2], gonds[0], instante(sumarDias(lunesPasada, 3), 12)],
     // c3 — LA FRONTERA: domingo de la semana pasada a las 22:00 AR.
-    //      En UTC eso ya es lunes de ESTA semana. Si el dashboard no usa la
-    //      zona horaria, esta visita se cuenta en la semana equivocada.
-    [comercios[3], gonds[1], sumarDias(lunesPasada, 6), 22],
-    // c4 — visitado solo en la semana ANTERIOR: prueba que el universo son los
-    //      comercios con alguna visita en la campaña, no en la semana.
-    [comercios[4], gonds[0], sumarDias(lunesAnterior, 2), 14],
-    // c1 otra vez, pero del OTRO gondolero: el caso de dos personas en el mismo
-    // comercio. Para el primero tiene que decir "Cubierto · lo visitó otro
-    // gondolero" y NO mandarlo a volver — la frecuencia es del comercio.
-    [comercios[1], gonds[0], sumarDias(lunes, 2), 9],
+    //      En UTC eso ya es lunes de ESTA semana. Si el cálculo no usa la zona
+    //      horaria, esta visita se cuenta en la semana equivocada.
+    [comercios[3], gonds[1], instante(sumarDias(lunesPasada, 6), 22)],
+    // c4 — EL AVISO "lo visitó otro". Es comercio de gonds[0] porque lo visitó
+    //      hace dos semanas, pero esta semana solo fue gonds[1]. Para gonds[0]
+    //      tiene que decir "Cubierto · lo visitó otro gondolero": no lo tocó y
+    //      sin esa frase parecería que el sistema le perdió la visita.
+    //      Para gonds[1] dice "Cubierto" a secas — él fue.
+    [comercios[4], gonds[0], instante(sumarDias(lunesAnterior, 2), 14)],
+    [comercios[4], gonds[1], enEstaSemana(lunes, 30)],
+    [comercios[4], gonds[1], enEstaSemana(lunes, 4)],
   ]
 
-  for (const [com, g, dia, hora] of visitas) {
-    const at = instante(dia, hora)
+  for (const [com, g, at] of visitas) {
     await c.query(`
       INSERT INTO misiones (campana_id, comercio_id, gondolero_id, estado, puntos_total,
                             bounty_estado, capturada_at, created_at)
@@ -171,17 +197,17 @@ async function main() {
     INSERT INTO misiones (campana_id, comercio_id, gondolero_id, estado, puntos_total,
                           bounty_estado, capturada_at, created_at)
     VALUES ($1,$2,$3,'descartada',50,'anulado',$4,$4)`,
-    [campana.id, comercios[2].id, gonds[0].id, instante(sumarDias(lunes, 1), 16)])
+    [campana.id, comercios[2].id, gonds[0].id, enEstaSemana(lunes, 8)])
 
   console.log(`\nSembrada "${NOMBRE}" en ${distri.razon_social}`)
   console.log(`  frecuencia ${FRECUENCIA} por semana · arrancó el ${lunesAnterior}`)
   console.log(`  semana en curso: ${lunes}\n`)
   console.log('  comercio                  visitas esta semana   nota')
   console.log(`  ${comercios[0].nombre.padEnd(25)} 2                     al día`)
-  console.log(`  ${comercios[1].nombre.padEnd(25)} 2 (de DOS gondoleros) el caso de "lo visitó otro"`)
+  console.log(`  ${comercios[1].nombre.padEnd(25)} 2 (de DOS gondoleros) los dos ven "Cubierto" a secas`)
   console.log(`  ${comercios[2].nombre.padEnd(25)} 0 (+1 descartada)     atrasado; la descartada no cuenta`)
   console.log(`  ${comercios[3].nombre.padEnd(25)} 0                     visita del domingo 22:00 AR — la frontera`)
-  console.log(`  ${comercios[4].nombre.padEnd(25)} 0                     solo visitado hace dos semanas`)
+  console.log(`  ${comercios[4].nombre.padEnd(25)} 2 (solo del OTRO)     el aviso "lo visitó otro gondolero"`)
   console.log('\n  La de la frontera es la que importa: en UTC cae el lunes de esta')
   console.log('  semana. Si el dashboard la cuenta como de ESTA semana, la zona')
   console.log('  horaria no está aplicada.\n')

@@ -3731,13 +3731,15 @@ function ChipSemana({
   meta: number | null
 }) {
   if (!meta || !estado) return null
-  const [visitas, cubierto, hayDeOtro] = estado
+  const [visitas, cubierto, avisarQueFueOtro] = estado
   return (
     <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
       cubierto ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'
     }`}>
       {cubierto ? 'Cubierto' : `${visitas} de ${meta} esta semana`}
-      {hayDeOtro && <span className="font-normal opacity-80">· lo visitó otro gondolero</span>}
+      {/* Solo cuando él NO lo visitó esta semana: si participó, "Cubierto" le
+          alcanza y agregar que además fue otro le resta su propio trabajo. */}
+      {avisarQueFueOtro && <span className="font-normal opacity-80">· lo visitó otro gondolero</span>}
     </span>
   )
 }

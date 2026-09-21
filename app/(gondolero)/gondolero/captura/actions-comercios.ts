@@ -53,7 +53,11 @@ export interface EstadoComerciosCampana {
    * Solo en SEGUIMIENTO: cuántas visitas lleva cada comercio esta semana.
    *
    * Va como pares y no como Map porque cruza el borde de un Server Action y los
-   * Map no serializan. `[comercioId, visitas, cubierto, hayDeOtro]`.
+   * Map no serializan. `[comercioId, visitas, cubierto, avisarQueFueOtro]`.
+   *
+   * El cuarto NO es "alguien más lo visitó" sino "hay que avisarle que fue
+   * otro", que es verdadero solo cuando él no lo visitó esta semana. La regla
+   * la decide lib/cobertura-seguimiento, no la pantalla.
    *
    * Las visitas son de CUALQUIER gondolero: la frecuencia es del comercio, no
    * de la persona. Medirla por gondolero mandaría a hacer una visita que no
@@ -130,7 +134,7 @@ export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoC
           misiones: (data ?? []) as VisitaMision[],
           gondoleroId: user.id,
           visitasPorSemana: campana.visitas_por_semana,
-        })].map(([id, s]) => [id, s.visitas, s.cubierto, s.hayDeOtro] as [string, number, boolean, boolean])
+        })].map(([id, s]) => [id, s.visitas, s.cubierto, s.avisarQueFueOtro] as [string, number, boolean, boolean])
       : [],
     visitasPorSemana: campana.modalidad === 'seguimiento'
       ? (campana.visitas_por_semana ?? null)

@@ -111,6 +111,25 @@ export function esVisita(m: { estado: string | null }): boolean {
   return m.estado !== 'descartada'
 }
 
+/**
+ * Una visita con fecha FUTURA no ocurrió, así que no cuenta.
+ *
+ * En datos reales no debería pasar: `momentoDeCaptura` recorta `capturadoAt`
+ * contra ahora antes de guardarlo, y el backfill de la migración hizo lo mismo
+ * con `LEAST`. Pero un seed, un import o un UPDATE a mano lo saltean.
+ *
+ * Y el error va en la dirección que más duele: una visita futura **infla lo
+ * hecho**. Le diría al gondolero que el comercio está cubierto cuando todavía no
+ * fue, y a la distribuidora que la semana va bien cuando no empezó.
+ *
+ * Sin fecha se deja pasar: no se puede afirmar que es futura.
+ */
+function yaOcurrio(m: VisitaMision, ahora: Date): boolean {
+  const iso = m.capturada_at ?? m.created_at
+  if (!iso) return true
+  return new Date(iso).getTime() <= ahora.getTime()
+}
+
 /** El día argentino de una misión. Cae a `created_at` solo si falta el otro. */
 export function diaDeLaVisita(m: VisitaMision): string | null {
   const iso = m.capturada_at ?? m.created_at
@@ -175,7 +194,7 @@ export function calcularCobertura(params: {
   // ellos son TODAS, vengan del gondolero que vengan.
   const visitasPorComercio = new Map<string, VisitaMision[]>()
   for (const m of misiones) {
-    if (!m.comercio_id || !esVisita(m)) continue
+    if (!m.comercio_id || !esVisita(m) || !yaOcurrio(m, ahora)) continue
     if (universo && !universo.has(m.comercio_id)) continue
     const lista = visitasPorComercio.get(m.comercio_id) ?? []
     lista.push(m)
@@ -321,7 +340,7 @@ export function calcularHistorico(params: {
   const universo = new Set<string>()
 
   for (const m of misiones) {
-    if (!m.comercio_id || !esVisita(m)) continue
+    if (!m.comercio_id || !esVisita(m) || !yaOcurrio(m, ahora)) continue
     universo.add(m.comercio_id)
     const dia = diaDeLaVisita(m)
     if (!dia) continue
@@ -412,6 +431,18 @@ export interface ComercioSemana {
   hayDeOtro: boolean
   /** Él no visitó este comercio esta semana. */
   ningunaSuya: boolean
+  /**
+   * Si hay que decirle *"lo visitó otro gondolero"*.
+   *
+   * **Solo cuando él NO visitó ese comercio esta semana.** La frase existe para
+   * explicar por qué un comercio que él no tocó aparece cubierto — sin ella se
+   * lee como que el sistema le perdió la visita. Si participó no hay nada que
+   * explicar: "Cubierto" le alcanza, y agregar que además fue otro es ruido que
+   * le resta su propio trabajo.
+   *
+   * La regla vive acá y no en la pantalla: es la que decide qué se le dice.
+   */
+  avisarQueFueOtro: boolean
 }
 
 /**
@@ -435,15 +466,17 @@ export function coberturaPorComercio(params: {
   const out = new Map<string, ComercioSemana>()
 
   for (const m of misiones) {
-    if (!m.comercio_id || !esVisita(m)) continue
+    if (!m.comercio_id || !esVisita(m) || !yaOcurrio(m, ahora)) continue
     const dia = diaDeLaVisita(m)
     if (!dia || dia < semana.lunes || dia > semana.domingo) continue
 
-    const prev = out.get(m.comercio_id) ?? { visitas: 0, cubierto: false, hayDeOtro: false, ningunaSuya: true }
+    const prev = out.get(m.comercio_id)
+      ?? { visitas: 0, cubierto: false, hayDeOtro: false, ningunaSuya: true, avisarQueFueOtro: false }
     prev.visitas += 1
     if (m.gondolero_id === gondoleroId) prev.ningunaSuya = false
     else                                prev.hayDeOtro   = true
-    prev.cubierto = prev.visitas >= visitasPorSemana
+    prev.cubierto         = prev.visitas >= visitasPorSemana
+    prev.avisarQueFueOtro = prev.hayDeOtro && prev.ningunaSuya
     out.set(m.comercio_id, prev)
   }
   return out
