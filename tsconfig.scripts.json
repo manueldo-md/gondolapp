@@ -1,0 +1,22 @@
+{
+  // Los scripts de scripts/ se chequean ACÁ y no en el tsconfig del build.
+  //
+  // POR QUÉ ESTÁN SEPARADOS
+  // El tsconfig raíz es el que usa `next build`, y su `include` es `**/*.ts`.
+  // Con eso, un error de tipos en una herramienta de diagnóstico —que no viaja
+  // al bundle ni corre en Vercel— tira el deploy. Ya pasó dos veces: `pg` sin
+  // tipos en septiembre, y un `@ts-expect-error` que sobraba el 21/9/2026.
+  //
+  // Separarlos NO es dejar de chequearlos: es que el chequeo no bloquee algo
+  // con lo que no tiene relación. Corre con `npm run typecheck:scripts`.
+  //
+  // `noEmit` y `incremental: false`: esto no compila nada, solo mira.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts", "scripts/**/*.mjs"],
+  "exclude": ["node_modules"]
+}

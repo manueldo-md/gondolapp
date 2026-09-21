@@ -46,6 +46,10 @@ function salirCon(mensaje) {
 
 /** Parser de .env sin dependencias: una sola ruta de código para .ts y .mjs. */
 function leerEnv(ruta) {
+  // El JSDoc no hace nada en runtime: está para los scripts .ts que leen
+  // `cred.vars.NEXT_PUBLIC_SUPABASE_URL`. Sin él TS infiere `{}` desde el
+  // literal vacío y cada script tiene que castear por su cuenta.
+  /** @type {Record<string, string>} */
   const vars = {}
   for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
     const t = linea.trim()

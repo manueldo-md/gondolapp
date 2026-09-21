@@ -23,5 +23,6 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "//": "scripts/ NO entra acá a propósito: es el tsconfig que usa 'next build'. Una herramienta de prueba no puede tirar un deploy. Se chequean aparte, con tsconfig.scripts.json y 'npm run typecheck:scripts'.",
+  "exclude": ["node_modules", "scripts"]
 }

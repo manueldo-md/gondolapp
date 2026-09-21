@@ -9,7 +9,6 @@
  *   npx tsx scripts/probar-metricas.ts --ref <project-ref>
  */
 import { createClient } from '@supabase/supabase-js'
-// @ts-expect-error — .mjs sin tipos
 import { credencialesDeRef, nombreDeRef } from './lib/entorno.mjs'
 import { cambioDeMetricaPermitido, metricasCompatibles, type Metrica } from '../lib/metricas'
 
