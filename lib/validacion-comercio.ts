@@ -123,7 +123,7 @@ export async function validarComercioYCrearMision(
 
   const { data: comercio, error: errCom } = await db
     .from('comercios')
-    .select('id, nombre, estado, campana_id, registrado_por')
+    .select('id, nombre, estado, campana_id, registrado_por, created_at')
     .eq('id', comercioId)
     .maybeSingle()
 
@@ -225,6 +225,11 @@ export async function validarComercioYCrearMision(
         estado:        'pendiente',
         puntos_total:  puntos,
         bounty_estado: 'retenido',
+        // La visita fue cuando el gondolero REGISTRÓ el comercio, no cuando
+        // alguien lo validó — eso puede pasar días después y lo decide la
+        // distribuidora, no él. Sin esto la misión del alta quedaría fechada
+        // con el default `now()`, o sea en la semana del que valida.
+        capturada_at:  comercio.created_at ?? new Date().toISOString(),
       })
       .select('id')
       .single()

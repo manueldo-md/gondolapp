@@ -161,6 +161,29 @@ export type ResultadoMision =
   | { ok: false; codigo: CodigoRechazoMision; motivo: string }
 
 /**
+ * Cuándo se hizo la visita, para `misiones.capturada_at`.
+ *
+ * `created_at` es el momento del INSERT, que para una misión de la cola offline
+ * es cuando el gondolero recuperó señal — días después, y en otra semana. El
+ * dashboard de cobertura de las campañas de seguimiento mide por semana, así
+ * que fechar la visita por el INSERT deja una semana vacía y la siguiente con
+ * dos, y marca en rojo a quien trabajó sin señal.
+ *
+ * El recorte contra `ahora` no es decorativo: `capturadoAt` lo manda el cliente
+ * y el reloj del teléfono puede estar adelantado. Una captura POSTERIOR a su
+ * propio registro es imposible. Es la misma guarda que `puedeRegistrarMision`
+ * aplica en lib/campana-vigencia.ts, y la misma que el backfill de la migración
+ * 20260921100000 hizo con `LEAST`.
+ *
+ * Sin `capturadoAt` cae en ahora, que para un envío en vivo ES la verdad.
+ */
+function momentoDeCaptura(capturadoAt?: number): string {
+  const ahora = Date.now()
+  if (!capturadoAt || !Number.isFinite(capturadoAt)) return new Date(ahora).toISOString()
+  return new Date(Math.min(capturadoAt, ahora)).toISOString()
+}
+
+/**
  * ¿Puede este gondolero trabajar en esta campaña AHORA?
  *
  * Es la segunda capa del filtro de acceso: la pantalla de captura la llama antes
@@ -487,6 +510,7 @@ export async function registrarMision(params: RegistrarMisionParams): Promise<Re
       puntos_total:     params.puntosTotal,
       bounty_estado:    'retenido',
       idempotencia_key: params.idempotenciaKey ?? null,
+      capturada_at:     momentoDeCaptura(params.capturadoAt),
     })
     .select('id')
     .single()
@@ -791,6 +815,16 @@ export interface RegistrarDescarteParams {
   motivoFallo: string
   /** epoch ms en que el gondolero descartó (client-side). */
   descartadaAt: number
+  /**
+   * epoch ms de cuándo se CAPTURÓ la misión —`guardadaAt` de la entry de IDB—,
+   * que no es lo mismo que cuándo la descartó.
+   *
+   * Una descartada no cuenta como visita en el dashboard de cobertura, así que
+   * esto no mueve ningún número. Va igual porque la fila queda en la base y
+   * `now()` diría que la visita fue hoy, cuando el trabajo se hizo la semana
+   * pasada. Una fecha falsa guardada es una fecha falsa que alguien va a leer.
+   */
+  capturadoAt?: number
 }
 
 /**
@@ -834,6 +868,7 @@ export async function registrarDescarte(params: RegistrarDescarteParams): Promis
     puntos_total:          params.puntosTotal,
     bounty_estado:         'anulado',
     idempotencia_key:      params.idempotenciaKey,
+    capturada_at:          momentoDeCaptura(params.capturadoAt),
     offline_descartada_at: new Date(params.descartadaAt).toISOString(),
     offline_motivo_fallo:  params.motivoFallo,
   })

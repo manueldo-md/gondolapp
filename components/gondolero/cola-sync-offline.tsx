@@ -286,6 +286,8 @@ async function limpiarMisionesVencidas() {
         idempotenciaKey: mision.idempotenciaKey,
         motivoFallo:     mision.motivoRechazo ?? mision.ultimoError ?? 'TTL de 7 días alcanzado',
         descartadaAt:    ahora,
+        // Cuándo la CAPTURÓ, que no es cuándo venció el TTL.
+        capturadoAt:     mision.guardadaAt,
       })
     } catch {
       // Best-effort: si falla (sin señal), borrar igual

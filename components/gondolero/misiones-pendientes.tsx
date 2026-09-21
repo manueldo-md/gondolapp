@@ -148,6 +148,8 @@ export function MisionesPendientes() {
           idempotenciaKey: mision.idempotenciaKey,
           motivoFallo:     mision.motivoRechazo ?? mision.ultimoError ?? 'Descartada manualmente',
           descartadaAt:    Date.now(),
+          // Cuándo la CAPTURÓ, que no es cuándo apretó Descartar.
+          capturadoAt:     mision.guardadaAt,
         })
       } catch {
         // Best-effort: sin señal, descartamos igual
