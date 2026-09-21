@@ -199,6 +199,32 @@ async function main() {
     VALUES ($1,$2,$3,'descartada',50,'anulado',$4,$4)`,
     [campana.id, comercios[2].id, gonds[0].id, enEstaSemana(lunes, 8)])
 
+  // ── Recalcular los derivados, como hace el seed principal ─────────────────
+  //
+  // Insertar misiones a mano deja `campanas.comercios_relevados` y
+  // `participaciones.comercios_completados` en el valor con el que nacieron, o
+  // sea cero. La app los recalcula en cada escritura real
+  // (lib/comercios-relevados.ts); un seed que escribe por SQL se saltea ese
+  // camino y deja el detalle de la campaña diciendo "0 comercios" con cinco
+  // sembrados.
+  //
+  // Es el mismo estado derivado que CLAUDE.md marca para borrar. Mientras
+  // exista, un seed que no lo actualice siembra un dato falso.
+  await c.query(`
+    UPDATE campanas SET comercios_relevados = (
+      SELECT count(DISTINCT m.comercio_id) FROM misiones m
+      WHERE m.campana_id = $1 AND m.estado IS DISTINCT FROM 'descartada'
+    ) WHERE id = $1`, [campana.id])
+
+  // El de la participación cuenta APROBADAS, que es otro número: es el que se
+  // compara contra min_comercios_para_cobrar. Ver "TOMADOS y APROBADOS".
+  await c.query(`
+    UPDATE participaciones p SET comercios_completados = (
+      SELECT count(DISTINCT m.comercio_id) FROM misiones m
+      WHERE m.campana_id = p.campana_id AND m.gondolero_id = p.gondolero_id
+        AND m.estado = 'aprobada'
+    ) WHERE p.campana_id = $1`, [campana.id])
+
   console.log(`\nSembrada "${NOMBRE}" en ${distri.razon_social}`)
   console.log(`  frecuencia ${FRECUENCIA} por semana · arrancó el ${lunesAnterior}`)
   console.log(`  semana en curso: ${lunes}\n`)

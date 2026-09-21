@@ -412,7 +412,13 @@ export function fraseSemanaGondolero(
     // "tus comercios ESTÁN cubiertos", no "vos los cubriste".
     return `${base} Tus comercios están cubiertos esta semana.`
   }
-  if (c.esperadasHoy === 0) return `${base} Recién empieza.`
+  // "Recién empieza" solo con CERO visitas.
+  //
+  // La versión anterior miraba únicamente `esperadasHoy === 0`, así que un lunes
+  // con 6 de 8 decía "Esta semana: 6 de 8 visitas. Recién empieza." — una frase
+  // que se contradice a sí misma. El día de la semana no es el único dato: si ya
+  // trabajó, lo que corresponde es reconocerlo.
+  if (c.visitasHechas === 0 && c.esperadasHoy === 0) return `${base} Recién empieza.`
   if (c.visitasHechas >= c.esperadasHoy) return `${base} Vas al día.`
 
   const faltan = c.metaSemana - c.visitasHechas

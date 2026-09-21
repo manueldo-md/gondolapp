@@ -274,6 +274,23 @@ console.log('\n── 11. la frase del gondolero ──')
 
   ok('días que quedan: viernes 3, domingo 1, lunes 7',
     [diasQueQuedan(VIERNES), diasQueQuedan(DOMINGO), diasQueQuedan(LUNES)], [3, 1, 7])
+
+  // "Recién empieza" describe el AVANCE, no el día. Un lunes con trabajo hecho
+  // no está recién empezando, y decirlo es contradecir el número de al lado.
+  // 17:00 AR del lunes: las visitas del mediodía ya ocurrieron. Con LUNES —que
+  // son las 08:00 AR— el filtro de visitas futuras las descartaría, y con razón.
+  const LUNES_TARDE = new Date('2026-09-21T20:00:00Z')
+  const lunesConAvance = calcularCobertura({
+    misiones: [
+      v('k0', '2026-09-14'), v('k1', '2026-09-14'), v('k2', '2026-09-14'), v('k3', '2026-09-14'),
+      v('k0', '2026-09-21'), v('k0', '2026-09-21'), v('k1', '2026-09-21'),
+      v('k1', '2026-09-21'), v('k2', '2026-09-21'), v('k2', '2026-09-21'),
+    ],
+    nombresComercio: new Map(), visitasPorSemana: 2, ahora: LUNES_TARDE,
+  })
+  ok('un lunes CON avance no dice "recién empieza"',
+    fraseSemanaGondolero(lunesConAvance, LUNES_TARDE),
+    'Esta semana: 6 de 8 visitas. Vas al día.')
 }
 
 // ── 12. El estado por comercio de la lista de captura ────────────────────────
