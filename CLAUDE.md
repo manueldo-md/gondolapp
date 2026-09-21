@@ -4109,3 +4109,90 @@ para las de Drive y picsum, que son las únicas que la necesitan. Tramo propio:
 hay que verificar fila por fila que el `storage_path` resuelva **antes** de
 borrar la url, porque las 25 de arriba son la prueba de que tener `storage_path`
 no garantiza que el objeto exista.
+
+---
+
+## Próximos tramos (anotado el 21/9/2026, sin empezar)
+
+### 1. Prefijo `FXR` para los fixers
+
+Al unificar el generador el 16/9/2026 el prefijo quedó **fijo en `GND` para
+todos**, gondoleros y fixers. El código se dicta por teléfono —hay un botón de
+WhatsApp en el perfil— así que la distribuidora que lo recibe y lo carga en su
+panel **no tiene forma de saber a quién está invitando**. Y no es lo mismo: un
+fixer toca la góndola, arma exhibidores y repone producto ajeno.
+
+El cambio es chico: **el mismo generador**, `generar_codigo_gondolero()`, con el
+prefijo derivado de `tipo_actor`. El `UNIQUE` sobre la columna es global, así que
+`GND` y `FXR` no pueden chocar — el espacio queda disjunto por construcción.
+
+**Los que ya tienen GND se REGENERAN, no conviven.** Medido el 21/9/2026:
+
+```
+                  fixers    todos con GND    con código viejo    sin código
+PROD                 8            8                 0                0
+DEV                  6            6                 0                0
+fixer_invitacion_tokens usados:  0 en las dos bases
+```
+
+Los 14 son de seed y **ningún código de fixer fue dictado nunca a nadie**, así
+que regenerar no invalida un papel anotado por nadie. El riesgo es cero hoy y
+sube con cada fixer real que entre: es ahora o nunca.
+
+Y sobre todo, **convivir no resolvería el problema**. Si `GND` puede ser
+cualquiera de los dos, el prefijo deja de ser información y la distribuidora
+sigue sin saber a quién invita — que es exactamente lo que este tramo viene a
+arreglar. Un prefijo que solo vale para los nuevos no sirve hasta que se renueve
+la población entera.
+
+El mecanismo ya existe: `backfill_codigos_gondolero()`, el mismo del botón
+"Asignar códigos" de `/admin/usuarios`, que ya se usó para reescribir los 5
+códigos viejos de prueba.
+
+**Dos detalles a no pasar por alto:**
+
+- `lib/codigo-gondolero.ts` tiene `FORMATO_CODIGO_GONDOLERO` con `GND`
+  hardcodeado, y `tieneCodigoVigente()` sale de ahí. El backfill levanta "los que
+  no tengan el formato nuevo", así que si la regex pasa a aceptar los dos
+  prefijos hay que condicionarla por `tipo_actor` o el backfill deja de ver a los
+  fixers con GND — justo los que hay que reescribir.
+- Las tres búsquedas por código (`distribuidora/gondoleros`,
+  `distribuidora/fixers`, `repositora/fixers`) filtran por `tipo_actor` y **no
+  por prefijo**, así que el cambio no las rompe. Conviene que siga siendo así: el
+  prefijo es para el humano que lee, no para el código que filtra.
+
+### 2. Postulación de fixers a campañas
+
+**El problema.** Un fixer no trabaja libre —toca la góndola, arma exhibidores,
+repone producto ajeno, y alguien tiene que responder por quién entra al
+comercio— pero tampoco debería depender de que lo inviten primero para poder
+ofrecerse.
+
+**El modelo, ya definido:**
+
+1. La campaña se marca como **abierta a postulaciones** (flag nuevo en
+   `campanas`).
+2. Un fixer **sin vínculo** la ve como oferta, con botón "Postularme".
+3. El botón crea la solicitud con `iniciado_por = 'fixer'`.
+4. **Aprueba QUIEN EJECUTA la campaña, no quien la financia.** Si la crea la
+   marca y la ejecuta una distribuidora o una repositora, aprueba el ejecutor.
+5. Recién con la solicitud aprobada participa.
+
+**Lo que ya está:** las dos tablas de solicitudes aceptan `iniciado_por='fixer'`
+por CHECK, y `lib/acceso-campana.ts` ya distingue al ejecutor —`distri_id` o
+`repositora_id`— del financiador, que es justo la distinción que el punto 4
+necesita.
+
+**Lo que falta:** el flag en `campanas`, la pantalla de ofertas para el fixer sin
+vínculo, el botón, y el camino de aprobación del lado del ejecutor.
+
+**A definir antes de escribir**, porque cambia el modelo de datos:
+
+- Una campaña abierta a postulaciones con `repositora_id` **y** `marca_id`: ¿la
+  postulación se hace a la repositora (vínculo duradero, sirve para sus próximas
+  campañas) o a la campaña (vínculo de una vez)? Las tablas de hoy son
+  `fixer_repo_solicitudes` y `fixer_distri_solicitudes`, o sea vínculo con el
+  ACTOR y no con la campaña. Postularse "a una campaña" no tiene dónde guardarse
+  sin una tabla nueva.
+- Qué ve el fixer de una campaña a la que todavía no entró. Hoy el detalle le
+  muestra todo; una oferta abierta probablemente tenga que mostrar menos.
