@@ -160,6 +160,67 @@ export type ResultadoMision =
   | { ok: true;  misionId: string; puntos: number }
   | { ok: false; codigo: CodigoRechazoMision; motivo: string }
 
+/**
+ * ¿Puede este gondolero trabajar en esta campaña AHORA?
+ *
+ * Es la segunda capa del filtro de acceso: la pantalla de captura la llama antes
+ * de montar el primer paso, igual que `estaVencida`. Sin esto, un desvinculado
+ * entra por URL directa —o desde el detalle, o con el back del navegador—, saca
+ * todas las fotos, llena el formulario y recién al enviar le dice el servidor
+ * que ya no pertenece. Rechazo tardío del peor tipo: el trabajo ya está hecho.
+ *
+ * La regla no se reescribe acá: es la misma `accesoACampana` que usan la lista,
+ * el detalle, `unirseACampana`, `soloUnirse`, `crearComercioNuevo` y el gate de
+ * `registrarMision`.
+ *
+ * **Sin `momentoMs`**: esto corre cuando el gondolero está por EMPEZAR, así que
+ * lo que importa es si puede trabajar ahora, no si podía antes. La tolerancia
+ * con lo capturado antes del corte vive en `registrarMision`, que es donde llega
+ * el trabajo viejo de la cola.
+ */
+export async function verificarAccesoCampana(
+  campanaId: string,
+): Promise<{ ok: true } | { ok: false; mensaje: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+
+  const admin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any
+
+  const { data: campana, error } = await db
+    .from('campanas')
+    .select('financiada_por, via_ejecucion, distri_id, repositora_id, marca_id, actor_campana')
+    .eq('id', campanaId)
+    .maybeSingle()
+
+  // Falla abierta a propósito: si no se pudo leer, que decida el gate del
+  // servidor al registrar. Bloquear acá por un error de infraestructura le
+  // cerraría la campaña a alguien que sí tiene acceso, y con un mensaje que
+  // además le echaría la culpa.
+  if (error) {
+    console.error('[verificarAccesoCampana] no se pudo leer la campaña —',
+      'se deja pasar y decide el gate de registrarMision:', error.message)
+    return { ok: true }
+  }
+  if (!campana) return { ok: true }
+
+  const { data: perfil } = await db
+    .from('profiles').select('tipo_actor').eq('id', user.id).maybeSingle() as
+    { data: { tipo_actor: string | null } | null }
+
+  const acceso = accesoACampana(
+    campana,
+    await contextoAcceso({ actorId: user.id, tipoActor: perfil?.tipo_actor, admin: db }),
+  )
+  return acceso.ok ? { ok: true } : { ok: false, mensaje: acceso.mensaje }
+}
+
 export async function registrarMision(params: RegistrarMisionParams): Promise<ResultadoMision> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

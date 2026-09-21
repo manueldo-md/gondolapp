@@ -473,7 +473,33 @@ export default async function CampanaDetallePage({
                 es el único link a la captura de toda la pantalla. En una campaña
                 de seguimiento —donde tener el cupo lleno es el estado NORMAL del
                 repositor— eso la volvía inutilizable. */}
-            {campanaActiva && (cupoLleno ? (
+            {/* ── Sin acceso o vencida: no hay botón ────────────────────────
+                Este es el ÚNICO link a la captura de toda la pantalla, así que
+                esconderlo es lo que corta el camino.
+
+                Los dos casos tenían el mismo agujero y ninguno estaba tapado:
+                `campanaActiva` mira `estado`, y tanto una campaña vencida como
+                una de la que lo desvincularon siguen diciendo 'activa'. Con eso
+                el botón aparecía igual. El 21/9/2026 SokkaElectrizante entró por
+                acá desde "Finalizadas", hizo la misión completa y recibió el
+                rechazo al enviar.
+
+                Se explica en vez de desaparecer sin más: el gondolero vino
+                siguiendo un link y merece saber por qué no puede seguir. */}
+            {campanaActiva && (sinAcceso || vig?.vencida) && (
+              <div className="bg-rose-50 rounded-2xl border border-rose-200 p-4 text-center">
+                <p className="text-sm font-semibold text-rose-700">
+                  {vig?.vencida ? 'Esta campaña ya terminó' : 'Ya no podés trabajar en esta campaña'}
+                </p>
+                <p className="text-xs text-rose-600 mt-1">
+                  {vig?.vencida
+                    ? 'No acepta misiones nuevas. Lo que hiciste sigue contando.'
+                    : `${motivoSinAcceso ?? ''} Lo que hiciste sigue contando.`}
+                </p>
+              </div>
+            )}
+
+            {campanaActiva && !sinAcceso && !vig?.vencida && (cupoLleno ? (
               <div className="bg-gray-50 rounded-2xl border border-gray-200 p-4 text-center">
                 <p className="text-sm font-semibold text-gray-600">Campaña sin cupos disponibles</p>
                 <p className="text-xs text-gray-400 mt-1">El cupo total de la campaña está completo.</p>

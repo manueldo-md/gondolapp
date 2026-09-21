@@ -21,6 +21,7 @@ import { useGPS } from '@/lib/hooks'
 import {
   registrarMision, registrarRecaptura, descartarRecaptura, subirFoto,
   asegurarBloqueGenerico, obtenerConfigCompresion, getMisionParaRetake,
+  verificarAccesoCampana,
   type FotoRecapturaInput,
 } from './actions'
 import {
@@ -858,6 +859,27 @@ function CapturaContent() {
             setErrorGlobal('Esta campaña ya terminó y no acepta misiones nuevas. Buscá otra en la lista de campañas.')
             setCargando(false)
             return
+          }
+
+          // Segunda capa del filtro de ACCESO, por el mismo motivo y en el mismo
+          // lugar que el de fecha. La lista ya baja a "Finalizadas" las campañas
+          // de una distribuidora que cortó el vínculo, pero acá se entra por URL
+          // directa, por el botón del detalle o por el back del navegador.
+          //
+          // Sin este corte pasaba exactamente lo que vimos con SokkaElectrizante
+          // el 21/9/2026: hizo la misión COMPLETA y el rechazo le llegó al
+          // enviar. El gate de `registrarMision` queda como red para el caso
+          // offline, que es el único donde no se puede avisar antes.
+          //
+          // Solo corre online: la rama de caché de más arriba ya devolvió. Si la
+          // consulta falla, la action deja pasar y decide el gate del servidor.
+          if (data) {
+            const acceso = await verificarAccesoCampana(campanaId)
+            if (!acceso.ok) {
+              setErrorGlobal(`${acceso.mensaje} Buscá otra en la lista de campañas.`)
+              setCargando(false)
+              return
+            }
           }
           if (error || !data) {
             // Intentar desde caché como fallback
