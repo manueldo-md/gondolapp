@@ -17,6 +17,7 @@ import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { accesoACampana, type CampanaAcceso } from '@/lib/acceso-campana'
+import { calcularCobertura, fraseSemanaGondolero } from '@/lib/cobertura-seguimiento'
 
 type BloqueFotoRow = {
   id: string
@@ -47,6 +48,8 @@ type CampanaDetalle = {
   comercios_relevados: number
   instruccion: string | null
   nivel_minimo: string | null
+  modalidad: string | null
+  visitas_por_semana: number | null
   marca: { razon_social: string } | null
   bloques_foto: BloqueFotoRow[]
 }
@@ -116,6 +119,7 @@ export default async function CampanaDetallePage({
     .from('campanas')
     .select(`
       id, nombre, tipo, financiada_por, via_ejecucion, distri_id, repositora_id, marca_id, estado, actor_campana,
+      modalidad, visitas_por_semana,
       puntos_por_foto, puntos_por_mision, fecha_inicio, fecha_fin, fecha_limite_inscripcion,
       minimo_comercios, tope_total_comercios, max_comercios_por_gondolero, min_comercios_para_cobrar,
       comercios_relevados, instruccion, nivel_minimo,
@@ -193,6 +197,47 @@ export default async function CampanaDetallePage({
   const misDistriIds = esFixer
     ? ((misDistrisFixerData ?? []) as { distri_id: string }[]).map(d => d.distri_id)
     : ((misDistrisGondoleroData ?? []) as { distri_id: string }[]).map(d => d.distri_id)
+  // ── Su semana, en campañas de seguimiento ──────────────────────────────────
+  //
+  // Segunda consulta y no la de arriba: la lista de abajo tiene que seguir
+  // mostrando SUS misiones, pero la cobertura cuenta las visitas de TODOS. La
+  // frecuencia es del comercio, no de la persona — si otro ya lo visitó, el
+  // comercio está cubierto y volver sería trabajo que no hace falta (y que la
+  // distribuidora paga igual). Ver lib/cobertura-seguimiento.ts.
+  //
+  // Solo se pide en seguimiento: en puntual no hay frecuencia que medir.
+  const esSeguimiento = c.modalidad === 'seguimiento' && !!c.visitas_por_semana
+  let fraseSemana: string | null = null
+  if (esSeguimiento) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: todas, error: errTodas } = await (admin as any)
+      .from('misiones')
+      .select('comercio_id, gondolero_id, estado, capturada_at, created_at')
+      .eq('campana_id', params.id)
+
+    if (errTodas) {
+      // Se loguea y no se muestra nada: una cabecera con números inventados es
+      // peor que no tenerla, sobre todo cuando le dice cuánto le falta.
+      console.error('[campana-detalle] no se pudo calcular la cobertura de la semana:', errTodas.message)
+    } else {
+      // Sus comercios: los que él visitó alguna vez en esta campaña.
+      const misComercios = new Set(
+        ((misionesData ?? []) as MisionRow[])
+          .filter(m => m.estado !== 'descartada' && m.comercio_id)
+          .map(m => m.comercio_id as string),
+      )
+      if (misComercios.size > 0) {
+        fraseSemana = fraseSemanaGondolero(calcularCobertura({
+          misiones: todas ?? [],
+          nombresComercio: new Map(),
+          visitasPorSemana: c.visitas_por_semana!,
+          fechaInicio: c.fecha_inicio,
+          universo: misComercios,
+        }))
+      }
+    }
+  }
+
   const misRepoIds = esFixer
     ? ((misReposFixerData ?? []) as { repositora_id: string }[]).map(r => r.repositora_id)
     : []
@@ -362,6 +407,23 @@ export default async function CampanaDetallePage({
             </p>
             <p className="text-xs text-gray-500">
               {puedeUnirse ? 'Podés volver a unirte.' : 'No hay cupos o la inscripción está cerrada.'}
+            </p>
+          </div>
+        )}
+
+        {/* ── Su semana, solo en seguimiento ────────────────────────────────
+            El gondolero nunca veía `visitas_por_semana` en esta pantalla: el
+            dashboard de la distri lo medía contra una vara que él no conocía.
+
+            Dice "tus comercios están cubiertos" y no "cubriste tus comercios":
+            parte de esas visitas pueden ser de otro, y atribuirle trabajo ajeno
+            es tan falso como no reconocerle el propio. */}
+        {fraseSemana && (
+          <div className="bg-gondo-verde-50 border border-gondo-verde-200 rounded-2xl p-4">
+            <p className="text-sm text-gondo-verde-800 leading-snug">{fraseSemana}</p>
+            <p className="text-[11px] text-gondo-verde-600 mt-1">
+              Se piden {c.visitas_por_semana} {c.visitas_por_semana === 1 ? 'visita' : 'visitas'} por
+              semana a cada comercio. Cuentan las de cualquier gondolero: si otro ya lo visitó, está cubierto.
             </p>
           </div>
         )}

@@ -10,7 +10,11 @@
  *
  * La semana de referencia es 2026-09-21 (lunes) a 2026-09-27 (domingo).
  */
-import { calcularCobertura, calcularHistorico, etiquetaUltimaVisita, type VisitaMision } from '../lib/cobertura-seguimiento'
+import {
+  calcularCobertura, calcularHistorico, etiquetaUltimaVisita,
+  fraseSemanaGondolero, coberturaPorComercio, diasQueQuedan,
+  type VisitaMision,
+} from '../lib/cobertura-seguimiento'
 
 let fallos = 0
 function ok(titulo: string, real: unknown, esperado: unknown) {
@@ -183,6 +187,114 @@ console.log('\n── 9. tira histórica ──')
   })
   ok('un comercio visitado fuera de la ventana aparece igual', h.length, 1)
   ok('con la tira en cero', h[0].semanas.map(x => x.visitas), [0, 0, 0, 0])
+}
+
+// ── 10. El universo: lo que ve el GONDOLERO ──────────────────────────────────
+console.log('\n── 10. universo acotado: sus comercios, TODAS las visitas ──')
+{
+  // Juan (g1) visitó c1 el lunes. Pedro (g2) lo visitó el martes.
+  // c2 es solo de Pedro: no tiene que aparecerle a Juan.
+  const misiones = [
+    v('c1', '2026-09-21', 'aprobada', 'g1'),
+    v('c1', '2026-09-22', 'aprobada', 'g2'),
+    v('c2', '2026-09-22', 'aprobada', 'g2'),
+  ]
+  const juan = calcularCobertura({
+    misiones, nombresComercio: NOMBRES, visitasPorSemana: 2,
+    ahora: VIERNES, universo: ['c1'],
+  })
+  ok('a Juan le aparece solo su comercio', juan.comercios.map(x => x.comercioId), ['c1'])
+  ok('pero con las DOS visitas, no solo la suya', juan.comercios[0].visitas, 2)
+  ok('así que el comercio está al día', juan.comercios[0].estado, 'al_dia')
+  ok('y su meta es la de un comercio', juan.metaSemana, 2)
+
+  // Filtrar las misiones en vez de usar `universo` es lo que NO hay que hacer:
+  // daría el universo bien y el conteo mal.
+  const malHecho = calcularCobertura({
+    misiones: misiones.filter(m => m.gondolero_id === 'g1'),
+    nombresComercio: NOMBRES, visitasPorSemana: 2, ahora: VIERNES,
+  })
+  ok('CONTROL: filtrar por gondolero contaría 1 y mandaría a Juan de nuevo',
+    malHecho.comercios[0].visitas, 1)
+
+  // Y la distri ve lo mismo sobre ese comercio, más el de Pedro.
+  const distri = calcularCobertura({
+    misiones, nombresComercio: NOMBRES, visitasPorSemana: 2, ahora: VIERNES,
+  })
+  ok('la distri ve los dos comercios', distri.comercios.length, 2)
+  ok('y sobre c1 dice lo mismo que Juan',
+    distri.comercios.find(x => x.comercioId === 'c1')!.visitas, 2)
+}
+
+// ── 11. La frase de la cabecera ──────────────────────────────────────────────
+console.log('\n── 11. la frase del gondolero ──')
+{
+  const conVisitas = (n: number, comercios = 5) => calcularCobertura({
+    misiones: [
+      // 5 comercios en el universo, n visitas repartidas en el primero.
+      ...Array.from({ length: comercios }, (_, i) => v(`k${i}`, '2026-09-14')),
+      ...Array.from({ length: n }, (_, i) => v('k0', ['2026-09-21', '2026-09-22', '2026-09-23'][i % 3])),
+    ],
+    nombresComercio: new Map(), visitasPorSemana: 2, ahora: VIERNES,
+  })
+
+  const LUNES = new Date('2026-09-21T11:00:00Z')
+  const lunes = calcularCobertura({
+    misiones: [v('k0', '2026-09-14')], nombresComercio: new Map(),
+    visitasPorSemana: 2, ahora: LUNES,
+  })
+  ok('lunes sin visitas: no dice que le faltan',
+    fraseSemanaGondolero(lunes, LUNES), 'Esta semana: 0 de 2 visitas. Recién empieza.')
+
+  ok('viernes atrasado: dice VISITAS y el plazo',
+    fraseSemanaGondolero(conVisitas(3), VIERNES),
+    'Esta semana: 3 de 10 visitas. Te faltan 7 visitas y quedan 3 días.')
+
+  ok('viernes al día pero sin cerrar la semana',
+    fraseSemanaGondolero(conVisitas(6), VIERNES),
+    'Esta semana: 6 de 10 visitas. Vas al día.')
+
+  const cubierto = calcularCobertura({
+    misiones: [v('k0', '2026-09-21'), v('k0', '2026-09-22', 'aprobada', 'g2')],
+    nombresComercio: new Map(), visitasPorSemana: 2, ahora: VIERNES,
+  })
+  ok('cubierto NO le atribuye el trabajo: "están cubiertos", no "cubriste"',
+    fraseSemanaGondolero(cubierto, VIERNES),
+    'Esta semana: 2 de 2 visitas. Tus comercios están cubiertos esta semana.')
+
+  const DOMINGO = new Date('2026-09-27T15:00:00Z')
+  ok('el domingo el plazo va en singular',
+    fraseSemanaGondolero(
+      calcularCobertura({ misiones: [v('k0', '2026-09-14')], nombresComercio: new Map(),
+        visitasPorSemana: 2, ahora: DOMINGO }), DOMINGO),
+    'Esta semana: 0 de 2 visitas. Te faltan 2 visitas y queda 1 día.')
+
+  ok('días que quedan: viernes 3, domingo 1, lunes 7',
+    [diasQueQuedan(VIERNES), diasQueQuedan(DOMINGO), diasQueQuedan(LUNES)], [3, 1, 7])
+}
+
+// ── 12. El estado por comercio de la lista de captura ────────────────────────
+console.log('\n── 12. coberturaPorComercio ──')
+{
+  const m = coberturaPorComercio({
+    misiones: [
+      v('c1', '2026-09-21', 'aprobada', 'g1'),   // suya
+      v('c1', '2026-09-22', 'aprobada', 'g2'),   // de otro → cubierto entre los dos
+      v('c2', '2026-09-22', 'aprobada', 'g2'),   // solo de otro
+      v('c3', '2026-09-23', 'aprobada', 'g1'),   // solo suya, 1 de 2
+      v('c3', '2026-09-24', 'descartada', 'g1'), // no cuenta
+      v('c1', '2026-09-14', 'aprobada', 'g1'),   // semana pasada: no cuenta
+    ],
+    gondoleroId: 'g1', visitasPorSemana: 2, ahora: VIERNES,
+  })
+  ok('c1: dos visitas, cubierto, una es de otro',
+    [m.get('c1')!.visitas, m.get('c1')!.cubierto, m.get('c1')!.hayDeOtro, m.get('c1')!.ningunaSuya],
+    [2, true, true, false])
+  ok('c2: solo de otro, ninguna suya',
+    [m.get('c2')!.visitas, m.get('c2')!.hayDeOtro, m.get('c2')!.ningunaSuya], [1, true, true])
+  ok('c3: una suya, sin cubrir, la descartada no cuenta',
+    [m.get('c3')!.visitas, m.get('c3')!.cubierto, m.get('c3')!.hayDeOtro], [1, false, false])
+  ok('la visita de la semana pasada no entra', m.get('c1')!.visitas, 2)
 }
 
 console.log(fallos === 0 ? '\nTODO OK' : `\n${fallos} FALLOS`)

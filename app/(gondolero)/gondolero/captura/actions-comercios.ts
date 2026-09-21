@@ -11,6 +11,7 @@ import {
 } from '@/lib/comercios-relevados'
 import { requiereFotoFachada } from '@/lib/campana-altas'
 import { puedeRegistrarMision } from '@/lib/campana-vigencia'
+import { coberturaPorComercio, type VisitaMision } from '@/lib/cobertura-seguimiento'
 import { accesoACampana } from '@/lib/acceso-campana'
 import { contextoAcceso } from '@/lib/utils-distri'
 
@@ -48,6 +49,19 @@ export interface EstadoComerciosCampana {
   misComercios: string[]
   /** `max_comercios_por_gondolero` de la campaña. null = sin tope propio. */
   maxComercios: number | null
+  /**
+   * Solo en SEGUIMIENTO: cuántas visitas lleva cada comercio esta semana.
+   *
+   * Va como pares y no como Map porque cruza el borde de un Server Action y los
+   * Map no serializan. `[comercioId, visitas, cubierto, hayDeOtro]`.
+   *
+   * Las visitas son de CUALQUIER gondolero: la frecuencia es del comercio, no
+   * de la persona. Medirla por gondolero mandaría a hacer una visita que no
+   * hace falta, y la distribuidora pagaría dos veces la misma cobertura.
+   */
+  semanaPorComercio: [string, number, boolean, boolean][]
+  /** `visitas_por_semana` de la campaña. null fuera de seguimiento. */
+  visitasPorSemana: number | null
 }
 
 export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoComerciosCampana> {
@@ -63,11 +77,14 @@ export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoC
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = admin as any
 
-  const vacio: EstadoComerciosCampana = { relevadosPorOtros: [], misComercios: [], maxComercios: null }
+  const vacio: EstadoComerciosCampana = {
+    relevadosPorOtros: [], misComercios: [], maxComercios: null,
+    semanaPorComercio: [], visitasPorSemana: null,
+  }
 
   const { data: campana } = await db
     .from('campanas')
-    .select('modalidad, max_comercios_por_gondolero')
+    .select('modalidad, max_comercios_por_gondolero, visitas_por_semana')
     .eq('id', campanaId)
     .maybeSingle()
 
@@ -75,7 +92,9 @@ export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoC
 
   const { data, error } = await db
     .from('misiones')
-    .select('comercio_id, estado, gondolero_id')
+    // `capturada_at` para la cobertura semanal. Es una columna más en una
+    // consulta que ya traía TODAS las misiones de la campaña: sin costo.
+    .select('comercio_id, estado, gondolero_id, capturada_at, created_at')
     .eq('campana_id', campanaId)
 
   if (error) {
@@ -105,6 +124,17 @@ export async function obtenerEstadoComercios(campanaId: string): Promise<EstadoC
       : [],
     misComercios: [...tomados],
     maxComercios: campana.max_comercios_por_gondolero ?? null,
+    // Solo en seguimiento: en puntual no hay frecuencia que medir.
+    semanaPorComercio: campana.modalidad === 'seguimiento' && campana.visitas_por_semana
+      ? [...coberturaPorComercio({
+          misiones: (data ?? []) as VisitaMision[],
+          gondoleroId: user.id,
+          visitasPorSemana: campana.visitas_por_semana,
+        })].map(([id, s]) => [id, s.visitas, s.cubierto, s.hayDeOtro] as [string, number, boolean, boolean])
+      : [],
+    visitasPorSemana: campana.modalidad === 'seguimiento'
+      ? (campana.visitas_por_semana ?? null)
+      : null,
   }
 }
 

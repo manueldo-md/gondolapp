@@ -123,6 +123,21 @@ export interface EstadoComerciosCache {
   relevadosPorOtros: string[]
   misComercios: string[]
   maxComercios: number | null
+  /**
+   * Cobertura de la semana por comercio: `[comercioId, visitas, cubierto, hayDeOtro]`.
+   *
+   * **Opcional a propósito.** Los teléfonos que ya usaron la app tienen en IDB
+   * la forma anterior, sin este campo. Marcarlo obligatorio haría que el primer
+   * arranque después del deploy leyera `undefined` donde el código espera un
+   * array, justo en la pantalla de captura — el mismo modo de falla que la
+   * guarda del array viejo de más abajo ya documenta.
+   *
+   * Que falte significa "no sé", y la UI no muestra nada: un comercio sin dato
+   * de cobertura se ve como antes del cambio.
+   */
+  semanaPorComercio?: [string, number, boolean, boolean][]
+  /** `visitas_por_semana`. `null`/ausente fuera de seguimiento. */
+  visitasPorSemana?: number | null
 }
 
 export async function guardarRelevados(campanaId: string, estado: EstadoComerciosCache): Promise<void> {

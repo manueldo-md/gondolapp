@@ -133,8 +133,30 @@ export function calcularCobertura(params: {
   fechaInicio?: string | null
   /** Instante de referencia. Por defecto, ahora. */
   ahora?: Date
+  /**
+   * Qué comercios MOSTRAR. Sin esto son todos los de la campaña.
+   *
+   * ── POR QUÉ ES UN PARÁMETRO Y NO UN FILTRO DE `misiones` ────────────────
+   * El gondolero necesita ver SUS comercios, pero contando TODAS las visitas
+   * que recibieron — incluidas las de otros. La frecuencia es del COMERCIO, no
+   * de la persona: si Juan lo visitó el lunes y Pedro el martes, con frecuencia
+   * 2 el comercio está cubierto y ninguno de los dos tiene que volver.
+   *
+   * Filtrar el array de misiones por gondolero daría el universo correcto y el
+   * **conteo equivocado**: el comercio diría "1 de 2" y mandaría a Juan a hacer
+   * una visita que no hace falta. La distribuidora terminaría pagando cuatro
+   * visitas por una cobertura de dos.
+   *
+   * Por eso se separa QUÉ SE MUESTRA de QUÉ SE CUENTA, y por eso va acá y no en
+   * una segunda función: el día que cambie qué cuenta como visita, el gondolero
+   * y la distri seguirían viendo el mismo número sobre el mismo comercio.
+   */
+  universo?: Set<string> | string[]
 }): CoberturaSemanal {
   const { misiones, nombresComercio, visitasPorSemana, fechaInicio, ahora = new Date() } = params
+  const universo = params.universo
+    ? (params.universo instanceof Set ? params.universo : new Set(params.universo))
+    : null
 
   const semana = semanaDe(ahora)
   const hoy    = diaAR(ahora)
@@ -149,9 +171,12 @@ export function calcularCobertura(params: {
   })
 
   // ── El universo: los comercios con al menos una visita en la campaña ───────
+  // El universo acota QUÉ comercios salen; las visitas que se cuentan sobre
+  // ellos son TODAS, vengan del gondolero que vengan.
   const visitasPorComercio = new Map<string, VisitaMision[]>()
   for (const m of misiones) {
     if (!m.comercio_id || !esVisita(m)) continue
+    if (universo && !universo.has(m.comercio_id)) continue
     const lista = visitasPorComercio.get(m.comercio_id) ?? []
     lista.push(m)
     visitasPorComercio.set(m.comercio_id, lista)
@@ -328,4 +353,98 @@ export function calcularHistorico(params: {
       }),
     }
   }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+}
+
+// ── Lo que ve el GONDOLERO ───────────────────────────────────────────────────
+
+/** Días que faltan para que cierre la semana, contando hoy. Domingo = 1. */
+export function diasQueQuedan(instante: Date | string | number = new Date()): number {
+  return 8 - diaDeLaSemanaAR(instante)
+}
+
+/**
+ * La frase de la cabecera del gondolero.
+ *
+ * ── POR QUÉ NO DICE "CUBRISTE TUS COMERCIOS" ────────────────────────────────
+ * Sería falso si parte de esas visitas las hizo otro. Los comercios están
+ * cubiertos; no necesariamente los cubrió él. Atribuirle trabajo ajeno es tan
+ * mentira como no reconocerle el propio, y acá además le haría creer que su
+ * aporte fue mayor.
+ *
+ * ── POR QUÉ "N VISITAS" Y NO "N" ────────────────────────────────────────────
+ * Toda la pantalla habla de comercios —el cupo, el mínimo para cobrar, la lista
+ * de abajo— así que un número suelto se lee como comercios. "Te faltan 7" sobre
+ * 5 comercios es una frase que no cierra y que el gondolero va a interpretar mal
+ * en la dirección que más le cuesta.
+ *
+ * ── Y EL PLAZO VA PEGADO AL FALTANTE ────────────────────────────────────────
+ * "Te faltan 7 visitas" sin plazo es una cifra que asusta sin informar. Con los
+ * días que quedan es una decisión: sabe si le alcanza el viernes o tiene que
+ * salir hoy.
+ */
+export function fraseSemanaGondolero(
+  c: CoberturaSemanal,
+  ahora: Date | string | number = new Date(),
+): string {
+  const base = `Esta semana: ${c.visitasHechas} de ${c.metaSemana} visitas.`
+
+  if (c.comercios.length === 0) return base
+  if (c.visitasHechas >= c.metaSemana) {
+    // "tus comercios ESTÁN cubiertos", no "vos los cubriste".
+    return `${base} Tus comercios están cubiertos esta semana.`
+  }
+  if (c.esperadasHoy === 0) return `${base} Recién empieza.`
+  if (c.visitasHechas >= c.esperadasHoy) return `${base} Vas al día.`
+
+  const faltan = c.metaSemana - c.visitasHechas
+  const dias   = diasQueQuedan(ahora)
+  return `${base} Te faltan ${faltan} ${faltan === 1 ? 'visita' : 'visitas'} y ` +
+         `${dias === 1 ? 'queda 1 día' : `quedan ${dias} días`}.`
+}
+
+/** El estado de un comercio para el gondolero, en su lista de captura. */
+export interface ComercioSemana {
+  /** Visitas que recibió el comercio esta semana, de CUALQUIER gondolero. */
+  visitas: number
+  /** Ya cumplió la frecuencia de la semana. */
+  cubierto: boolean
+  /** Alguna de esas visitas no la hizo él. */
+  hayDeOtro: boolean
+  /** Él no visitó este comercio esta semana. */
+  ningunaSuya: boolean
+}
+
+/**
+ * Cuántas visitas lleva cada comercio ESTA semana, para la lista de captura.
+ *
+ * `hayDeOtro` existe para poder decirle *"lo visitó otro gondolero"*. Sin esa
+ * frase, un comercio que aparece cubierto sin que él lo haya tocado se lee como
+ * que el sistema le perdió la visita. **Sin nombrar a nadie**: el alias de otro
+ * gondolero solo se muestra en el ranking de Logros, y abrir esa superficie acá
+ * por un dato que no hace falta no se justifica.
+ */
+export function coberturaPorComercio(params: {
+  /** TODAS las misiones de la campaña. */
+  misiones: VisitaMision[]
+  gondoleroId: string
+  visitasPorSemana: number
+  ahora?: Date
+}): Map<string, ComercioSemana> {
+  const { misiones, gondoleroId, visitasPorSemana, ahora = new Date() } = params
+  const semana = semanaDe(ahora)
+  const out = new Map<string, ComercioSemana>()
+
+  for (const m of misiones) {
+    if (!m.comercio_id || !esVisita(m)) continue
+    const dia = diaDeLaVisita(m)
+    if (!dia || dia < semana.lunes || dia > semana.domingo) continue
+
+    const prev = out.get(m.comercio_id) ?? { visitas: 0, cubierto: false, hayDeOtro: false, ningunaSuya: true }
+    prev.visitas += 1
+    if (m.gondolero_id === gondoleroId) prev.ningunaSuya = false
+    else                                prev.hayDeOtro   = true
+    prev.cubierto = prev.visitas >= visitasPorSemana
+    out.set(m.comercio_id, prev)
+  }
+  return out
 }

@@ -151,6 +151,10 @@ async function main() {
     // c4 — visitado solo en la semana ANTERIOR: prueba que el universo son los
     //      comercios con alguna visita en la campaña, no en la semana.
     [comercios[4], gonds[0], sumarDias(lunesAnterior, 2), 14],
+    // c1 otra vez, pero del OTRO gondolero: el caso de dos personas en el mismo
+    // comercio. Para el primero tiene que decir "Cubierto · lo visitó otro
+    // gondolero" y NO mandarlo a volver — la frecuencia es del comercio.
+    [comercios[1], gonds[0], sumarDias(lunes, 2), 9],
   ]
 
   for (const [com, g, dia, hora] of visitas) {
@@ -174,7 +178,7 @@ async function main() {
   console.log(`  semana en curso: ${lunes}\n`)
   console.log('  comercio                  visitas esta semana   nota')
   console.log(`  ${comercios[0].nombre.padEnd(25)} 2                     al día`)
-  console.log(`  ${comercios[1].nombre.padEnd(25)} 1                     según el día`)
+  console.log(`  ${comercios[1].nombre.padEnd(25)} 2 (de DOS gondoleros) el caso de "lo visitó otro"`)
   console.log(`  ${comercios[2].nombre.padEnd(25)} 0 (+1 descartada)     atrasado; la descartada no cuenta`)
   console.log(`  ${comercios[3].nombre.padEnd(25)} 0                     visita del domingo 22:00 AR — la frontera`)
   console.log(`  ${comercios[4].nombre.padEnd(25)} 0                     solo visitado hace dos semanas`)

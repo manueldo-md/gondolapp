@@ -746,6 +746,14 @@ function CapturaContent() {
   /** Comercios que este gondolero ya tomó — incluye los de la cola offline. */
   const [misComercios, setMisComercios] = useState<Set<string>>(new Set())
   const [maxComercios, setMaxComercios] = useState<number | null>(null)
+  /**
+   * Cobertura de la semana por comercio, solo en seguimiento.
+   *
+   * `[visitas, cubierto, hayDeOtro]`. Las visitas son de CUALQUIER gondolero:
+   * la frecuencia es del comercio, no de la persona. Ver lib/cobertura-seguimiento.
+   */
+  const [semanaComercio, setSemanaComercio] = useState<Map<string, [number, boolean, boolean]>>(new Map())
+  const [visitasSemana, setVisitasSemana]   = useState<number | null>(null)
   // Aviso de la revalidación en el paso de GPS. Local y no errorGlobal: ese hace
   // early-return a pantalla completa con un botón de volver, y acá el gondolero
   // tiene que quedarse en la lista para elegir otro comercio, no salir.
@@ -1036,6 +1044,9 @@ function CapturaContent() {
       setRelevados(new Set(estado.relevadosPorOtros))
       setMisComercios(new Set([...estado.misComercios, ...enCola]))
       setMaxComercios(estado.maxComercios)
+      setSemanaComercio(new Map((estado.semanaPorComercio ?? []).map(
+        ([id, v, cub, otro]) => [id, [v, cub, otro] as [number, boolean, boolean]])))
+      setVisitasSemana(estado.visitasPorSemana ?? null)
       setRelevadosFresco(fresco)
     }
 
@@ -2580,6 +2591,10 @@ function CapturaContent() {
                         A {Math.round(calcularDistanciaMetros(gps.posicion.lat, gps.posicion.lng, c.lat, c.lng))}m
                       </p>
                     )}
+                    {/* La misma etiqueta que en la lista de búsqueda: acá es
+                        donde está parado y decide, así que es donde más pesa
+                        saber si el comercio ya está cubierto. */}
+                    <ChipSemana estado={semanaComercio.get(c.id)} meta={visitasSemana} />
                   </div>
                 </button>
                 )
@@ -2653,6 +2668,17 @@ function CapturaContent() {
                             {bloqueo ? TEXTO_BLOQUEO[bloqueo] : null}
                           </span>
                         )}
+                        {/* Cobertura de la semana, solo en seguimiento.
+                            La frecuencia es del COMERCIO: si lo visitó otro, ya
+                            está cubierto y volver sería trabajo que no hace
+                            falta. Se dice que fue otro —sin nombrarlo— porque
+                            si no, un comercio cubierto que él no tocó se lee
+                            como que el sistema le perdió la visita. */}
+                        <ChipSemana
+                          estado={semanaComercio.get(c.id)}
+                          meta={visitasSemana}
+                        />
+
                       </div>
                     </button>
                   )
@@ -3691,6 +3717,30 @@ function CapturaContent() {
 }
 
 // ── Export con Suspense (useSearchParams requiere boundary) ───────────────────
+
+/**
+ * Cuántas visitas lleva el comercio esta semana, en la lista de captura.
+ *
+ * No se renderiza fuera de seguimiento ni cuando falta el dato —un caché viejo
+ * no lo tiene— porque un hueco sin explicación es peor que no mostrar nada.
+ */
+function ChipSemana({
+  estado, meta,
+}: {
+  estado?: [number, boolean, boolean]
+  meta: number | null
+}) {
+  if (!meta || !estado) return null
+  const [visitas, cubierto, hayDeOtro] = estado
+  return (
+    <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+      cubierto ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'
+    }`}>
+      {cubierto ? 'Cubierto' : `${visitas} de ${meta} esta semana`}
+      {hayDeOtro && <span className="font-normal opacity-80">· lo visitó otro gondolero</span>}
+    </span>
+  )
+}
 
 export default function CapturaPage() {
   return (
