@@ -87,3 +87,64 @@ export function declaracionEsObservacion(foto: {
 export function presenciaSegunDeclaracion(declaracion: string): boolean {
   return declaracion === 'producto_presente'
 }
+
+// ── Elegir una métrica fija el tipo ──────────────────────────────────────────
+
+/**
+ * Las métricas que admiten respuestas de ese tipo.
+ *
+ * Es el mismo hecho que "la métrica fija el tipo", leído al revés. Sirve para
+ * las dos superficies: el constructor filtra el tipo cuando ya se eligió la
+ * métrica, y la pantalla de tipificar filtra la métrica porque el tipo de una
+ * pregunta que ya existe no se toca.
+ *
+ * Un campo `foto` no admite ninguna: una foto no es una medición comparable, y
+ * el CHECK de `metricas.tipo_respuesta` tampoco la acepta.
+ */
+export function metricasCompatibles(metricas: Metrica[], tipo: string): Metrica[] {
+  return metricas.filter(m => m.activa && m.tipo_respuesta === tipo)
+}
+
+/**
+ * Las tres reglas de cambio. Son TRES casos, no dos.
+ *
+ * | De | A | Con respuestas |
+ * |---|---|---|
+ * | sin métrica | una métrica | **permitido** |
+ * | métrica A | métrica B | bloqueado |
+ * | una métrica | sin métrica | bloqueado |
+ *
+ * La asimetría del primer caso es el punto: tipificar una pregunta que ya tiene
+ * respuestas **no reinterpreta nada**. Las respuestas siempre quisieron decir lo
+ * mismo; lo único que cambia es que ahora el sistema lo sabe. Es exactamente lo
+ * que necesitan las cuatro preguntas que ya están en producción, y sin esa regla
+ * el catálogo arrancaría sin una sola serie.
+ *
+ * Los otros dos sí reinterpretan: una respuesta cargada como "frentes" pasaría a
+ * leerse como "precio", o saldría de una serie en la que ya figura.
+ */
+export type ResultadoCambioMetrica =
+  | { ok: true }
+  | { ok: false; motivo: string }
+
+export function cambioDeMetricaPermitido(params: {
+  actual: string | null
+  nueva: string | null
+  respuestas: number
+}): ResultadoCambioMetrica {
+  const { actual, nueva, respuestas } = params
+
+  if (actual === nueva) return { ok: true }
+  if (respuestas === 0) return { ok: true }
+
+  // Tipificar lo que estaba sin tipificar: siempre.
+  if (actual === null) return { ok: true }
+
+  const cuantas = `${respuestas} ${respuestas === 1 ? 'respuesta' : 'respuestas'}`
+  return {
+    ok: false,
+    motivo: nueva === null
+      ? `Esta pregunta ya tiene ${cuantas}. Sacarle la métrica las dejaría fuera de una serie en la que ya figuran.`
+      : `Esta pregunta ya tiene ${cuantas}. Cambiarle la métrica cambiaría qué significan.`,
+  }
+}

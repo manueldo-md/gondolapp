@@ -8,7 +8,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoCampana, TipoContenidoBloque } from '@/types'
 import {
-  esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque, BLOQUE_ALTAS,
+  esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque, filaBloqueCampo, BLOQUE_ALTAS,
 } from '@/lib/campana-altas'
 
 function adminClient() {
@@ -128,14 +128,7 @@ export async function crearCampanaAdmin(formData: FormData) {
 
   if (bloque?.id && camposValidos.length > 0) {
     const { error: errCampos } = await admin.from('bloque_campos').insert(
-      camposValidos.map(c => ({
-        bloque_id:   bloque.id,
-        tipo:        c.tipo,
-        pregunta:    c.pregunta.trim() || (c.tipo === 'foto' ? 'Fotografiá el producto' : ''),
-        opciones:    c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
-        obligatorio: c.obligatorio,
-        orden:       c.orden,
-      }))
+      camposValidos.map(c => filaBloqueCampo(c, bloque.id, c.orden))
     )
     if (errCampos) console.error('[crearCampanaAdmin] Error insertando bloque_campos:', errCampos.message)
   }

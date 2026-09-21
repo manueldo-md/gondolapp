@@ -141,6 +141,44 @@ export interface CampoBloqueSerializado {
   opciones: string[]
   obligatorio: boolean
   orden: number
+  /** Qué mide. `null`/ausente = sin métrica. Ver `lib/metricas.ts`. */
+  metricaId?: string | null
+}
+
+/**
+ * La fila de `bloque_campos`, en un solo lugar.
+ *
+ * **Estaba escrita cinco veces**, idéntica: las tres actions de campaña nueva y
+ * los dos `republicarCampana` de draft. Agregar `metrica_id` significaba
+ * acordarse de las cinco, y el modo de falla no es un error — es una métrica que
+ * el creador eligió y que se pierde en silencio en el camino del draft.
+ *
+ * `orden` va aparte porque las dos familias lo calculan distinto: las actions lo
+ * traen del editor, el draft lo deriva de la posición en el array.
+ */
+export interface CampoParaInsertar {
+  tipo: string
+  pregunta?: string | null
+  opciones?: string[] | null
+  obligatorio?: boolean
+  metricaId?: string | null
+}
+
+export function filaBloqueCampo(campo: CampoParaInsertar, bloqueId: string, orden: number) {
+  const opciones = (campo.opciones ?? []).filter(Boolean)
+  return {
+    bloque_id:   bloqueId,
+    tipo:        campo.tipo,
+    pregunta:    campo.pregunta?.trim() || (campo.tipo === 'foto' ? 'Fotografiá el producto' : ''),
+    opciones:    opciones.length > 0 ? opciones : null,
+    obligatorio: campo.obligatorio ?? true,
+    orden,
+    // Un campo de tipo foto no lleva métrica: una foto no es una medición
+    // comparable, y el CHECK de `metricas.tipo_respuesta` tampoco acepta 'foto'.
+    // Se limpia acá y no en la UI porque el tipo se puede cambiar después de
+    // haber elegido la métrica.
+    metrica_id:  campo.tipo === 'foto' ? null : (campo.metricaId ?? null),
+  }
 }
 
 /**

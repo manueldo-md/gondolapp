@@ -3,6 +3,7 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import type { CampoBloque } from '@/components/shared/campos-bloque-builder'
+import { filaBloqueCampo } from '@/lib/campana-altas'
 import { crearNotificacionAdmin } from '@/lib/notificaciones'
 
 function admin() {
@@ -97,14 +98,7 @@ export async function republicarCampanaMarca(campanaId: string): Promise<{ error
 
       if (bloque?.id && Array.isArray(b.campos) && b.campos.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await admin().from('bloque_campos').insert(b.campos.map((campo: any, j: number) => ({
-          bloque_id: bloque.id,
-          tipo: campo.tipo,
-          pregunta: campo.pregunta,
-          opciones: campo.opciones,
-          obligatorio: campo.obligatorio,
-          orden: j + 1,
-        })))
+        await admin().from('bloque_campos').insert(b.campos.map((campo: CampoBloque, j: number) => filaBloqueCampo(campo, bloque.id, j + 1)))
       }
     }
   }

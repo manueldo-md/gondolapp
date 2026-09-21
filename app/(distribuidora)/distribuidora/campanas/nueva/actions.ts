@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
 import { validarFechasCampana, type Modalidad } from '@/lib/campana-fechas'
 import {
-  esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque,
+  esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque, filaBloqueCampo,
   BLOQUE_ALTAS, MODALIDAD_ALTAS,
 } from '@/lib/campana-altas'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -155,14 +155,7 @@ export async function crearCampanaInterna(formData: FormData) {
 
   if (bloque?.id && camposValidos.length > 0) {
     const { error: errCampos } = await admin.from('bloque_campos').insert(
-      camposValidos.map(c => ({
-        bloque_id:   bloque.id,
-        tipo:        c.tipo,
-        pregunta:    c.pregunta.trim() || (c.tipo === 'foto' ? 'Fotografiá el producto' : ''),
-        opciones:    c.opciones.filter(Boolean).length > 0 ? c.opciones.filter(Boolean) : null,
-        obligatorio: c.obligatorio,
-        orden:       c.orden,
-      }))
+      camposValidos.map(c => filaBloqueCampo(c, bloque.id, c.orden))
     )
     if (errCampos) console.error('[crearCampanaInterna] Error insertando bloque_campos:', errCampos.message)
   }

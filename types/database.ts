@@ -55,6 +55,7 @@ export type Database = {
           blur_requerido: boolean
           created_at: string | null
           id: string
+          metrica_id: string | null
           obligatorio: boolean | null
           opciones: string[] | null
           orden: number | null
@@ -67,6 +68,7 @@ export type Database = {
           blur_requerido?: boolean
           created_at?: string | null
           id?: string
+          metrica_id?: string | null
           obligatorio?: boolean | null
           opciones?: string[] | null
           orden?: number | null
@@ -79,6 +81,7 @@ export type Database = {
           blur_requerido?: boolean
           created_at?: string | null
           id?: string
+          metrica_id?: string | null
           obligatorio?: boolean | null
           opciones?: string[] | null
           orden?: number | null
@@ -92,6 +95,13 @@ export type Database = {
             columns: ["bloque_id"]
             isOneToOne: false
             referencedRelation: "bloques_foto"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bloque_campos_metrica_id_fkey"
+            columns: ["metrica_id"]
+            isOneToOne: false
+            referencedRelation: "metricas"
             referencedColumns: ["id"]
           },
         ]
@@ -1652,6 +1662,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      metricas: {
+        Row: {
+          activa: boolean
+          created_at: string
+          descripcion: string | null
+          fuentes: string[]
+          id: string
+          nombre: string
+          orden: number
+          slug: string
+          tipo_respuesta: string
+        }
+        Insert: {
+          activa?: boolean
+          created_at?: string
+          descripcion?: string | null
+          fuentes?: string[]
+          id?: string
+          nombre: string
+          orden?: number
+          slug: string
+          tipo_respuesta: string
+        }
+        Update: {
+          activa?: boolean
+          created_at?: string
+          descripcion?: string | null
+          fuentes?: string[]
+          id?: string
+          nombre?: string
+          orden?: number
+          slug?: string
+          tipo_respuesta?: string
+        }
+        Relationships: []
       }
       misiones: {
         Row: {

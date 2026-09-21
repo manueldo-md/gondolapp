@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronUp, GripVertical } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Trash2, ChevronDown, ChevronUp, GripVertical, Lock } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { type Metrica } from '@/lib/metricas'
 
 export interface CampoBloque {
   tempId: string
@@ -10,6 +12,8 @@ export interface CampoBloque {
   opciones: string[]
   obligatorio: boolean
   orden: number
+  /** Qué mide la pregunta. `null` = sin métrica, que es el default y la mayoría. */
+  metricaId: string | null
 }
 
 const TIPO_LABEL: Record<CampoBloque['tipo'], string> = {
@@ -29,7 +33,39 @@ function nuevoCampo(orden: number): CampoBloque {
     opciones:   [''],
     obligatorio: true,
     orden,
+    metricaId:  null,
   }
+}
+
+/**
+ * El catálogo se carga acá adentro, no llega por prop.
+ *
+ * Es lo mismo que hace `SelectorZona` con provincias y localidades, y por la
+ * misma razón: de los cuatro lugares donde se monta este constructor, **dos son
+ * client pages** —`admin/campanas/nueva` y `distribuidora/campanas/nueva`— que
+ * no tienen un server component arriba del cual pasar nada. Pasarlo por prop
+ * obligaría a partir esas dos pantallas en página + formulario solo para eso.
+ *
+ * La RLS de `metricas` deja leer a cualquier autenticado, así que el cliente
+ * anónimo del browser alcanza.
+ */
+function metricaDe(campo: CampoBloque, metricas: Metrica[]): Metrica | null {
+  return campo.metricaId ? metricas.find(m => m.id === campo.metricaId) ?? null : null
+}
+
+function useCatalogoMetricas() {
+  const [metricas, setMetricas] = useState<Metrica[]>([])
+
+  useEffect(() => {
+    createClient()
+      .from('metricas')
+      .select('id, slug, nombre, descripcion, tipo_respuesta, fuentes, orden, activa')
+      .eq('activa', true)
+      .order('orden')
+      .then(({ data }) => setMetricas((data ?? []) as unknown as Metrica[]))
+  }, [])
+
+  return metricas
 }
 
 export function CamposBloqueBuilder({
@@ -42,6 +78,7 @@ export function CamposBloqueBuilder({
   accentClass?: string
 }) {
   const [expandido, setExpandido] = useState<string | null>(null)
+  const metricas = useCatalogoMetricas()
 
   function agregar() {
     const nuevo = nuevoCampo(campos.length + 1)
@@ -88,6 +125,26 @@ export function CamposBloqueBuilder({
   const tieneOpciones = (tipo: CampoBloque['tipo']) =>
     tipo === 'seleccion_multiple' || tipo === 'seleccion_unica'
 
+  /**
+   * Elegir una métrica FIJA el tipo de respuesta, así que las dos cosas se
+   * escriben en el mismo acto. Si no, dos campañas podrían medir "precio" una
+   * con un número y otra con una selección, y la serie no existiría.
+   */
+  function elegirMetrica(campo: CampoBloque, metricaId: string) {
+    if (!metricaId) {
+      actualizar(campo.tempId, { metricaId: null })
+      return
+    }
+    const m = metricas.find(x => x.id === metricaId)
+    if (!m) return
+    const tipo = m.tipo_respuesta as CampoBloque['tipo']
+    actualizar(campo.tempId, {
+      metricaId,
+      tipo,
+      opciones: tieneOpciones(tipo) ? (campo.opciones.length ? campo.opciones : ['']) : [],
+    })
+  }
+
   return (
     <div className="space-y-3">
       {/* Encabezado de la sección */}
@@ -133,6 +190,11 @@ export function CamposBloqueBuilder({
                   : <span className="text-gray-500 italic font-normal">Sin nombre</span>
                 }
               </p>
+              {metricaDe(campo, metricas) && (
+                <span className="text-[10px] font-semibold text-emerald-300 shrink-0 hidden sm:inline bg-emerald-900/60 border border-emerald-700 px-2 py-0.5 rounded-full">
+                  {metricaDe(campo, metricas)!.nombre}
+                </span>
+              )}
               <span className="text-[10px] font-medium text-gray-400 shrink-0 hidden sm:inline bg-gray-700 px-2 py-0.5 rounded-full">
                 {TIPO_LABEL[campo.tipo]}
               </span>
@@ -172,6 +234,30 @@ export function CamposBloqueBuilder({
                   />
                 </div>
 
+                {/* Campo: Qué mide (métrica) */}
+                {campo.tipo !== 'foto' && metricas.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      ¿Qué mide?{' '}
+                      <span className="text-gray-400 font-normal">(opcional)</span>
+                    </label>
+                    <select
+                      value={campo.metricaId ?? ''}
+                      onChange={e => elegirMetrica(campo, e.target.value)}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 ${accentClass} transition appearance-none cursor-pointer`}
+                    >
+                      <option value="">Sin métrica</option>
+                      {metricas.map(m => (
+                        <option key={m.id} value={m.id}>{m.nombre}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+                      {metricaDe(campo, metricas)?.descripcion
+                        ?? 'Tipificarla deja que el panel de la marca compare esta pregunta con las de otras campañas y consigo misma en el tiempo. Sin métrica, la respuesta se ve igual pero no entra en ninguna serie.'}
+                    </p>
+                  </div>
+                )}
+
                 {/* Campo: Tipo de respuesta */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1.5">
@@ -179,16 +265,25 @@ export function CamposBloqueBuilder({
                   </label>
                   <select
                     value={campo.tipo}
+                    disabled={!!campo.metricaId}
                     onChange={e => actualizar(campo.tempId, {
                       tipo: e.target.value as CampoBloque['tipo'],
                       opciones: tieneOpciones(e.target.value as CampoBloque['tipo']) ? [''] : [],
                     })}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 ${accentClass} transition appearance-none cursor-pointer`}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 ${accentClass} transition appearance-none ${campo.metricaId ? 'cursor-not-allowed bg-gray-100 text-gray-500' : 'cursor-pointer'}`}
                   >
                     {(Object.entries(TIPO_LABEL) as [CampoBloque['tipo'], string][]).map(([v, l]) => (
                       <option key={v} value={v}>{l}</option>
                     ))}
                   </select>
+                  {campo.metricaId && (
+                    <p className="flex items-start gap-1.5 text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+                      <Lock size={11} className="shrink-0 mt-0.5" />
+                      <span>
+                        Lo fija la métrica. Para cambiarlo, elegí &ldquo;Sin métrica&rdquo; arriba.
+                      </span>
+                    </p>
+                  )}
                 </div>
 
                 {/* Foto: aviso informativo */}
