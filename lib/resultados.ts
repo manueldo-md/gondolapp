@@ -155,7 +155,23 @@ export interface ResultadosData {
   counts: Record<string, number>
   totalFotos: number
   fotosAprobadas: number
+  /**
+   * Lo que el dashboard de cobertura necesita, crudo.
+   *
+   * Va crudo y no calculado porque `loadResultadosCampanaData` no recibe la
+   * campaña —no sabe la modalidad ni `visitas_por_semana`—, y esos dos los
+   * tienen las cuatro pantallas que montan ResultadosView. Calcular acá
+   * obligaría a cambiar la firma y los cuatro llamadores para un dato que solo
+   * usan las campañas de seguimiento.
+   */
+  cobertura: {
+    misiones: VisitaMision[]
+    nombresComercio: Map<string, string>
+    aliasGondolero: Map<string, string>
+  }
 }
+
+import type { VisitaMision } from './cobertura-seguimiento'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -203,7 +219,7 @@ export async function loadResultadosCampanaData(
       .order('orden'),
     admin
       .from('misiones')
-      .select('id, estado, comercio_id, gondolero_id, created_at, gondolero:profiles(alias)')
+      .select('id, estado, comercio_id, gondolero_id, created_at, capturada_at, gondolero:profiles(alias)')
       .eq('campana_id', campanaId),
   ])
 
@@ -578,5 +594,24 @@ export async function loadResultadosCampanaData(
     counts,
     totalFotos,
     fotosAprobadas,
+    cobertura: {
+      misiones: misiones.map(m => ({
+        comercio_id:  m.comercio_id ?? null,
+        gondolero_id: m.gondolero_id ?? null,
+        estado:       m.estado ?? null,
+        capturada_at: m.capturada_at ?? null,
+        created_at:   m.created_at ?? null,
+      })),
+      nombresComercio: new Map(
+        [...comercioCtx.entries()]
+          .filter(([, v]) => v.nombre)
+          .map(([id, v]) => [id, v.nombre as string]),
+      ),
+      aliasGondolero: new Map(
+        misiones
+          .map(m => [m.gondolero_id as string, uno<{ alias: string | null }>(m.gondolero)?.alias])
+          .filter((p): p is [string, string] => !!p[0] && !!p[1]),
+      ),
+    },
   }
 }

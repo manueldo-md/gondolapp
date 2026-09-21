@@ -10,7 +10,7 @@
  *
  * La semana de referencia es 2026-09-21 (lunes) a 2026-09-27 (domingo).
  */
-import { calcularCobertura, etiquetaUltimaVisita, type VisitaMision } from '../lib/cobertura-seguimiento'
+import { calcularCobertura, calcularHistorico, etiquetaUltimaVisita, type VisitaMision } from '../lib/cobertura-seguimiento'
 
 let fallos = 0
 function ok(titulo: string, real: unknown, esperado: unknown) {
@@ -149,6 +149,41 @@ ok('ayer',           etiquetaUltimaVisita('2026-09-24', 1), 'ayer')
 ok('dentro de la semana usa el nombre del día', etiquetaUltimaVisita('2026-09-22', 3), 'martes')
 ok('más de una semana usa los días',            etiquetaUltimaVisita('2026-09-10', 15), 'hace 15 días')
 ok('sin visitas',    etiquetaUltimaVisita(null, null), 'nunca')
+
+// ── 9. La tira histórica ─────────────────────────────────────────────────────
+console.log('\n── 9. tira histórica ──')
+{
+  const h = calcularHistorico({
+    misiones: [
+      v('c1', '2026-09-07'), v('c1', '2026-09-08'),   // semana del 7: cumplió (2 de 2)
+      v('c1', '2026-09-15'),                          // semana del 14: 1 de 2, no cumplió
+      v('c1', '2026-09-21'),                          // semana en curso: 1 de 2, sin veredicto
+    ],
+    nombresComercio: NOMBRES, visitasPorSemana: 2, fechaInicio: '2026-09-07',
+    semanas: 4, ahora: new Date('2026-09-21T15:00:00Z'),
+  })
+  const s = h[0].semanas
+  ok('cuatro semanas, de la más vieja a la más nueva', s.map(x => x.lunes),
+    ['2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21'])
+  ok('visitas por semana', s.map(x => x.visitas), [0, 2, 1, 1])
+  ok('la anterior al arranque no es incumplimiento', s[0].antesDeEmpezar, true)
+  ok('y por eso no figura como incumplida', s[0].cumplio, false)
+  ok('la del 7 cumplió', s[1].cumplio, true)
+  ok('la del 14 no cumplió', s[2].cumplio, false)
+  ok('la actual está en curso', s[3].enCurso, true)
+  ok('una semana en curso con 1 de 2 NO es incumplimiento', s[3].cumplio, false)
+}
+{
+  // El universo es el mismo que el de la cobertura semanal: un comercio
+  // visitado fuera de la ventana aparece igual, con la tira en cero.
+  const h = calcularHistorico({
+    misiones: [v('c3', '2026-01-05')],
+    nombresComercio: NOMBRES, visitasPorSemana: 2, semanas: 4,
+    ahora: new Date('2026-09-21T15:00:00Z'),
+  })
+  ok('un comercio visitado fuera de la ventana aparece igual', h.length, 1)
+  ok('con la tira en cero', h[0].semanas.map(x => x.visitas), [0, 0, 0, 0])
+}
 
 console.log(fallos === 0 ? '\nTODO OK' : `\n${fallos} FALLOS`)
 process.exit(fallos === 0 ? 0 : 1)

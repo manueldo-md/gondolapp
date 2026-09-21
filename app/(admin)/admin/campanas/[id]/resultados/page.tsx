@@ -24,7 +24,7 @@ export default async function AdminCampanaResultadosPage({
 
   const { data: campanaRaw, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_fin, modalidad, visitas_por_semana, minimo_comercios, tope_total_comercios, comercios_relevados')
+    .select('id, nombre, tipo, estado, fecha_fin, fecha_inicio, modalidad, visitas_por_semana, minimo_comercios, tope_total_comercios, comercios_relevados')
     .eq('id', params.id)
     .single()
 
@@ -57,6 +57,7 @@ export default async function AdminCampanaResultadosPage({
           tope_total_comercios: c.tope_total_comercios ?? null,
           modalidad:            c.modalidad ?? null,
           visitas_por_semana:   c.visitas_por_semana ?? null,
+          fecha_inicio:         c.fecha_inicio ?? null,
         }}
         tab={tab}
         panel="admin"

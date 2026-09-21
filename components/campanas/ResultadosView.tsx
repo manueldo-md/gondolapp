@@ -34,12 +34,15 @@ import { TEMAS, type Panel } from './modulos/tema'
 import { ModuloDispatcher } from './modulos/ModuloDispatcher'
 import { BadgeAvance } from './BadgeAvance'
 import { derivarAvance } from '@/lib/campana-avance'
+import { CoberturaSeguimiento } from './CoberturaSeguimiento'
 
 export interface ResultadosViewCampana {
   id: string
   nombre: string
   tipo: string
   fecha_fin: string | null
+  /** Solo en seguimiento: para no pedir cobertura de días sin campaña. */
+  fecha_inicio?: string | null
   /** 'puntual' o 'seguimiento'. Sin ella, derivarAvance asume puntual. */
   modalidad?: string | null
   /** Solo en seguimiento: visitas esperadas por comercio por semana. */
@@ -289,7 +292,7 @@ export function ResultadosView({
     modulos, tieneCamposFoto, fotoRespuestasMap, camposMap,
     misionesAprobadas, pdvRelevados, pdvEnRevision, ciudades, pdvSinLocalidad, provincias, tiposComercio,
     gondolerosRelevaron, ventana,
-    counts, totalFotos, fotosAprobadas,
+    counts, totalFotos, fotosAprobadas, cobertura,
   } = data
 
   const tema = TEMAS[panel]
@@ -428,6 +431,25 @@ export function ResultadosView({
         visitasPorSemana={campana.visitas_por_semana ?? null}
         enRevision={pdvEnRevision}
       />
+
+      {/* ── Cobertura semanal, SOLO en campañas de seguimiento ─────────────
+          Va arriba de la muestra y de los módulos porque es lo que la
+          distribuidora está comprando: si la frecuencia no se cumple, el resto
+          de los números son sobre una muestra incompleta.
+
+          `visitas_por_semana` era decorativo hasta el 21/9/2026 — se mostraba
+          en cinco pantallas y no lo medía una sola línea. */}
+      {campana.modalidad === 'seguimiento' && (
+        <CoberturaSeguimiento
+          misiones={cobertura.misiones}
+          nombresComercio={cobertura.nombresComercio}
+          aliasGondolero={cobertura.aliasGondolero}
+          visitasPorSemana={campana.visitas_por_semana ?? 0}
+          fechaInicio={campana.fecha_inicio ?? null}
+          verAgente={tema.verAgente}
+          colorBarra={tema.barraAvance}
+        />
+      )}
 
       {/* ── De qué está hecha la muestra ───────────────────────────────────
           Arriba de los módulos y no entre ellos: no es una respuesta del

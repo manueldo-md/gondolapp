@@ -234,3 +234,98 @@ export function etiquetaUltimaVisita(dia: string | null, diasSinVisita: number |
   }
   return `hace ${diasSinVisita} días`
 }
+
+// ── Tira histórica ───────────────────────────────────────────────────────────
+
+export interface SemanaHistorica {
+  /** Lunes de la semana, `'YYYY-MM-DD'`. */
+  lunes: string
+  visitas: number
+  /** ¿Llegó a la frecuencia declarada? Solo para semanas CERRADAS. */
+  cumplio: boolean
+  /** La semana en curso: su número todavía puede subir. */
+  enCurso: boolean
+  /** La campaña todavía no existía esa semana. */
+  antesDeEmpezar: boolean
+}
+
+export interface HistoricoComercio {
+  comercioId: string
+  nombre: string
+  semanas: SemanaHistorica[]
+}
+
+/**
+ * Las últimas N semanas por comercio, para ver el PATRÓN.
+ *
+ * Un número de la semana no muestra lo que de verdad importa: *"se cubrió bien
+ * en marzo y se abandonó en abril"*. Eso es inteligencia sobre la operación, y
+ * es lo que una distribuidora mira para decidir si renueva.
+ *
+ * No cuesta consultas: son las mismas misiones ya cargadas, agrupadas por
+ * semana. El cálculo es el mismo `esVisita` + `diaDeLaVisita` que la semana en
+ * curso, así que los dos números no pueden discrepar.
+ *
+ * `enCurso` y `antesDeEmpezar` van separados de `cumplio` a propósito: una
+ * semana en curso con 1 de 2 **no incumplió**, todavía le quedan días; y una
+ * anterior al arranque de la campaña no es un incumplimiento, es un vacío. Si
+ * las tres se pintaran igual, la tira mostraría rojo donde no hubo falla.
+ */
+export function calcularHistorico(params: {
+  misiones: VisitaMision[]
+  nombresComercio: Map<string, string>
+  visitasPorSemana: number
+  fechaInicio?: string | null
+  /** Cuántas semanas mostrar, contando la actual. */
+  semanas?: number
+  ahora?: Date
+}): HistoricoComercio[] {
+  const {
+    misiones, nombresComercio, visitasPorSemana,
+    fechaInicio, semanas = 8, ahora = new Date(),
+  } = params
+
+  const actual = semanaDe(ahora)
+  // De la más vieja a la más nueva: la tira se lee de izquierda a derecha.
+  const lunesDeCada: string[] = []
+  for (let i = semanas - 1; i >= 0; i--) {
+    lunesDeCada.push(diaAR(new Date(actual.desde.getTime() - i * 7 * 86400_000)))
+  }
+
+  const porComercio = new Map<string, Map<string, number>>()
+  const universo = new Set<string>()
+
+  for (const m of misiones) {
+    if (!m.comercio_id || !esVisita(m)) continue
+    universo.add(m.comercio_id)
+    const dia = diaDeLaVisita(m)
+    if (!dia) continue
+    const lunes = semanaDe(medianocheAR(dia)).lunes
+    const porSemana = porComercio.get(m.comercio_id) ?? new Map<string, number>()
+    porSemana.set(lunes, (porSemana.get(lunes) ?? 0) + 1)
+    porComercio.set(m.comercio_id, porSemana)
+  }
+
+  // El lunes de la semana en que arrancó la campaña: antes de eso no hubo falla.
+  const lunesInicio = fechaInicio ? semanaDe(medianocheAR(fechaInicio)).lunes : null
+
+  return [...universo].map(comercioId => {
+    const porSemana = porComercio.get(comercioId) ?? new Map<string, number>()
+    return {
+      comercioId,
+      nombre: nombresComercio.get(comercioId) ?? comercioId.slice(0, 8),
+      semanas: lunesDeCada.map(lunes => {
+        const visitas = porSemana.get(lunes) ?? 0
+        const enCurso = lunes === actual.lunes
+        const antesDeEmpezar = lunesInicio !== null && lunes < lunesInicio
+        return {
+          lunes,
+          visitas,
+          enCurso,
+          antesDeEmpezar,
+          cumplio: !enCurso && !antesDeEmpezar && visitas >= visitasPorSemana,
+        }
+      }),
+    }
+  }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+}
