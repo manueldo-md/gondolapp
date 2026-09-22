@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import Link from 'next/link'
 import {
   Star, Clock, Camera, CheckCircle2, ChevronDown, ChevronRight, DollarSign, WifiOff,
@@ -22,6 +22,8 @@ import {
   leerComercios,
 } from '@/lib/campana-cache'
 import { formatearDia } from '@/lib/fecha-ar'
+import { textoPostulacion, type EstadoPostulacion } from '@/lib/postulacion-fixer'
+import { postularseACampana } from './postular-actions'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -357,10 +359,25 @@ function CampanaCard({
  * Muestra lo justo para decidir si le interesa —qué tipo es, cuánto paga, hasta
  * cuándo— y nada de lo que hace falta para ejecutarla.
  */
-function CampanaCardOferta({ campana }: { campana: CampanaCardData }) {
+function CampanaCardOferta({ campana, postulacion }: { campana: CampanaCardData; postulacion: EstadoPostulacion }) {
   const vig = etiquetaVigencia(campana.fecha_fin)
   const esSeguimiento = campana.modalidad === 'seguimiento'
   const puntos = campana.puntos_por_mision || campana.puntos_por_foto
+
+  // El estado inicial viene del servidor; este local es para no tener que
+  // recargar la pantalla después de postularse.
+  const [estado, setEstado] = useState<EstadoPostulacion>(postulacion)
+  const [error, setError] = useState<string | null>(null)
+  const [pendiente, startPostular] = useTransition()
+
+  const handlePostularme = () => {
+    setError(null)
+    startPostular(async () => {
+      const res = await postularseACampana(campana.id)
+      if ('error' in res) { setError(res.error); return }
+      setEstado({ estado: 'pendiente' })
+    })
+  }
 
   return (
     <div className="rounded-2xl bg-white border border-violet-200 shadow-sm overflow-hidden">
@@ -399,10 +416,40 @@ function CampanaCardOferta({ campana }: { campana: CampanaCardData }) {
           )}
         </div>
 
-        {/* Lo que puede hacer: nada todavía. Decirlo es mejor que un botón que no
-            responde o un link a una pantalla donde está todo bloqueado. */}
-        <div className="mt-3 px-3 py-2 rounded-xl bg-violet-50 text-xs text-violet-800">
-          Todavía no trabajás con quien ejecuta esta campaña.
+        {/* ── Los tres estados ──────────────────────────────────────────────
+            El botón solo aparece cuando de verdad puede. En los otros dos casos
+            va un cartel, no un botón deshabilitado: un botón gris invita a
+            apretarlo para ver qué pasa, y lo que pasa es nada. */}
+        <div className="mt-3">
+          {estado.estado === 'puede' && (
+            <button
+              type="button"
+              onClick={handlePostularme}
+              disabled={pendiente}
+              className="w-full py-2.5 bg-violet-600 text-white text-sm font-semibold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-60 min-h-touch"
+            >
+              {pendiente ? 'Enviando…' : 'Postularme'}
+            </button>
+          )}
+
+          {estado.estado === 'pendiente' && (
+            <div className="px-3 py-2 rounded-xl bg-violet-50 text-xs text-violet-800">
+              <span className="font-semibold">Postulación enviada.</span>{' '}
+              Te avisamos cuando la revisen.
+            </div>
+          )}
+
+          {estado.estado === 'rechazada' && (
+            <div className="px-3 py-2 rounded-xl bg-gray-100 text-xs text-gray-600 space-y-1">
+              {/* Sin motivo obligatorio: quien rechaza puede no escribir nada, y
+                  entonces no se inventa una explicación que no dio. */}
+              <p className="font-semibold text-gray-700">Tu postulación no fue aceptada.</p>
+              {estado.motivo && <p>{estado.motivo}</p>}
+              <p className="text-gray-500">{textoPostulacion(estado)}.</p>
+            </div>
+          )}
+
+          {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
         </div>
       </div>
     </div>
@@ -527,7 +574,7 @@ export function CampanasSections({
   misCampanas: CampanaCardData[]
   disponibles: CampanaCardData[]
   /** Las que puede VER pero no trabajar: le falta el vínculo con el ejecutor. */
-  ofertas?: CampanaCardData[]
+  ofertas?: { campana: CampanaCardData; postulacion: EstadoPostulacion }[]
   finalizadas: CampanaCardData[]
   gondoleroNivel: NivelGondolero | null
   misDistriIds: string[]
@@ -722,8 +769,8 @@ export function CampanasSections({
             Todavía no trabajás con quien ejecuta estas campañas. Podés verlas, y
             en breve vas a poder pedir sumarte.
           </p>
-          {ofertas.map(c => (
-            <CampanaCardOferta key={c.id} campana={c} />
+          {ofertas.map(o => (
+            <CampanaCardOferta key={o.campana.id} campana={o.campana} postulacion={o.postulacion} />
           ))}
         </Seccion>
       )}

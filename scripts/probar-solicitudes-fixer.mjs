@@ -139,6 +139,40 @@ try {
   caso('se puede rechazar sin motivo', { e: sinMotivo?.estado, m: sinMotivo?.motivo_rechazo },
     { e: 'rechazada', m: null })
 
+  // ── 4. La re-postulación pasados los 30 días ───────────────────────────────
+  console.log('\n▸ Re-postularse limpia el rechazo viejo')
+  // Si el upsert de `postularseACampana` no limpiara `rechazada_at`, la fila
+  // volvería a 'pendiente' con la marca puesta — y al primer rechazo siguiente,
+  // o peor, al aprobarla y desvincularse, `estadoPostulacion` la vería vieja.
+  // Se reproduce el upsert de la action.
+  const ahoraIso = new Date().toISOString()
+  await c.query(`
+    INSERT INTO fixer_distri_solicitudes (fixer_id, distri_id, estado, iniciado_por, motivo_rechazo, rechazada_at, updated_at)
+    VALUES ($1,$2,'pendiente','fixer',NULL,NULL,$3)
+    ON CONFLICT (fixer_id, distri_id) DO UPDATE
+      SET estado='pendiente', iniciado_por='fixer', motivo_rechazo=NULL, rechazada_at=NULL, updated_at=$3`,
+    [fixer, distri, ahoraIso])
+  const re = await uno(`SELECT estado, iniciado_por, motivo_rechazo, rechazada_at
+                        FROM fixer_distri_solicitudes WHERE fixer_id=$1 AND distri_id=$2`, [fixer, distri])
+  caso('vuelve a pendiente', re?.estado, 'pendiente')
+  caso('marcada como del fixer, no del ejecutor', re?.iniciado_por, 'fixer')
+  caso('sin el motivo viejo', re?.motivo_rechazo, null)
+  caso('y SIN rechazada_at, que es lo que destraba la ventana', re?.rechazada_at, null)
+  caso('y vuelve a aparecerle al ejecutor como pendiente',
+    (await uno(`SELECT count(*)::int n FROM fixer_distri_solicitudes
+                WHERE distri_id=$1 AND estado='pendiente' AND iniciado_por='fixer'`, [distri])).n, 1)
+
+  console.log('\n▸ Una sola fila por par, pase lo que pase')
+  // El UNIQUE es lo que convierte "postularse dos veces" en un no-op en vez de
+  // en dos solicitudes que el ejecutor tiene que rechazar por separado.
+  await c.query(`
+    INSERT INTO fixer_distri_solicitudes (fixer_id, distri_id, estado, iniciado_por, updated_at)
+    VALUES ($1,$2,'pendiente','fixer',$3)
+    ON CONFLICT (fixer_id, distri_id) DO UPDATE SET updated_at=$3`, [fixer, distri, ahoraIso])
+  caso('postularse de nuevo no duplica',
+    (await uno(`SELECT count(*)::int n FROM fixer_distri_solicitudes
+                WHERE fixer_id=$1 AND distri_id=$2`, [fixer, distri])).n, 1)
+
 } finally {
   await c.query('ROLLBACK')
   console.log('\n(ROLLBACK — dev quedó exactamente como estaba)')

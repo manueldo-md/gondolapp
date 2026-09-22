@@ -8,6 +8,7 @@ import { MisionesPendientes } from '@/components/gondolero/misiones-pendientes'
 import { getConfig } from '@/lib/config'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { estaVencida } from '@/lib/campana-vigencia'
+import { estadoPostulacion } from '@/lib/postulacion-fixer'
 import { tieneAccesoACampana, accesoACampana, type CampanaAcceso, type MotivoSinAcceso, type EjecutorCampana } from '@/lib/acceso-campana'
 
 type CampanaRow = CampanaCardData
@@ -65,21 +66,26 @@ export default async function CampanasPage() {
       .select('distri_id')
       .eq('gondolero_id', user.id)
       .eq('estado', 'aprobada'),
+    // Las solicitudes del fixer, en TODOS los estados y no solo las aprobadas.
+    //
+    // Las aprobadas dan los vínculos (`misDistriIds`, `misRepoIds`); las
+    // pendientes y rechazadas dan el estado del botón de cada oferta. Se traen
+    // juntas y se separan en JS: son pocas filas por actor, y dos consultas
+    // sobre la misma tabla para dos subconjuntos es la clase de cosa que después
+    // se desincroniza.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('fixer_distri_solicitudes')
-      .select('distri_id')
-      .eq('fixer_id', user.id)
-      .eq('estado', 'aprobada'),
+      .select('distri_id, estado, motivo_rechazo, rechazada_at')
+      .eq('fixer_id', user.id),
     // Las repositoras del fixer. Es SU eje: las campañas de fixers llevan
     // `repositora_id` y el vínculo vive acá. Sin esto la lista les escondía las
     // dos campañas de fixers que existen.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('fixer_repo_solicitudes')
-      .select('repositora_id')
-      .eq('fixer_id', user.id)
-      .eq('estado', 'aprobada'),
+      .select('repositora_id, estado, motivo_rechazo, rechazada_at')
+      .eq('fixer_id', user.id),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (admin as any)
       .from('misiones')
@@ -124,12 +130,24 @@ export default async function CampanasPage() {
   })
   const gondoleroTipoActor = (profileRes.data as { tipo_actor: string } | null)?.tipo_actor ?? 'gondolero'
   const esFixer = gondoleroTipoActor === 'fixer'
+  // Las solicitudes del fixer vienen en todos los estados: los vínculos son solo
+  // las APROBADAS. Filtrar acá y no en la query es lo que permite que la misma
+  // lectura alimente el estado del botón de las ofertas, más abajo.
+  type SolFixer = { estado: string | null; motivo_rechazo: string | null; rechazada_at: string | null }
+  const solsDistriFixer = (misDistrisFixerRes.data ?? []) as (SolFixer & { distri_id: string })[]
+  const solsRepoFixer   = (misReposFixerRes.data ?? [])   as (SolFixer & { repositora_id: string })[]
+
   const misDistriIds = esFixer
-    ? (misDistrisFixerRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
+    ? solsDistriFixer.filter(d => d.estado === 'aprobada').map(d => d.distri_id)
     : (misDistrisGondoleroRes.data ?? []).map((d: { distri_id: string }) => d.distri_id)
   const misRepoIds: string[] = esFixer
-    ? (misReposFixerRes.data ?? []).map((r: { repositora_id: string }) => r.repositora_id)
+    ? solsRepoFixer.filter(r => r.estado === 'aprobada').map(r => r.repositora_id)
     : []
+
+  // Por ejecutor, para saber qué botón dibujarle a cada oferta.
+  const solPorEjecutor = new Map<string, SolFixer>()
+  for (const d of solsDistriFixer) solPorEjecutor.set(d.distri_id, d)
+  for (const r of solsRepoFixer)   solPorEjecutor.set(r.repositora_id, r)
 
   // Misiones: qué campañas tiene el gondolero y cuántas misiones por campaña.
   // misionCampanaIds se llena con TODAS las misiones (incluidas 'descartada')
@@ -342,7 +360,13 @@ export default async function CampanasPage() {
     .map(c => ({ campana: c, acceso: accesoACampana(c as unknown as CampanaAcceso, ctxAcceso) }))
     .filter((x): x is { campana: CampanaRow; acceso: { ok: false; motivo: MotivoSinAcceso; mensaje: string; postulable: EjecutorCampana } } =>
       !x.acceso.ok && !!x.acceso.postulable)
-    .map(x => x.campana)
+    .map(x => ({
+      campana: x.campana,
+      // El estado se resuelve en el servidor y viaja listo: la tarjeta no tiene
+      // que saber de tablas ni de ventanas de días, y la misma función la usa la
+      // action para decidir de verdad.
+      postulacion: estadoPostulacion(solPorEjecutor.get(x.acceso.postulable.id)),
+    }))
 
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
   // REGLA: (estado IN ('cerrada','suspendida','pausada') OR fecha_fin pasada)
