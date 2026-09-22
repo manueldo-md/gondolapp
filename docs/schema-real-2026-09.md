@@ -2,25 +2,51 @@
 
 > **Fuente de verdad sobre la base de datos.**
 >
-> Generado el **7 de septiembre de 2026** directamente del proyecto de
-> producción (`xzznzustgsacmfwsupux`) con `scripts/comparar-schema.mjs`,
-> después de reconstruirlo tras el `DROP SCHEMA public CASCADE` de ese día.
+> Regenerado el **22 de septiembre de 2026** desde el proyecto de producción
+> (`xzznzustgsacmfwsupux`) con `scripts/comparar-schema.mjs`.
 >
-> **A diferencia del dump anterior, este NO tiene divergencias con las
-> migraciones**: producción se reconstruyó aplicando las 57 migraciones del
-> repo, así que este documento es exactamente lo que producen esos archivos.
-> Se verificó que el proyecto de dev (`mqeymmprvpclpyjpujvf`), levantado por
-> separado desde las mismas migraciones, produce este documento byte a byte.
+> **Dev produce este mismo documento.** Verificado el 22/9/2026 generando los dos
+> y diffeándolos: la única diferencia es el ref del encabezado. Una fila de la
+> tabla de triggers aparece en otra posición porque el orden de
+> `information_schema` no está garantizado; el contenido es idéntico, comprobado
+> diffeando los dos archivos ordenados.
 >
-> Para regenerarlo:
+> La corrida reportó **100 diferencias** contra la versión del 7/9. Son las dos
+> semanas de migraciones que van desde `fotos.reemplazada_por` hasta el catálogo
+> de métricas, todas aplicadas en las dos bases.
+>
+> ### ⚠ Tres columnas figuran acá y están por irse
+>
+> `bloques_foto.tipo_contenido`, `bloques_foto.solicitar_precio` y
+> `bloque_campos.solicitar_precio` **ya no las lee ni las escribe nadie**, y su
+> DROP está escrito en
+> `supabase/migrations/20260922100000_drop_tipo_contenido_y_solicitar_precio.sql`.
+> Al 22/9/2026 esa migración **todavía no está aplicada** en ninguna de las dos
+> bases, así que las columnas siguen apareciendo en este documento. Cuando se
+> corra hay que regenerar: el diff van a ser esas tres filas más su CHECK.
+>
+> Para confirmar si ya está aplicada, sin leer notices en una UI:
+> ```bash
+> node scripts/verificar-drop-columnas.mjs
+> ```
+>
+> ### Cómo regenerar este archivo
+>
 > ```bash
 > node scripts/comparar-schema.mjs --ref xzznzustgsacmfwsupux
 > ```
-> y renombrar el `docs/schema-nuevo-<fecha>.md` resultante.
+> y renombrar el `docs/schema-nuevo-<fecha>.md` resultante sobre este archivo,
+> **conservando este encabezado**. El script compara contra ESTE documento, así
+> que mientras no se reemplace va a reportar como diferencias todo lo que cambió
+> desde la última regeneración: eso es lo esperado, no un problema.
 >
-> El estado anterior al incidente quedó en
-> `docs/schema-real-2026-09-pre-incidente.md`, como registro histórico.
-
+> Ojo con las etiquetas de la salida del script: dice `prod:` para lo que
+> declara ESTE documento y `dev :` para lo que devuelve la base consultada, sea
+> cual sea. No son los dos ambientes.
+>
+> El estado anterior al `DROP SCHEMA public CASCADE` de septiembre quedó en
+> `docs/schema-real-2026-09-pre-incidente.md`, como registro histórico. **Ese
+> archivo NO es la base viva** — ver "Diferencias confirmadas" en CLAUDE.md.
 
 ## 1. Tablas y columnas
 
@@ -40,6 +66,9 @@
 | bloque_campos | obligatorio | boolean | YES | false |
 | bloque_campos | orden | integer | YES | 1 |
 | bloque_campos | created_at | timestamp with time zone | YES | now() |
+| bloque_campos | blur_requerido | boolean | NO | true |
+| bloque_campos | solicitar_precio | boolean | NO | false |
+| bloque_campos | metrica_id | uuid | YES | null |
 | bloques_foto | id | uuid | NO | uuid_generate_v4() |
 | bloques_foto | campana_id | uuid | NO | null |
 | bloques_foto | orden | integer | NO | 1 |
@@ -70,7 +99,6 @@
 | campanas | fecha_inicio | date | YES | null |
 | campanas | fecha_fin | date | YES | null |
 | campanas | fecha_limite_inscripcion | date | YES | null |
-| campanas | objetivo_comercios | integer | YES | null |
 | campanas | max_comercios_por_gondolero | integer | YES | 20 |
 | campanas | min_comercios_para_cobrar | integer | YES | 3 |
 | campanas | tope_total_comercios | integer | YES | null |
@@ -95,6 +123,9 @@
 | campanas | via_ejecucion | text | YES | 'distribuidora'::text |
 | campanas | motivo_rechazo | text | YES | null |
 | campanas | repositora_id | uuid | YES | null |
+| campanas | minimo_comercios | integer | YES | null |
+| campanas | modalidad | text | NO | 'puntual'::text |
+| campanas | visitas_por_semana | integer | YES | null |
 | canjes | id | uuid | NO | uuid_generate_v4() |
 | canjes | gondolero_id | uuid | NO | null |
 | canjes | premio | text | NO | null |
@@ -109,7 +140,7 @@
 | comercios | direccion | text | YES | null |
 | comercios | lat | numeric | NO | null |
 | comercios | lng | numeric | NO | null |
-| comercios | tipo | text | YES | 'almacen'::text |
+| comercios | tipo | text | YES | null |
 | comercios | foto_fachada_url | text | YES | null |
 | comercios | validado | boolean | YES | false |
 | comercios | zona_id | uuid | YES | null |
@@ -121,6 +152,7 @@
 | comercios | telefono | text | YES | null |
 | comercios | encargado | text | YES | null |
 | comercios | campana_id | uuid | YES | null |
+| comercios | motivo_rechazo | text | YES | null |
 | comercios_checks | id | uuid | NO | gen_random_uuid() |
 | comercios_checks | comercio_id | uuid | YES | null |
 | comercios_checks | gondolero_id | uuid | YES | null |
@@ -128,6 +160,24 @@
 | comercios_checks | latitud | numeric | YES | null |
 | comercios_checks | longitud | numeric | YES | null |
 | comercios_checks | created_at | timestamp with time zone | YES | now() |
+| comercios_reportes_ubicacion | id | uuid | NO | gen_random_uuid() |
+| comercios_reportes_ubicacion | comercio_id | uuid | NO | null |
+| comercios_reportes_ubicacion | gondolero_id | uuid | YES | null |
+| comercios_reportes_ubicacion | lat | numeric | NO | null |
+| comercios_reportes_ubicacion | lng | numeric | NO | null |
+| comercios_reportes_ubicacion | distancia_metros | integer | YES | null |
+| comercios_reportes_ubicacion | estado | text | NO | 'pendiente'::text |
+| comercios_reportes_ubicacion | resuelto_en | uuid | YES | null |
+| comercios_reportes_ubicacion | created_at | timestamp with time zone | YES | now() |
+| comercios_ubicacion_historial | id | uuid | NO | gen_random_uuid() |
+| comercios_ubicacion_historial | comercio_id | uuid | NO | null |
+| comercios_ubicacion_historial | lat_anterior | numeric | YES | null |
+| comercios_ubicacion_historial | lng_anterior | numeric | YES | null |
+| comercios_ubicacion_historial | lat_nueva | numeric | NO | null |
+| comercios_ubicacion_historial | lng_nueva | numeric | NO | null |
+| comercios_ubicacion_historial | corregido_por | uuid | YES | null |
+| comercios_ubicacion_historial | distri_id | uuid | YES | null |
+| comercios_ubicacion_historial | created_at | timestamp with time zone | YES | now() |
 | configuracion | clave | text | NO | null |
 | configuracion | valor | text | NO | null |
 | configuracion | descripcion | text | YES | null |
@@ -220,6 +270,8 @@
 | fotos | bounty_estado | text | YES | 'acreditado'::text |
 | fotos | mision_id | uuid | YES | null |
 | fotos | campo_id | uuid | YES | null |
+| fotos | reemplazada_por | uuid | YES | null |
+| fotos | distancia_metros | integer | YES | null |
 | geography_columns | f_table_catalog | name | YES | null |
 | geography_columns | f_table_schema | name | YES | null |
 | geography_columns | f_table_name | name | YES | null |
@@ -312,11 +364,22 @@
 | mensajes_campana | publicado | boolean | YES | false |
 | mensajes_campana | pregunta_id | uuid | YES | null |
 | mensajes_campana | created_at | timestamp with time zone | YES | now() |
+| metricas | id | uuid | NO | gen_random_uuid() |
+| metricas | slug | text | NO | null |
+| metricas | nombre | text | NO | null |
+| metricas | descripcion | text | YES | null |
+| metricas | tipo_respuesta | text | NO | null |
+| metricas | fuentes | ARRAY | NO | ARRAY['respuestas'::text] |
+| metricas | orden | integer | NO | 0 |
+| metricas | activa | boolean | NO | true |
+| metricas | created_at | timestamp with time zone | NO | now() |
 | mision_respuestas | id | uuid | NO | gen_random_uuid() |
 | mision_respuestas | mision_id | uuid | NO | null |
 | mision_respuestas | campo_id | uuid | NO | null |
 | mision_respuestas | valor | jsonb | YES | null |
 | mision_respuestas | created_at | timestamp with time zone | YES | now() |
+| mision_respuestas | reemplazada_por | uuid | YES | null |
+| mision_respuestas | foto_id | uuid | YES | null |
 | misiones | id | uuid | NO | gen_random_uuid() |
 | misiones | campana_id | uuid | YES | null |
 | misiones | comercio_id | uuid | YES | null |
@@ -326,6 +389,11 @@
 | misiones | bounty_estado | text | YES | 'retenido'::text |
 | misiones | created_at | timestamp with time zone | YES | now() |
 | misiones | updated_at | timestamp with time zone | YES | now() |
+| misiones | idempotencia_key | uuid | YES | null |
+| misiones | offline_descartada_at | timestamp with time zone | YES | null |
+| misiones | offline_motivo_fallo | text | YES | null |
+| misiones | unico_por_comercio | boolean | NO | true |
+| misiones | capturada_at | timestamp with time zone | YES | now() |
 | movimientos_puntos | id | uuid | NO | uuid_generate_v4() |
 | movimientos_puntos | gondolero_id | uuid | NO | null |
 | movimientos_puntos | tipo | text | NO | null |
@@ -366,13 +434,11 @@
 | profiles | nombre | text | YES | null |
 | profiles | alias | text | YES | null |
 | profiles | celular | text | YES | null |
-| profiles | nivel | text | YES | 'casual'::text |
 | profiles | puntos_disponibles | integer | YES | 0 |
 | profiles | puntos_totales_ganados | integer | YES | 0 |
 | profiles | distri_id | uuid | YES | null |
 | profiles | marca_id | uuid | YES | null |
 | profiles | monotributo_verificado | boolean | YES | false |
-| profiles | fotos_aprobadas | integer | YES | 0 |
 | profiles | tasa_aprobacion | numeric | YES | 100.00 |
 | profiles | activo | boolean | YES | true |
 | profiles | created_at | timestamp with time zone | YES | now() |
@@ -424,6 +490,7 @@
 | alertas_ignoradas | alertas_ignoradas_tipo_check | CHECK ((tipo = ANY (ARRAY['quiebre_stock'::text, 'sin_visita'::text, 'campana_riesgo'::text, 'gondolero_inactivo'::text]))) |
 | alertas_ignoradas | alertas_ignoradas_unique | UNIQUE (distri_id, tipo, referencia_id) |
 | bloque_campos | bloque_campos_bloque_id_fkey | FOREIGN KEY (bloque_id) REFERENCES bloques_foto(id) ON DELETE CASCADE |
+| bloque_campos | bloque_campos_metrica_id_fkey | FOREIGN KEY (metrica_id) REFERENCES metricas(id) ON DELETE RESTRICT |
 | bloque_campos | bloque_campos_pkey | PRIMARY KEY (id) |
 | bloque_campos | bloque_campos_tipo_check | CHECK ((tipo = ANY (ARRAY['seleccion_multiple'::text, 'seleccion_unica'::text, 'binaria'::text, 'numero'::text, 'texto'::text, 'foto'::text]))) |
 | bloques_foto | bloques_foto_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) ON DELETE CASCADE |
@@ -444,13 +511,19 @@
 | campanas | campanas_actor_campana_check | CHECK ((actor_campana = ANY (ARRAY['gondolero'::text, 'fixer'::text]))) |
 | campanas | campanas_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) |
 | campanas | campanas_estado_check | CHECK ((estado = ANY (ARRAY['borrador'::text, 'pendiente_aprobacion'::text, 'activa'::text, 'pausada'::text, 'cerrada'::text, 'pendiente_cambios'::text]))) |
+| campanas | campanas_fecha_fin_por_modalidad | CHECK (((estado = 'borrador'::text) OR ((modalidad = 'puntual'::text) AND (fecha_fin IS NOT NULL)) OR ((modalidad = 'seguimiento'::text) AND (fecha_fin IS NULL)))) |
 | campanas | campanas_financiada_por_check | CHECK ((financiada_por = ANY (ARRAY['marca'::text, 'distri'::text, 'gondolapp'::text, 'repositora'::text]))) |
+| campanas | campanas_frecuencia_solo_seguimiento | CHECK (((modalidad = 'seguimiento'::text) OR (visitas_por_semana IS NULL))) |
 | campanas | campanas_marca_id_fkey | FOREIGN KEY (marca_id) REFERENCES marcas(id) |
+| campanas | campanas_modalidad_check | CHECK ((modalidad = ANY (ARRAY['puntual'::text, 'seguimiento'::text]))) |
 | campanas | campanas_nivel_minimo_check | CHECK ((nivel_minimo = ANY (ARRAY['casual'::text, 'activo'::text, 'pro'::text]))) |
 | campanas | campanas_pkey | PRIMARY KEY (id) |
 | campanas | campanas_repositora_id_fkey | FOREIGN KEY (repositora_id) REFERENCES repositoras(id) |
 | campanas | campanas_tipo_check | CHECK ((tipo = ANY (ARRAY['relevamiento'::text, 'precio'::text, 'cobertura'::text, 'pop'::text, 'mapa'::text, 'comercios'::text, 'interna'::text]))) |
+| campanas | campanas_tope_solo_puntual | CHECK (((modalidad = 'puntual'::text) OR (tope_total_comercios IS NULL))) |
 | campanas | campanas_via_ejecucion_check | CHECK ((via_ejecucion = ANY (ARRAY['distribuidora'::text, 'gondolapp'::text, 'repositora'::text]))) |
+| campanas | campanas_visitas_obligatorias_seguimiento | CHECK (((modalidad = 'puntual'::text) OR (visitas_por_semana IS NOT NULL))) |
+| campanas | campanas_visitas_por_semana_check | CHECK (((visitas_por_semana IS NULL) OR ((visitas_por_semana >= 1) AND (visitas_por_semana <= 14)))) |
 | canjes | canjes_estado_check | CHECK ((estado = ANY (ARRAY['pendiente'::text, 'procesado'::text, 'entregado'::text, 'fallido'::text]))) |
 | canjes | canjes_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) |
 | canjes | canjes_pkey | PRIMARY KEY (id) |
@@ -469,6 +542,15 @@
 | comercios_checks | comercios_checks_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) |
 | comercios_checks | comercios_checks_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) |
 | comercios_checks | comercios_checks_pkey | PRIMARY KEY (id) |
+| comercios_reportes_ubicacion | comercios_reportes_ubicacion_comercio_id_fkey | FOREIGN KEY (comercio_id) REFERENCES comercios(id) ON DELETE CASCADE |
+| comercios_reportes_ubicacion | comercios_reportes_ubicacion_estado_check | CHECK ((estado = ANY (ARRAY['pendiente'::text, 'aplicado'::text, 'descartado'::text]))) |
+| comercios_reportes_ubicacion | comercios_reportes_ubicacion_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) |
+| comercios_reportes_ubicacion | comercios_reportes_ubicacion_pkey | PRIMARY KEY (id) |
+| comercios_reportes_ubicacion | comercios_reportes_ubicacion_resuelto_en_fkey | FOREIGN KEY (resuelto_en) REFERENCES comercios_ubicacion_historial(id) |
+| comercios_ubicacion_historial | comercios_ubicacion_historial_comercio_id_fkey | FOREIGN KEY (comercio_id) REFERENCES comercios(id) ON DELETE CASCADE |
+| comercios_ubicacion_historial | comercios_ubicacion_historial_corregido_por_fkey | FOREIGN KEY (corregido_por) REFERENCES profiles(id) |
+| comercios_ubicacion_historial | comercios_ubicacion_historial_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) |
+| comercios_ubicacion_historial | comercios_ubicacion_historial_pkey | PRIMARY KEY (id) |
 | configuracion | configuracion_clave_key | UNIQUE (clave) |
 | configuracion | configuracion_pkey | PRIMARY KEY (id) |
 | configuracion | configuracion_seccion_check | CHECK ((seccion = ANY (ARRAY['fotos'::text, 'gps'::text, 'economia'::text, 'niveles'::text, 'operacion'::text, 'compresion'::text]))) |
@@ -519,6 +601,7 @@
 | fotos | fotos_mision_id_fkey | FOREIGN KEY (mision_id) REFERENCES misiones(id) |
 | fotos | fotos_par_foto_id_fkey | FOREIGN KEY (par_foto_id) REFERENCES fotos(id) |
 | fotos | fotos_pkey | PRIMARY KEY (id) |
+| fotos | fotos_reemplazada_por_fkey | FOREIGN KEY (reemplazada_por) REFERENCES fotos(id) ON DELETE SET NULL |
 | gondolero_distri_solicitudes | gondolero_distri_solicitudes_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) ON DELETE CASCADE |
 | gondolero_distri_solicitudes | gondolero_distri_solicitudes_estado_check | CHECK ((estado = ANY (ARRAY['pendiente'::text, 'aprobada'::text, 'rechazada'::text, 'terminada'::text]))) |
 | gondolero_distri_solicitudes | gondolero_distri_solicitudes_gondolero_id_distri_id_key | UNIQUE (gondolero_id, distri_id) |
@@ -569,12 +652,18 @@
 | mensajes_campana | mensajes_campana_remitente_id_fkey | FOREIGN KEY (remitente_id) REFERENCES profiles(id) |
 | mensajes_campana | mensajes_campana_remitente_tipo_check | CHECK ((remitente_tipo = ANY (ARRAY['marca'::text, 'distribuidora'::text]))) |
 | mensajes_campana | mensajes_campana_tipo_check | CHECK ((tipo = ANY (ARRAY['broadcast'::text, 'pregunta'::text, 'respuesta'::text]))) |
+| metricas | metricas_fuentes_check | CHECK (((cardinality(fuentes) >= 1) AND (fuentes <@ ARRAY['respuestas'::text, 'declaracion_foto'::text]))) |
+| metricas | metricas_pkey | PRIMARY KEY (id) |
+| metricas | metricas_slug_key | UNIQUE (slug) |
+| metricas | metricas_tipo_respuesta_check | CHECK ((tipo_respuesta = ANY (ARRAY['seleccion_multiple'::text, 'seleccion_unica'::text, 'binaria'::text, 'numero'::text, 'texto'::text]))) |
+| mision_respuestas | mision_respuestas_foto_id_fkey | FOREIGN KEY (foto_id) REFERENCES fotos(id) |
 | mision_respuestas | mision_respuestas_mision_id_fkey | FOREIGN KEY (mision_id) REFERENCES misiones(id) ON DELETE CASCADE |
 | mision_respuestas | mision_respuestas_pkey | PRIMARY KEY (id) |
+| mision_respuestas | mision_respuestas_reemplazada_por_fkey | FOREIGN KEY (reemplazada_por) REFERENCES mision_respuestas(id) |
 | misiones | misiones_bounty_estado_check | CHECK ((bounty_estado = ANY (ARRAY['acreditado'::text, 'retenido'::text, 'anulado'::text]))) |
 | misiones | misiones_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) |
 | misiones | misiones_comercio_id_fkey | FOREIGN KEY (comercio_id) REFERENCES comercios(id) |
-| misiones | misiones_estado_check | CHECK ((estado = ANY (ARRAY['pendiente'::text, 'aprobada'::text, 'rechazada'::text, 'parcial'::text]))) |
+| misiones | misiones_estado_check | CHECK ((estado = ANY (ARRAY['pendiente'::text, 'aprobada'::text, 'rechazada'::text, 'parcial'::text, 'descartada'::text]))) |
 | misiones | misiones_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) |
 | misiones | misiones_pkey | PRIMARY KEY (id) |
 | movimientos_puntos | movimientos_puntos_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) |
@@ -591,17 +680,16 @@
 | notificaciones | notificaciones_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) ON DELETE SET NULL |
 | notificaciones | notificaciones_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) ON DELETE CASCADE |
 | notificaciones | notificaciones_pkey | PRIMARY KEY (id) |
-| notificaciones | notificaciones_tipo_check | CHECK ((tipo = ANY (ARRAY['foto_aprobada'::text, 'foto_rechazada'::text, 'nivel_subido'::text, 'mision_aprobada'::text, 'puntos_acreditados'::text, 'nueva_campana_disponible'::text, 'comercio_validado'::text, 'campana_aprobada'::text, 'campana_rechazada'::text, 'nueva_mision_recibida'::text, 'campana_por_vencer'::text, 'nueva_distribuidora_vinculada'::text, 'distribuidora_termino_relacion'::text, 'campana_marca_pendiente'::text, 'gondolero_solicitud_vinculacion'::text, 'gondolero_completo_mision'::text, 'comercio_pendiente_validacion'::text, 'marca_solicitud_reinicio_relacion'::text, 'campana_por_vencer_distri'::text, 'admin_campana_pendiente'::text, 'admin_comercio_pendiente'::text, 'admin_error_reportado'::text, 'solicitud_aprobada'::text, 'solicitud_rechazada'::text, 'desvinculacion_distri'::text, 'cambios_solicitados'::text]))) |
+| notificaciones | notificaciones_tipo_check | CHECK ((tipo = ANY (ARRAY['foto_aprobada'::text, 'foto_rechazada'::text, 'nivel_subido'::text, 'mision_aprobada'::text, 'puntos_acreditados'::text, 'nueva_campana_disponible'::text, 'comercio_validado'::text, 'campana_aprobada'::text, 'campana_rechazada'::text, 'nueva_mision_recibida'::text, 'campana_por_vencer'::text, 'nueva_distribuidora_vinculada'::text, 'distribuidora_termino_relacion'::text, 'campana_marca_pendiente'::text, 'gondolero_solicitud_vinculacion'::text, 'gondolero_completo_mision'::text, 'comercio_pendiente_validacion'::text, 'marca_solicitud_reinicio_relacion'::text, 'campana_por_vencer_distri'::text, 'admin_campana_pendiente'::text, 'admin_comercio_pendiente'::text, 'admin_error_reportado'::text, 'solicitud_aprobada'::text, 'solicitud_rechazada'::text, 'desvinculacion_distri'::text, 'cambios_solicitados'::text, 'campana_cerrada_por_tope'::text, 'comercio_ubicacion_reportada'::text, 'comercio_rechazado'::text]))) |
 | participaciones | participaciones_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) ON DELETE CASCADE |
 | participaciones | participaciones_campana_id_gondolero_id_key | UNIQUE (campana_id, gondolero_id) |
-| participaciones | participaciones_estado_check | CHECK ((estado = ANY (ARRAY['activa'::text, 'completada'::text, 'abandonada'::text]))) |
+| participaciones | participaciones_estado_check | CHECK ((estado = ANY (ARRAY['activa'::text, 'completada'::text, 'abandonada'::text, 'cerrada'::text]))) |
 | participaciones | participaciones_gondolero_id_fkey | FOREIGN KEY (gondolero_id) REFERENCES profiles(id) ON DELETE CASCADE |
 | participaciones | participaciones_pkey | PRIMARY KEY (id) |
 | profiles | profiles_codigo_gondolero_key | UNIQUE (codigo_gondolero) |
 | profiles | profiles_distri_id_fkey | FOREIGN KEY (distri_id) REFERENCES distribuidoras(id) |
 | profiles | profiles_id_fkey | FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE |
 | profiles | profiles_marca_id_fkey | FOREIGN KEY (marca_id) REFERENCES marcas(id) |
-| profiles | profiles_nivel_check | CHECK ((nivel = ANY (ARRAY['casual'::text, 'activo'::text, 'pro'::text]))) |
 | profiles | profiles_pkey | PRIMARY KEY (id) |
 | profiles | profiles_puntos_disponibles_check | CHECK ((puntos_disponibles >= 0)) |
 | profiles | profiles_repositora_id_fkey | FOREIGN KEY (repositora_id) REFERENCES repositoras(id) |
@@ -646,13 +734,13 @@
 | canjes | canjes_update_admin | UPDATE | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | comercios | comercios_insert | INSERT | {public} | null | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (registrado_por = auth.uid())) |
 | comercios | comercios_select | SELECT | {public} | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text, 'admin'::text])) OR (get_tipo_actor() = 'distribuidora'::text)) | null |
-| comercios | comercios_update_distri_admin | UPDATE | {public} | ((get_tipo_actor() = 'admin'::text) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = comercios.registrado_por) AND (p.distri_id = get_distri_id())))))) | null |
+| comercios | comercios_update_distri_admin | UPDATE | {public} | ((get_tipo_actor() = 'admin'::text) OR ((get_tipo_actor() = 'distribuidora'::text) AND (registrado_por IS NOT NULL) AND es_actor_de_mi_distri(registrado_por))) | null |
 | comercios_checks | service_role_all | ALL | {public} | true | null |
 | configuracion | configuracion_admin | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
 | configuracion | configuracion_select_admin | SELECT | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | configuracion | configuracion_update_admin | UPDATE | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | departamentos | public_read_departamentos | SELECT | {public} | true | null |
-| distri_repo_relaciones | service_role_all | ALL | {public} | true | null |
+| distri_repo_relaciones | service_role_all | ALL | {service_role} | true | true |
 | distri_repo_tokens | service_role_all | ALL | {public} | true | null |
 | distribuidoras | distribuidoras_select_gondolero | SELECT | {public} | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (validada = true)) | null |
 | distribuidoras | distribuidoras_select_own | SELECT | {public} | ((id = get_distri_id()) OR (get_tipo_actor() = 'admin'::text)) | null |
@@ -662,8 +750,7 @@
 | fixer_distri_solicitudes | service_role_all | ALL | {public} | true | null |
 | fixer_invitacion_tokens | service_role_all | ALL | {public} | true | null |
 | fixer_repo_solicitudes | service_role_all | ALL | {public} | true | null |
-| foto_respuestas | foto_respuestas_insert | INSERT | {public} | null | (auth.uid() IS NOT NULL) |
-| foto_respuestas | foto_respuestas_select | SELECT | {public} | (auth.uid() IS NOT NULL) | null |
+| foto_respuestas | service_role_all | ALL | {service_role} | true | true |
 | fotos | fotos_admin | ALL | {public} | (get_tipo_actor() = 'admin'::text) | null |
 | fotos | fotos_insert_gondolero | INSERT | {public} | null | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (gondolero_id = auth.uid())) |
 | fotos | fotos_select_distri | SELECT | {public} | ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = fotos.campana_id) AND (c.distri_id = get_distri_id()))))) | null |
@@ -689,13 +776,17 @@
 | marca_distri_tokens | admin_gestiona_tokens_marca_distri | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
 | marca_distri_tokens | tokens_marca_distri_insert | INSERT | {public} | null | (auth.uid() IS NOT NULL) |
 | marca_distri_tokens | tokens_marca_distri_public | SELECT | {public} | true | null |
-| marca_repo_relaciones | service_role_all | ALL | {public} | true | null |
+| marca_repo_relaciones | service_role_all | ALL | {service_role} | true | true |
 | marca_repo_tokens | service_role_all | ALL | {public} | true | null |
 | marcas | marcas_select_own | SELECT | {public} | ((id = get_marca_id()) OR (get_tipo_actor() = 'admin'::text)) | null |
 | marcas | marcas_update_own | UPDATE | {public} | ((id = get_marca_id()) AND (get_tipo_actor() = 'marca'::text)) | null |
 | mensajes_campana | mensajes_select | SELECT | {public} | ((EXISTS ( SELECT 1 FROM participaciones p WHERE ((p.campana_id = mensajes_campana.campana_id) AND (p.gondolero_id = auth.uid())))) OR ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = mensajes_campana.campana_id) AND (c.marca_id = get_marca_id()))))) OR ((get_tipo_actor() = 'distribuidora'::text) AND (EXISTS ( SELECT 1 FROM campanas c WHERE ((c.id = mensajes_campana.campana_id) AND (c.distri_id = get_distri_id()))))) OR (get_tipo_actor() = 'admin'::text)) | null |
+| metricas | metricas_delete_admin | DELETE | {public} | (get_tipo_actor() = 'admin'::text) | null |
+| metricas | metricas_insert_admin | INSERT | {public} | null | (get_tipo_actor() = 'admin'::text) |
+| metricas | metricas_select | SELECT | {public} | (auth.uid() IS NOT NULL) | null |
+| metricas | metricas_update_admin | UPDATE | {public} | (get_tipo_actor() = 'admin'::text) | (get_tipo_actor() = 'admin'::text) |
 | mision_respuestas | service_role_all | ALL | {service_role} | true | true |
-| misiones | service_role_all | ALL | {public} | true | null |
+| misiones | service_role_all | ALL | {service_role} | true | true |
 | movimientos_puntos | movimientos_puntos_select | SELECT | {public} | ((gondolero_id = auth.uid()) OR (get_tipo_actor() = 'admin'::text)) | null |
 | movimientos_tokens | movimientos_tokens_select_distri | SELECT | {public} | (((actor_tipo = 'distribuidora'::text) AND (actor_id = get_distri_id()) AND (get_tipo_actor() = 'distribuidora'::text)) OR ((actor_tipo = 'marca'::text) AND (actor_id = get_marca_id()) AND (get_tipo_actor() = 'marca'::text)) OR (get_tipo_actor() = 'admin'::text)) | null |
 | notificaciones | actor_ve_sus_notificaciones | SELECT | {public} | ((actor_id = auth.uid()) OR (actor_id IN ( SELECT profiles.distri_id FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.distri_id IS NOT NULL)))) OR (actor_id IN ( SELECT profiles.marca_id FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.marca_id IS NOT NULL))))) | null |
@@ -708,13 +799,13 @@
 | participaciones | participaciones_update_gondolero | UPDATE | {public} | ((get_tipo_actor() = ANY (ARRAY['gondolero'::text, 'fixer'::text])) AND (gondolero_id = auth.uid())) | null |
 | profiles | profiles_insert | INSERT | {public} | null | (id = auth.uid()) |
 | profiles | profiles_select | SELECT | {public} | ((id = auth.uid()) OR (get_tipo_actor() = 'admin'::text)) | null |
-| profiles | profiles_select_distri | SELECT | {public} | ((get_tipo_actor() = 'distribuidora'::text) AND (distri_id = get_distri_id())) | null |
+| profiles | profiles_select_distri | SELECT | {public} | ((get_tipo_actor() = 'distribuidora'::text) AND es_actor_de_mi_distri(id)) | null |
 | profiles | profiles_select_marca | SELECT | {public} | ((get_tipo_actor() = 'marca'::text) AND (EXISTS ( SELECT 1 FROM (participaciones p JOIN campanas c ON ((c.id = p.campana_id))) WHERE ((p.gondolero_id = profiles.id) AND (c.marca_id = get_marca_id()))))) | null |
 | profiles | profiles_update | UPDATE | {public} | (id = auth.uid()) | null |
 | provincias | public_read_provincias | SELECT | {public} | true | null |
 | relacion_reinicio_solicitudes | actores_ven_reinicio_sus_relaciones | SELECT | {public} | (EXISTS ( SELECT 1 FROM marca_distri_relaciones mdr WHERE ((mdr.id = relacion_reinicio_solicitudes.relacion_id) AND ((EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = auth.uid()) AND (p.marca_id = mdr.marca_id)))) OR (EXISTS ( SELECT 1 FROM profiles p WHERE ((p.id = auth.uid()) AND (p.distri_id = mdr.distri_id)))))))) | null |
 | relacion_reinicio_solicitudes | admin_gestiona_solicitudes_reinicio | ALL | {public} | (EXISTS ( SELECT 1 FROM profiles WHERE ((profiles.id = auth.uid()) AND (profiles.tipo_actor = 'admin'::text)))) | null |
-| repositoras | service_role_all | ALL | {public} | true | null |
+| repositoras | service_role_all | ALL | {service_role} | true | true |
 | vinculacion_tokens | tokens_distri | ALL | {public} | (distri_id = ( SELECT profiles.distri_id FROM profiles WHERE (profiles.id = auth.uid()))) | null |
 | vinculacion_tokens | tokens_public_select | SELECT | {public} | true | null |
 | zonas | zonas_admin_all | ALL | {public} | (get_tipo_actor() = 'admin'::text) | null |
@@ -727,6 +818,7 @@
 | alertas_ignoradas | alertas_ignoradas_pkey | CREATE UNIQUE INDEX alertas_ignoradas_pkey ON public.alertas_ignoradas USING btree (id) |
 | alertas_ignoradas | alertas_ignoradas_unique | CREATE UNIQUE INDEX alertas_ignoradas_unique ON public.alertas_ignoradas USING btree (distri_id, tipo, referencia_id) |
 | bloque_campos | bloque_campos_pkey | CREATE UNIQUE INDEX bloque_campos_pkey ON public.bloque_campos USING btree (id) |
+| bloque_campos | idx_bloque_campos_metrica | CREATE INDEX idx_bloque_campos_metrica ON public.bloque_campos USING btree (metrica_id) WHERE (metrica_id IS NOT NULL) |
 | bloques_foto | bloques_foto_pkey | CREATE UNIQUE INDEX bloques_foto_pkey ON public.bloques_foto USING btree (id) |
 | campana_localidades | campana_localidades_campana_id_localidad_id_key | CREATE UNIQUE INDEX campana_localidades_campana_id_localidad_id_key ON public.campana_localidades USING btree (campana_id, localidad_id) |
 | campana_localidades | campana_localidades_pkey | CREATE UNIQUE INDEX campana_localidades_pkey ON public.campana_localidades USING btree (id) |
@@ -741,6 +833,10 @@
 | comercios | idx_comercios_lat_lng | CREATE INDEX idx_comercios_lat_lng ON public.comercios USING btree (lat, lng) |
 | comercios_checks | comercios_checks_comercio_id_gondolero_id_key | CREATE UNIQUE INDEX comercios_checks_comercio_id_gondolero_id_key ON public.comercios_checks USING btree (comercio_id, gondolero_id) |
 | comercios_checks | comercios_checks_pkey | CREATE UNIQUE INDEX comercios_checks_pkey ON public.comercios_checks USING btree (id) |
+| comercios_reportes_ubicacion | comercios_reportes_ubicacion_comercio_idx | CREATE INDEX comercios_reportes_ubicacion_comercio_idx ON public.comercios_reportes_ubicacion USING btree (comercio_id, estado) |
+| comercios_reportes_ubicacion | comercios_reportes_ubicacion_pkey | CREATE UNIQUE INDEX comercios_reportes_ubicacion_pkey ON public.comercios_reportes_ubicacion USING btree (id) |
+| comercios_ubicacion_historial | comercios_ubicacion_historial_comercio_idx | CREATE INDEX comercios_ubicacion_historial_comercio_idx ON public.comercios_ubicacion_historial USING btree (comercio_id, created_at DESC) |
+| comercios_ubicacion_historial | comercios_ubicacion_historial_pkey | CREATE UNIQUE INDEX comercios_ubicacion_historial_pkey ON public.comercios_ubicacion_historial USING btree (id) |
 | configuracion | configuracion_clave_key | CREATE UNIQUE INDEX configuracion_clave_key ON public.configuracion USING btree (clave) |
 | configuracion | configuracion_pkey | CREATE UNIQUE INDEX configuracion_pkey ON public.configuracion USING btree (id) |
 | departamentos | departamentos_nombre_provincia_id_key | CREATE UNIQUE INDEX departamentos_nombre_provincia_id_key ON public.departamentos USING btree (nombre, provincia_id) |
@@ -763,6 +859,7 @@
 | foto_respuestas | foto_respuestas_pkey | CREATE UNIQUE INDEX foto_respuestas_pkey ON public.foto_respuestas USING btree (id) |
 | fotos | fotos_bounty_retenido_idx | CREATE INDEX fotos_bounty_retenido_idx ON public.fotos USING btree (campana_id, bounty_estado) WHERE (bounty_estado = 'retenido'::text) |
 | fotos | fotos_pkey | CREATE UNIQUE INDEX fotos_pkey ON public.fotos USING btree (id) |
+| fotos | fotos_rechazadas_vigentes_idx | CREATE INDEX fotos_rechazadas_vigentes_idx ON public.fotos USING btree (mision_id) WHERE ((estado = 'rechazada'::text) AND (reemplazada_por IS NULL)) |
 | fotos | idx_fotos_campana | CREATE INDEX idx_fotos_campana ON public.fotos USING btree (campana_id) |
 | fotos | idx_fotos_comercio | CREATE INDEX idx_fotos_comercio ON public.fotos USING btree (comercio_id) |
 | fotos | idx_fotos_estado | CREATE INDEX idx_fotos_estado ON public.fotos USING btree (estado) |
@@ -791,8 +888,15 @@
 | marcas | marcas_cuit_key | CREATE UNIQUE INDEX marcas_cuit_key ON public.marcas USING btree (cuit) |
 | marcas | marcas_pkey | CREATE UNIQUE INDEX marcas_pkey ON public.marcas USING btree (id) |
 | mensajes_campana | mensajes_campana_pkey | CREATE UNIQUE INDEX mensajes_campana_pkey ON public.mensajes_campana USING btree (id) |
+| metricas | metricas_pkey | CREATE UNIQUE INDEX metricas_pkey ON public.metricas USING btree (id) |
+| metricas | metricas_slug_key | CREATE UNIQUE INDEX metricas_slug_key ON public.metricas USING btree (slug) |
+| mision_respuestas | mision_respuestas_foto_id_idx | CREATE INDEX mision_respuestas_foto_id_idx ON public.mision_respuestas USING btree (foto_id) WHERE (foto_id IS NOT NULL) |
 | mision_respuestas | mision_respuestas_mision_id_idx | CREATE INDEX mision_respuestas_mision_id_idx ON public.mision_respuestas USING btree (mision_id) |
 | mision_respuestas | mision_respuestas_pkey | CREATE UNIQUE INDEX mision_respuestas_pkey ON public.mision_respuestas USING btree (id) |
+| mision_respuestas | mision_respuestas_vigentes_idx | CREATE INDEX mision_respuestas_vigentes_idx ON public.mision_respuestas USING btree (mision_id) WHERE (reemplazada_por IS NULL) |
+| misiones | misiones_campana_comercio_uniq | CREATE UNIQUE INDEX misiones_campana_comercio_uniq ON public.misiones USING btree (campana_id, comercio_id) WHERE (unico_por_comercio AND (estado IS DISTINCT FROM 'descartada'::text)) |
+| misiones | misiones_gondolero_campana_estado_idx | CREATE INDEX misiones_gondolero_campana_estado_idx ON public.misiones USING btree (gondolero_id, campana_id, estado) |
+| misiones | misiones_idempotencia_key_idx | CREATE UNIQUE INDEX misiones_idempotencia_key_idx ON public.misiones USING btree (idempotencia_key) WHERE (idempotencia_key IS NOT NULL) |
 | misiones | misiones_pkey | CREATE UNIQUE INDEX misiones_pkey ON public.misiones USING btree (id) |
 | movimientos_puntos | movimientos_puntos_pkey | CREATE UNIQUE INDEX movimientos_puntos_pkey ON public.movimientos_puntos USING btree (id) |
 | movimientos_tokens | movimientos_tokens_pkey | CREATE UNIQUE INDEX movimientos_tokens_pkey ON public.movimientos_tokens USING btree (id) |
@@ -1418,6 +1522,88 @@ $function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.backfill_codigos_gondolero()
+ RETURNS TABLE(asignados integer, fallidos integer, detalle_fallidos text[])
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  _perfil      record;
+  _codigo      text;
+  _restriccion text;
+  _intento     int;
+  _ok          boolean;
+BEGIN
+  asignados        := 0;
+  fallidos         := 0;
+  detalle_fallidos := ARRAY[]::text[];
+
+  FOR _perfil IN
+    SELECT id, COALESCE(alias, nombre, id::text) AS etiqueta
+    FROM profiles
+    WHERE tipo_actor IN ('gondolero', 'fixer')
+      AND (codigo_gondolero IS NULL
+           OR codigo_gondolero !~ '^GND-[2-9]{4}-[2-9]{4}$')
+    ORDER BY created_at NULLS LAST
+  LOOP
+    _ok := false;
+    FOR _intento IN 1..10 LOOP
+      _codigo := generar_codigo_gondolero();
+      BEGIN
+        UPDATE profiles SET codigo_gondolero = _codigo WHERE id = _perfil.id;
+        _ok := true;
+        EXIT;
+      EXCEPTION WHEN unique_violation THEN
+        GET STACKED DIAGNOSTICS _restriccion = CONSTRAINT_NAME;
+        IF _restriccion IS DISTINCT FROM 'profiles_codigo_gondolero_key' THEN
+          RAISE;
+        END IF;
+      END;
+    END LOOP;
+
+    IF _ok THEN
+      asignados := asignados + 1;
+    ELSE
+      fallidos         := fallidos + 1;
+      detalle_fallidos := detalle_fallidos || _perfil.etiqueta;
+      RAISE WARNING '[backfill_codigos_gondolero] 10 colisiones seguidas para % (%). Queda sin codigo.',
+        _perfil.etiqueta, _perfil.id;
+    END IF;
+  END LOOP;
+
+  RETURN NEXT;
+END;
+$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.bloque_campos_valida_metrica()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  _tipo_metrica text;
+BEGIN
+  IF NEW.metrica_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT tipo_respuesta INTO _tipo_metrica FROM metricas WHERE id = NEW.metrica_id;
+
+  IF _tipo_metrica IS DISTINCT FROM NEW.tipo THEN
+    RAISE EXCEPTION
+      'La métrica exige tipo de respuesta "%" y el campo es "%"',
+      _tipo_metrica, NEW.tipo;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.box(box3d)
  RETURNS box
  LANGUAGE c
@@ -1535,6 +1721,25 @@ CREATE OR REPLACE FUNCTION public.bytea(geometry)
  LANGUAGE c
  IMMUTABLE PARALLEL SAFE STRICT COST 50
 AS '$libdir/postgis-3', $function$LWGEOM_to_bytea$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.campanas_modalidad_inmutable()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF NEW.modalidad IS DISTINCT FROM OLD.modalidad
+     AND EXISTS (SELECT 1 FROM misiones WHERE campana_id = OLD.id) THEN
+    RAISE EXCEPTION
+      'No se puede cambiar la modalidad de una campaña que ya tiene misiones (campana_id=%)', OLD.id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
 ```
 
 ```sql
@@ -1838,6 +2043,27 @@ AS '$libdir/postgis-3', $function$ST_Equals$function$
 ```
 
 ```sql
+CREATE OR REPLACE FUNCTION public.es_actor_de_mi_distri(_actor_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM gondolero_distri_solicitudes s
+    WHERE s.gondolero_id = _actor_id
+      AND s.distri_id    = get_distri_id()
+      AND s.estado       = 'aprobada'
+  ) OR EXISTS (
+    SELECT 1 FROM fixer_distri_solicitudes f
+    WHERE f.fixer_id  = _actor_id
+      AND f.distri_id = get_distri_id()
+      AND f.estado    = 'aprobada'
+  );
+$function$
+```
+
+```sql
 CREATE OR REPLACE FUNCTION public.find_srid(character varying, character varying, character varying)
  RETURNS integer
  LANGUAGE plpgsql
@@ -1861,6 +2087,25 @@ BEGIN
 	   RAISE EXCEPTION 'find_srid() - could not find the corresponding SRID - is the geometry registered in the GEOMETRY_COLUMNS table?  Is there an uppercase/lowercase mismatch?';
 	END IF;
 	return sr;
+END;
+$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.generar_codigo_gondolero()
+ RETURNS text
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  _digitos constant text := '23456789';
+  _cuerpo  text := '';
+  _i       int;
+BEGIN
+  FOR _i IN 1..8 LOOP
+    _cuerpo := _cuerpo || substr(_digitos, floor(random() * 8)::int + 1, 1);
+  END LOOP;
+  RETURN 'GND-' || substr(_cuerpo, 1, 4) || '-' || substr(_cuerpo, 5, 4);
 END;
 $function$
 ```
@@ -2948,13 +3193,21 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
-  _tipo      text;
-  _distri_id uuid;
+  _tipo        text;
+  _distri_id   uuid;
+  _nombre      text;
+  _alias       text;
+  _celular     text;
+  _codigo      text;
+  _restriccion text;
+  _intento     int;
+  _listo       boolean := false;
 BEGIN
   _tipo := NEW.raw_user_meta_data->>'tipo_actor';
   IF _tipo IS DISTINCT FROM 'gondolero' THEN
     _tipo := 'gondolero';
   END IF;
+
   BEGIN
     _distri_id := (NEW.raw_user_meta_data->>'distri_id')::uuid;
     IF _distri_id IS NOT NULL
@@ -2964,14 +3217,33 @@ BEGIN
   EXCEPTION WHEN others THEN
     _distri_id := NULL;
   END;
-  INSERT INTO public.profiles (id, tipo_actor, nombre, alias, distri_id)
-  VALUES (
-    NEW.id,
-    _tipo,
-    COALESCE(NULLIF(trim(NEW.raw_user_meta_data->>'nombre'), ''), NEW.email),
-    NEW.raw_user_meta_data->>'alias',
-    _distri_id
-  );
+
+  _nombre  := COALESCE(NULLIF(trim(NEW.raw_user_meta_data->>'nombre'), ''), NEW.email);
+  _alias   := NULLIF(trim(COALESCE(NEW.raw_user_meta_data->>'alias', '')), '');
+  _celular := NULLIF(trim(COALESCE(NEW.raw_user_meta_data->>'celular', '')), '');
+
+  FOR _intento IN 1..10 LOOP
+    _codigo := generar_codigo_gondolero();
+    BEGIN
+      INSERT INTO public.profiles (id, tipo_actor, nombre, alias, celular, distri_id, codigo_gondolero)
+      VALUES (NEW.id, _tipo, _nombre, _alias, _celular, _distri_id, _codigo);
+      _listo := true;
+      EXIT;
+    EXCEPTION WHEN unique_violation THEN
+      GET STACKED DIAGNOSTICS _restriccion = CONSTRAINT_NAME;
+      IF _restriccion IS DISTINCT FROM 'profiles_codigo_gondolero_key' THEN
+        RAISE;
+      END IF;
+    END;
+  END LOOP;
+
+  IF NOT _listo THEN
+    RAISE WARNING '[handle_new_user] codigo_gondolero: 10 colisiones seguidas para el usuario % (%). Se crea el profile SIN codigo; usar "Asignar codigos" en /admin/usuarios.',
+      NEW.id, NEW.email;
+    INSERT INTO public.profiles (id, tipo_actor, nombre, alias, celular, distri_id, codigo_gondolero)
+    VALUES (NEW.id, _tipo, _nombre, _alias, _celular, _distri_id, NULL);
+  END IF;
+
   RETURN NEW;
 END;
 $function$
@@ -3107,6 +3379,28 @@ BEGIN
 		return 't';
 	END LOOP;
 	return 'f';
+END;
+$function$
+```
+
+```sql
+CREATE OR REPLACE FUNCTION public.misiones_set_unico_por_comercio()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  SELECT (c.modalidad = 'puntual')
+    INTO NEW.unico_por_comercio
+  FROM campanas c
+  WHERE c.id = NEW.campana_id;
+
+  IF NEW.unico_por_comercio IS NULL THEN
+    NEW.unico_por_comercio := true;
+  END IF;
+
+  RETURN NEW;
 END;
 $function$
 ```
@@ -8278,12 +8572,16 @@ $function$
 
 | event_object_table | trigger_name | action_timing | event_manipulation |
 | --- | --- | --- | --- |
+| bloque_campos | bloque_campos_metrica_tipo | BEFORE | UPDATE |
+| bloque_campos | bloque_campos_metrica_tipo | BEFORE | INSERT |
 | campanas | set_updated_at_campanas | BEFORE | UPDATE |
+| campanas | trigger_campanas_modalidad_inmutable | BEFORE | UPDATE |
 | campanas | trigger_campanas_updated_at | BEFORE | UPDATE |
 | comercios | set_updated_at_comercios | BEFORE | UPDATE |
 | distribuidoras | set_updated_at_distribuidoras | BEFORE | UPDATE |
 | fotos | set_updated_at_fotos | BEFORE | UPDATE |
 | marcas | set_updated_at_marcas | BEFORE | UPDATE |
+| misiones | trigger_misiones_unico_por_comercio | BEFORE | INSERT |
 | misiones | trigger_misiones_updated_at | BEFORE | UPDATE |
 | movimientos_puntos | on_movimiento_puntos | AFTER | INSERT |
 | profiles | set_updated_at_profiles | BEFORE | UPDATE |

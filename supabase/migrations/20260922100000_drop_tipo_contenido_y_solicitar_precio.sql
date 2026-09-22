@@ -11,6 +11,30 @@
 -- tipificada. Este es el paso que va DESPUÉS de esa verificación, igual que con
 -- `profiles.nivel` y `profiles.fotos_aprobadas`.
 --
+-- ── ES IDEMPOTENTE: SE PUEDE VOLVER A CORRER ─────────────────────────────────
+-- Los tres `DROP COLUMN IF EXISTS` no hacen nada si la columna ya no está.
+--
+-- ── LA VERIFICACIÓN DE LA PRIMERA VERSIÓN MENTÍA ─────────────────────────────
+-- La versión original de este archivo terminaba con `RAISE WARNING` si quedaban
+-- columnas y, DOS LÍNEAS DESPUÉS, un `RAISE NOTICE '[drop] OK'` **sin ninguna
+-- condición**. O sea que el OK salía igual. Medido contra producción el
+-- 22/9/2026, con las tres columnas todavía presentes:
+--
+--   WARNING: [drop] quedaron 3 de las 3 columnas
+--   NOTICE:  [drop] OK — 3 columnas menos, fotos.precio_confirmado intacta
+--
+-- En el SQL Editor un WARNING se pierde fácil entre el ruido; el OK es lo que
+-- se lee. Es el mismo defecto que `[generate-sw-manifest] OK` reportando éxito
+-- sobre un no-op: **una verificación que puede decir OK sin haber verificado no
+-- es una verificación.**
+--
+-- Ahora es `RAISE EXCEPTION`. Una excepción en este bloque NO revierte el DROP
+-- —ya commiteó arriba— pero sale en rojo y no se puede pasar por alto. Y el OK
+-- del final solo se alcanza si no saltó ninguna.
+--
+-- Para confirmarlo sin depender de leer notices en una UI:
+--   node scripts/verificar-drop-columnas.mjs --ref <project-ref>
+--
 -- ── fotos.precio_confirmado NO SE TOCA ───────────────────────────────────────
 -- Esa columna sigue recibiendo escrituras: la cola offline guarda `precio` por
 -- bloque en IndexedDB y `cola-sync-offline.tsx` lo lee, así que una misión
@@ -65,30 +89,43 @@ ALTER TABLE bloque_campos DROP COLUMN IF EXISTS solicitar_precio;
 COMMIT;
 
 -- ── Verificación ─────────────────────────────────────────────────────────────
--- Corre después del COMMIT y no escribe nada.
+-- Corre después del COMMIT, no escribe nada, y FALLA si algo no cuadra.
 DO $verif$
 DECLARE
   _quedan int;
   _precio int;
+  _check  int;
 BEGIN
   SELECT count(*) INTO _quedan
   FROM information_schema.columns
-  WHERE (table_name = 'bloques_foto'  AND column_name IN ('tipo_contenido', 'solicitar_precio'))
-     OR (table_name = 'bloque_campos' AND column_name = 'solicitar_precio');
+  WHERE table_schema = 'public'
+    AND ((table_name = 'bloques_foto'  AND column_name IN ('tipo_contenido', 'solicitar_precio'))
+      OR (table_name = 'bloque_campos' AND column_name = 'solicitar_precio'));
 
   IF _quedan <> 0 THEN
-    RAISE WARNING '[drop] quedaron % de las 3 columnas', _quedan;
+    RAISE EXCEPTION '[drop] FALLÓ: quedan % de las 3 columnas. El DROP no se aplicó.', _quedan;
   END IF;
 
-  -- La que NO se dropea. Si esto avisa, se fue algo que no debía.
+  -- El CHECK se va solo con la columna. Si sigue, la columna también.
+  SELECT count(*) INTO _check
+  FROM pg_constraint
+  WHERE conrelid = 'bloques_foto'::regclass
+    AND conname = 'bloques_foto_tipo_contenido_check';
+
+  IF _check <> 0 THEN
+    RAISE EXCEPTION '[drop] FALLÓ: el CHECK de tipo_contenido sigue existiendo.';
+  END IF;
+
+  -- La que NO se dropea. Si esto falla, se fue algo que no debía.
   SELECT count(*) INTO _precio
   FROM information_schema.columns
-  WHERE table_name = 'fotos' AND column_name = 'precio_confirmado';
+  WHERE table_schema = 'public'
+    AND table_name = 'fotos' AND column_name = 'precio_confirmado';
 
   IF _precio <> 1 THEN
-    RAISE WARNING '[drop] fotos.precio_confirmado tendría que seguir existiendo y no está';
+    RAISE EXCEPTION '[drop] FALLÓ: fotos.precio_confirmado tendría que seguir existiendo y no está.';
   END IF;
 
-  RAISE NOTICE '[drop] OK — 3 columnas menos, fotos.precio_confirmado intacta';
+  RAISE NOTICE '[drop] OK — las 3 columnas y su CHECK ya no están, fotos.precio_confirmado intacta';
 END
 $verif$;

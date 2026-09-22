@@ -4423,3 +4423,54 @@ ninguno         0     0
 
 El INSERT del bloque ahora omite la columna y toma su `DEFAULT 'propios'`, así
 que las filas nuevas siguen siendo válidas hasta el DROP.
+
+---
+
+## Una verificación que puede decir OK sin haber verificado no es una verificación
+
+El 22/9/2026 el DROP de `tipo_contenido` y las dos `solicitar_precio` se dio por
+corrido en dev y prod. **No estaba aplicado en ninguna de las dos.** Se descubrió
+al regenerar `docs/schema-real-2026-09.md` y ver las tres columnas ahí.
+
+La causa no fue el SQL del DROP sino el bloque de verificación que yo le había
+puesto al final:
+
+```sql
+IF _quedan <> 0 THEN
+  RAISE WARNING '[drop] quedaron % de las 3 columnas', _quedan;
+END IF;
+...
+RAISE NOTICE '[drop] OK — 3 columnas menos, ...';   -- ← SIN CONDICIÓN
+```
+
+Reproducido contra producción con las columnas todavía presentes:
+
+```
+WARNING: [drop] quedaron 3 de las 3 columnas
+NOTICE:  [drop] OK — 3 columnas menos, fotos.precio_confirmado intacta
+```
+
+**El OK sale igual.** En el SQL Editor un WARNING se pierde entre el ruido y lo
+que se lee es la última línea, que dice OK. Es el mismo defecto que
+`[generate-sw-manifest] OK — 17 chunks escritos` reportando éxito sobre un no-op
+que nadie consumía.
+
+**Las dos reglas que salen de esto:**
+
+1. **Un bloque de verificación falla con `RAISE EXCEPTION`, no con `RAISE
+   WARNING`.** Después del `COMMIT` una excepción no revierte nada —el DDL ya
+   está— pero sale en rojo y no se puede pasar por alto. Y el mensaje de éxito
+   tiene que ser inalcanzable si algo falló, no una línea más abajo.
+2. **Verificar las dos direcciones.** Que se hayan ido las que tenían que irse
+   **y** que sigan las que tenían que quedarse. Chequear una sola deja pasar un
+   DROP de más, que es el error caro.
+
+Y una tercera, de proceso: **la confirmación no puede depender de leer bien la
+salida de una UI.** `scripts/verificar-drop-columnas.mjs` lo dice en una línea y
+sale con código 0 o 1. Toda migración destructiva futura debería tener su
+equivalente.
+
+> Ojo también con las etiquetas de `scripts/comparar-schema.mjs`: imprime
+> `prod:` para lo que declara `docs/schema-real-2026-09.md` y `dev :` para lo
+> que devuelve la base consultada, **sea cual sea el `--ref`**. No son los dos
+> ambientes. Leerlo al revés lleva a conclusiones opuestas.
