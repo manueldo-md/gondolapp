@@ -3,32 +3,15 @@
 > **Fuente de verdad sobre la base de datos.**
 >
 > Regenerado el **22 de septiembre de 2026** desde el proyecto de producción
-> (`xzznzustgsacmfwsupux`) con `scripts/comparar-schema.mjs`.
+> (`xzznzustgsacmfwsupux`) con `scripts/comparar-schema.mjs`, después del DROP de
+> `bloques_foto.tipo_contenido`, `bloques_foto.solicitar_precio` y
+> `bloque_campos.solicitar_precio`.
 >
 > **Dev produce este mismo documento.** Verificado el 22/9/2026 generando los dos
 > y diffeándolos: la única diferencia es el ref del encabezado. Una fila de la
 > tabla de triggers aparece en otra posición porque el orden de
 > `information_schema` no está garantizado; el contenido es idéntico, comprobado
 > diffeando los dos archivos ordenados.
->
-> La corrida reportó **100 diferencias** contra la versión del 7/9. Son las dos
-> semanas de migraciones que van desde `fotos.reemplazada_por` hasta el catálogo
-> de métricas, todas aplicadas en las dos bases.
->
-> ### ⚠ Tres columnas figuran acá y están por irse
->
-> `bloques_foto.tipo_contenido`, `bloques_foto.solicitar_precio` y
-> `bloque_campos.solicitar_precio` **ya no las lee ni las escribe nadie**, y su
-> DROP está escrito en
-> `supabase/migrations/20260922100000_drop_tipo_contenido_y_solicitar_precio.sql`.
-> Al 22/9/2026 esa migración **todavía no está aplicada** en ninguna de las dos
-> bases, así que las columnas siguen apareciendo en este documento. Cuando se
-> corra hay que regenerar: el diff van a ser esas tres filas más su CHECK.
->
-> Para confirmar si ya está aplicada, sin leer notices en una UI:
-> ```bash
-> node scripts/verificar-drop-columnas.mjs
-> ```
 >
 > ### Cómo regenerar este archivo
 >
@@ -40,9 +23,11 @@
 > que mientras no se reemplace va a reportar como diferencias todo lo que cambió
 > desde la última regeneración: eso es lo esperado, no un problema.
 >
-> Ojo con las etiquetas de la salida del script: dice `prod:` para lo que
+> **Ojo con las etiquetas de la salida.** El script dice `prod:` para lo que
 > declara ESTE documento y `dev :` para lo que devuelve la base consultada, sea
-> cual sea. No son los dos ambientes.
+> cual sea el `--ref`; y su "GRUPO A" se lee igual —lo que está en el documento
+> y no en la base—. No son los dos ambientes. Leerlo al revés lleva a la
+> conclusión opuesta.
 >
 > El estado anterior al `DROP SCHEMA public CASCADE` de septiembre quedó en
 > `docs/schema-real-2026-09-pre-incidente.md`, como registro histórico. **Ese
@@ -67,14 +52,11 @@
 | bloque_campos | orden | integer | YES | 1 |
 | bloque_campos | created_at | timestamp with time zone | YES | now() |
 | bloque_campos | blur_requerido | boolean | NO | true |
-| bloque_campos | solicitar_precio | boolean | NO | false |
 | bloque_campos | metrica_id | uuid | YES | null |
 | bloques_foto | id | uuid | NO | uuid_generate_v4() |
 | bloques_foto | campana_id | uuid | NO | null |
 | bloques_foto | orden | integer | NO | 1 |
 | bloques_foto | instruccion | text | NO | null |
-| bloques_foto | tipo_contenido | text | YES | 'propios'::text |
-| bloques_foto | solicitar_precio | boolean | YES | false |
 | campana_localidades | campana_id | uuid | YES | null |
 | campana_localidades | localidad_id | integer | YES | null |
 | campana_localidades | created_at | timestamp with time zone | YES | now() |
@@ -495,7 +477,6 @@
 | bloque_campos | bloque_campos_tipo_check | CHECK ((tipo = ANY (ARRAY['seleccion_multiple'::text, 'seleccion_unica'::text, 'binaria'::text, 'numero'::text, 'texto'::text, 'foto'::text]))) |
 | bloques_foto | bloques_foto_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) ON DELETE CASCADE |
 | bloques_foto | bloques_foto_pkey | PRIMARY KEY (id) |
-| bloques_foto | bloques_foto_tipo_contenido_check | CHECK ((tipo_contenido = ANY (ARRAY['propios'::text, 'competencia'::text, 'ambos'::text]))) |
 | campana_localidades | campana_localidades_campana_id_fkey | FOREIGN KEY (campana_id) REFERENCES campanas(id) ON DELETE CASCADE |
 | campana_localidades | campana_localidades_campana_id_localidad_id_key | UNIQUE (campana_id, localidad_id) |
 | campana_localidades | campana_localidades_localidad_id_fkey | FOREIGN KEY (localidad_id) REFERENCES localidades(id) |

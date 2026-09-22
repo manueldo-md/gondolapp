@@ -4326,11 +4326,16 @@ verificar este deploy en producción, igual que con `nivel` y
 
 | Columna | Estado |
 |---|---|
-| `bloques_foto.tipo_contenido` | sin lectores ni escritores (ver abajo) |
-| `bloques_foto.solicitar_precio` | sin lectores ni escritores |
-| `bloque_campos.solicitar_precio` | sin lectores ni escritores |
+| `bloques_foto.tipo_contenido` | ✅ **dropeada** el 22/9/2026 (ver abajo) |
+| `bloques_foto.solicitar_precio` | ✅ **dropeada** el 22/9/2026 |
+| `bloque_campos.solicitar_precio` | ✅ **dropeada** el 22/9/2026 |
 | `fotos.precio_confirmado` | **sigue escribiéndose**, ver abajo |
 | `fotos.precio_detectado` | sin lectores ni escritores (la IA de visión nunca se activó) |
+
+Las tres primeras se fueron en
+`20260922100000_drop_tipo_contenido_y_solicitar_precio.sql`, corrida en dev y
+prod el 22/9/2026 y confirmada con `node scripts/verificar-drop-columnas.mjs`.
+Las dos de `fotos` siguen pendientes: ver el párrafo de la cola offline.
 
 **La casilla "Pedirle precio al gondolero" nunca funcionó.** Escribía
 `bloques_foto.solicitar_precio` y el input de la captura miraba
@@ -4428,12 +4433,13 @@ que las filas nuevas siguen siendo válidas hasta el DROP.
 
 ## Una verificación que puede decir OK sin haber verificado no es una verificación
 
-El 22/9/2026 el DROP de `tipo_contenido` y las dos `solicitar_precio` se dio por
-corrido en dev y prod. **No estaba aplicado en ninguna de las dos.** Se descubrió
-al regenerar `docs/schema-real-2026-09.md` y ver las tres columnas ahí.
+El 22/9/2026, al regenerar `docs/schema-real-2026-09.md`, las tres columnas del
+DROP seguían ahí. **La causa fue trivial y no técnica: el DROP todavía no se
+había corrido.** No hubo ninguna falla de la base ni de la migración.
 
-La causa no fue el SQL del DROP sino el bloque de verificación que yo le había
-puesto al final:
+Pero al ir a buscar por qué una verificación no lo había atrapado apareció que
+**no podía atraparlo**, y eso sí vale. El bloque que yo había puesto al final de
+la migración era éste:
 
 ```sql
 IF _quedan <> 0 THEN
@@ -4454,6 +4460,10 @@ NOTICE:  [drop] OK — 3 columnas menos, fotos.precio_confirmado intacta
 que se lee es la última línea, que dice OK. Es el mismo defecto que
 `[generate-sw-manifest] OK — 17 chunks escritos` reportando éxito sobre un no-op
 que nadie consumía.
+
+Este bloque nunca llegó a tapar nada —no corrió— así que la lección no viene de
+un daño sino de haberlo medido antes de que lo hiciera. Vale igual: el día que
+un DROP falle de verdad, esto habría dicho OK.
 
 **Las dos reglas que salen de esto:**
 
