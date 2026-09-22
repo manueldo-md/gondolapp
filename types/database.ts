@@ -60,7 +60,6 @@ export type Database = {
           opciones: string[] | null
           orden: number | null
           pregunta: string
-          solicitar_precio: boolean
           tipo: string
         }
         Insert: {
@@ -73,7 +72,6 @@ export type Database = {
           opciones?: string[] | null
           orden?: number | null
           pregunta: string
-          solicitar_precio?: boolean
           tipo: string
         }
         Update: {
@@ -86,7 +84,6 @@ export type Database = {
           opciones?: string[] | null
           orden?: number | null
           pregunta?: string
-          solicitar_precio?: boolean
           tipo?: string
         }
         Relationships: [
@@ -112,24 +109,18 @@ export type Database = {
           id: string
           instruccion: string
           orden: number
-          solicitar_precio: boolean | null
-          tipo_contenido: string | null
         }
         Insert: {
           campana_id: string
           id?: string
           instruccion: string
           orden?: number
-          solicitar_precio?: boolean | null
-          tipo_contenido?: string | null
         }
         Update: {
           campana_id?: string
           id?: string
           instruccion?: string
           orden?: number
-          solicitar_precio?: boolean | null
-          tipo_contenido?: string | null
         }
         Relationships: [
           {

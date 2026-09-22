@@ -613,8 +613,8 @@ async function main() {
       const { data: b2 } = await (db as any).from('bloques_foto').select('id').eq('campana_id', campana1Id).order('orden').limit(2)
       bloque1bId = b2?.[1]?.id ?? bloque1aId
     } else {
-      const { data: ba } = await (db as any).from('bloques_foto').insert({ campana_id: campana1Id, orden: 1, instruccion: 'Fotografiá la góndola completa', tipo_contenido: 'ambos' }).select('id').single()
-      const { data: bb } = await (db as any).from('bloques_foto').insert({ campana_id: campana1Id, orden: 2, instruccion: 'Fotografiá los productos Georgalos', tipo_contenido: 'propios' }).select('id').single()
+      const { data: ba } = await (db as any).from('bloques_foto').insert({ campana_id: campana1Id, orden: 1, instruccion: 'Fotografiá la góndola completa' }).select('id').single()
+      const { data: bb } = await (db as any).from('bloques_foto').insert({ campana_id: campana1Id, orden: 2, instruccion: 'Fotografiá los productos Georgalos' }).select('id').single()
       bloque1aId = ba?.id; bloque1bId = bb?.id ?? ba?.id
     }
 
@@ -699,7 +699,7 @@ async function main() {
       puntos_por_mision: 150, marca_id: georgalosId, distri_id: biomegaId,
       tope_total_comercios: 50, comercios_relevados: 23,
     },
-    bloque: { instruccion: 'Fotografiá el producto con el precio visible', tipo_contenido: 'propios' },
+    bloque: { instruccion: 'Fotografiá el producto con el precio visible' },
     campos: [{ tipo: 'numero', pregunta: '¿Cuál es el precio del Mantecol?', obligatorio: true, orden: 1 }],
     misiones: 23,
     gondolerosPool: Object.values(gondoleroIds).filter((_, i) => i < 10).filter(Boolean),
@@ -730,7 +730,7 @@ async function main() {
       marca_id: acmeId, distri_id: distriNorteId,
       tope_total_comercios: 40, comercios_relevados: 12,
     },
-    bloque: { instruccion: 'Fotografiá la sección ACME en góndola', tipo_contenido: 'propios' },
+    bloque: { instruccion: 'Fotografiá la sección ACME en góndola' },
     campos: [],
     misiones: 12,
     gondolerosPool: distriNorteGondoleros,
@@ -752,7 +752,7 @@ async function main() {
       financiada_por: 'marca', puntos_por_mision: 80,
       marca_id: supranteId, distri_id: biomegaId,
     },
-    bloque: { instruccion: 'Completá la encuesta de presencia y sacá foto de la góndola', tipo_contenido: 'ambos' },
+    bloque: { instruccion: 'Completá la encuesta de presencia y sacá foto de la góndola' },
     campos: [
       { tipo: 'binaria',            pregunta: '¿Hay productos Suprante en góndola?',         obligatorio: true,  orden: 1 },
       { tipo: 'numero',             pregunta: '¿Cuántos facings tiene Suprante?',             obligatorio: false, orden: 2 },
@@ -794,7 +794,7 @@ async function main() {
     }).select('id').single()
     if (c5?.id) {
       stats.campanas++
-      const { data: b5 } = await (db as any).from('bloques_foto').insert({ campana_id: c5.id, orden: 1, instruccion: 'Fotografiá la fachada del comercio', tipo_contenido: 'ambos' }).select('id').single()
+      const { data: b5 } = await (db as any).from('bloques_foto').insert({ campana_id: c5.id, orden: 1, instruccion: 'Fotografiá la fachada del comercio' }).select('id').single()
       // 5 comercios pendiente_validacion
       for (let i = 0; i < 5; i++) {
         const gId = Object.values(gondoleroIds)[i % Object.values(gondoleroIds).length]
@@ -1137,7 +1137,7 @@ async function crearCampanaFixers({
   const { data: c } = await (db as any).from('campanas').insert(campana).select('id').single()
   if (!c?.id) return
   stats.campanas++
-  const { data: b } = await (db as any).from('bloques_foto').insert({ campana_id: c.id, orden: 1, instruccion: 'Fotografiá el exhibidor antes y después', tipo_contenido: 'propios' }).select('id').single()
+  const { data: b } = await (db as any).from('bloques_foto').insert({ campana_id: c.id, orden: 1, instruccion: 'Fotografiá el exhibidor antes y después' }).select('id').single()
   if (!b?.id) return
 
   const pool = fixersPool.length ? fixersPool : [null]

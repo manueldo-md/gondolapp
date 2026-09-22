@@ -94,12 +94,12 @@ VALUES (
 );
 
 -- Bloques de foto para la campaña
-INSERT INTO bloques_foto (campana_id, orden, instruccion, tipo_contenido)
+INSERT INTO bloques_foto (campana_id, orden, instruccion)
 VALUES
   ('44444444-0000-0000-0000-000000000001', 1,
-   'Góndola de snacks · incluir Mantecol y Maní Confitado en el encuadre', 'propios'),
+   'Góndola de snacks · incluir Mantecol y Maní Confitado en el encuadre'),
   ('44444444-0000-0000-0000-000000000001', 2,
-   'Sección golosinas · Georgalos surtido · encuadre completo de la sección', 'propios');
+   'Sección golosinas · Georgalos surtido · encuadre completo de la sección');
 
 -- Zona de la campaña
 INSERT INTO campana_zonas (campana_id, zona_id)

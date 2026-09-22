@@ -244,7 +244,6 @@ bloques_foto (
   campana_id uuid REFERENCES campanas,
   orden integer,
   instruccion text,
-  tipo_contenido text           -- propios | competencia | ambos
 )
 
 participaciones (
@@ -2519,6 +2518,13 @@ Diferencias confirmadas hasta hoy:
 | Dice el dump | Dice la base viva |
 |---|---|
 | `localidades.provincia_id` existe | **No existe** |
+| `bloques_foto.tipo_contenido` acepta `'ninguno'` | **Solo acepta `propios`, `competencia` y `ambos`** |
+
+La segunda costó un bug de meses: la reconstrucción desde las migraciones
+angostó el CHECK sin que nadie lo notara, el código se siguió escribiendo contra
+la base de antes —`BLOQUE_ALTAS` forzaba `'ninguno'`—, los INSERT rebotaban, y
+como nadie chequeaba el error la campaña de altas se creaba **sin bloque**.
+Detectada el 21/9/2026 al sacar la columna.
 
 La jerarquía geográfica real es de cuatro niveles:
 
@@ -3857,7 +3863,6 @@ Qué cambia cuando el tipo es `comercios`:
 |---|---|---|
 | Campos del bloque | al menos uno | **ninguno** (`validarBloqueCampana`) |
 | Bloque | sí | **sí** — `crearComercioNuevo` lo busca por `campana_id` para colgar la fachada |
-| `tipo_contenido` | lo elige el creador | `'ninguno'` forzado |
 | Precio al gondolero | opcional | no se ofrece |
 | Modalidad | puntual o seguimiento | **puntual** forzada |
 | Foto de fachada | opcional | **obligatoria** |

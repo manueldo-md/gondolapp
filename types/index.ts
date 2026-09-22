@@ -66,7 +66,6 @@ export type EstadoParticipacion = 'activa' | 'completada' | 'abandonada' | 'cerr
 
 export type FinanciadaPor = 'marca' | 'distri' | 'gondolapp'
 
-export type TipoContenidoBloque = 'propios' | 'competencia' | 'ambos' | 'ninguno'
 
 // ── INTERFACES DE DOMINIO ─────────────────────────────────────────────────────
 
@@ -182,7 +181,6 @@ export interface BloqueFoto {
   campana_id: string
   orden: number
   instruccion: string
-  tipo_contenido: TipoContenidoBloque
 }
 
 export interface Participacion {
