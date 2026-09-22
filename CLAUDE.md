@@ -3334,11 +3334,21 @@ disparaba nunca.
 
 ### Cortar el vínculo cierra el trabajo en curso (18/9/2026)
 
-Desde el Walled Garden un gondolero pertenece a UNA distribuidora a la vez, y
-para cambiar tiene que desvincularse primero. **Sin esto, el vínculo único sería
-una formalidad**: desvincular no sacaba al gondolero de las campañas en las que
-ya estaba, así que seguía relevando para la distri vieja mientras trabajaba para
-la nueva. Lo verificado:
+> **CORRECCIÓN (24/9/2026): este párrafo decía que un gondolero pertenece a UNA
+> distribuidora a la vez y quedó viejo.** El Walled Garden protege los DATOS de
+> cada ejecutor —que A no vea lo que se hizo para B—, no la exclusividad de la
+> persona. Un gondolero o un fixer puede estar vinculado a varias distribuidoras
+> y repositoras a la vez, y el código ya lo hace: `getDistrisDeActor` devuelve un
+> `string[]` leído de la tabla de solicitudes, y `ContextoAcceso.misRepoIds`
+> también es un array.
+>
+> Lo que sigue valiendo del tramo del 18/9 es todo lo demás: **cortar un vínculo
+> cierra el trabajo en curso DE ESE vínculo**. Eso no dependía de la
+> exclusividad.
+
+Desvincular no sacaba al gondolero de las campañas de esa distribuidora en las
+que ya estaba, así que seguía relevando para ella después del corte. Lo
+verificado:
 
 - `misCampanas` en campanas/page.tsx filtra por participación o misiones y **no
   aplica `tieneAcceso`** — la campaña seguía en "En curso".
@@ -4298,6 +4308,93 @@ vínculo, el botón, y el camino de aprobación del lado del ejecutor.
   sin una tabla nueva.
 - Qué ve el fixer de una campaña a la que todavía no entró. Hoy el detalle le
   muestra todo; una oferta abierta probablemente tenga que mostrar menos.
+
+#### Decidido el 24/9/2026, y el plan en seis etapas
+
+**Se postula AL ACTOR que ejecuta, no a la campaña.** Aprobado, queda vinculado
+de forma duradera y ve esa campaña y las siguientes. Usa las dos tablas que ya
+existen. **La contra asumida:** el ejecutor no puede aceptarlo para una campaña y
+no para otras. Más adelante puede venir una lista de exclusión al crear la
+campaña; no ahora.
+
+**El ejecutor es quien EJECUTA, no quien financia**, y se deriva igual que en
+`lib/acceso-campana.ts`: `repositora_id` → la repositora; si no, `distri_id` → la
+distri; si ninguno → GondolApp. **`via_ejecucion` no sirve para esto**: dice
+`'distribuidora'` en el 100% de las filas de las dos bases, incluidas las que
+tienen `repositora_id`. Es una columna que quedó vieja.
+
+**Las campañas de GondolApp no llevan el flag**: `accesoACampana` ya las deja
+pasar antes de mirar ningún vínculo, así que no hay a qué postularse. El selector
+no aparece en ese caso.
+
+**Un fixer puede estar vinculado a varias repositoras y distris a la vez** — ver
+la corrección del Walled Garden más arriba. Por eso `aprobarSolicitudFixer` deja
+de pisar `profiles.repositora_id` y lo escribe **solo si está en null**, y la
+oferta se le muestra también al fixer que ya tiene otros vínculos, siempre que no
+lo tenga con ESE ejecutor.
+
+Las seis etapas, en orden:
+
+| | Qué | Cómo se verifica |
+|---|---|---|
+| 1 | El schema | dry-run; y los 4 tipos rotos pasan a entrar |
+| 2 | Las notificaciones que hoy no llegan | invitar por código y que llegue el aviso |
+| 3 | El bypass de consentimiento + las 2 pantallas | las listas de pendientes quedan VACÍAS |
+| 4 | `postulable` en `accesoACampana` + el flag en los editores | test de acceso; crear la campaña en dev |
+| 5 | El fixer VE la oferta y no la puede trabajar | `validarUnion` lo rechaza igual |
+| 6 | Postularme, los tres estados y los 30 días | de punta a punta, y el camino del no |
+
+La 2 va segunda a propósito: **arregla algo que está roto en producción ahora** y
+no depende del resto. Si el tramo se frena, eso ya quedó. La 5 está separada de
+la 6 a propósito: es la que prueba que **mirar no habilita trabajar**.
+
+#### Lo que el relevamiento encontró y no era parte de la feature
+
+1. **`vinculacion_invitacion` lo rechaza el CHECK de `notificaciones`.** Los tres
+   paneles de invitación lo escriben sin chequear el error, así que **desde que
+   existe el flujo nadie recibió el aviso de que lo invitaron** — cero filas de
+   ese tipo en dev, con vínculos aprobados existiendo. Y `actor_tipo` no acepta
+   `'fixer'`, que es lo que escribe `aprobarSolicitudFixer`: **el fixer tampoco
+   se entera de que lo aprobaron.** Los dos CHECK se arreglan en la etapa 1.
+2. **La distri puede aprobar su propia invitación.** `confirmarVinculacionPorCodigo`
+   crea la fila en `pendiente` con `iniciado_por='distri'`, esa fila aparece en su
+   propia pestaña "Solicitudes", y `aprobarSolicitudFixer` no mira `iniciado_por`:
+   escribe el vínculo sin que el fixer acepte nada. El vacío de esa pestaña dice
+   *"Cuando un fixer solicite unirse, aparecerá acá"* — la pantalla se construyó
+   para este tramo y nunca tuvo quién produjera esas filas.
+3. **La aprobación de la repositora ya existe** y chequea el error, pero vive
+   adentro del panel de invitación, y la pestaña "Solicitudes" —que tiene el
+   badge con el contador— es un cartel que dice "aparecen arriba". Es mudanza y
+   filtro, no pantalla nueva.
+4. **`'rechazada'` ya lo aceptan las dos tablas.** No hubo nada que corregir.
+
+#### PENDIENTE — que nadie lea `profiles.repositora_id` para pertenencia
+
+Lo mismo que se hizo con `distri_id`: la fuente de la pertenencia es la tabla de
+solicitudes, no la columna. `lib/utils-distri.ts` ya lo hace bien
+(`getDistrisDeActor` devuelve un array leído de las solicitudes).
+
+**Son 4 lectores y 3 escritores**, todos sobre la pertenencia del FIXER:
+
+| Archivo | Qué hace |
+|---|---|
+| `admin/fixers/page.tsx:19` | lista los fixers con su repositora |
+| `admin/repositoras/[id]/page.tsx:35` | los fixers de esa repositora |
+| `admin/repositoras/page.tsx:34` | el conteo de fixers por repositora |
+| `fixer-vinculacion/page.tsx:105` | "¿ya estás vinculado a este actor?" |
+| `repositora/fixers/invitar-actions.ts:146` | **escribe** al aprobar (pisa) |
+| `repositora/fixers/invitar-actions.ts:196` | **limpia** al desvincular |
+| `fixer-vinculacion/actions.ts:72` | **escribe** si está en null |
+
+El síntoma concreto con vínculos múltiples: un fixer vinculado a A y a B **cuenta
+para una sola** en los dos paneles de admin, y la columna dice cuál según cuál
+vínculo se escribió primero.
+
+**No confundir con el otro uso de la misma columna**: para un usuario con
+`tipo_actor='repositora'`, `profiles.repositora_id` es *"de qué empresa soy"*, y
+lo usa todo el panel `(repositora)/`. Ese uso está bien y no se toca. La columna
+está sobrecargada con dos significados, y solo uno es el problema.
+
 
 ---
 
