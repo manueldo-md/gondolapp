@@ -4406,9 +4406,9 @@ código a propósito.
 > que pasa en la máquina del que la escribe y fallaría en Vercel es peor que no
 > tenerla: da permiso para no mirar.
 
-**C′ — la presentación. 87 usos en 28 server components.**
+**C′ — la presentación. ✅ HECHO el 22/9/2026.**
 
-Y no es poner `timeZone` y listo, porque **un `date` y un `timestamptz`
+No era poner `timeZone` y listo, porque **un `date` y un `timestamptz`
 necesitan tratamiento opuesto**:
 
 ```
@@ -4424,18 +4424,69 @@ argentina lo retrocede un día. Poner la zona a ciegas arregla las fechas de
 misiones y **rompe las de campañas**, con un error nuevo más visible que el que
 corrige.
 
-Hacen falta **dos** funciones:
+Las tres funciones viven en `lib/fecha-ar.ts`:
 
-- `formatearDia(date)` — para `fecha_inicio`, `fecha_fin` y
-  `fecha_limite_inscripcion`, las tres únicas columnas `date` del schema.
-  Formatea el string tal cual, sin pasar por `Date`.
-- `formatearInstante(timestamptz)` — con `timeZone: ZONA_AR`, para todo lo demás.
+| | Para | Cómo |
+|---|---|---|
+| `formatearDia(dia)` | las columnas `date` | formatea el **mediodía UTC** de ese día con `timeZone: 'UTC'`, así ningún desfasaje lo puede mover de día, e `Intl` igual sabe dar el nombre del mes |
+| `formatearInstante(ts, opts)` | los `timestamptz` | `timeZone: ZONA_AR` |
+| `formatearInstanteHora(ts)` | ídem, con hora | `22/09/2026, 19:30` — reloj de 24 |
 
-Y después revisar los 87 usos uno por uno decidiendo cuál es cuál. No se puede
-automatizar: el tipo no está en el nombre.
+**El schema tiene exactamente TRES columnas `date`**, las tres en `campanas`:
+`fecha_inicio`, `fecha_fin` y `fecha_limite_inscripcion`. Todo lo demás es
+`timestamptz`, **incluidas `marca_distri_relaciones.fecha_fin` y
+`fecha_reinicio`, que se llaman "fecha" y no lo son**. El tipo no está en el
+nombre: un formateo nuevo se decide mirando el schema, no leyendo la variable.
 
-Los client components no tienen el problema — el navegador del gondolero ya está
-en hora argentina.
+Eso es también lo que hizo fallar el primer intento mecánico. Un `sed` que
+convertía `toLocaleDateString` a `formatearDia` archivo por archivo agarró de
+paso ocho `created_at`/`updated_at` que viven en los mismos archivos que las
+`fecha_fin` — o sea que la migración automática **introdujo el bug opuesto en el
+mismo commit que arreglaba el original**. Se detectó revisando la salida del
+`sed`, no compilando: los dos formateadores tienen la misma firma y el
+typecheck no distingue uno del otro.
+
+**`formatearFecha` y `formatearFechaHora` se BORRARON de `lib/utils.ts`.** No se
+dejaron redirigidas: un formateador sin zona que todavía compila es el que
+alguien va a usar en la pantalla siguiente. `tiempoRelativo` se queda —una resta
+de instantes no depende de la zona— pero su fallback de más de una semana ahora
+va a `formatearInstante`.
+
+**Los client components tampoco estaban exentos, al revés de lo que decía esta
+misma nota.** Un componente cliente hace SSR en el primer render: el servidor lo
+pinta en UTC y el navegador en hora argentina, o sea que entre las 21:00 y la
+medianoche eran **dos días distintos para el mismo dato** — una discrepancia de
+hidratación, no solo una inconsistencia estética. `alertas-en-pausa.tsx` y
+`fechaCacheRelativa` quedaron con la zona explícita por eso.
+
+Lo que se tocó además de los formateos:
+
+- **Tres `mesInicio`** calculados con `new Date(y, m, 1)` —`admin/tablero`,
+  `distribuidora/dashboard` y **`repositora/dashboard`, que no estaba en el
+  inventario**— ahora usan `inicioDelMes`. Con el cálculo viejo el mes arrancaba
+  el 1° a las 00:00 UTC, o sea a las 21:00 del último día del mes anterior.
+- **`fmtSemana`** en los dos tableros: rotulaba el bucket semanal con el día UTC.
+- **El `mesLabel` de Logros**, que a las 22:00 del 30 de septiembre decía
+  "Octubre" arriba de números de septiembre.
+- **`formatearVentana` de `ResultadosView`**, el "Del 11 al 14 de marzo" que la
+  marca usa para saber si el dato sigue vigente.
+
+### El test: `scripts/probar-formato-ar.ts`
+
+23 casos, se pone en UTC solo y corta si no lo logra, igual que el de C. El caso
+que manda no es el bug original sino **el que introduce un arreglo apurado**: una
+columna `date` no puede mostrarse un día antes.
+
+Verificado rompiendo el código a propósito, en las dos direcciones:
+
+```
+formatearDia tratado como instante (la "zona a todo")  →  6 casos en rojo
+formatearInstante sin zona (el bug original)           →  7 casos en rojo
+```
+
+> Un test de este tramo tiene que ponerse rojo contra **los dos** errores. El que
+> cubre uno solo es el que deja pasar el arreglo que rompe el otro lado.
+
 
 ### Y después del dashboard: que el gondolero sepa su frecuencia
 

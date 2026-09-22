@@ -6,6 +6,7 @@ import { InvitarMarcaPanel } from './invitar-panel'
 import { TerminarRelacionBtn } from './terminar-relacion-btn'
 import { ReiniciarRelacionBtnDistri } from './reiniciar-btn'
 import { SolicitudReinicioCardDistri } from './solicitud-reinicio-card'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -164,7 +165,7 @@ export default async function DistriMarcasPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 capitalize">{r.iniciadoPor ?? '—'}</td>
                       <td className="px-4 py-3 text-xs text-gray-400">
-                        {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                        {formatearInstante(r.createdAt)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -220,7 +221,7 @@ export default async function DistriMarcasPage() {
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-400 capitalize">{r.iniciadoPor ?? '—'}</td>
                           <td className="px-4 py-3 text-xs text-gray-400">
-                            {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                            {formatearInstante(r.createdAt)}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">

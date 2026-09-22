@@ -18,6 +18,7 @@ import {
 import type { TipoCampana, EstadoCampana, FinanciadaPor } from '@/types'
 import { CampanaAccionesAdmin } from '../../campana-acciones'
 import { CampanaPageNav } from '@/components/campanas/campana-page-nav'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -178,9 +179,9 @@ export default async function AdminCampanaDetallePage({
           <div>
             <dt className="text-gray-500 mb-0.5">Creada el</dt>
             <dd className="font-medium text-gray-900">
-              {new Date(campana.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+              {formatearInstante(campana.created_at, { day: '2-digit', month: 'long', year: 'numeric' })}
               <span className="block text-xs text-gray-400 font-normal">
-                {new Date(campana.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                {formatearInstante(campana.created_at, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
               </span>
             </dd>
           </div>

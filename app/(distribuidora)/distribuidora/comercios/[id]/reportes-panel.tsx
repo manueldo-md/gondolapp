@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { MapPin, Users, Crosshair, Check, X, Undo2, Loader2 } from 'lucide-react'
-import { formatearFechaHora, calcularDistanciaMetros } from '@/lib/utils'
+import { calcularDistanciaMetros } from '@/lib/utils'
+import { formatearInstanteHora } from '@/lib/fecha-ar'
 import { RADIO_BLOQUEO_METROS } from '@/lib/gps-radios'
 import { corregirUbicacionComercio, descartarReporteUbicacion } from './actions'
 
@@ -185,7 +186,7 @@ export function ReportesPanel({ comercioId, lat, lng, reportes, anterior }: Prop
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-gray-900">
                   {quien}
-                  <span className="text-xs text-gray-400"> · {formatearFechaHora(r.created_at)}</span>
+                  <span className="text-xs text-gray-400"> · {formatearInstanteHora(r.created_at)}</span>
                 </p>
                 <p className="text-[11px] text-gray-500 mt-0.5">
                   {dAlPin == null

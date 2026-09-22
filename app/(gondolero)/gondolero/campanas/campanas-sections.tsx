@@ -21,6 +21,7 @@ import {
   guardarComercios,
   leerComercios,
 } from '@/lib/campana-cache'
+import { formatearDia } from '@/lib/fecha-ar'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -373,7 +374,7 @@ function CampanaCardCerrada({
           </span>
           {campana.fecha_fin && (
             <span className="text-xs text-gray-400">
-              Venció {new Date(campana.fecha_fin).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}
+              Venció {formatearDia(campana.fecha_fin, { day: 'numeric', month: 'short', year: 'numeric' })}
             </span>
           )}
         </div>

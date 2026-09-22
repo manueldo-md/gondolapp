@@ -3,9 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Users, Camera, CheckCircle2, Clock, Megaphone } from 'lucide-react'
-import { formatearFechaHora } from '@/lib/utils'
+import { formatearDia, formatearInstanteHora } from '@/lib/fecha-ar'
 import { firmarFotos } from '@/lib/storage-fotos'
 import { contarFotosAprobadas } from '@/lib/fotos-aprobadas'
+import { inicioDelMes } from '@/lib/nivel-mensual'
 
 function makeAdmin() {
   return createAdminClient(
@@ -33,7 +34,7 @@ export default async function RepoDashboardPage() {
 
   // Fechas de referencia
   const ahora = new Date()
-  const mesInicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  const mesInicio = inicioDelMes(ahora)
 
   // Obtener IDs de fixers vinculados
   const { data: fixersData } = await admin
@@ -195,7 +196,7 @@ export default async function RepoDashboardPage() {
                       {f.comercio?.nombre ?? 'Comercio desconocido'}
                     </p>
                     <p className="text-xs text-gray-400 truncate">
-                      {f.campana?.nombre ?? 'Sin campaña'} · {formatearFechaHora(f.created_at)}
+                      {f.campana?.nombre ?? 'Sin campaña'} · {formatearInstanteHora(f.created_at)}
                     </p>
                   </div>
                   <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_COLOR[f.estado] ?? 'bg-gray-100 text-gray-500'}`}>
@@ -229,7 +230,7 @@ export default async function RepoDashboardPage() {
                     {c.fecha_fin && (
                       <span className="text-xs text-gray-400 flex items-center gap-1">
                         <Clock size={11} />
-                        vence {new Date(c.fecha_fin).toLocaleDateString('es-AR')}
+                        vence {formatearDia(c.fecha_fin)}
                       </span>
                     )}
                   </div>

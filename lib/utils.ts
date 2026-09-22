@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { diasHastaFin } from './campana-vigencia'
+import { formatearInstante } from './fecha-ar'
 import type { TipoActor, NivelGondolero, TipoCampana, EstadoCampana, EstadoFoto, TipoPremio } from '@/types'
 
 // ── TAILWIND ──────────────────────────────────────────────────────────────────
@@ -74,38 +75,33 @@ export function formatearTokens(tokens: number): string {
   return `U$S ${new Intl.NumberFormat('es-AR').format(tokens)}`
 }
 
-/**
- * Formatea una fecha en español argentino
- */
-export function formatearFecha(fecha: string | Date, opciones?: Intl.DateTimeFormatOptions): string {
-  const date = typeof fecha === 'string' ? new Date(fecha) : fecha
-  return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    ...opciones,
-  }).format(date)
-}
-
-/**
- * Formatea fecha y hora
- */
-export function formatearFechaHora(fecha: string | Date): string {
-  return formatearFecha(fecha, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+// `formatearFecha` y `formatearFechaHora` se borraron el 22/9/2026.
+//
+// Llamaban a `Intl` **sin `timeZone`**, o sea que formateaban en la zona del
+// proceso. En el browser eso da la hora del gondolero y parece correcto; en un
+// Server Component da UTC, y una misión capturada a las 22:30 del 20 se le
+// mostraba al revisor como del 21.
+//
+// No se arreglaron en su lugar porque el arreglo NO es uno solo: un `date` y un
+// `timestamptz` necesitan tratamiento opuesto, y una sola función con la zona
+// puesta rompe las tres columnas `date` del schema mientras arregla el resto.
+// Los reemplazos viven en lib/fecha-ar.ts —`formatearDia`, `formatearInstante`
+// y `formatearInstanteHora`— con el porqué escrito ahí.
+//
+// Se borran en vez de dejarse deprecadas a propósito: un formateador sin zona
+// que todavía compila es el que alguien va a usar en la pantalla siguiente.
 
 /**
  * Tiempo relativo (hace 5 minutos, hace 2 horas, etc.)
+ *
+ * Lo relativo no depende de la zona —una resta de instantes es una resta—, pero
+ * el fallback de más de una semana SÍ formatea una fecha, y ahí se va a
+ * `formatearInstante`, que la pone en hora argentina.
+ *
+ * `ahora` es parámetro para poder probarlo. En producción nadie lo pasa.
  */
-export function tiempoRelativo(fecha: string | Date): string {
+export function tiempoRelativo(fecha: string | Date, ahora: Date = new Date()): string {
   const date = typeof fecha === 'string' ? new Date(fecha) : fecha
-  const ahora = new Date()
   const diffMs = ahora.getTime() - date.getTime()
   const diffMin = Math.floor(diffMs / 60000)
   const diffHrs = Math.floor(diffMin / 60)
@@ -115,7 +111,7 @@ export function tiempoRelativo(fecha: string | Date): string {
   if (diffMin < 60) return `hace ${diffMin} min`
   if (diffHrs < 24) return `hace ${diffHrs} h`
   if (diffDias < 7) return `hace ${diffDias} días`
-  return formatearFecha(fecha)
+  return formatearInstante(date)
 }
 
 /**

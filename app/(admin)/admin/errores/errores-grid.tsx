@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cambiarEstadoError } from './acciones'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 type ErrorRow = {
   id: string
@@ -35,7 +36,7 @@ const ESTADOS: { value: string; label: string }[] = [
 const ACTORES = ['gondolero', 'admin', 'distribuidora', 'marca']
 
 function formatFecha(iso: string) {
-  return new Date(iso).toLocaleString('es-AR', {
+  return formatearInstante(iso, {
     day: '2-digit', month: '2-digit', year: '2-digit',
     hour: '2-digit', minute: '2-digit',
   })

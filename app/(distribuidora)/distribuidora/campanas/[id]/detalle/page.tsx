@@ -16,6 +16,7 @@ import {
   republicarCampanaDistri,
   descartarCambiosDistri,
 } from './draft-actions'
+import { formatearDia, formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createSupabaseClient(
@@ -107,9 +108,9 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
   const bloques = ((c.bloques_foto ?? []) as any[]).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
   const marcaNombre = Array.isArray(c.marca) ? c.marca[0]?.razon_social : c.marca?.razon_social
 
-  const fechaCreacion = new Date(c.created_at).toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const fechaCreacion = formatearInstante(c.created_at, { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   const fechaModif = c.updated_at && c.updated_at !== c.created_at
-    ? new Date(c.updated_at).toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? formatearInstante(c.updated_at, { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     : null
   const creadorLabel = c.financiada_por === 'distri' ? 'Tu distribuidora' : (marcaNombre ?? 'Marca')
 
@@ -143,7 +144,7 @@ export default async function DistriCampanaDetallePage({ params }: { params: { i
               <div>
                 <p className="text-xs text-gray-400">Fin{vig ? ` · ${vig.texto}` : ''}</p>
                 <p className={`font-medium ${vig && !vig.vencida && vig.dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
-                  {new Date(c.fecha_fin).toLocaleDateString('es-AR')}
+                  {formatearDia(c.fecha_fin)}
                 </p>
               </div>
             </div>

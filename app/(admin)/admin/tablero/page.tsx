@@ -9,7 +9,8 @@ import {
 } from 'lucide-react'
 import { tiempoRelativo, formatearPuntos } from '@/lib/utils'
 import { getConfig } from '@/lib/config'
-import { nivelPorMisiones } from '@/lib/nivel-mensual'
+import { nivelPorMisiones, inicioDelMes } from '@/lib/nivel-mensual'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -21,8 +22,10 @@ function makeAdmin() {
   )
 }
 
-const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
-function fmtSemana(d: Date) { return `${d.getDate()} ${MESES[d.getMonth()]}` }
+// El label del bucket semanal, en hora argentina. Con `getDate()/getMonth()`
+// —hora local del proceso— en Vercel salía el día UTC, así que una semana que
+// arranca entre las 21:00 y la medianoche se rotulaba con el día siguiente.
+const fmtSemana = (d: Date) => formatearInstante(d, { day: 'numeric', month: 'short' })
 
 const NIVEL_BADGE: Record<string, string> = {
   casual: 'bg-gray-100 text-gray-500',
@@ -59,7 +62,7 @@ export default async function AdminTableroPage() {
   const admin = makeAdmin()
 
   const ahora    = new Date()
-  const mesInicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  const mesInicio = inicioDelMes(ahora)
   const hace7d   = new Date(Date.now() -  7 * 86400_000)
   const hace14d  = new Date(Date.now() - 14 * 86400_000)
   const hace56d  = new Date(Date.now() - 56 * 86400_000)

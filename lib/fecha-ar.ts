@@ -204,3 +204,92 @@ export function visitasEsperadas(params: {
 
   return Math.floor((visitasPorSemana * completos) / 7)
 }
+
+// ── La presentación: cómo se MUESTRA una fecha ────────────────────────────────
+//
+// Todo lo de arriba decide. Lo de acá abajo solo dibuja, y aun así se arregló
+// el 22/9/2026 por el mismo motivo: `formatearFecha` de lib/utils.ts llamaba a
+// `Intl` **sin `timeZone`**, o sea que en un Server Component formateaba en UTC.
+// Una misión capturada a las 22:30 del 20 se le mostraba al revisor como del 21.
+//
+// ── LA TRAMPA: UN `date` Y UN `timestamptz` NECESITAN TRATAMIENTO OPUESTO ────
+// No es que "hay que ponerle la zona a todo". Son dos cosas distintas:
+//
+//   `timestamptz` — un INSTANTE. Hay que convertirlo a hora argentina para
+//     saber qué día era acá. → `formatearInstante`
+//
+//   `date` — una ETIQUETA DE DÍA. No tiene hora ni zona: el 30 de septiembre es
+//     el 30 de septiembre. Pero `new Date('2026-09-30')` lo parsea como
+//     medianoche **UTC**, y ahí sí convertirlo a hora argentina lo retrocede al
+//     **29**. → `formatearDia`, que no pasa por ninguna zona.
+//
+// Aplicarle a un `date` el arreglo que necesita un `timestamptz` no lo deja
+// igual: lo rompe en la dirección contraria. Por eso son dos funciones y no una
+// con un flag.
+//
+// En TODO el schema hay exactamente TRES columnas `date`, las tres en
+// `campanas`: `fecha_inicio`, `fecha_fin` y `fecha_limite_inscripcion`. Todo lo
+// demás —incluidas `marca_distri_relaciones.fecha_fin` y `fecha_reinicio`, que
+// se llaman "fecha" y NO lo son— es `timestamptz`. El tipo no está en el
+// nombre: si hay que agregar un formateo nuevo, se mira el schema.
+
+/** El formato por defecto: `22/09/2026`. */
+const DIA_CORTO: Intl.DateTimeFormatOptions = {
+  day: '2-digit', month: '2-digit', year: 'numeric',
+}
+
+/**
+ * Formatea una columna `date` (`'YYYY-MM-DD'`) **sin pasarla por ninguna zona**.
+ *
+ * El truco es formatear el mediodía UTC de ese día con `timeZone: 'UTC'`: así
+ * ningún desfasaje puede moverlo de día, y `Intl` igual sabe dar el nombre del
+ * mes y del día de la semana.
+ *
+ * Acepta también un `'YYYY-MM-DDT…'` por comodidad de los llamadores que traen
+ * la columna con basura al final, pero **no** es para timestamps: pasarle un
+ * `timestamptz` da el día UTC, que es justamente el bug. Para eso está
+ * `formatearInstante`.
+ */
+export function formatearDia(
+  dia: string | null | undefined,
+  opciones: Intl.DateTimeFormatOptions = DIA_CORTO,
+): string {
+  if (!dia) return '—'
+  const soloDia = dia.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(soloDia)) return '—'
+  const medioDiaUTC = new Date(`${soloDia}T12:00:00.000Z`)
+  if (Number.isNaN(medioDiaUTC.getTime())) return '—'
+  return new Intl.DateTimeFormat('es-AR', { ...opciones, timeZone: 'UTC' }).format(medioDiaUTC)
+}
+
+/**
+ * Formatea un `timestamptz` (o cualquier instante) **en hora argentina**.
+ *
+ * Por defecto muestra solo el día, igual que hacía `formatearFecha`. Para el
+ * día con la hora está `formatearInstanteHora`, que es el reemplazo directo de
+ * `formatearFechaHora`.
+ */
+export function formatearInstante(
+  instante: Date | string | number | null | undefined,
+  opciones: Intl.DateTimeFormatOptions = DIA_CORTO,
+): string {
+  if (instante === null || instante === undefined || instante === '') return '—'
+  const d = aDate(instante)
+  if (Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat('es-AR', { ...opciones, timeZone: ZONA_AR }).format(d)
+}
+
+/**
+ * `22/09/2026, 19:30` en hora argentina. Reemplaza a `formatearFechaHora`.
+ *
+ * `hourCycle: 'h23'` y no el default de `es-AR`, que da `7:30 p. m.`: acá se
+ * escriben horarios de relevamiento y de revisión, y el reloj de 24 es el que
+ * se usa. Es el mismo criterio que el `FORMATO` interno de este archivo.
+ */
+export function formatearInstanteHora(
+  instante: Date | string | number | null | undefined,
+): string {
+  return formatearInstante(instante, {
+    ...DIA_CORTO, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  })
+}

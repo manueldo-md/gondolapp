@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react'
 import { CheckCircle2, XCircle, Loader2, Square, CheckSquare, MapPin, User, Clock } from 'lucide-react'
 import Link from 'next/link'
-import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
+import { labelTipoCampana } from '@/lib/utils'
+import { formatearInstanteHora } from '@/lib/fecha-ar'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { aprobarFoto, rechazarFoto, accionMasivaDistri } from './actions'
 import type { DeclaracionFoto, TipoCampana } from '@/types'
@@ -256,7 +257,7 @@ export function GondolasPendientes({
                   <PreciosFoto precios={preciosDeRespuestas(foto.respuestas, metricaPrecioId)} />
                   <div className="flex items-center gap-1">
                     <Clock size={11} />
-                    <span>{formatearFechaHora(foto.created_at)}</span>
+                    <span>{formatearInstanteHora(foto.created_at)}</span>
                   </div>
                 </div>
 

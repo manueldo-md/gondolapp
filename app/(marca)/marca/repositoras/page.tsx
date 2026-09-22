@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { InvitarRepoPanel } from './invitar-panel'
 import { TerminarRelacionRepoBtn } from './terminar-relacion-btn'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -117,7 +118,7 @@ export default async function MarcaRepositorasPage() {
                         <EstadoBadge estado={r.estado} />
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400">
-                        {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                        {formatearInstante(r.createdAt)}
                       </td>
                       <td className="px-4 py-3">
                         <TerminarRelacionRepoBtn
@@ -153,7 +154,7 @@ export default async function MarcaRepositorasPage() {
                         <td className="px-4 py-3 font-medium text-gray-500">{r.repoNombre ?? '—'}</td>
                         <td className="px-4 py-3"><EstadoBadge estado={r.estado} /></td>
                         <td className="px-4 py-3 text-xs text-gray-400">
-                          {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                          {formatearInstante(r.createdAt)}
                         </td>
                       </tr>
                     ))}

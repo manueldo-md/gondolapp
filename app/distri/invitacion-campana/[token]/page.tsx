@@ -6,6 +6,7 @@ import { InvitacionAcciones } from './invitacion-acciones'
 import type { TipoCampana } from '@/types'
 import { labelTipoCampana } from '@/lib/utils'
 import { appUrl } from '@/lib/app-url'
+import { formatearDia } from '@/lib/fecha-ar'
 
 const TIPO_COLOR: Record<TipoCampana, string> = {
   relevamiento: 'bg-indigo-100 text-indigo-700',
@@ -143,7 +144,7 @@ export default async function InvitacionCampanaPage({
                   <Clock size={13} className="text-gray-400" />
                 </div>
                 <p className="text-sm font-bold text-gray-900">
-                  {new Date(campana.fecha_fin).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
+                  {formatearDia(campana.fecha_fin, { day: 'numeric', month: 'short' })}
                 </p>
                 <p className="text-[11px] text-gray-400">cierre</p>
               </div>
@@ -153,10 +154,10 @@ export default async function InvitacionCampanaPage({
           {(campana.fecha_inicio || campana.fecha_fin) && (
             <div className="pt-3 border-t border-gray-100 flex gap-6 text-sm text-gray-500">
               {campana.fecha_inicio && (
-                <span>Inicio: <strong className="text-gray-700">{new Date(campana.fecha_inicio).toLocaleDateString('es-AR')}</strong></span>
+                <span>Inicio: <strong className="text-gray-700">{formatearDia(campana.fecha_inicio)}</strong></span>
               )}
               {campana.fecha_fin && (
-                <span>Cierre: <strong className="text-gray-700">{new Date(campana.fecha_fin).toLocaleDateString('es-AR')}</strong></span>
+                <span>Cierre: <strong className="text-gray-700">{formatearDia(campana.fecha_fin)}</strong></span>
               )}
             </div>
           )}

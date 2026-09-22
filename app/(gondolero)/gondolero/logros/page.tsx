@@ -18,6 +18,7 @@ import { getDistrisDeGondolero } from '@/lib/utils-distri'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
 import { MarcarLogrosVistos } from './marcar-vistos'
+import { diaAR } from '@/lib/fecha-ar'
 
 // ── Helpers de nivel ──────────────────────────────────────────────────────────
 
@@ -63,7 +64,11 @@ export default async function LogrosPage() {
   // y dos fuentes para el mismo mes es exactamente cómo se termina mostrando un
   // número que no coincide con el que decide.
   const inicioMes = inicioDelMes(ahora)
-  const mesLabel = `${MESES_ES[ahora.getMonth()]} ${ahora.getFullYear()}`
+  // El mes ARGENTINO, el mismo que `inicioDelMes` de la línea de arriba. Con
+  // `ahora.getMonth()` —hora local del proceso— a las 22:00 del último día de
+  // septiembre el título decía "Octubre" sobre números de septiembre.
+  const [anioAR, mesAR] = diaAR(ahora).split('-')
+  const mesLabel = `${MESES_ES[Number(mesAR) - 1]} ${anioAR}`
 
   // ── FASE 1: queries independientes ────────────────────────────────────────
   const [

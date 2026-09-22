@@ -3,7 +3,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { CheckCircle2, Clock, MapPin, User, X, Info } from 'lucide-react'
-import { formatearFechaHora, labelTipoCampana } from '@/lib/utils'
+import { labelTipoCampana } from '@/lib/utils'
+import { formatearInstanteHora } from '@/lib/fecha-ar'
 
 import type { DeclaracionFoto, TipoCampana } from '@/types'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
@@ -134,7 +135,7 @@ function FotoCard({
           <PreciosFoto precios={precios} />
           <div className="flex items-center gap-1">
             <Clock size={11} />
-            <span>{formatearFechaHora(foto.created_at)}</span>
+            <span>{formatearInstanteHora(foto.created_at)}</span>
           </div>
         </div>
 

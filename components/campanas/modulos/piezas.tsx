@@ -11,6 +11,7 @@
 import React from 'react'
 import { MapPin, Clock, User } from 'lucide-react'
 import type { ContextoRespuesta } from '@/lib/resultados'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 /**
  * Dónde y cuándo se relevó una respuesta.
@@ -47,7 +48,7 @@ export function ContextoLinea({
       {contexto.fecha && (
         <span className="flex items-center gap-1">
           <Clock size={11} className="shrink-0" />
-          {new Date(contexto.fecha).toLocaleDateString('es-AR')}
+          {formatearInstante(contexto.fecha)}
         </span>
       )}
     </div>

@@ -7,6 +7,7 @@ import {
 import { tiempoRelativo } from '@/lib/utils'
 import { ValidarRepoBtn, DesactivarRepoBtn } from '../validar-btn'
 import { contarFotosAprobadas } from '@/lib/fotos-aprobadas'
+import { formatearDia, formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -73,7 +74,7 @@ export default async function RepositoraDetallePage({ params }: { params: { id: 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const campanas = (campanasData ?? []) as any[]
 
-  const fechaCreacion = new Date(repo.created_at).toLocaleString('es-AR', {
+  const fechaCreacion = formatearInstante(repo.created_at, {
     day: '2-digit', month: 'long', year: 'numeric',
   })
 
@@ -212,7 +213,7 @@ export default async function RepositoraDetallePage({ params }: { params: { id: 
                     <td className="px-4 py-3.5 font-medium text-gray-900">{c.nombre}</td>
                     <td className="px-4 py-3.5 text-gray-700 font-semibold">{c.puntos_por_foto ?? 0}</td>
                     <td className="px-4 py-3.5 text-xs text-gray-400 whitespace-nowrap">
-                      {c.fecha_fin ? new Date(c.fecha_fin).toLocaleDateString('es-AR') : '—'}
+                      {c.fecha_fin ? formatearDia(c.fecha_fin) : '—'}
                     </td>
                     <td className="px-4 py-3.5">
                       <Link

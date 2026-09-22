@@ -13,6 +13,7 @@
 
 import { get, set } from 'idb-keyval'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { diaAR, formatearInstante } from '@/lib/fecha-ar'
 
 // ── Claves de IndexedDB ────────────────────────────────────────────────────────
 
@@ -402,21 +403,25 @@ export async function sincronizarCampanas(
  * "hace mucho": el gondolero sabe si el martes pasó algo o no, y con eso decide
  * si vale la pena buscar señal antes de entrar al comercio.
  *
- * Se formatea con la hora del dispositivo, no del servidor, porque esto solo se
- * renderiza en client components — el teléfono ya está en hora argentina.
+ * Se fija la zona argentina aunque esto **solo** se renderice en client
+ * components —el teléfono del gondolero ya está en hora argentina— por dos
+ * motivos: un dispositivo con la zona mal puesta deja de mentir, y el día que
+ * alguien mueva este texto a un server component no se convierte en el bug de
+ * las 21:00 sin que nada falle. Es la misma zona explícita que el resto de la
+ * app desde el 22/9/2026.
  */
 export function fechaCacheRelativa(timestamp: number, ahora = Date.now()): string {
   // `0` es el caché escrito antes de que existiera el envoltorio. Decir "del 1
   // de enero de 1970" sería peor que no decir nada.
   if (!timestamp) return 'de una versión anterior de la app'
 
-  const d = new Date(timestamp)
-  const hoy = new Date(ahora)
-  const soloDia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
-  const dias = Math.round((soloDia(hoy) - soloDia(d)) / 86_400_000)
+  // Los dos días se comparan como ETIQUETAS argentinas, no como instantes.
+  const dias = Math.round(
+    (Date.parse(`${diaAR(ahora)}T00:00:00Z`) - Date.parse(`${diaAR(timestamp)}T00:00:00Z`)) / 86_400_000
+  )
 
-  if (dias <= 0) return `de hoy a las ${d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+  if (dias <= 0) return `de hoy a las ${formatearInstante(timestamp, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`
   if (dias === 1) return 'de ayer'
-  if (dias < 7) return `del ${d.toLocaleDateString('es-AR', { weekday: 'long' })}`
-  return `del ${d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}`
+  if (dias < 7)  return `del ${formatearInstante(timestamp, { weekday: 'long' })}`
+  return `del ${formatearInstante(timestamp, { day: 'numeric', month: 'long' })}`
 }

@@ -9,6 +9,7 @@ import {
 import { labelEstadoCampana } from '@/lib/utils'
 import type { EstadoCampana } from '@/types'
 import { ReiniciarRelacionBtnDistri } from '../reiniciar-btn'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -140,7 +141,7 @@ export default async function DistriRelacionDetailPage({
           <div>
             <dt className="text-gray-500 mb-0.5">Inicio</dt>
             <dd className="font-medium text-gray-900">
-              {new Date(rel.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+              {formatearInstante(rel.created_at, { day: '2-digit', month: 'long', year: 'numeric' })}
             </dd>
           </div>
           <div>
@@ -151,7 +152,7 @@ export default async function DistriRelacionDetailPage({
             <div>
               <dt className="text-gray-500 mb-0.5">Último reinicio</dt>
               <dd className="font-medium text-gray-900">
-                {new Date(rel.fecha_reinicio).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                {formatearInstante(rel.fecha_reinicio, { day: '2-digit', month: 'long', year: 'numeric' })}
               </dd>
             </div>
           )}
@@ -159,7 +160,7 @@ export default async function DistriRelacionDetailPage({
             <div>
               <dt className="text-gray-500 mb-0.5">Terminada el</dt>
               <dd className="font-medium text-red-600">
-                {new Date(rel.fecha_fin).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                {formatearInstante(rel.fecha_fin, { day: '2-digit', month: 'long', year: 'numeric' })}
               </dd>
             </div>
           )}
@@ -237,7 +238,7 @@ export default async function DistriRelacionDetailPage({
               <div key={s.id} className="px-5 py-3 flex items-center justify-between text-sm">
                 <div>
                   <span className="text-gray-600">Solicitada por <strong className="capitalize">{s.solicitado_por}</strong></span>
-                  <span className="text-xs text-gray-400 ml-2">{new Date(s.created_at).toLocaleDateString('es-AR')}</span>
+                  <span className="text-xs text-gray-400 ml-2">{formatearInstante(s.created_at)}</span>
                 </div>
                 <SolicitudEstadoBadge estado={s.estado} />
               </div>

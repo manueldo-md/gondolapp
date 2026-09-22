@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Images } from 'lucide-react'
-import { formatearFechaHora } from '@/lib/utils'
+import { formatearInstanteHora } from '@/lib/fecha-ar'
 import type { DeclaracionFoto } from '@/types'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { FotoDistancia } from '@/components/shared/foto-distancia'
@@ -213,7 +213,7 @@ export default async function RepoGondolasPage({
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-                        {formatearFechaHora(f.created_at)}
+                        {formatearInstanteHora(f.created_at)}
                       </td>
                     </tr>
                   ))}

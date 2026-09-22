@@ -3,7 +3,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, MapPin, Camera, History, CheckCircle2, AlertCircle } from 'lucide-react'
-import { formatearFechaHora, tiempoRelativo, calcularDistanciaMetros } from '@/lib/utils'
+import { tiempoRelativo, calcularDistanciaMetros } from '@/lib/utils'
+import { formatearInstanteHora } from '@/lib/fecha-ar'
 import type { TipoComercio } from '@/types'
 import { ReportesPanel, type ReporteRow } from './reportes-panel'
 import { firmarFachada } from '@/lib/storage-fotos'
@@ -181,7 +182,7 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
           </p>
         )}
         <p className="text-xs text-gray-400 mt-2">
-          Registrado {formatearFechaHora(comercio.created_at)}
+          Registrado {formatearInstanteHora(comercio.created_at)}
         </p>
       </div>
 
@@ -231,7 +232,7 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
                       <span className="text-xs text-gray-400">· {h.distri.razon_social}</span>
                     )}
                     <span className="text-xs text-gray-400">
-                      · {formatearFechaHora(h.created_at)}
+                      · {formatearInstanteHora(h.created_at)}
                     </span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">

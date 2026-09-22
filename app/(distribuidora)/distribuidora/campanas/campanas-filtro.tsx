@@ -10,6 +10,7 @@ import { BadgeAvance } from '@/components/campanas/BadgeAvance'
 import type { TipoCampana, EstadoCampana } from '@/types'
 import { SeccionColapsable } from '@/components/campanas/seccion-colapsable'
 import { AprobacionBtns } from './aprobacion-btns'
+import { formatearDia } from '@/lib/fecha-ar'
 
 export interface CampanaFiltroRow {
   id: string
@@ -88,7 +89,7 @@ function PendienteCard({ campana }: { campana: CampanaFiltroRow }) {
             {campana.fecha_fin && (
               <div className="flex items-center gap-1">
                 <Clock size={11} />
-                <span>Hasta {new Date(campana.fecha_fin).toLocaleDateString('es-AR')}</span>
+                <span>Hasta {formatearDia(campana.fecha_fin)}</span>
               </div>
             )}
             {campana.minimo_comercios && (

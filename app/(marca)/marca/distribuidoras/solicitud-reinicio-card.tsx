@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Loader2, RefreshCw, Check, X } from 'lucide-react'
 import { aceptarReinicioMarca, rechazarReinicioMarca } from './reinicio-actions'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 interface Props {
   solicitudId: string
@@ -50,7 +51,7 @@ export function SolicitudReinicioCardMarca({
             <span className="text-[#1E1B4B]">{distriNombre}</span> quiere reiniciar la relación
           </p>
           <p className="text-xs text-gray-500 mt-0.5">
-            Relación anterior activa desde {new Date(relacionFechaInicio).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+            Relación anterior activa desde {formatearInstante(relacionFechaInicio, { day: '2-digit', month: 'long', year: 'numeric' })}
           </p>
 
           <label className="flex items-start gap-2 mt-3 cursor-pointer">

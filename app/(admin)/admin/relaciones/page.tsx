@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Handshake } from 'lucide-react'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -153,10 +154,10 @@ function RelacionesTable({
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-500 capitalize">{r.iniciadoPor ?? '—'}</td>
                 <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-                  {new Date(r.createdAt).toLocaleDateString('es-AR')}
+                  {formatearInstante(r.createdAt)}
                   {r.fechaFin && (
                     <span className="block text-gray-300">
-                      → {new Date(r.fechaFin).toLocaleDateString('es-AR')}
+                      → {formatearInstante(r.fechaFin)}
                     </span>
                   )}
                 </td>

@@ -9,6 +9,7 @@ import { ValidarDistriBtn } from '../validar-btn'
 import { getConfig } from '@/lib/config'
 import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
+import { formatearDia, formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -101,7 +102,7 @@ export default async function DistriDetallePage({ params }: { params: { id: stri
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const campanas = (campanasData ?? []) as any[]
 
-  const fechaCreacion = new Date(distri.created_at).toLocaleString('es-AR', {
+  const fechaCreacion = formatearInstante(distri.created_at, {
     day: '2-digit', month: 'long', year: 'numeric',
   })
 
@@ -262,7 +263,7 @@ export default async function DistriDetallePage({ params }: { params: { id: stri
                     <td className="px-4 py-3.5 text-xs text-gray-500">{c.tipo ?? '—'}</td>
                     <td className="px-4 py-3.5 text-gray-700 font-semibold">{c.puntos_por_foto ?? 0}</td>
                     <td className="px-4 py-3.5 text-xs text-gray-400 whitespace-nowrap">
-                      {c.fecha_fin ? new Date(c.fecha_fin).toLocaleDateString('es-AR') : '—'}
+                      {c.fecha_fin ? formatearDia(c.fecha_fin) : '—'}
                     </td>
                     <td className="px-4 py-3.5">
                       <Link

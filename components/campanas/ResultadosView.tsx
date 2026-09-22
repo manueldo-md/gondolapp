@@ -35,6 +35,7 @@ import { ModuloDispatcher } from './modulos/ModuloDispatcher'
 import { BadgeAvance } from './BadgeAvance'
 import { derivarAvance } from '@/lib/campana-avance'
 import { CoberturaSeguimiento } from './CoberturaSeguimiento'
+import { diaAR } from '@/lib/fecha-ar'
 
 export interface ResultadosViewCampana {
   id: string
@@ -67,21 +68,24 @@ export interface ResultadosViewCampana {
  */
 function formatearVentana(desde: string | null, hasta: string | null): string | null {
   if (!desde || !hasta) return null
-  const d = new Date(desde), h = new Date(hasta)
-  if (isNaN(d.getTime()) || isNaN(h.getTime())) return null
+  if (isNaN(Date.parse(desde)) || isNaN(Date.parse(hasta))) return null
+
+  // `desde` y `hasta` son el mín y el máx de `misiones.created_at`, o sea
+  // INSTANTES. Se pasan a día argentino antes de descomponerlos: con
+  // `getDate/getMonth` —hora local del proceso, UTC en Vercel— un relevamiento
+  // que arrancó a las 22:00 del 11 se anunciaba como "del 12".
+  const [aD, mD, dD] = diaAR(desde).split('-').map(Number)
+  const [aH, mH, dH] = diaAR(hasta).split('-').map(Number)
 
   const MES = ['enero','febrero','marzo','abril','mayo','junio',
                'julio','agosto','septiembre','octubre','noviembre','diciembre']
-  const anioActual = new Date().getFullYear()
-  const sufijoAnio = d.getFullYear() !== anioActual ? ` de ${d.getFullYear()}` : ''
+  const anioActual = Number(diaAR().slice(0, 4))
+  const sufijoAnio = aD !== anioActual ? ` de ${aD}` : ''
 
-  const mismoDia = d.toDateString() === h.toDateString()
-  if (mismoDia) return `El ${d.getDate()} de ${MES[d.getMonth()]}${sufijoAnio}`
+  if (aD === aH && mD === mH && dD === dH) return `El ${dD} de ${MES[mD - 1]}${sufijoAnio}`
+  if (aD === aH && mD === mH) return `Del ${dD} al ${dH} de ${MES[mD - 1]}${sufijoAnio}`
 
-  const mismoMes = d.getMonth() === h.getMonth() && d.getFullYear() === h.getFullYear()
-  if (mismoMes) return `Del ${d.getDate()} al ${h.getDate()} de ${MES[d.getMonth()]}${sufijoAnio}`
-
-  return `Del ${d.getDate()} de ${MES[d.getMonth()]} al ${h.getDate()} de ${MES[h.getMonth()]}${sufijoAnio}`
+  return `Del ${dD} de ${MES[mD - 1]} al ${dH} de ${MES[mH - 1]}${sufijoAnio}`
 }
 
 /**

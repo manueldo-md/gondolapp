@@ -8,6 +8,7 @@ import {
   Camera, AlertTriangle, Clock, CheckCircle2,
 } from 'lucide-react'
 import type { DashboardVisualizacionesProps } from './dashboard-visualizaciones'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 // ── Único dynamic import — recharts + leaflet NUNCA tocan el servidor ─────────
 const DashboardVisualizaciones = dynamic(
@@ -259,7 +260,7 @@ export default async function DashboardPage() {
     const start = new Date(ahora); start.setDate(start.getDate() - (i + 1) * 7)
     const end   = new Date(ahora); end.setDate(end.getDate() - i * 7)
     const count = fotos.filter(f => { const t = new Date(f.created_at); return t >= start && t < end }).length
-    semanas.push({ label: start.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }), fotos: count })
+    semanas.push({ label: formatearInstante(start, { day: '2-digit', month: 'short' }), fotos: count })
   }
 
   // ── 12. Alertas ───────────────────────────────────────────────────────────────

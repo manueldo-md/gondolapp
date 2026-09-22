@@ -2,7 +2,7 @@ import React from 'react'
 import { Camera, MapPin, User, Clock } from 'lucide-react'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import { FotoDistancia } from '@/components/shared/foto-distancia'
-import { formatearFechaHora } from '@/lib/utils'
+import { formatearInstanteHora } from '@/lib/fecha-ar'
 import type { EstadoFoto } from '@/types'
 import type { Modulo } from '@/lib/resultados'
 import type { Tema } from './tema'
@@ -127,7 +127,7 @@ export function ModuloFoto({
                 <div className="flex items-center justify-end text-[10px] text-gray-400 mt-auto">
                   <div className="flex items-center gap-1">
                     <Clock size={10} />
-                    <span>{formatearFechaHora(f.created_at)}</span>
+                    <span>{formatearInstanteHora(f.created_at)}</span>
                   </div>
                 </div>
               </div>

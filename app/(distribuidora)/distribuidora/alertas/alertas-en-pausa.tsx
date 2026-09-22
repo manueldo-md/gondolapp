@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { PackageX, Store, Megaphone, UserX } from 'lucide-react'
 import { reactivarAlerta, eliminarAlertaDefinitivo } from './actions'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 export interface AlertaIgnoradaConNombre {
   id:            string
@@ -18,10 +19,11 @@ const TIPO_CONFIG: Record<string, { label: string; Icon: React.ElementType; colo
   gondolero_inactivo: { label: 'Gondolero sin actividad',  Icon: UserX,    color: 'text-amber-400'  },
 }
 
-function formatFecha(iso: string) {
-  const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-}
+// `ignorada_hasta` es un timestamptz. Con `getDate/getMonth/getFullYear` esto
+// daba la zona del DISPOSITIVO en el cliente y la del SERVIDOR en el render de
+// SSR: entre las 21:00 y la medianoche eran dos días distintos para la misma
+// alerta, o sea también una discrepancia de hidratación.
+const formatFecha = (iso: string) => formatearInstante(iso)
 
 export function AlertasEnPausa({ alertas }: { alertas: AlertaIgnoradaConNombre[] }) {
   const [abierto, setAbierto]       = useState(false)

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Camera } from 'lucide-react'
-import { formatearFechaHora } from '@/lib/utils'
+import { formatearInstanteHora } from '@/lib/fecha-ar'
 import { FotoLightbox } from '@/components/shared/foto-lightbox'
 import type { EstadoFoto, DeclaracionFoto, TipoCampana } from '@/types'
 import { GondolasFilter } from './gondolas-filter'
@@ -251,7 +251,7 @@ export default async function GondolasPage({
                   className="mt-0.5"
                 />
                 <p className="text-[10px] text-gray-400">
-                  {formatearFechaHora(f.created_at)}
+                  {formatearInstanteHora(f.created_at)}
                 </p>
                 <FotoDistancia metros={f.distancia_metros} />
                 {respuestasMap[f.id] && respuestasMap[f.id].length > 0 && (

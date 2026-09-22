@@ -9,12 +9,12 @@ import {
   labelTipoCampana,
   calcularPorcentaje,
   formatearPuntos,
-  formatearFecha,
 } from '@/lib/utils'
 import type { TipoCampana } from '@/types'
 import { getConfig } from '@/lib/config'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import { etiquetaVigencia, inscripcionCerrada } from '@/lib/campana-vigencia'
+import { formatearDia, formatearInstante } from '@/lib/fecha-ar'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { accesoACampana, type CampanaAcceso } from '@/lib/acceso-campana'
 import { calcularCobertura, fraseSemanaGondolero } from '@/lib/cobertura-seguimiento'
@@ -608,7 +608,7 @@ export default async function CampanaDetallePage({
                         {mision.comercio?.direccion && (
                           <p className="text-xs text-gray-400 truncate">{mision.comercio.direccion}</p>
                         )}
-                        <p className="text-xs text-gray-400">{formatearFecha(mision.created_at)}</p>
+                        <p className="text-xs text-gray-400">{formatearInstante(mision.created_at)}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         {/* Estado de la misión */}
@@ -655,8 +655,8 @@ export default async function CampanaDetallePage({
                 <ReqRow
                   ok={!inscripcionVencida}
                   text={inscripcionVencida
-                    ? `Inscripción cerrada (venció el ${formatearFecha(c.fecha_limite_inscripcion)})`
-                    : `Inscripción abierta hasta el ${formatearFecha(c.fecha_limite_inscripcion)}`}
+                    ? `Inscripción cerrada (venció el ${formatearDia(c.fecha_limite_inscripcion)})`
+                    : `Inscripción abierta hasta el ${formatearDia(c.fecha_limite_inscripcion)}`}
                 />
               ) : (
                 <ReqRow ok text="Inscripción abierta" />

@@ -17,6 +17,7 @@ import {
 } from './draft-actions'
 import { ReenviarBtn } from './reenviar-btn'
 import { appUrl } from '@/lib/app-url'
+import { formatearDia, formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createSupabaseClient(
@@ -93,9 +94,9 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
   const bloques = ((c.bloques_foto ?? []) as any[]).sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
 
   // Fecha de creación / modificación formateadas
-  const fechaCreacion = new Date(c.created_at).toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const fechaCreacion = formatearInstante(c.created_at, { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   const fechaModif = c.updated_at && c.updated_at !== c.created_at
-    ? new Date(c.updated_at).toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? formatearInstante(c.updated_at, { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     : null
 
   return (
@@ -127,7 +128,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
               <Calendar size={14} className="text-gray-400 mt-0.5 shrink-0" />
               <div>
                 <p className="text-xs text-gray-400">Inicio</p>
-                <p className="font-medium text-gray-900">{new Date(c.fecha_inicio).toLocaleDateString('es-AR')}</p>
+                <p className="font-medium text-gray-900">{formatearDia(c.fecha_inicio)}</p>
               </div>
             </div>
           )}
@@ -137,7 +138,7 @@ export default async function MarcaCampanaDetallePage({ params }: { params: { id
               <div>
                 <p className="text-xs text-gray-400">Fin{vig ? ` · ${vig.texto}` : ''}</p>
                 <p className={`font-medium ${vig && !vig.vencida && vig.dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
-                  {new Date(c.fecha_fin).toLocaleDateString('es-AR')}
+                  {formatearDia(c.fecha_fin)}
                 </p>
               </div>
             </div>

@@ -7,6 +7,7 @@
 
 import { useState } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown, MapPin } from 'lucide-react'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -378,7 +379,7 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
               <td className="px-4 py-3 text-right text-gray-700">{r.fotosRecibidas}</td>
               <td className="px-4 py-3 text-right text-xs text-gray-400">
                 {r.ultimaVisita
-                  ? new Date(r.ultimaVisita).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
+                  ? formatearInstante(r.ultimaVisita, { day: '2-digit', month: 'short', year: 'numeric' })
                   : '—'}
               </td>
             </tr>

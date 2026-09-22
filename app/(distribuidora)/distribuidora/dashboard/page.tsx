@@ -11,7 +11,8 @@ import { formatearPuntos } from '@/lib/utils'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
 import { getConfig } from '@/lib/config'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
-import { nivelPorMisiones } from '@/lib/nivel-mensual'
+import { nivelPorMisiones, inicioDelMes } from '@/lib/nivel-mensual'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
@@ -34,8 +35,10 @@ function makeAdmin() {
 const NULL_UUID = '00000000-0000-0000-0000-000000000000'
 function safe(ids: string[]) { return ids.length > 0 ? ids : [NULL_UUID] }
 
-const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
-function fmtSemana(d: Date) { return `${d.getDate()} ${MESES[d.getMonth()]}` }
+// El label del bucket semanal, en hora argentina. Con `getDate()/getMonth()`
+// —hora local del proceso— en Vercel salía el día UTC, así que una semana que
+// arranca entre las 21:00 y la medianoche se rotulaba con el día siguiente.
+const fmtSemana = (d: Date) => formatearInstante(d, { day: 'numeric', month: 'short' })
 
 const TIPO_LABEL: Record<string, string> = {
   autoservicio: 'Autoservicio',
@@ -73,7 +76,7 @@ export default async function DashboardPage() {
 
   // ── Fechas de referencia ──────────────────────────────────────────────────
   const ahora        = new Date()
-  const mesInicio    = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  const mesInicio    = inicioDelMes(ahora)
   const hace7d       = new Date(Date.now() -  7 * 86400_000)
   const hace14d      = new Date(Date.now() - 14 * 86400_000)
   const hace30d      = new Date(Date.now() - 30 * 86400_000)
@@ -429,7 +432,7 @@ export default async function DashboardPage() {
                     <p className="text-sm font-medium text-gray-900 truncate">{q.nombre}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       No encontrado {q.veces} {q.veces === 1 ? 'vez' : 'veces'} · última vez{' '}
-                      {new Date(q.ultimaVez).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
+                      {formatearInstante(q.ultimaVez, { day: '2-digit', month: 'short' })}
                     </p>
                   </div>
                   <ChevronRight size={14} className="text-gray-300 shrink-0 ml-3" />
@@ -634,7 +637,7 @@ export default async function DashboardPage() {
                       </p>
                     </div>
                     <span className="text-[10px] text-gray-400 shrink-0">
-                      {loc.ultimaActividad.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
+                      {formatearInstante(loc.ultimaActividad, { day: '2-digit', month: 'short' })}
                     </span>
                   </div>
                 )
@@ -668,7 +671,7 @@ export default async function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{c.nombre}</p>
                     <p className="text-[11px] text-gray-400">
-                      {TIPO_LABEL[c.tipo ?? 'otro'] ?? 'Comercio'} · {new Date(c.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
+                      {TIPO_LABEL[c.tipo ?? 'otro'] ?? 'Comercio'} · {formatearInstante(c.created_at, { day: '2-digit', month: 'short' })}
                     </p>
                   </div>
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 shrink-0">

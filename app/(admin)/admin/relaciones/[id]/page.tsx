@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { labelEstadoCampana } from '@/lib/utils'
 import type { EstadoCampana } from '@/types'
+import { formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -124,7 +125,7 @@ export default async function AdminRelacionDetailPage({
           <div>
             <dt className="text-gray-500 mb-0.5">Inicio</dt>
             <dd className="font-medium text-gray-900">
-              {new Date(rel.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+              {formatearInstante(rel.created_at, { day: '2-digit', month: 'long', year: 'numeric' })}
             </dd>
           </div>
           <div>
@@ -139,7 +140,7 @@ export default async function AdminRelacionDetailPage({
             <div>
               <dt className="text-gray-500 mb-0.5">Terminada el</dt>
               <dd className="font-medium text-red-600">
-                {new Date(rel.fecha_fin).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                {formatearInstante(rel.fecha_fin, { day: '2-digit', month: 'long', year: 'numeric' })}
               </dd>
             </div>
           )}
@@ -147,7 +148,7 @@ export default async function AdminRelacionDetailPage({
             <div>
               <dt className="text-gray-500 mb-0.5">Último reinicio</dt>
               <dd className="font-medium text-gray-900">
-                {new Date(rel.fecha_reinicio).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                {formatearInstante(rel.fecha_reinicio, { day: '2-digit', month: 'long', year: 'numeric' })}
               </dd>
             </div>
           )}
@@ -254,7 +255,7 @@ export default async function AdminRelacionDetailPage({
                     }
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-400">
-                    {new Date(s.created_at).toLocaleDateString('es-AR')}
+                    {formatearInstante(s.created_at)}
                   </td>
                 </tr>
               ))}

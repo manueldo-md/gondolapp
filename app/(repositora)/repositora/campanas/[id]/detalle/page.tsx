@@ -8,6 +8,7 @@ import {
 import type { TipoCampana, EstadoCampana } from '@/types'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { CampanaPageNav } from '@/components/campanas/campana-page-nav'
+import { formatearDia, formatearInstante } from '@/lib/fecha-ar'
 
 function adminClient() {
   return createAdminClient(
@@ -103,11 +104,11 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
   const puntosEfectivos = (c.puntos_por_mision ?? 0) > 0 ? c.puntos_por_mision : c.puntos_por_foto
   const limiteComercio = c.tope_total_comercios ?? c.minimo_comercios
 
-  const fechaCreacion = new Date(c.created_at).toLocaleString('es-AR', {
-    day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  const fechaCreacion = formatearInstante(c.created_at, {
+    day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   })
   const fechaModif = c.updated_at && c.updated_at !== c.created_at
-    ? new Date(c.updated_at).toLocaleString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? formatearInstante(c.updated_at, { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     : null
 
   return (
@@ -141,7 +142,7 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
           {c.fecha_inicio && (
             <div className="flex items-start gap-2">
               <Calendar size={14} className="text-gray-400 mt-0.5 shrink-0" />
-              <div><p className="text-xs text-gray-400">Inicio</p><p className="font-medium text-gray-900">{new Date(c.fecha_inicio).toLocaleDateString('es-AR')}</p></div>
+              <div><p className="text-xs text-gray-400">Inicio</p><p className="font-medium text-gray-900">{formatearDia(c.fecha_inicio)}</p></div>
             </div>
           )}
           {c.fecha_fin && (
@@ -150,7 +151,7 @@ export default async function RepoCampanaDetallePage({ params }: { params: { id:
               <div>
                 <p className="text-xs text-gray-400">Fin{vig ? ` · ${vig.texto}` : ''}</p>
                 <p className={`font-medium ${vig && !vig.vencida && vig.dias <= 3 ? 'text-red-600' : 'text-gray-900'}`}>
-                  {new Date(c.fecha_fin).toLocaleDateString('es-AR')}
+                  {formatearDia(c.fecha_fin)}
                 </p>
               </div>
             </div>
