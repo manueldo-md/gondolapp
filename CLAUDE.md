@@ -4241,10 +4241,17 @@ Importa más desde este tramo: un fallo silencioso ahí dejaba al usuario con el
 tipo VIEJO y al admin viendo *"Rol cambiado a marca"*; ahora arrastra además el
 código, porque el trigger tampoco llegó a correr.
 
-**`cambiar-rol-btn.tsx` no lo monta nadie** — verificado con grep el 23/9/2026,
-la única mención en el repo es su propia declaración. El cambio de rol que se usa
-está en `acciones-usuario.tsx`. Queda candidata a borrarse; mientras exista, al
-menos ya no se traga el error.
+**`cambiar-rol-btn.tsx` se borró el 23/9/2026.** No lo montaba nadie —
+verificado con grep sobre el repo entero, la única mención era su propia
+declaración— y era una segunda copia del cambio de rol, la que además se tragaba
+el error entero. El que se usa está en `acciones-usuario.tsx`.
+
+`docs/AUDITORIA-2026-09.md:880` ya lo había marcado como "posible código muerto"
+en septiembre, y el propio archivo decía *"componente legacy — la funcionalidad
+se migró a AccionesUsuario"*. **Estuvo así meses**, que es exactamente lo que lo
+hacía peligroso: una copia muerta con la acción adentro es la que alguien va a
+"arreglar" algún día creyendo que es la que corre. Mismo caso que
+`unirseACampana` y que los dos formateadores sin zona de `lib/utils.ts`.
 
 **Probado:** `scripts/probar-migracion-fxr.mjs` (28 casos, aplica la migración en
 una transacción y termina con ROLLBACK; cubre el registro público por el camino
