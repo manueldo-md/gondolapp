@@ -15,7 +15,7 @@
  *
  *   npx tsx scripts/probar-postulable.ts
  */
-import { accesoACampana, ejecutorDeCampana, type CampanaAcceso, type ContextoAcceso } from '../lib/acceso-campana'
+import { accesoACampana, tieneAccesoACampana, ejecutorDeCampana, type CampanaAcceso, type ContextoAcceso } from '../lib/acceso-campana'
 
 let fallos = 0
 function caso(nombre: string, real: unknown, esperado: unknown) {
@@ -54,6 +54,15 @@ for (const [nombre, c, ctx] of combinaciones) {
   const r = accesoACampana(c, ctx)
   caso(`${nombre}: postulable pero ok=false`,
     { ok: r.ok, postulable: !r.ok && !!r.postulable }, { ok: false, postulable: true })
+}
+
+console.log('\n▸ Y no puede caer en "Disponibles"')
+// El acople entre las dos secciones de la lista: `disponibles` filtra con
+// `tieneAccesoACampana` y `ofertas` con `postulable`. Si alguna vez las dos
+// dieran true para la misma campaña, el fixer vería un botón de "Ir a capturar"
+// sobre una campaña de una repositora que nunca lo aceptó.
+for (const [nombre, c, ctx] of combinaciones) {
+  caso(`${nombre}: tieneAccesoACampana dice NO`, tieneAccesoACampana(c, ctx), false)
 }
 
 console.log('\n▸ Quién ejecuta — y por qué no se lee via_ejecucion')

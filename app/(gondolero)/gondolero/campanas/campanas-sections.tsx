@@ -47,6 +47,14 @@ export interface CampanaCardData {
   nivel_minimo: string | null
   es_abierta: boolean
   via_ejecucion: string | null
+  /**
+   * Los dos siguientes los lee `accesoACampana` para decidir si la campaña es
+   * una OFERTA. Están declarados acá porque si alguien los saca de
+   * `CAMPANA_SELECT` llegan `undefined`, la sección de ofertas queda vacía para
+   * siempre y **no falla nada**: es el modo de falla silencioso de siempre.
+   */
+  actor_campana?: string | null
+  abierta_a_postulaciones?: boolean | null
   estado?: string
   created_at: string
   marca: { razon_social: string } | null
@@ -335,6 +343,72 @@ function CampanaCard({
 
 // ── CampanaCardCerrada (compacta) ──────────────────────────────────────────────
 
+// ── CampanaCardOferta ─────────────────────────────────────────────────────────
+
+/**
+ * Una campaña que el fixer VE pero todavía no puede trabajar.
+ *
+ * ── NO ES UN LINK, Y ESO ES DELIBERADO ──────────────────────────────────────
+ * Las otras dos tarjetas envuelven todo en un `<Link>` al detalle. Esta no: el
+ * detalle tiene el botón de unirse, el link a captura y el resto del flujo de
+ * trabajo, y llevarlo ahí sería ofrecerle puertas que están todas cerradas — el
+ * rechazo tardío de siempre, esta vez con tres clics de por medio.
+ *
+ * Muestra lo justo para decidir si le interesa —qué tipo es, cuánto paga, hasta
+ * cuándo— y nada de lo que hace falta para ejecutarla.
+ */
+function CampanaCardOferta({ campana }: { campana: CampanaCardData }) {
+  const vig = etiquetaVigencia(campana.fecha_fin)
+  const esSeguimiento = campana.modalidad === 'seguimiento'
+  const puntos = campana.puntos_por_mision || campana.puntos_por_foto
+
+  return (
+    <div className="rounded-2xl bg-white border border-violet-200 shadow-sm overflow-hidden">
+      <div className="p-4">
+        <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${COLORES_TIPO[campana.tipo]}`}>
+            {labelTipoCampana(campana.tipo)}
+          </span>
+          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+            Abierta a postulación
+          </span>
+          {esSeguimiento && campana.visitas_por_semana && (
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+              {campana.visitas_por_semana}× por semana
+            </span>
+          )}
+        </div>
+
+        <h3 className="font-bold text-gray-900 leading-snug">{campana.nombre}</h3>
+        {campana.instruccion && (
+          <p className="text-sm text-gray-500 mt-1 line-clamp-2">{campana.instruccion}</p>
+        )}
+
+        <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+          {puntos > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Star size={12} className="text-gondo-amber-400" />
+              {formatearPuntos(puntos)} pts por misión
+            </span>
+          )}
+          {vig && (
+            <span className="inline-flex items-center gap-1">
+              <Clock size={12} />
+              {vig.texto}
+            </span>
+          )}
+        </div>
+
+        {/* Lo que puede hacer: nada todavía. Decirlo es mejor que un botón que no
+            responde o un link a una pantalla donde está todo bloqueado. */}
+        <div className="mt-3 px-3 py-2 rounded-xl bg-violet-50 text-xs text-violet-800">
+          Todavía no trabajás con quien ejecuta esta campaña.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CampanaCardCerrada({
   campana,
   misDistriIds,
@@ -440,6 +514,7 @@ function Seccion({
 export function CampanasSections({
   misCampanas,
   disponibles,
+  ofertas = [],
   finalizadas,
   gondoleroNivel,
   misDistriIds,
@@ -451,6 +526,8 @@ export function CampanasSections({
 }: {
   misCampanas: CampanaCardData[]
   disponibles: CampanaCardData[]
+  /** Las que puede VER pero no trabajar: le falta el vínculo con el ejecutor. */
+  ofertas?: CampanaCardData[]
   finalizadas: CampanaCardData[]
   gondoleroNivel: NivelGondolero | null
   misDistriIds: string[]
@@ -557,7 +634,7 @@ export function CampanasSections({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [misCampanas, gondoleroLocalidadIds])
 
-  const hayAlgo = misCampanas.length + disponibles.length + finalizadas.length > 0
+  const hayAlgo = misCampanas.length + disponibles.length + ofertas.length + finalizadas.length > 0
 
   if (!hayAlgo) {
     return (
@@ -620,6 +697,33 @@ export function CampanasSections({
               gondoleroNivel={gondoleroNivel}
               misDistriIds={misDistriIds}
             />
+          ))}
+        </Seccion>
+      )}
+
+      {/* ── Ofertas: las que puede MIRAR pero todavía no trabajar ──────────────
+          Van DESPUÉS de "Disponibles" a propósito: primero lo que puede hacer
+          ahora, después lo que tiene que pedir. Al revés, la pantalla le
+          ofrecería trabajo que no puede tomar antes que el que sí.
+
+          Sin botón por ahora — el de postularse llega en la etapa siguiente. Que
+          esta sección exista sin botón es el punto: prueba que ver una campaña
+          no habilita trabajarla. */}
+      {ofertas.length > 0 && (
+        <Seccion
+          titulo="Abiertas a postulación"
+          badge={ofertas.length}
+          badgeColor="bg-violet-100 text-violet-700"
+          bgColor="bg-violet-50"
+          borderColor="border-violet-200"
+          defaultOpen={true}
+        >
+          <p className="text-xs text-gray-500 px-1 pb-2">
+            Todavía no trabajás con quien ejecuta estas campañas. Podés verlas, y
+            en breve vas a poder pedir sumarte.
+          </p>
+          {ofertas.map(c => (
+            <CampanaCardOferta key={c.id} campana={c} />
           ))}
         </Seccion>
       )}

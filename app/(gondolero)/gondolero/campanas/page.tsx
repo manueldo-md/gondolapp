@@ -8,7 +8,7 @@ import { MisionesPendientes } from '@/components/gondolero/misiones-pendientes'
 import { getConfig } from '@/lib/config'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { estaVencida } from '@/lib/campana-vigencia'
-import { tieneAccesoACampana, type CampanaAcceso } from '@/lib/acceso-campana'
+import { tieneAccesoACampana, accesoACampana, type CampanaAcceso, type MotivoSinAcceso, type EjecutorCampana } from '@/lib/acceso-campana'
 
 type CampanaRow = CampanaCardData
 
@@ -18,6 +18,7 @@ const CAMPANA_SELECT = `
   fecha_limite_inscripcion, minimo_comercios,
   tope_total_comercios, comercios_relevados, instruccion, min_comercios_para_cobrar,
   max_comercios_por_gondolero, nivel_minimo, es_abierta, created_at,
+  actor_campana, abierta_a_postulaciones,
   marca:marcas ( razon_social ),
   distri:distribuidoras ( razon_social ),
   bloques_foto ( id, bloque_campos ( tipo ) )
@@ -324,6 +325,25 @@ export default async function CampanasPage() {
     && tieneAcceso(c)
   )
 
+  // ── Sección 2b: Ofertas ───────────────────────────────────────────────────────
+  // Campañas que el fixer PUEDE VER pero NO PUEDE TRABAJAR: le falta el vínculo
+  // con el ejecutor, y la campaña acepta postulaciones.
+  //
+  // La regla no se escribe acá: sale de `accesoACampana`, el mismo que decide
+  // `disponibles`. Una consulta aparte sería la cuarta copia de lo que ese
+  // archivo vino a unificar, y volvería a pasar lo de siempre — la lista
+  // ofreciendo algo que `unirse` rechaza al apretar.
+  //
+  // `postulable` NO toca `ok`, así que estas campañas siguen fuera de
+  // `disponibles` por construcción: no hay forma de que una oferta se cuele
+  // como trabajable sin cambiar `acceso-campana.ts`.
+  const ofertas = vigentes
+    .filter(c => !misCampanasIds.has(c.id))
+    .map(c => ({ campana: c, acceso: accesoACampana(c as unknown as CampanaAcceso, ctxAcceso) }))
+    .filter((x): x is { campana: CampanaRow; acceso: { ok: false; motivo: MotivoSinAcceso; mensaje: string; postulable: EjecutorCampana } } =>
+      !x.acceso.ok && !!x.acceso.postulable)
+    .map(x => x.campana)
+
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
   // REGLA: (estado IN ('cerrada','suspendida','pausada') OR fecha_fin pasada)
   //        AND (tiene participación OR misiones)
@@ -436,6 +456,7 @@ export default async function CampanasPage() {
         <CampanasSections
           misCampanas={misCampanas}
           disponibles={disponibles}
+          ofertas={ofertas}
           finalizadas={finalizadas}
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}
