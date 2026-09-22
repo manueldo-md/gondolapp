@@ -8,11 +8,32 @@ function adminClient() {
   )
 }
 
+/**
+ * ── ESTA UNIÓN Y EL CHECK DE LA BASE SON LA MISMA LISTA, ESCRITA DOS VECES ──
+ *
+ * `notificaciones_tipo_check` en Postgres tiene que aceptar exactamente esto.
+ * Si se agrega un tipo acá y no allá, el insert **rebota y no se nota**: los
+ * inserts de notificación no pueden hacer fallar la acción que los dispara, así
+ * que un fallo suyo es siempre silencioso por diseño.
+ *
+ * No es hipotético. Hasta el 24/9/2026 el CHECK rechazaba CUATRO tipos que el
+ * código escribía —`vinculacion_invitacion` entre ellos— y **ningún gondolero ni
+ * fixer recibió nunca el aviso de que lo habían invitado**. Cero filas de ese
+ * tipo en la base, con vínculos aprobados existiendo.
+ *
+ * `scripts/probar-notificaciones.mjs` compara esta unión contra el CHECK de la
+ * base viva y se pone rojo si se separan. Es la única defensa que hay.
+ */
 export type TipoNotificacion =
-  // Gondolero
+  // Gondolero / fixer
   | 'foto_aprobada' | 'foto_rechazada' | 'nivel_subido'
   | 'mision_aprobada' | 'puntos_acreditados' | 'nueva_campana_disponible' | 'comercio_validado'
   | 'solicitud_aprobada' | 'solicitud_rechazada' | 'desvinculacion_distri'
+  | 'desvinculacion_repositora'
+  // Vinculación (los cuatro que el CHECK rechazaba hasta el 24/9/2026)
+  | 'vinculacion_invitacion' | 'vinculacion_invitacion_enviada' | 'vinculacion_nueva'
+  // Postulación de fixers a campañas
+  | 'postulacion_fixer'
   // Marca
   | 'campana_aprobada' | 'campana_rechazada' | 'nueva_mision_recibida'
   | 'campana_por_vencer' | 'nueva_distribuidora_vinculada' | 'distribuidora_termino_relacion'
@@ -33,6 +54,64 @@ interface NotifBase {
   mensaje?: string
   campanaId?: string
   linkDestino?: string
+}
+
+/**
+ * Para un gondolero o un fixer. `notificaciones.gondolero_id` guarda a los dos
+ * —la columna se llama así desde antes de que existieran los fixers— y lo que
+ * los distingue es `actor_tipo`.
+ *
+ * ── POR QUÉ IMPORTA PASAR EL TIPO BIEN ──────────────────────────────────────
+ * `actor_tipo` tiene su propio CHECK, y hasta el 24/9/2026 **no aceptaba
+ * `'fixer'`**. Tres escrituras lo usaban igual —las de aprobar, rechazar y
+ * desvincular a un fixer— así que rebotaban enteras aunque el `tipo` fuera
+ * válido. Un fixer aprobado nunca se enteró de que lo habían aprobado.
+ */
+export async function crearNotificacionActor(
+  actorId: string,
+  esFixer: boolean,
+  notif: NotifBase,
+): Promise<{ error: string | null }> {
+  const db = adminClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (db as any).from('notificaciones').insert({
+    gondolero_id: actorId,
+    actor_id:     actorId,
+    actor_tipo:   esFixer ? 'fixer' : 'gondolero',
+    tipo:         notif.tipo,
+    titulo:       notif.titulo,
+    mensaje:      notif.mensaje ?? null,
+    campana_id:   notif.campanaId ?? null,
+    link_destino: notif.linkDestino ?? null,
+  })
+  if (error) {
+    console.error('[notificaciones] crearNotificacionActor error:', error.message,
+      { actorId, esFixer, tipo: notif.tipo })
+  }
+  return { error: error?.message ?? null }
+}
+
+/** Para una repositora (por `actor_id = repositora_id`). */
+export async function crearNotificacionRepositora(
+  repositoraId: string,
+  notif: NotifBase,
+): Promise<{ error: string | null }> {
+  const db = adminClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (db as any).from('notificaciones').insert({
+    actor_id:     repositoraId,
+    actor_tipo:   'repositora',
+    tipo:         notif.tipo,
+    titulo:       notif.titulo,
+    mensaje:      notif.mensaje ?? null,
+    campana_id:   notif.campanaId ?? null,
+    link_destino: notif.linkDestino ?? null,
+  })
+  if (error) {
+    console.error('[notificaciones] crearNotificacionRepositora error:', error.message,
+      { repositoraId, tipo: notif.tipo })
+  }
+  return { error: error?.message ?? null }
 }
 
 // Para gondolero (backward compat)

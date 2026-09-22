@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
 import { revisarCodigo } from '@/lib/codigo-gondolero'
+import { crearNotificacionActor } from '@/lib/notificaciones'
 
 function adminClient() {
   return createAdminClient(
@@ -115,13 +116,17 @@ export async function confirmarVinculacionPorCodigo(
 
   if (error) return { error: 'No se pudo enviar la invitación. Intentá de nuevo.' }
 
-  // Notificación al fixer
-  await admin.from('notificaciones').insert({
-    gondolero_id: fixerId,
+  // Por el helper y no con un insert suelto: chequea el error y lo loguea. Este
+  // mismo aviso venía REBOTANDO —el CHECK de `tipo` no aceptaba
+  // 'vinculacion_invitacion'— y como nadie miraba el error, ningún fixer se
+  // enteró nunca de que lo habían invitado.
+  //
+  // No corta el flujo si falla: la solicitud ya quedó registrada, y perderla por
+  // un aviso sería peor que el aviso que se pierde.
+  await crearNotificacionActor(fixerId, true, {
     tipo: 'vinculacion_invitacion',
     titulo: `📦 ${distriNombre} quiere vincularte`,
     mensaje: `La distribuidora ${distriNombre} te invitó a unirte a su equipo. Revisá tu perfil para aceptar o rechazar.`,
-    leida: false,
   })
 
   revalidatePath('/distribuidora/fixers')

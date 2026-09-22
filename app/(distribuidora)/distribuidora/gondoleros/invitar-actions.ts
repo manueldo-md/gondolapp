@@ -10,6 +10,7 @@ import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
 import { revisarCodigo } from '@/lib/codigo-gondolero'
+import { crearNotificacionActor } from '@/lib/notificaciones'
 
 function adminClient() {
   return createSupabaseClient(
@@ -123,13 +124,12 @@ export async function confirmarVinculacionPorCodigo(
 
   if (error) return { error: 'No se pudo enviar la invitación. Intentá de nuevo.' }
 
-  // Notificación al gondolero
-  await admin.from('notificaciones').insert({
-    gondolero_id: gondoleroId,
+  // Por el helper: chequea el error y lo loguea. Venía rebotando contra el
+  // CHECK de `tipo`, sin que nadie lo mirara — ver lib/notificaciones.ts.
+  await crearNotificacionActor(gondoleroId, false, {
     tipo: 'vinculacion_invitacion',
     titulo: `📦 ${distriNombre} quiere vincularte`,
     mensaje: `La distribuidora ${distriNombre} te invitó a unirte a su equipo. Revisá tu perfil para aceptar o rechazar.`,
-    leida: false,
   })
 
   revalidatePath('/distribuidora/gondoleros')

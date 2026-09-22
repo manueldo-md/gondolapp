@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
+import { crearNotificacionActor } from '@/lib/notificaciones'
 
 function adminClient() {
   return createSupabaseClient(
@@ -85,12 +86,16 @@ export async function aceptarInvitacionFixer(
   }
 
   // Notificación al fixer
-  await admin.from('notificaciones').insert({
-    gondolero_id: fixerId,
+  // Por el helper y no con un insert suelto: chequea el error y lo loguea. Este
+  // mismo insert venía REBOTANDO —el CHECK de `tipo` no aceptaba 'vinculacion_invitacion_enviada'—
+  // y como nadie miraba el error, nadie recibió nunca este aviso.
+  //
+  // No corta el flujo si falla: el vínculo ya quedó registrado, y perderlo por
+  // un aviso sería peor que el aviso que se pierde.
+  await crearNotificacionActor(fixerId, true, {
     tipo: 'vinculacion_invitacion_enviada',
     titulo: `Te uniste al equipo de ${actorNombre} 🎉`,
     mensaje: `Ya sos parte de ${actorNombre}. Podés empezar a recibir misiones.`,
-    leida: false,
   })
 
   revalidatePath('/gondolero/perfil')

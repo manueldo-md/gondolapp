@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { crearNotificacionActor } from '@/lib/notificaciones'
 
 function adminClient() {
   return createAdminClient(
@@ -38,15 +39,13 @@ export async function aprobarSolicitudFixer(
   if (profileUpdate.error) return { error: 'No se pudo aprobar. ' + profileUpdate.error.message }
   if (solicitudUpdate.error) return { error: 'No se pudo actualizar la solicitud. ' + solicitudUpdate.error.message }
 
-  // Notificación al fixer
-  await admin.from('notificaciones').insert({
-    gondolero_id: fixerId,
-    actor_id:     fixerId,
-    actor_tipo:   'fixer',
-    tipo:         'solicitud_aprobada',
-    titulo:       '¡Solicitud aprobada!',
-    mensaje:      `Ya sos parte de ${distriNombre}. ¡Bienvenido al equipo!`,
-    leida:        false,
+  // Por el helper: chequea el error y lo loguea. Este aviso venía rebotando
+  // entero —el CHECK de `actor_tipo` no aceptaba 'fixer' hasta el 24/9/2026—
+  // aunque el `tipo` fuera válido. Un fixer nunca supo que lo habían aprobado.
+  await crearNotificacionActor(fixerId, true, {
+    tipo:    'solicitud_aprobada',
+    titulo:  '¡Solicitud aprobada!',
+    mensaje: `Ya sos parte de ${distriNombre}. ¡Bienvenido al equipo!`,
   })
 
   revalidatePath('/distribuidora/fixers')
@@ -72,15 +71,13 @@ export async function rechazarSolicitudFixer(
 
   if (error) return { error: 'No se pudo rechazar. ' + error.message }
 
-  // Notificación al fixer
-  await admin.from('notificaciones').insert({
-    gondolero_id: fixerId,
-    actor_id:     fixerId,
-    actor_tipo:   'fixer',
-    tipo:         'solicitud_rechazada',
-    titulo:       'Solicitud no aprobada',
-    mensaje:      `Tu solicitud a ${distriNombre} no fue aprobada. Podés solicitar otra distribuidora desde tu perfil.`,
-    leida:        false,
+  // Por el helper: chequea el error y lo loguea. Este aviso venía rebotando
+  // entero —el CHECK de `actor_tipo` no aceptaba 'fixer' hasta el 24/9/2026—
+  // aunque el `tipo` fuera válido. Un fixer nunca supo que lo habían aprobado.
+  await crearNotificacionActor(fixerId, true, {
+    tipo:    'solicitud_rechazada',
+    titulo:  'Solicitud no aprobada',
+    mensaje: `Tu solicitud a ${distriNombre} no fue aprobada. Podés solicitar otra distribuidora desde tu perfil.`,
   })
 
   revalidatePath('/distribuidora/fixers')

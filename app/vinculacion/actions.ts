@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
+import { crearNotificacionActor } from '@/lib/notificaciones'
 
 function adminClient() {
   return createSupabaseClient(
@@ -41,12 +42,16 @@ export async function aceptarInvitacion(
   }
 
   // Notificación al gondolero
-  await admin.from('notificaciones').insert({
-    gondolero_id: gondoleroId,
+  // Por el helper y no con un insert suelto: chequea el error y lo loguea. Este
+  // mismo insert venía REBOTANDO —el CHECK de `tipo` no aceptaba 'vinculacion_nueva'—
+  // y como nadie miraba el error, nadie recibió nunca este aviso.
+  //
+  // No corta el flujo si falla: el vínculo ya quedó registrado, y perderlo por
+  // un aviso sería peor que el aviso que se pierde.
+  await crearNotificacionActor(gondoleroId, false, {
     tipo: 'vinculacion_nueva',
     titulo: `¡Bienvenido al equipo de ${distriNombre}! 🎉`,
     mensaje: `Ya sos parte de ${distriNombre}. Revisá las campañas disponibles.`,
-    leida: false,
   })
 
   revalidatePath('/gondolero/perfil')

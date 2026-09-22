@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
 import { revisarCodigo } from '@/lib/codigo-gondolero'
+import { crearNotificacionActor } from '@/lib/notificaciones'
 
 function adminClient() {
   return createAdminClient(
@@ -111,13 +112,12 @@ export async function vincularFixerPorCodigo(
 
   if (error) return { error: 'No se pudo enviar la invitación. Intentá de nuevo.' }
 
-  // Notificación al fixer
-  await admin.from('notificaciones').insert({
-    gondolero_id: fixerId,
+  // Por el helper: chequea el error y lo loguea. Venía rebotando contra el
+  // CHECK de `tipo`, sin que nadie lo mirara — ver lib/notificaciones.ts.
+  await crearNotificacionActor(fixerId, true, {
     tipo: 'vinculacion_invitacion',
     titulo: `📦 ${repoNombre} quiere vincularte`,
     mensaje: `La repositora ${repoNombre} te invitó a unirte. Revisá tu perfil para aceptar o rechazar.`,
-    leida: false,
   })
 
   revalidatePath('/repositora/fixers')

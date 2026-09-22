@@ -5,6 +5,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
+import { crearNotificacionActor } from '@/lib/notificaciones'
 
 function adminClient() {
   return createAdminClient(
@@ -96,17 +97,17 @@ export async function desvincularFixer(
   if (profileRes.error) return { error: 'No se pudo actualizar el perfil: ' + profileRes.error.message }
 
   // Notificación al fixer (fire-and-forget)
-  try {
-    await admin.from('notificaciones').insert({
-      gondolero_id: fixerId,
-      actor_id:     fixerId,
-      actor_tipo:   'fixer',
-      tipo:         'desvinculacion_distri',
-      titulo:       'Fuiste desvinculado',
-      mensaje:      `Tu relación con ${distriNombre} fue terminada. Podés solicitar vinculación a otra distribuidora desde tu perfil.`,
-      leida:        false,
-    })
-  } catch { /* ignorar si la notificación falla */ }
+  // El try/catch se fue: supabase-js NO lanza ante un error de Postgres, lo
+  // devuelve en `.error`, así que ese catch no atrapaba nada y el fallo era
+  // invisible igual. El helper lo chequea y lo loguea, y sigue sin cortar el
+  // flujo — que era la intención del fire-and-forget y se mantiene.
+  //
+  // Este aviso venía rebotando: el CHECK de `actor_tipo` no aceptaba 'fixer'.
+  await crearNotificacionActor(fixerId, true, {
+    tipo:    'desvinculacion_distri',
+    titulo:  'Fuiste desvinculado',
+    mensaje: `Tu relación con ${distriNombre} fue terminada. Podés solicitar vinculación a otra distribuidora desde tu perfil.`,
+  })
 
   revalidatePath('/distribuidora/fixers')
   return {}
