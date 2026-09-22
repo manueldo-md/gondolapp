@@ -4273,7 +4273,7 @@ y rechazo por prefijo).
 > `COMMIT` cerraría su transacción y escribiría sobre dev. Un reemplazo que no
 > matchea sería un borrado silencioso con daño real.
 
-### 2. Postulación de fixers a campañas
+### 2. Postulación de fixers a campañas — ✅ HECHA el 24/9/2026, en seis etapas
 
 **El problema.** Un fixer no trabaja libre —toca la góndola, arma exhibidores,
 repone producto ajeno, y alguien tiene que responder por quién entra al
@@ -4333,20 +4333,60 @@ de pisar `profiles.repositora_id` y lo escribe **solo si está en null**, y la
 oferta se le muestra también al fixer que ya tiene otros vínculos, siempre que no
 lo tenga con ESE ejecutor.
 
-Las seis etapas, en orden:
+Las seis etapas, y lo que se verificó EN DEV de cada una:
 
-| | Qué | Cómo se verifica |
+| | Qué | Verificado |
 |---|---|---|
-| 1 | El schema | dry-run; y los 4 tipos rotos pasan a entrar |
-| 2 | Las notificaciones que hoy no llegan | invitar por código y que llegue el aviso |
-| 3 | El bypass de consentimiento + las 2 pantallas | las listas de pendientes quedan VACÍAS |
-| 4 | `postulable` en `accesoACampana` + el flag en los editores | test de acceso; crear la campaña en dev |
-| 5 | El fixer VE la oferta y no la puede trabajar | `validarUnion` lo rechaza igual |
-| 6 | Postularme, los tres estados y los 30 días | de punta a punta, y el camino del no |
+| 1 | El schema (migración `20260924100000`) | dry-run; corrida en dev y prod |
+| 2 | Las notificaciones que no llegaban | la invitación aparece en la campanita, a gondoleros y a fixers |
+| 3 | El bypass + las 2 pantallas + el pisotón | la pestaña queda vacía al invitar; AkaashiHeroique quedó con los dos vínculos y `distri_id` en Biomega |
+| 4 | `postulable` + el flag en los editores | el flag solo con actor fixer y ejecutor; el estado escondido no viaja |
+| 5 | El fixer VE la oferta y no la trabaja | Pedro la ve sin botón, y la URL del detalle dice "No disponible para vos" |
+| 6 | Postularme, los tres estados, los 30 días | camino completo: postularse → aviso al ejecutor → aprobar → la campaña salta a Disponibles; y el rechazo con motivo |
 
-La 2 va segunda a propósito: **arregla algo que está roto en producción ahora** y
-no depende del resto. Si el tramo se frena, eso ya quedó. La 5 está separada de
-la 6 a propósito: es la que prueba que **mirar no habilita trabajar**.
+**La 2 fue segunda a propósito** —arreglaba algo roto en producción y no dependía
+del resto— y por eso se subió a `main` sola, antes de que el tramo terminara.
+
+**La 5 se separó de la 6 a propósito**: es la única que prueba que **mirar no
+habilita trabajar**. Con las dos juntas, ese control se hubiera perdido entre el
+resto del flujo.
+
+#### Lo que quedó escrito, más allá de la feature
+
+**`postulable` NO toca `ok`.** Es la propiedad que sostiene todo: `validarUnion`
+y el gate de captura miran `ok`, así que una oferta no se puede trabajar por
+accidente ni aunque una pantalla se olvide de chequear algo. Un tercer estado de
+`ok` habría obligado a cada gate a acordarse del caso nuevo — que es exactamente
+cómo se separaron las tres copias que `acceso-campana.ts` vino a unificar.
+
+**`ejecutorDeCampana` no lee `via_ejecucion`.** Esa columna dice
+`'distribuidora'` en el **100%** de las filas de las dos bases, incluidas las que
+tienen `repositora_id`. Quedó vieja y leerla da la respuesta equivocada justo
+para los fixers.
+
+**La ventana de 30 días es una DURACIÓN, no un día calendario**, y por eso
+`lib/postulacion-fixer.ts` es el primer archivo de decisión que **no** cablea
+`lib/fecha-ar.ts`: acá no hay ningún día que decidir, y meter la zona sería
+agregarle una frontera a algo que no la tiene. Falla ABIERTO sin `rechazada_at`
+—las filas rechazadas antes de la migración no la tienen— porque bloquear por un
+dato que nosotros no guardamos deja a alguien afuera sin poder explicarle cuánto
+falta.
+
+**Dos tests míos estuvieron mal, y los dos enseñaron algo:**
+
+1. En `probar-postulable.ts`, el filtro por `motivo` de `accesoACampana` resultó
+   **redundante**: verificado rompiéndolo a propósito, el test siguió verde. Los
+   tres motivos que excluye no pueden coexistir con un ejecutor. Se dejó el
+   filtro —dice la intención, y el default para un motivo nuevo queda del lado
+   seguro— pero anotado en los dos archivos para que nadie concluya del verde lo
+   que el verde no dice.
+2. En `probar-postulacion-fixer.ts`, un control afirmaba que rechazos a distintas
+   horas del mismo día dan la misma espera. Eso es lo que pasaría si la regla
+   fuera de día calendario, o sea lo contrario de lo decidido. **El test estaba
+   mal, no el código.**
+
+> Un test que no se pone rojo contra la rotura que dice cubrir no cubre nada. Las
+> dos veces se descubrió rompiendo el código a propósito, no leyéndolo.
 
 #### Lo que el relevamiento encontró y no era parte de la feature
 
@@ -4367,6 +4407,11 @@ la 6 a propósito: es la que prueba que **mirar no habilita trabajar**.
    badge con el contador— es un cartel que dice "aparecen arriba". Es mudanza y
    filtro, no pantalla nueva.
 4. **`'rechazada'` ya lo aceptan las dos tablas.** No hubo nada que corregir.
+
+**Los cuatro se cerraron dentro del tramo**: los dos CHECK y las columnas en la
+etapa 1, los nueve avisos que rebotaban en la 2, y el bypass más la mudanza de la
+pantalla de repositora en la 3. Ninguno era parte de la feature; los tres
+primeros estaban rotos en producción desde antes.
 
 #### PENDIENTE — que nadie lea `profiles.repositora_id` para pertenencia
 
