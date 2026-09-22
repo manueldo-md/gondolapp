@@ -127,7 +127,8 @@ export async function vincularFixerPorCodigo(
 export async function aprobarSolicitudFixer(
   solicitudId: string,
   fixerId: string,
-  repoId: string
+  repoId: string,
+  repoNombre?: string,
 ): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -143,29 +144,91 @@ export async function aprobarSolicitudFixer(
 
   if (error) return { error: error.message }
 
-  // Actualizar repositora_id en el profile del fixer
-  await admin.from('profiles').update({ repositora_id: repoId }).eq('id', fixerId)
+  // ── EL VÍNCULO VIVE EN LA TABLA DE SOLICITUDES, NO EN ESTA COLUMNA ─────────
+  //
+  // `profiles.repositora_id` es "la repositora principal" del fixer, y hasta el
+  // 24/9/2026 esta línea la PISABA sin condición. Un fixer vinculado a A que se
+  // postulaba a B y era aprobado quedaba con B en el perfil: sin desvincularse
+  // de A, sin cerrarle las participaciones, y sin que nadie se enterara.
+  //
+  // Un fixer puede estar vinculado a varias repositoras a la vez —lo dice el
+  // array `misRepoIds` de lib/acceso-campana.ts y lo permite el UNIQUE por par—
+  // así que el vínculo NUEVO ya quedó registrado arriba, en la tabla, que es la
+  // fuente. La columna solo se llena si está vacía, que es el mismo criterio que
+  // ya usaba el camino del link de invitación (`fixer-vinculacion/actions.ts`)
+  // y con el que esta acción estaba en contradicción.
+  const { data: perfil, error: perfilError } = await admin
+    .from('profiles').select('repositora_id').eq('id', fixerId).single()
+  if (perfilError) {
+    console.error('[aprobarSolicitudFixer] no se pudo leer el perfil:', perfilError.message, { fixerId })
+  } else if (!perfil?.repositora_id) {
+    const { error: setError } = await admin
+      .from('profiles').update({ repositora_id: repoId }).eq('id', fixerId)
+    if (setError) {
+      console.error('[aprobarSolicitudFixer] no se pudo setear repositora_id:', setError.message, { fixerId })
+    }
+  }
+
+  // Esta notificación NO EXISTÍA. El fixer aprobado por una repositora no se
+  // enteraba de nada: ni un aviso, ni un cambio visible hasta que entrara a
+  // buscar. El camino equivalente de la distri sí la tenía (y rebotaba, ver la
+  // migración 20260924100000).
+  await crearNotificacionActor(fixerId, true, {
+    tipo:    'solicitud_aprobada',
+    titulo:  '¡Postulación aprobada!',
+    mensaje: repoNombre
+      ? `Ya sos parte de ${repoNombre}. Mirá las campañas disponibles.`
+      : 'Tu postulación fue aprobada. Mirá las campañas disponibles.',
+  })
 
   revalidatePath('/repositora/fixers')
   return {}
 }
 
+/**
+ * El rechazo NO borra la fila: queda en `'rechazada'` con su `rechazada_at`, que
+ * es lo que manda la ventana de 30 días para volver a postularse (etapa 6).
+ *
+ * `rechazada_at` propia y no `updated_at`: esa marca la mueve cualquier
+ * escritura futura, y acá decide si alguien puede trabajar.
+ */
 export async function rechazarSolicitudFixer(
-  solicitudId: string
+  solicitudId: string,
+  fixerId?: string,
+  repoNombre?: string,
+  motivo?: string | null,
 ): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
   const admin = adminClient()
+  const ahora = new Date().toISOString()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (admin as any)
     .from('fixer_repo_solicitudes')
-    .update({ estado: 'rechazada', updated_at: new Date().toISOString() })
+    .update({
+      estado:         'rechazada',
+      motivo_rechazo: motivo ?? null,
+      rechazada_at:   ahora,
+      updated_at:     ahora,
+    })
     .eq('id', solicitudId)
 
   if (error) return { error: error.message }
+
+  // El fixer se entera, con el motivo si lo hubo. Sin aviso, la postulación se
+  // quedaría en "enviada" para siempre desde su lado.
+  if (fixerId) {
+    await crearNotificacionActor(fixerId, true, {
+      tipo:    'solicitud_rechazada',
+      titulo:  'Tu postulación no fue aceptada',
+      mensaje: motivo
+        ? `${repoNombre ?? 'La repositora'} no aceptó tu postulación: ${motivo}`
+        : `${repoNombre ?? 'La repositora'} no aceptó tu postulación por ahora.`,
+    })
+  }
 
   revalidatePath('/repositora/fixers')
   return {}

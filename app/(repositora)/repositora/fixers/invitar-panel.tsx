@@ -2,24 +2,23 @@
 
 import { EJEMPLO_CODIGO } from '@/lib/codigo-gondolero'
 import { useState, useTransition } from 'react'
-import { Hash, Search, UserCheck, Loader2, CheckCircle2, XCircle, Link2, Copy, Check } from 'lucide-react'
-import { generarLinkInvitacionFixer, buscarFixerPorCodigo, vincularFixerPorCodigo, aprobarSolicitudFixer, rechazarSolicitudFixer } from './invitar-actions'
+import { Hash, Search, UserCheck, Loader2, Link2, Copy, Check } from 'lucide-react'
+import { generarLinkInvitacionFixer, buscarFixerPorCodigo, vincularFixerPorCodigo } from './invitar-actions'
 
-interface Solicitud {
-  id: string
-  fixer_id: string
-  fixer: { nombre: string | null; alias: string | null; celular: string | null } | null
-  created_at: string
-}
-
+/**
+ * Solo invitar: por link o por código.
+ *
+ * Las POSTULACIONES pendientes vivían acá adentro hasta el 24/9/2026, mientras
+ * el badge de la pestaña "Solicitudes" mandaba a una pantalla que decía
+ * "aparecen arriba en el panel de invitación". Se mudaron a esa pestaña, que es
+ * donde el contador dice que están.
+ */
 export function InvitarFixerPanel({
   repoId,
   repoNombre,
-  solicitudesIniciales,
 }: {
   repoId: string
   repoNombre: string
-  solicitudesIniciales: Solicitud[]
 }) {
   // Link de invitación
   const [link, setLink] = useState<string | null>(null)
@@ -34,9 +33,6 @@ export function InvitarFixerPanel({
   const [vinculadoNombre, setVinculadoNombre] = useState<string | null>(null)
   const [isPendingBuscar, startBuscar] = useTransition()
   const [isPendingVincular, startVincular] = useTransition()
-  const [solicitudes, setSolicitudes] = useState<Solicitud[]>(solicitudesIniciales)
-  const [procesandoSol, setProcesandoSol] = useState<string | null>(null)
-  const [solFeedback, setSolFeedback] = useState<string | null>(null)
 
   const handleGenerarLink = () => {
     setLinkError(null)
@@ -84,27 +80,6 @@ export function InvitarFixerPanel({
       setVinculadoOk(true)
       setFixerEncontrado(null)
       setCodigo('')
-    })
-  }
-
-  const handleAprobar = (sol: Solicitud) => {
-    setProcesandoSol(sol.id)
-    startVincular(async () => {
-      const res = await aprobarSolicitudFixer(sol.id, sol.fixer_id, repoId)
-      setProcesandoSol(null)
-      if (res.error) { setSolFeedback(res.error); return }
-      setSolicitudes(prev => prev.filter(s => s.id !== sol.id))
-      setSolFeedback(`Fixer aprobado y vinculado.`)
-    })
-  }
-
-  const handleRechazar = (sol: Solicitud) => {
-    setProcesandoSol(sol.id)
-    startVincular(async () => {
-      const res = await rechazarSolicitudFixer(sol.id)
-      setProcesandoSol(null)
-      if (res.error) { setSolFeedback(res.error); return }
-      setSolicitudes(prev => prev.filter(s => s.id !== sol.id))
     })
   }
 
@@ -162,42 +137,6 @@ export function InvitarFixerPanel({
           </div>
         )}
       </div>
-
-      {/* Solicitudes pendientes (del fixer) */}
-      {solicitudes.length > 0 && (
-        <div className="bg-blue-50 rounded-xl border border-blue-200 p-4 space-y-3">
-          <p className="text-sm font-semibold text-blue-900">Solicitudes de fixers pendientes</p>
-          {solicitudes.map(sol => (
-            <div key={sol.id} className="bg-white rounded-lg border border-blue-100 px-4 py-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
-                  {sol.fixer?.alias ?? sol.fixer?.nombre ?? 'Fixer sin nombre'}
-                </p>
-                {sol.fixer?.celular && <p className="text-xs text-gray-500">{sol.fixer.celular}</p>}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleAprobar(sol)}
-                  disabled={procesandoSol === sol.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
-                >
-                  {procesandoSol === sol.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                  Aprobar
-                </button>
-                <button
-                  onClick={() => handleRechazar(sol)}
-                  disabled={procesandoSol === sol.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 border border-red-200 text-xs font-semibold rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60"
-                >
-                  <XCircle size={13} />
-                  Rechazar
-                </button>
-              </div>
-            </div>
-          ))}
-          {solFeedback && <p className="text-xs text-green-700 font-medium">{solFeedback}</p>}
-        </div>
-      )}
 
       {/* Vincular por código */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">

@@ -140,6 +140,12 @@ export default async function FixersDistriPage({
         .select('id, fixer_id, created_at, fixer:profiles!fixer_id(alias, nombre)')
         .eq('distri_id', distriId)
         .eq('estado', 'pendiente')
+        // Solo las POSTULACIONES del fixer. Sin este filtro, la distri veía acá
+        // su propia invitación por código —que nace 'pendiente' con
+        // iniciado_por='distri'— y podía aprobarla ella misma, escribiendo el
+        // vínculo sin que el fixer aceptara nada. El consentimiento del fixer se
+        // da en su perfil.
+        .eq('iniciado_por', 'fixer')
         .order('created_at', { ascending: true })
 
       solicitudes = ((solData ?? []) as unknown[]).map((s: unknown) => {

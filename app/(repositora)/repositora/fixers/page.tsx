@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Users, CheckCircle2, XCircle } from 'lucide-react'
 import { InvitarFixerPanel } from './invitar-panel'
+import { SolicitudesFixerTab } from './solicitudes-tab'
 import { FixerRepoDesvincularBtn } from './desvincular-btn'
 import { contarFotosAprobadas } from '@/lib/fotos-aprobadas'
 
@@ -73,6 +74,14 @@ export default async function FixersPage({
       .select('id, fixer_id, estado, created_at, fixer:profiles!fixer_id(nombre, alias, celular)')
       .eq('repositora_id', repoId)
       .eq('estado', 'pendiente')
+      // Solo las POSTULACIONES del fixer. Sin este filtro la repositora vería
+      // acá su propia invitación por código —que nace 'pendiente'— y podría
+      // aprobarla ella misma, escribiendo el vínculo sin que el fixer aceptara
+      // nada. El consentimiento del fixer se da en su perfil.
+      //
+      // `iniciado_por` es nueva en esta tabla (migración 20260924100000): la de
+      // distribuidora la tenía desde abril y ésta no.
+      .eq('iniciado_por', 'fixer')
       .order('created_at', { ascending: false }),
   ])
 
@@ -109,12 +118,9 @@ export default async function FixersPage({
         </div>
       </div>
 
-      {/* Panel de invitación + solicitudes pendientes (interactivo) */}
-      <InvitarFixerPanel
-        repoId={repoId}
-        repoNombre={repoNombre}
-        solicitudesIniciales={solicitudes}
-      />
+      {/* Panel de invitación. Las postulaciones pendientes ya NO van acá: se
+          mudaron a la pestaña "Solicitudes", que es donde las manda el badge. */}
+      <InvitarFixerPanel repoId={repoId} repoNombre={repoNombre} />
 
       {/* Tabs */}
       <div className="flex gap-2">
@@ -149,9 +155,18 @@ export default async function FixersPage({
 
       {/* Tab content */}
       {tab === 'solicitudes' ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-500">
-          Las solicitudes pendientes aparecen arriba en el panel de invitación.
-        </div>
+        <SolicitudesFixerTab
+          solicitudes={solicitudes.map(s => ({
+            id: s.id,
+            fixer_id: s.fixer_id,
+            fixer_alias: s.fixer?.alias ?? null,
+            fixer_nombre: s.fixer?.nombre ?? null,
+            fixer_celular: s.fixer?.celular ?? null,
+            created_at: s.created_at,
+          }))}
+          repoId={repoId}
+          repoNombre={repoNombre}
+        />
       ) : (
         /* Vinculados */
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
