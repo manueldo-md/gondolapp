@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { User } from 'lucide-react'
 import type { NivelGondolero } from '@/types'
 import { getConfig } from '@/lib/config'
-import { nivelPorMisiones } from '@/lib/nivel-mensual'
+import { nivelPorMisiones, inicioDelMes } from '@/lib/nivel-mensual'
 import { LocalidadesSelector } from './zonas-selector'
 import { DatosForm } from './datos-form'
 import { PasswordForm } from './password-form'
@@ -36,7 +36,10 @@ export default async function PerfilPage() {
   )
 
   const ahora = new Date()
-  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  // `inicioDelMes` y no un cálculo propio: es el mismo corte que usa el nivel,
+  // y dos fuentes para el mismo mes es exactamente cómo se termina mostrando un
+  // número que no coincide con el que decide.
+  const inicioMes = inicioDelMes(ahora)
 
   const [profileRes, gondoleroLocalidadesRes, misionesEsteMesRes, config] = await Promise.all([
     admin.from('profiles')

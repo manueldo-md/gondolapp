@@ -14,7 +14,7 @@ import {
 import type { TipoCampana } from '@/types'
 import { getConfig } from '@/lib/config'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
-import { etiquetaVigencia } from '@/lib/campana-vigencia'
+import { etiquetaVigencia, inscripcionCerrada } from '@/lib/campana-vigencia'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { accesoACampana, type CampanaAcceso } from '@/lib/acceso-campana'
 import { calcularCobertura, fraseSemanaGondolero } from '@/lib/cobertura-seguimiento'
@@ -297,16 +297,18 @@ export default async function CampanaDetallePage({
   // Restricciones operativas de acceso
   const nivelMinimo       = c.nivel_minimo ?? 'casual'
   const nivelOk           = cumpleNivelMinimo(gondoleroNivel, nivelMinimo)
-  const inscripcionCerrada = !!(c.fecha_limite_inscripcion && new Date(c.fecha_limite_inscripcion) < new Date())
+  // Mismo criterio que la action que valida al apretar el botón: si difirieran,
+  // la pantalla habilitaría algo que el servidor rechaza, o al revés.
+  const inscripcionVencida = inscripcionCerrada(c.fecha_limite_inscripcion)
   const cupoLleno         = !!(c.tope_total_comercios != null && c.comercios_relevados >= c.tope_total_comercios)
   const cupoProgreso      = c.tope_total_comercios
     ? calcularPorcentaje(c.comercios_relevados, c.tope_total_comercios)
     : null
 
-  const puedeUnirse = nivelOk && !inscripcionCerrada && !cupoLleno && !sinAcceso
+  const puedeUnirse = nivelOk && !inscripcionVencida && !cupoLleno && !sinAcceso
 
   const mostrarPanelAcceso = !yaUnido
-  const hayRestricciones = !nivelOk || inscripcionCerrada || cupoLleno || sinAcceso || !!participacionAnteriorEstado
+  const hayRestricciones = !nivelOk || inscripcionVencida || cupoLleno || sinAcceso || !!participacionAnteriorEstado
 
   // El cupo se mide en COMERCIOS DISTINTOS, no en misiones: en seguimiento un
   // comercio se visita muchas veces a propósito y esas visitas no consumen cupo.
@@ -651,8 +653,8 @@ export default async function CampanaDetallePage({
             <div className="space-y-2.5">
               {c.fecha_limite_inscripcion ? (
                 <ReqRow
-                  ok={!inscripcionCerrada}
-                  text={inscripcionCerrada
+                  ok={!inscripcionVencida}
+                  text={inscripcionVencida
                     ? `Inscripción cerrada (venció el ${formatearFecha(c.fecha_limite_inscripcion)})`
                     : `Inscripción abierta hasta el ${formatearFecha(c.fecha_limite_inscripcion)}`}
                 />
@@ -745,7 +747,7 @@ export default async function CampanaDetallePage({
           <UnirseButton
             campanaId={c.id}
             yaUnido={yaUnido}
-            inscripcionCerrada={inscripcionCerrada}
+            inscripcionCerrada={inscripcionVencida}
             cupoLleno={cupoLleno}
             nivelOk={nivelOk}
             nivelMinimo={nivelMinimo}

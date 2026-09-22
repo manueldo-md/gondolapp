@@ -11,6 +11,7 @@ import {
   contarMisionesAprobadasDelMes,
   nivelPorMisiones,
   misionesParaSiguienteNivel,
+  inicioDelMes,
 } from '@/lib/nivel-mensual'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { getDistrisDeGondolero } from '@/lib/utils-distri'
@@ -58,7 +59,10 @@ export default async function LogrosPage() {
   )
 
   const ahora = new Date()
-  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  // `inicioDelMes` y no un cálculo propio: es el mismo corte que usa el nivel,
+  // y dos fuentes para el mismo mes es exactamente cómo se termina mostrando un
+  // número que no coincide con el que decide.
+  const inicioMes = inicioDelMes(ahora)
   const mesLabel = `${MESES_ES[ahora.getMonth()]} ${ahora.getFullYear()}`
 
   // ── FASE 1: queries independientes ────────────────────────────────────────

@@ -24,7 +24,25 @@
  *
  * `campanas.estado` queda para lo ADMINISTRATIVO: borrador, activa, pausada,
  * cerrada a mano, cancelada. La vigencia es otra dimensión y no se mezcla.
+ *
+ * ── EL DÍA ES EL ARGENTINO, NO EL DEL SERVIDOR ──────────────────────────────
+ * Vercel corre en UTC y Argentina es UTC−3. Hasta el 22/9/2026 el `diaDe()` de
+ * este archivo armaba la fecha con `getFullYear/getMonth/getDate`, o sea la hora
+ * local del PROCESO: entre las 21:00 y la medianoche argentina el servidor ya
+ * estaba en el día siguiente.
+ *
+ * Efecto concreto: una campaña con `fecha_fin = 30` dejaba de aceptar misiones
+ * **a las 21:00 del 29** hora argentina. El gondolero que relevaba a las 22:00
+ * del 29 veía su misión rechazada por vencimiento un día antes de lo que dice la
+ * campaña, y eso es plata que no cobra por trabajo hecho en plazo.
+ *
+ * El cambio solo puede DEVOLVER esas tres horas, nunca quitarlas: Argentina va
+ * atrás de UTC, así que `diaAR(hoy) ≤ diaUTC(hoy)` siempre, y el gate
+ * `dia > fechaFin` se vuelve menos frecuente, nunca más. Es una garantía de la
+ * aritmética, no una observación sobre los datos de hoy.
  */
+
+import { diaAR } from '@/lib/fecha-ar'
 
 /** Campañas de seguimiento no vencen: no tienen fecha_fin por definición. */
 export function estaVencida(
@@ -32,7 +50,7 @@ export function estaVencida(
   referencia: Date = new Date(),
 ): boolean {
   if (!fechaFin) return false
-  return diaDe(referencia) > fechaFin
+  return diaAR(referencia) > fechaFin
 }
 
 /**
@@ -81,13 +99,31 @@ export function puedeRegistrarMision(params: {
   // Un capturadoAt en el futuro no da ventaja: se juzga con el menor de los dos.
   const referencia = capturadoAt.getTime() > ahora.getTime() ? ahora : capturadoAt
 
-  if (diaDe(referencia) > fechaFin) return { ok: false, motivo: 'vencida' }
+  if (diaAR(referencia) > fechaFin) return { ok: false, motivo: 'vencida' }
   return { ok: true }
 }
 
-/** `fecha_fin` es una columna `date`, así que se compara YYYY-MM-DD como texto. */
-function diaDe(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+/**
+ * ¿Cerró la inscripción?
+ *
+ * `fecha_limite_inscripcion` es una columna `date` y es INCLUSIVA, igual que
+ * `fecha_fin`: el último día vale entero.
+ *
+ * Las dos pantallas que lo chequeaban hacían `new Date(limite) < new Date()`, y
+ * eso es peor que el corrimiento de tres horas del resto del archivo:
+ * `new Date('2026-09-30')` se parsea como medianoche **UTC**, así que la
+ * inscripción cerraba a las 21:00 del 29 hora argentina — **27 horas antes** de
+ * lo que dice la fecha. Acá también el cambio solo abre, nunca cierra antes.
+ *
+ * Vive en este archivo y no en cada pantalla porque estaba escrito dos veces y
+ * las dos tenían el mismo error.
+ */
+export function inscripcionCerrada(
+  fechaLimite: string | null | undefined,
+  ahora: Date = new Date(),
+): boolean {
+  if (!fechaLimite) return false
+  return diaAR(ahora) > fechaLimite.slice(0, 10)
 }
 
 // ── Cuánto falta, y cómo se dice ──────────────────────────────────────────────
@@ -102,20 +138,24 @@ function diaDe(d: Date): string {
  * la pintaban de rojo urgente. El dato estaba mal en la función, no en cada
  * pantalla.
  *
- * Compara DÍAS CALENDARIO en hora local, no milisegundos. `new Date('2026-04-30')`
- * se parsea como medianoche UTC y `new Date()` es local: en Argentina (UTC-3) esa
- * mezcla corría el límite tres horas, y el último día empezaba a las 21:00 del
- * anterior. Es el mismo criterio que usa `estaVencida` acá arriba.
+ * Compara DÍAS CALENDARIO ARGENTINOS, no milisegundos, y es el mismo criterio
+ * que `estaVencida` acá arriba. Antes mezclaba `new Date('2026-04-30')`
+ * —medianoche UTC— con `new Date(hoy.getFullYear(), …)` —hora local del
+ * proceso—, y esa mezcla corría el límite tres horas: el último día empezaba a
+ * las 21:00 del anterior.
  */
 export function diasHastaFin(
   fechaFin: string,
   ahora: Date = new Date(),
 ): number {
-  const [y, m, d] = fechaFin.slice(0, 10).split('-').map(Number)
-  if (!y || !m || !d) return 0
-  const fin = new Date(y, m - 1, d)
-  const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
-  return Math.round((fin.getTime() - hoy.getTime()) / 86_400_000)
+  // Los dos lados son ETIQUETAS DE DÍA, no instantes: se convierten a
+  // medianoche UTC solo para poder restarlas. Construirlos con `new Date(y, m, d)`
+  // —hora local del proceso— era lo que metía la zona horaria en una cuenta que
+  // no la necesita.
+  const fin = Date.parse(`${fechaFin.slice(0, 10)}T00:00:00.000Z`)
+  const hoy = Date.parse(`${diaAR(ahora)}T00:00:00.000Z`)
+  if (!Number.isFinite(fin) || !Number.isFinite(hoy)) return 0
+  return Math.round((fin - hoy) / 86_400_000)
 }
 
 export interface EtiquetaVigencia {

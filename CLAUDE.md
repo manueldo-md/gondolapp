@@ -4350,20 +4350,61 @@ vencido a propósito para que se revise en la primera oportunidad con señal.
 lado**. Van en dos tramos y no en uno: un rollback por un problema de plata no
 puede llevarse puestas 28 pantallas de cosmética, ni al revés.
 
-**C — las decisiones. Primero, porque toca plata.**
+**C — las decisiones. ✅ HECHO el 22/9/2026.**
 
-| Dónde | Qué decide |
+| Dónde | Qué decidía mal |
 |---|---|
-| `lib/campana-vigencia.ts` | el gate de vencimiento |
-| `campanas/[id]/actions.ts:72` y `[id]/page.tsx` | `fecha_limite_inscripcion` |
-| `lib/nivel-mensual.ts` | el corte del mes del nivel y del ranking |
-| `lib/logros.ts` | la racha de días seguidos y el inicio de mes |
+| `lib/campana-vigencia.ts` | el gate de vencimiento: cerraba a las 21:00 del día anterior |
+| `inscripcionCerrada` (nueva, ex 2 copias) | `new Date(limite) < new Date()` cerraba **27 horas antes** |
+| `lib/nivel-mensual.ts` `inicioDelMes` | el mes arrancaba el 1° a las 21:00 del último día del anterior |
+| `lib/nivel-maximo.ts` `claveMes` | el mes del "mejor mes", que alimenta los 4 gates |
+| `lib/logros.ts` | la racha, "hoy" y el inicio de mes |
+| `logros/page.tsx`, `perfil/page.tsx` | cada una calculaba su propio corte de mes |
 
-En SQL **no hay nada**: cero funciones con `CURRENT_DATE` o `CURRENT_TIMESTAMP`,
-verificado contra la base. El problema es enteramente de JS.
+**La dirección del cambio es lo que lo hizo seguro:** Argentina va atrás de UTC,
+así que `diaAR(hoy) ≤ diaUTC(hoy)` **siempre**, y el gate `dia > fechaFin` se
+vuelve menos frecuente, nunca más. El cambio solo puede DEVOLVER las tres horas
+del último día, jamás quitarlas. Es aritmética, no una observación sobre los
+datos de hoy.
 
-Cambiar esto **mueve la frontera de un día**: antes hay que mirar si alguna
-campaña cierra justo en esa ventana.
+Medido antes de tocar nada, en las dos bases:
+
+```
+campañas donde el cambio mueve el resultado ahora        0
+campañas que vencen en los próximos 7 días               0
+gondoleros con racha_7_dias                              0
+gondoleros cuya racha cambia con el cálculo nuevo        0
+misiones que cambian de MES al pasar a hora AR       0/182 (dev)  0/136 (prod)
+```
+
+Y aunque cambiara: **un logro ganado no se puede perder.** `verificarLogros`
+solo INSERTA lo que falta y no hay un solo DELETE de `gondolero_logros` en el
+repo.
+
+**De paso se arregló un bug activo de la racha:** `checkRacha` contaba hacia
+atrás desde `new Date()` y armaba la clave con `toISOString()`. Entre las 21:00
+y la medianoche argentina "hoy" para el servidor era mañana, un día sin
+actividad, así que el primer chequeo fallaba y **la racha se evaluaba mal todas
+las noches**, justo cuando el gondolero mira sus logros después de trabajar.
+
+### El test que lo protege, y por qué casi no sirve
+
+`scripts/probar-vigencia-ar.ts` — 23 casos. El que manda: *una campaña que vence
+hoy, evaluada a las 22:00 hora argentina, tiene que seguir aceptando misiones.*
+
+**La primera versión daba verde contra el código roto.** El cálculo viejo usaba
+`getFullYear/getMonth/getDate`, la hora local del PROCESO: en una máquina
+argentina eso devuelve el día argentino por casualidad y el bug no se ve. Solo 2
+de los 23 casos se ponían rojos, y ninguno era el del vencimiento.
+
+Por eso **la prueba se pone en UTC sola** (`process.env.TZ = 'UTC'` antes de
+cualquier fecha) y corta si no lo logra. Con eso, contra el código viejo se
+ponen rojos **7 casos**, incluido el que importa. Verificado revirtiendo el
+código a propósito.
+
+> Al escribir una prueba de zona horaria, correrla en la zona del servidor. Una
+> que pasa en la máquina del que la escribe y fallaría en Vercel es peor que no
+> tenerla: da permiso para no mirar.
 
 **C′ — la presentación. 87 usos en 28 server components.**
 

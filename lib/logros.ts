@@ -16,6 +16,9 @@
  * llamador es lo que impide que tres pantallas vuelvan a pasar tres números
  * distintos — era exactamente eso lo que pasaba.
  */
+
+import { diaAR, medianocheAR, sumarDias } from '@/lib/fecha-ar'
+
 export async function verificarLogros(
   gondoleroId: string,
   adminClient: any,
@@ -38,14 +41,14 @@ export async function verificarLogros(
     if (todosDesbloqueados) return []
 
     // 2. Queries en paralelo para checks complejos
-    const hoy = new Date()
-    hoy.setHours(0, 0, 0, 0)
-    const hace6Dias = new Date(hoy)
-    hace6Dias.setDate(hoy.getDate() - 5) // 6 días incluyendo hoy
-
-    const inicioMes = new Date()
-    inicioMes.setDate(1)
-    inicioMes.setHours(0, 0, 0, 0)
+    // Los tres cortes son de DÍA ARGENTINO, no del proceso. `setHours(0,0,0,0)`
+    // usaba la hora local del server, que en Vercel es UTC: "hoy" empezaba a las
+    // 21:00 de ayer hora argentina, y el mes arrancaba el 1° a las 21:00 del
+    // último día del mes anterior.
+    const hoyAR = diaAR()
+    const hoy = medianocheAR(hoyAR)
+    const hace6Dias = medianocheAR(sumarDias(hoyAR, -5))   // 6 días incluyendo hoy
+    const inicioMes = medianocheAR(`${hoyAR.slice(0, 7)}-01`)
 
     const [
       participacionesRes,
@@ -110,8 +113,11 @@ export async function verificarLogros(
     const fotosEsteMesCount    = fotosEsteMesRes.count ?? 0
 
     // Verificar racha de 6 días consecutivos
+    // `created_at` viene en UTC: `split('T')[0]` daba el día UTC, así que una
+    // foto de las 22:00 del lunes contaba como martes. Eso podía inflar la racha
+    // —dos fotos del mismo día argentino contadas como dos días— o cortarla.
     const diasConActividad = new Set<string>(
-      (fotosStreakRes.data ?? []).map((f: any) => (f.created_at as string).split('T')[0])
+      (fotosStreakRes.data ?? []).map((f: any) => diaAR(f.created_at as string))
     )
     const tieneRacha = checkRacha(diasConActividad, 6)
 
@@ -215,15 +221,24 @@ export async function verificarLogros(
 
 /**
  * Comprueba si hay N días consecutivos con actividad hasta hoy.
+ *
+ * Todo en DÍAS ARGENTINOS. Antes contaba hacia atrás desde `new Date()` y
+ * armaba la clave con `toISOString()`, o sea el día UTC — **y eso rompía la
+ * racha todas las noches**: entre las 21:00 y la medianoche argentina, "hoy"
+ * para el servidor era mañana, un día donde casi nunca hay actividad, así que el
+ * primer chequeo fallaba y la racha se evaluaba mal justo cuando el gondolero
+ * miraba sus logros después de trabajar.
+ *
+ * Medido el 22/9/2026: a 0 gondoleros de dev y 0 de prod les cambia el resultado
+ * con el cálculo nuevo, y nadie tiene `racha_7_dias` todavía. Y aunque cambiara:
+ * `verificarLogros` solo INSERTA los que faltan y no hay un solo DELETE de
+ * `gondolero_logros` en el repo, así que un logro ganado no se puede perder.
  */
-function checkRacha(days: Set<string>, streak: number): boolean {
+function checkRacha(days: Set<string>, streak: number, ahora: Date = new Date()): boolean {
   if (days.size < streak) return false
-  const hoy = new Date()
+  const hoy = diaAR(ahora)
   for (let i = 0; i < streak; i++) {
-    const d = new Date(hoy)
-    d.setDate(hoy.getDate() - i)
-    const key = d.toISOString().split('T')[0]
-    if (!days.has(key)) return false
+    if (!days.has(sumarDias(hoy, -i))) return false
   }
   return true
 }

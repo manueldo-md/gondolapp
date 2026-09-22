@@ -48,15 +48,24 @@
 
 import type { NivelGondolero } from '@/types'
 import { nivelPorMisiones } from './nivel-mensual'
+import { diaAR } from './fecha-ar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = any
 
-/** Clave de mes en la MISMA zona horaria que `inicioDelMes`, para que el mes en
- *  curso cuente igual en las dos familias. */
+/**
+ * Clave de mes en la MISMA zona horaria que `inicioDelMes`, para que el mes en
+ * curso cuente igual en las dos familias.
+ *
+ * Eso lo decía este comentario desde que se escribió, y desde el 22/9/2026 es
+ * cierto: `inicioDelMes` pasó a hora argentina y esto usaba
+ * `getFullYear/getMonth`, o sea la del proceso. Con las dos en UTC coincidían
+ * por casualidad; con una sola cambiada habrían divergido tres horas por mes, y
+ * un gondolero podría haber visto un nivel del mes que su propio máximo no
+ * alcanza — que es justo lo que el comentario venía a evitar.
+ */
 export function claveMes(fecha: string | Date): string {
-  const d = typeof fecha === 'string' ? new Date(fecha) : fecha
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return diaAR(fecha).slice(0, 7)
 }
 
 /**

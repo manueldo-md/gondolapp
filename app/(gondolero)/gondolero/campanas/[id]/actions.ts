@@ -9,6 +9,7 @@ import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import { nivelMaximoAlcanzado } from '@/lib/nivel-maximo'
 import { accesoACampana } from '@/lib/acceso-campana'
 import { contextoAcceso } from '@/lib/utils-distri'
+import { inscripcionCerrada } from '@/lib/campana-vigencia'
 
 /**
  * Todo lo que hay que cumplir para entrar a una campaña, en un solo lugar.
@@ -69,7 +70,10 @@ async function validarUnion(
   if (!acceso.ok) return { error: acceso.mensaje }
 
   // ── Fecha límite de inscripción ───────────────────────────────────────────
-  if (campana.fecha_limite_inscripcion && new Date(campana.fecha_limite_inscripcion) < new Date()) {
+  // `inscripcionCerrada` y no `new Date(limite) < new Date()`: esa comparación
+  // parseaba la columna `date` como medianoche UTC y cerraba la inscripción
+  // 27 horas antes de lo que dice la fecha. Ver lib/campana-vigencia.ts.
+  if (inscripcionCerrada(campana.fecha_limite_inscripcion)) {
     return { error: 'El período de inscripción ya cerró.' }
   }
 

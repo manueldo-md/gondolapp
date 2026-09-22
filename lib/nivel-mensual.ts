@@ -31,13 +31,27 @@
  */
 
 import type { NivelGondolero } from '@/types'
+import { diaAR, medianocheAR } from '@/lib/fecha-ar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = any
 
-/** Primer instante del mes en curso. */
+/**
+ * Primer instante del mes en curso, EN HORA ARGENTINA.
+ *
+ * `new Date(ahora.getFullYear(), ahora.getMonth(), 1)` usaba la hora local del
+ * proceso, que en Vercel es UTC: el "mes" arrancaba el 1° a las 00:00 UTC, o sea
+ * a las 21:00 del último día del mes ANTERIOR. Tres horas del mes pasado
+ * contaban para éste.
+ *
+ * Medido el 22/9/2026 antes de cambiarlo: 0 de 182 misiones en dev y 0 de 136 en
+ * prod cambian de mes con este arreglo, y a nadie le cambia el "mejor mes" del
+ * que salen los gates de nivel. Se arregla ahora justamente porque hoy no mueve
+ * a nadie.
+ */
 export function inicioDelMes(ahora: Date = new Date()): Date {
-  return new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+  const [anio, mes] = diaAR(ahora).split('-')
+  return medianocheAR(`${anio}-${mes}-01`)
 }
 
 /**
