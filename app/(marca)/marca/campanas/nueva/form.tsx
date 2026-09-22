@@ -71,6 +71,8 @@ export function NuevaCampanaForm({
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoZona[]>([])
   const [actorCampana, setActorCampana] = useState<'gondolero' | 'fixer'>('gondolero')
+  // Solo se manda cuando el actor es fixer Y hay ejecutor. Ver el checkbox del paso 3.
+  const [abiertaAPostulaciones, setAbiertaAPostulaciones] = useState(false)
 
   const [campos, setCampos] = useState<CampoBloque[]>([])
 
@@ -126,6 +128,13 @@ export function NuevaCampanaForm({
     fd.set('campos_json', JSON.stringify(campos))
     fd.set('actor_campana', actorCampana)
     fd.set('via_ejecucion', s3.via_ejecucion)
+    // Se manda SOLO si las dos condiciones se cumplen, y no lo que quedó en el
+    // estado: alguien puede marcar la casilla y después cambiar el actor a
+    // gondoleros, y ahí la campaña saldría abierta a postulaciones sin que la
+    // pantalla lo muestre.
+    if (actorCampana === 'fixer' && s3.via_ejecucion !== 'gondolapp' && abiertaAPostulaciones) {
+      fd.set('abierta_a_postulaciones', '1')
+    }
     if (s3.via_ejecucion === 'distribuidora' && s3.distri_id) {
       fd.set('distri_id', s3.distri_id)
     }
@@ -573,6 +582,35 @@ export function NuevaCampanaForm({
                   </div>
                 )}
               </>
+            )}
+
+            {/* ── Abierta a postulaciones ──────────────────────────────────
+                Solo en campañas de FIXERS y solo cuando hay un ejecutor: una
+                campaña de GondolApp ya está abierta para todos —`accesoACampana`
+                la deja pasar antes de mirar ningún vínculo— así que no habría a
+                quién postularse. Ofrecer el flag ahí sería ofrecer una casilla
+                que no hace nada. */}
+            {actorCampana === 'fixer' && s3.via_ejecucion !== 'gondolapp' && (
+              <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 bg-white cursor-pointer hover:border-gray-300 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={abiertaAPostulaciones}
+                  onChange={e => setAbiertaAPostulaciones(e.target.checked)}
+                  className="mt-0.5 accent-gondo-indigo-600 w-4 h-4"
+                />
+                <div>
+                  <span className="text-sm font-semibold text-gray-900">
+                    Abierta a postulaciones
+                  </span>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Los fixers que todavía no trabajan con{' '}
+                    {s3.via_ejecucion === 'repositora' ? 'esa repositora' : 'esa distribuidora'}{' '}
+                    van a ver esta campaña y van a poder pedir sumarse. No entran hasta
+                    que {s3.via_ejecucion === 'repositora' ? 'la repositora' : 'la distribuidora'}{' '}
+                    los acepte, y el vínculo queda para las próximas campañas también.
+                  </p>
+                </div>
+              </label>
             )}
 
             {/* Aviso de costo */}

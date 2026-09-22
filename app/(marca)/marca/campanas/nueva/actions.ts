@@ -120,6 +120,13 @@ export async function crearCampana(formData: FormData) {
       estado:                    'pendiente_aprobacion',
       via_ejecucion:             viaEjecucion,
       actor_campana:             actorCampana,
+      // Solo puede ser true en campañas de fixers CON ejecutor. La pantalla ya
+      // lo condiciona, pero un POST a mano no pasa por la pantalla: una campaña
+      // de GondolApp abierta a postulaciones sería una oferta sin nadie a quien
+      // postularse, y el botón del fixer no tendría a dónde mandar la solicitud.
+      abierta_a_postulaciones:   actorCampana === 'fixer'
+                                 && viaEjecucion !== 'gondolapp'
+                                 && formData.get('abierta_a_postulaciones') === '1',
       tokens_creacion:           COSTO_CREACION,
     })
     .select('id')

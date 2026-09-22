@@ -64,6 +64,38 @@ export interface CampanaAcceso {
   repositora_id?: string | null
   marca_id: string | null
   actor_campana?: string | null
+  /**
+   * Un fixer SIN vínculo con el ejecutor la ve como oferta y puede postularse.
+   * Ver `postulable` en `ResultadoAcceso`.
+   */
+  abierta_a_postulaciones?: boolean | null
+}
+
+export interface EjecutorCampana {
+  tipo: 'repositora' | 'distri'
+  id: string
+}
+
+/**
+ * Quién EJECUTA la campaña — no quién la financia.
+ *
+ * ── `via_ejecucion` NO SIRVE PARA ESTO ──────────────────────────────────────
+ * Medido el 23/9/2026 en las dos bases: dice `'distribuidora'` en el **100%**
+ * de las filas, incluidas las que tienen `repositora_id`. Es una columna que
+ * quedó vieja y que leerla daría la respuesta equivocada siempre que el ejecutor
+ * sea una repositora, que es justo el caso de los fixers.
+ *
+ * `repositora_id` va primero porque es el eje de los fixers: las tres campañas
+ * `actor_campana='fixer'` que existen lo tienen, y ninguna tiene `distri_id`,
+ * aunque dos digan `financiada_por='marca'`.
+ *
+ * `null` = la ejecuta GondolApp. Esas ya están abiertas para todos (paso 2 de
+ * `accesoACampana`), así que no hay a quién postularse.
+ */
+export function ejecutorDeCampana(campana: CampanaAcceso): EjecutorCampana | null {
+  if (campana.repositora_id) return { tipo: 'repositora', id: campana.repositora_id }
+  if (campana.distri_id)     return { tipo: 'distri',     id: campana.distri_id }
+  return null
 }
 
 export interface ContextoAcceso {
@@ -81,7 +113,24 @@ export interface ContextoAcceso {
 
 export type ResultadoAcceso =
   | { ok: true }
-  | { ok: false; motivo: MotivoSinAcceso; mensaje: string }
+  | {
+      ok: false
+      motivo: MotivoSinAcceso
+      mensaje: string
+      /**
+       * Lo que le falta es un VÍNCULO CON EL EJECUTOR, la campaña acepta
+       * postulaciones, y él es un fixer. O sea: puede pedir entrar.
+       *
+       * ── `ok` SIGUE EN FALSE, Y ESO ES EL PUNTO ────────────────────────────
+       * `postulable` habilita MIRAR, no TRABAJAR. `validarUnion` y el gate de
+       * captura miran `ok`, así que una oferta no se puede trabajar por
+       * accidente aunque una pantalla se olvide de chequear algo. Si esto
+       * hubiera sido un tercer estado de `ok`, cada uno de esos gates tendría
+       * que acordarse del caso nuevo — que es exactamente cómo se separaron las
+       * tres copias que este archivo vino a unificar.
+       */
+      postulable?: EjecutorCampana
+    }
 
 /** El texto que ve el gondolero. Depende de si es fixer solo donde cambia. */
 function mensajeDe(motivo: MotivoSinAcceso, esFixer: boolean): string {
@@ -115,8 +164,37 @@ export function accesoACampana(
   campana: CampanaAcceso,
   ctx: ContextoAcceso,
 ): ResultadoAcceso {
-  const no = (motivo: MotivoSinAcceso): ResultadoAcceso =>
-    ({ ok: false, motivo, mensaje: mensajeDe(motivo, ctx.esFixer) })
+  const no = (motivo: MotivoSinAcceso): ResultadoAcceso => {
+    const base = { ok: false as const, motivo, mensaje: mensajeDe(motivo, ctx.esFixer) }
+
+    // ── ¿Puede pedir entrar? ────────────────────────────────────────────────
+    // Solo si lo único que le falta es el vínculo CON EL EJECUTOR.
+    //
+    // ── ESTA PRIMERA GUARDA ES REDUNDANTE, Y SE DEJA IGUAL ──────────────────
+    // Medido rompiéndola a propósito: sacarla no cambia ningún resultado, y el
+    // test sigue en verde. Las otras dos la cubren enteras, porque los tres
+    // motivos que excluye no pueden coexistir con lo que ellas piden:
+    //
+    //   `sin_vinculo_marca`        solo se devuelve cuando NO hay distri_id ni
+    //                              repositora_id — o sea, sin ejecutor
+    //   `campana_sin_financiador`  ídem
+    //   `actor_distinto`           lo agarra la guarda de `esFixer`
+    //
+    // Se deja porque dice la intención —postularse arregla la falta de vínculo
+    // con el EJECUTOR y nada más— y porque el día que alguien agregue un motivo
+    // nuevo, el default va a ser "no postulable", que es el lado seguro. Pero no
+    // hay que confiar en ella como si fuera la que protege: la que protege es la
+    // de abajo.
+    if (motivo !== 'sin_vinculo_repo' && motivo !== 'sin_vinculo_distri') return base
+    if (!campana.abierta_a_postulaciones) return base
+
+    // Doble llave, barata: el flag solo se pone en campañas de fixers, pero si
+    // alguna vez apareciera en otra, un gondolero no tiene que ver una oferta.
+    if (!ctx.esFixer || campana.actor_campana !== 'fixer') return base
+
+    const ejecutor = ejecutorDeCampana(campana)
+    return ejecutor ? { ...base, postulable: ejecutor } : base
+  }
 
   // ── 1. El tipo de actor ────────────────────────────────────────────────────
   // `null` en actor_campana es "cualquiera": son las campañas viejas, anteriores

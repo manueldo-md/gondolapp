@@ -70,6 +70,7 @@ export default function NuevaCampanaPage() {
     min_comercios_para_cobrar:   '3',
     nivel_minimo:                'casual',
     actor_campana:               'gondolero',
+    abierta_a_postulaciones:     '',
   })
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -93,6 +94,20 @@ export default function NuevaCampanaPage() {
       tipo,
       modalidad:          tipo === 'comercios' ? MODALIDAD_ALTAS : p.modalidad,
       visitas_por_semana: tipo === 'comercios' ? '' : p.visitas_por_semana,
+    }))
+
+  /**
+   * Cambiar de actor limpia el flag de postulaciones, por el mismo motivo que
+   * `setTipo` y `setModalidad`: el submit serializa el objeto entero, así que
+   * marcar la casilla en "Fixers" y después volver a "Gondoleros" mandaría
+   * `abierta_a_postulaciones` igual, sobre una campaña donde la pantalla ni
+   * siquiera la mostró.
+   */
+  const setActor = (actor: string) =>
+    setForm(p => ({
+      ...p,
+      actor_campana: actor,
+      abierta_a_postulaciones: actor === 'fixer' ? p.abierta_a_postulaciones : '',
     }))
 
   /**
@@ -452,7 +467,7 @@ export default function NuevaCampanaPage() {
                     name="actor_campana"
                     value={opt.value}
                     checked={form.actor_campana === opt.value}
-                    onChange={set('actor_campana')}
+                    onChange={() => setActor(opt.value)}
                     className="accent-gondo-amber-400"
                   />
                   <span className="text-sm text-gray-700">{opt.label}</span>
@@ -460,6 +475,32 @@ export default function NuevaCampanaPage() {
               ))}
             </div>
           </div>
+
+          {/* ── Abierta a postulaciones ───────────────────────────────────────
+              Solo en campañas de FIXERS. Acá el ejecutor siempre existe —es la
+              distribuidora que está creando la campaña— así que no hace falta la
+              segunda condición que sí tiene el editor de marca, donde se puede
+              elegir "Con GondolApp" y ahí no hay a quién postularse. */}
+          {form.actor_campana === 'fixer' && (
+            <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 bg-white cursor-pointer hover:border-gray-300 transition-colors">
+              <input
+                type="checkbox"
+                name="abierta_a_postulaciones"
+                value="1"
+                checked={form.abierta_a_postulaciones === '1'}
+                onChange={e => setForm(p => ({ ...p, abierta_a_postulaciones: e.target.checked ? '1' : '' }))}
+                className="mt-0.5 accent-gondo-amber-400 w-4 h-4"
+              />
+              <div>
+                <span className="text-sm font-semibold text-gray-900">Abierta a postulaciones</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Los fixers que todavía no trabajan con vos van a ver esta campaña y
+                  van a poder pedir sumarse. No entran hasta que los aceptes, y el
+                  vínculo queda para las próximas campañas también.
+                </p>
+              </div>
+            </label>
+          )}
 
           {/* Zonas */}
           <SelectorZona

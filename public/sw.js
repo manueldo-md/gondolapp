@@ -6,7 +6,7 @@
 // Bumpear en CADA deploy que toque código del gondolero. Está anotado en
 // CLAUDE.md como pendiente automatizarlo desde generate-sw-manifest.js, que ya
 // corre en build time y ya escribe en public/.
-const CACHE_NAME = 'gondolapp-v45'
+const CACHE_NAME = 'gondolapp-v46'
 
 // ── Rutas a precachear en install ─────────────────────────────────────────────
 //

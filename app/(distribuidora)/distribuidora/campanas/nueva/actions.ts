@@ -120,6 +120,11 @@ export async function crearCampanaInterna(formData: FormData) {
       estado:                      'activa',
       tokens_creacion:             0,
       actor_campana:               (formData.get('actor_campana') as string) || 'gondolero',
+      // El ejecutor de una campaña de distri es ella misma, así que alcanza con
+      // que el actor sea fixer. En el editor de marca hace falta además que la
+      // vía no sea GondolApp, donde no hay a quién postularse.
+      abierta_a_postulaciones:     (formData.get('actor_campana') as string) === 'fixer'
+                                   && formData.get('abierta_a_postulaciones') === '1',
     })
     .select('id')
     .single()
