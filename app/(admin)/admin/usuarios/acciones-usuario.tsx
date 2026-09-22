@@ -197,7 +197,12 @@ export function AccionesUsuario({
   // Cambiar rol
   const handleCambiarRol = (nuevoTipo: TipoActor) => {
     startTransition(async () => {
-      await cambiarTipoActor(usuario.id, nuevoTipo)
+      // Se mira el error. Antes se daba el cambio por hecho pasara lo que
+      // pasara: el modal se cerraba, el cartel decía "Rol cambiado a marca" y el
+      // usuario seguía siendo gondolero. Y desde el prefijo FXR eso arrastra
+      // además el código, porque el trigger de la base tampoco llegó a correr.
+      const res = await cambiarTipoActor(usuario.id, nuevoTipo)
+      if (res?.error) { showFeedback(false, res.error); return }
       closeModal()
       showFeedback(true, `Rol cambiado a ${nuevoTipo}`)
     })

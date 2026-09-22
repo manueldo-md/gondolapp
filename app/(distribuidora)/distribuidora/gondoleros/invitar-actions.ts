@@ -9,6 +9,7 @@ import { mejorMesDeMisiones } from '@/lib/nivel-maximo'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
+import { revisarCodigo } from '@/lib/codigo-gondolero'
 
 function adminClient() {
   return createSupabaseClient(
@@ -55,18 +56,19 @@ export async function vincularPorCodigo(
 
   const admin = adminClient()
 
-  // Buscar el perfil por código — primero sin filtro de tipo para dar mensajes útiles
+  // Se normaliza y se rechaza por PREFIJO antes de consultar. Ver
+  // lib/codigo-gondolero.ts.
+  const revisado = revisarCodigo(codigoGondolero, 'gondolero',
+    'Para vincularlo andá a la sección Fixers de tu panel.')
+  if (revisado.error) return { error: revisado.error }
+
   const { data: perfil } = await admin
     .from('profiles')
     .select('id, alias, nombre, tipo_actor')
-    .eq('codigo_gondolero', codigoGondolero.toUpperCase())
+    .eq('codigo_gondolero', revisado.codigo)
     .maybeSingle()
 
   if (!perfil) return { error: 'Código no encontrado. Verificá que sea correcto.' }
-
-  if (perfil.tipo_actor === 'fixer') {
-    return { error: 'Este código pertenece a un Fixer. Para vincularlo andá a la sección Fixers de tu panel.' }
-  }
 
   if (perfil.tipo_actor !== 'gondolero') {
     return { error: 'Código no encontrado. Verificá que sea correcto.' }

@@ -1,6 +1,6 @@
 'use client'
 
-import { EJEMPLO_CODIGO_GONDOLERO } from '@/lib/codigo-gondolero'
+import { EJEMPLO_CODIGO } from '@/lib/codigo-gondolero'
 import { useState, useTransition } from 'react'
 import { Link2, Hash, Copy, Check, Loader2, Search, UserCheck } from 'lucide-react'
 import { generarLinkInvitacion, vincularPorCodigo, confirmarVinculacionPorCodigo } from './invitar-actions'
@@ -161,7 +161,7 @@ export function InvitarPanel({
             value={codigo}
             onChange={e => { setCodigo(e.target.value.toUpperCase()); setCodigoError(null); setGondoleroEncontrado(null); setVinculadoOk(false) }}
             onKeyDown={e => e.key === 'Enter' && handleBuscarCodigo()}
-            placeholder={`Ej: ${EJEMPLO_CODIGO_GONDOLERO}`}
+            placeholder={`Ej: ${EJEMPLO_CODIGO.gondolero}`}
             className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gondo-amber-400"
           />
           <button

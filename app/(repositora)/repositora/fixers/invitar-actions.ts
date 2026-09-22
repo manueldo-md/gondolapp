@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
+import { revisarCodigo } from '@/lib/codigo-gondolero'
 
 function adminClient() {
   return createAdminClient(
@@ -52,17 +53,20 @@ export async function buscarFixerPorCodigo(
 
   const admin = adminClient()
 
+  // Se normaliza y se rechaza por PREFIJO antes de consultar. Ver
+  // lib/codigo-gondolero.ts. La sugerencia no manda a otra sección porque el
+  // panel de repositora no tiene gondoleros: mandarla ahí sería mandarla a una
+  // pantalla que no existe.
+  const revisado = revisarCodigo(codigo, 'fixer', 'Los fixers tienen códigos propios.')
+  if (revisado.error) return { error: revisado.error }
+
   const { data: perfil } = await admin
     .from('profiles')
     .select('id, alias, nombre, tipo_actor')
-    .eq('codigo_gondolero', codigo.toUpperCase())
+    .eq('codigo_gondolero', revisado.codigo)
     .maybeSingle()
 
   if (!perfil) return { error: 'Código no encontrado. Verificá que sea correcto.' }
-
-  if (perfil.tipo_actor === 'gondolero') {
-    return { error: 'Este código pertenece a un Gondolero. Los fixers tienen códigos propios.' }
-  }
 
   if (perfil.tipo_actor !== 'fixer') {
     return { error: 'Código no encontrado. Verificá que sea correcto.' }

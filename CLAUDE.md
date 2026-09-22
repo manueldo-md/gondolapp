@@ -4119,52 +4119,142 @@ no garantiza que el objeto exista.
 
 ## Próximos tramos (anotado el 21/9/2026, sin empezar)
 
-### 1. Prefijo `FXR` para los fixers
+### 1. Prefijo `FXR` para los fixers — ✅ HECHO el 23/9/2026
 
-Al unificar el generador el 16/9/2026 el prefijo quedó **fijo en `GND` para
-todos**, gondoleros y fixers. El código se dicta por teléfono —hay un botón de
-WhatsApp en el perfil— así que la distribuidora que lo recibe y lo carga en su
-panel **no tiene forma de saber a quién está invitando**. Y no es lo mismo: un
-fixer toca la góndola, arma exhibidores y repone producto ajeno.
+Al unificar el generador el 16/9 el prefijo quedó fijo en `GND` para los dos,
+con el argumento de que las tres búsquedas por código filtran por `tipo_actor` y
+no por prefijo. El argumento era cierto y era insuficiente: **el prefijo no
+discrimina para el código, discrimina para la PERSONA.** El código se dicta por
+teléfono y la distribuidora que lo anota no tenía forma de saber si invita a un
+gondolero o a un fixer, que no hacen lo mismo.
 
-El cambio es chico: **el mismo generador**, `generar_codigo_gondolero()`, con el
-prefijo derivado de `tipo_actor`. El `UNIQUE` sobre la columna es global, así que
-`GND` y `FXR` no pueden chocar — el espacio queda disjunto por construcción.
+**Lo que hizo que no fuera un tramo de una línea: nadie mantenía la
+correspondencia entre el prefijo y el tipo.** Ningún fixer nace fixer — el
+registro público ofrece solo gondolero, distribuidora y marca, y
+`handle_new_user()` fuerza `tipo_actor='gondolero'` para cualquier alta. Los 14
+fixers llegaron a serlo por un UPDATE del panel admin, y hay **dos** caminos:
 
-**Los que ya tienen GND se REGENERAN, no conviven.** Medido el 21/9/2026:
+| | Qué hacía con el código |
+|---|---|
+| `crearUsuario` | lo ponía en `null` si el tipo nuevo era una empresa |
+| `cambiarTipoActor` | **nada, nunca** |
 
-```
-                  fixers    todos con GND    con código viejo    sin código
-PROD                 8            8                 0                0
-DEV                  6            6                 0                0
-fixer_invitacion_tokens usados:  0 en las dos bases
-```
+O sea que un gondolero convertido en marca se quedaba con su GND y seguía
+apareciendo en las búsquedas por código de los paneles de vinculación. **Ese bug
+ya estaba, sin prefijos de por medio.**
 
-Los 14 son de seed y **ningún código de fixer fue dictado nunca a nadie**, así
-que regenerar no invalida un papel anotado por nadie. El riesgo es cero hoy y
-sube con cada fixer real que entre: es ahora o nunca.
+Por eso la regla vive en un TRIGGER (`profiles_sincronizar_codigo`, migración
+`20260923100000`) y no en cada escritor:
 
-Y sobre todo, **convivir no resolvería el problema**. Si `GND` puede ser
-cualquiera de los dos, el prefijo deja de ser información y la distribuidora
-sigue sin saber a quién invita — que es exactamente lo que este tramo viene a
-arreglar. Un prefijo que solo vale para los nuevos no sirve hasta que se renueve
-la población entera.
+> el prefijo coincide con el `tipo_actor`, y las empresas no tienen código
 
-El mecanismo ya existe: `backfill_codigos_gondolero()`, el mismo del botón
-"Asignar códigos" de `/admin/usuarios`, que ya se usó para reescribir los 5
-códigos viejos de prueba.
+Dos decisiones del trigger que conviene no revertir:
 
-**Dos detalles a no pasar por alto:**
+1. **Es `BEFORE UPDATE OF tipo_actor`, no `INSERT`.** El único camino que
+   inserta un profile es `handle_new_user()`, que ya pone el código con su
+   reintento contra el UNIQUE — un mecanismo cuyo fallo significa que una
+   persona no puede entrar a la app y no vuelve. Y no hace falta: al registrarse
+   nadie es fixer.
+2. **La guarda "ya tiene el prefijo que le corresponde → no se toca".**
+   `UPDATE OF tipo_actor` se dispara cuando la columna está en el `SET` **aunque
+   el valor no cambie**, así que sin eso un cambio de tipo que no cambia nada le
+   rotaría el código a alguien que ya lo dictó por teléfono.
 
-- `lib/codigo-gondolero.ts` tiene `FORMATO_CODIGO_GONDOLERO` con `GND`
-  hardcodeado, y `tieneCodigoVigente()` sale de ahí. El backfill levanta "los que
-  no tengan el formato nuevo", así que si la regex pasa a aceptar los dos
-  prefijos hay que condicionarla por `tipo_actor` o el backfill deja de ver a los
-  fixers con GND — justo los que hay que reescribir.
-- Las tres búsquedas por código (`distribuidora/gondoleros`,
-  `distribuidora/fixers`, `repositora/fixers`) filtran por `tipo_actor` y **no
-  por prefijo**, así que el cambio no las rompe. Conviene que siga siendo así: el
-  prefijo es para el humano que lee, no para el código que filtra.
+**El `WHILE EXISTS` tiene ventana y se aceptó.** El reintento del alta no la
+tiene —pide, choca contra el UNIQUE, reintenta— pero en un `BEFORE UPDATE` la
+violación se levanta después del trigger. Con 8^8 combinaciones y 29 filas es
+irrelevante, y si alguna vez chocara el UNIQUE hace fallar el UPDATE de forma
+ruidosa en vez de escribir un duplicado.
+
+**El backfill tuvo que volverse sensible al tipo.** Con `^(GND|FXR)-…` un fixer
+con GND **matchea** y queda excluido para siempre, o sea que la función que tenía
+que migrar a los 14 no los habría visto. La condición es "el prefijo que le
+corresponde a SU `tipo_actor`", y eso es lo que al mismo tiempo la deja
+idempotente.
+
+**Corrido el 23/9/2026 en dev y prod: 6 y 8 asignados, cero fallidos.**
+
+#### La corrección sobre el DROP, que vale más que el tramo
+
+Dije que sin el `DROP FUNCTION` el registro público se rompía entero, porque
+medí `42725: function generar_codigo_gondolero() is not unique`. **Era falso
+para la migración como quedó**, y lo descubrí yendo a probarlo.
+
+El 42725 salía porque en ese experimento el parámetro tenía
+`DEFAULT 'gondolero'`. Sin `DEFAULT` —que es como quedó, obligatorio a
+propósito— no hay ambigüedad ninguna: `f()` resuelve a la vieja y `f(text)` a la
+nueva, y nada falla.
+
+Lo cual es **peor**: sin el DROP sobrevive un generador que devuelve GND pase lo
+que pase, listo para que alguien lo llame y le ponga prefijo de gondolero a un
+fixer, en silencio. El DROP va igual, pero por el argumento de `unirseACampana` y
+`formatearFecha` —lo que todavía compila es lo que alguien va a usar— y no por
+una rotura ruidosa que no existe.
+
+#### El formato está escrito dos veces, en dos lenguajes
+
+El regex de `backfill_codigos_gondolero()` y el de `lib/codigo-gondolero.ts`
+describen lo mismo. **Si cambia uno, cambia el otro**, y el modo de falla no es
+que algo explote: es que el contador de "códigos pendientes" de
+`/admin/usuarios` nunca llegue a cero mientras el botón dice que ya está todo
+asignado. El `COMMENT` de la función SQL apunta a ese archivo para que quien lea
+desde la base también lo vea.
+
+Por eso `tieneCodigoVigente(codigo, tipo)` pide el tipo **obligatorio**: con un
+default, el contador daría por bueno el GND de un fixer.
+
+#### La normalización del código tipeado
+
+Las tres búsquedas hacían `.eq('codigo_gondolero', codigo.toUpperCase())`, o sea
+match exacto sobre lo que la persona escribió. **Un código dictado por teléfono
+se tipea como viene**: sin guiones, con espacios, en minúscula, con un espacio
+pegado de un copiar-pegar. Las cuatro formas devolvían *"Código no encontrado.
+Verificá que sea correcto."* sobre un código que era correcto — el peor mensaje
+posible, porque manda a buscar un error que no está.
+
+`normalizarCodigo` saca todo lo que no sea letra o dígito y rearma los guiones.
+**Lo que no hace es adivinar**: un texto que no tenga tres letras y ocho dígitos
+sale como se pueda y lo rechaza el validador. Normalizar no es corregir.
+
+#### Lo que el prefijo agregó a las búsquedas, que no es el mensaje
+
+Las tres **ya daban** el mensaje cruzado ("Este código pertenece a un
+Gondolero…"). Lo que agrega el prefijo es **cuándo se puede dar**: antes salía
+solo si el código EXISTÍA en la base, así que un GND mal tipeado o de otro
+ambiente caía en "no encontrado", indistinguible de un typo. Ahora se rechaza
+antes de consultar, exista o no.
+
+La sugerencia de a dónde ir la pone cada pantalla y no el helper, porque **no es
+la misma**: el panel de distribuidora tiene las dos secciones; el de repositora
+solo tiene fixers, y mandarla a "la sección Gondoleros" sería mandarla a una
+pantalla que no existe.
+
+El chequeo de `tipo_actor` contra la base **se quedó** después del rechazo por
+prefijo: es el que decide, y el prefijo es una convención.
+
+#### Las dos escrituras que no chequeaban el error
+
+`crearUsuario` y `cambiarTipoActor` hacían `await admin.from('profiles').update(…)`
+pelado — dos de las 137. Ahora devuelven `{ error }` y los llamadores lo miran.
+
+Importa más desde este tramo: un fallo silencioso ahí dejaba al usuario con el
+tipo VIEJO y al admin viendo *"Rol cambiado a marca"*; ahora arrastra además el
+código, porque el trigger tampoco llegó a correr.
+
+**`cambiar-rol-btn.tsx` no lo monta nadie** — verificado con grep el 23/9/2026,
+la única mención en el repo es su propia declaración. El cambio de rol que se usa
+está en `acciones-usuario.tsx`. Queda candidata a borrarse; mientras exista, al
+menos ya no se traga el error.
+
+**Probado:** `scripts/probar-migracion-fxr.mjs` (28 casos, aplica la migración en
+una transacción y termina con ROLLBACK; cubre el registro público por el camino
+real, las cinco transiciones de tipo, la no-rotación y la idempotencia del
+backfill) y `scripts/probar-codigo-actor.ts` (33 casos de formato, normalización
+y rechazo por prefijo).
+
+> El dry-run saca el `BEGIN;`/`COMMIT;` del archivo y **aborta si no puede**: ese
+> `COMMIT` cerraría su transacción y escribiría sobre dev. Un reemplazo que no
+> matchea sería un borrado silencioso con daño real.
 
 ### 2. Postulación de fixers a campañas
 

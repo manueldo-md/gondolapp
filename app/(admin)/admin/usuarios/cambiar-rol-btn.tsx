@@ -6,13 +6,27 @@ import type { TipoActor } from '@/types'
 
 const TIPOS: TipoActor[] = ['gondolero', 'fixer', 'distribuidora', 'marca', 'admin']
 
+/**
+ * NO LA MONTA NADIE — verificado con grep el 23/9/2026: la única mención de
+ * `CambiarRolBtn` en todo el repo es esta declaración. El cambio de rol que se
+ * usa vive en `acciones-usuario.tsx`, adentro del modal del usuario.
+ *
+ * Se deja porque borrar archivos se consulta, pero **es candidata a borrarse**:
+ * una segunda copia de la misma acción es la que alguien va a "arreglar" algún
+ * día creyendo que es la que corre, como pasó con `unirseACampana`.
+ *
+ * Mientras exista, que al menos no se trague el error.
+ */
 export function CambiarRolBtn({ userId, tipoActual }: { userId: string; tipoActual: string }) {
   const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const handleCambiar = (nuevoTipo: TipoActor) => {
     startTransition(async () => {
-      await cambiarTipoActor(userId, nuevoTipo)
+      const res = await cambiarTipoActor(userId, nuevoTipo)
+      if (res?.error) { setError(res.error); return }
+      setError(null)
       setOpen(false)
     })
   }
@@ -37,6 +51,7 @@ export function CambiarRolBtn({ userId, tipoActual }: { userId: string; tipoActu
               → {tipo}
             </button>
           ))}
+          {error && <p className="px-3 py-1.5 text-xs text-red-600">{error}</p>}
         </div>
       )}
     </div>

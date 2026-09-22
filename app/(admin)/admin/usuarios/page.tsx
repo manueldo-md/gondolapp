@@ -5,7 +5,7 @@ import { NuevoUsuarioModal } from './nuevo-usuario-modal'
 import { AccionesUsuario } from './acciones-usuario'
 import { AsignarAliasBtn } from './asignar-alias-btn'
 import { AsignarCodigosBtn } from './asignar-codigos-btn'
-import { tieneCodigoVigente } from '@/lib/codigo-gondolero'
+import { tieneCodigoVigente, type TipoConCodigo } from '@/lib/codigo-gondolero'
 import { getConfig } from '@/lib/config'
 import { contarMisionesAprobadasDelMes, nivelPorMisiones } from '@/lib/nivel-mensual'
 
@@ -68,13 +68,19 @@ export default async function UsuariosPage({
   // limitada a 200: el contador tiene que ver a todos, incluso mirando el filtro
   // "Marcas". Es además el rastro visible de cuando handle_new_user() agota los
   // reintentos y crea el profile sin código.
+  //
+  // `tipo_actor` entra al select desde el 23/9/2026: el código vigente de un
+  // fixer es FXR y el de un gondolero GND, así que sin el tipo no se puede
+  // saber si el que tiene está bien. Un contador que use un solo formato
+  // contaría a los 14 fixers como pendientes para siempre, con el botón
+  // diciendo que ya está todo asignado.
   const { data: codigosData } = await admin
     .from('profiles')
-    .select('codigo_gondolero')
+    .select('codigo_gondolero, tipo_actor')
     .in('tipo_actor', ['gondolero', 'fixer'])
 
-  const codigosPendientes = ((codigosData ?? []) as { codigo_gondolero: string | null }[])
-    .filter(p => !tieneCodigoVigente(p.codigo_gondolero))
+  const codigosPendientes = ((codigosData ?? []) as { codigo_gondolero: string | null; tipo_actor: TipoConCodigo }[])
+    .filter(p => !tieneCodigoVigente(p.codigo_gondolero, p.tipo_actor))
     .length
 
   // Emails y estado de ban desde auth

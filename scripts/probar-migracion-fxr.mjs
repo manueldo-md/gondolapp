@@ -58,7 +58,18 @@ try {
            count(*) FILTER (WHERE tipo_actor = 'gondolero')::int AS gondoleros
     FROM profiles`)
   console.log(`   ${antes.fixers} fixers (${antes.fixers_gnd} con GND), ${antes.gondoleros} gondoleros`)
-  caso('CONTROL — hoy todos los fixers tienen prefijo de gondolero', antes.fixers_gnd, antes.fixers)
+
+  // El CONTROL del estado previo solo vale mientras la base NO esté migrada. Una
+  // vez corrida la migración se vuelve falso por definición, y dejarlo fijo haría
+  // que este script quede rojo para siempre — que es como se consigue que nadie
+  // lo vuelva a correr. Se informa el estado y se sigue: todo lo de abajo aplica
+  // la migración sobre lo que haya y vale en los dos casos.
+  const yaMigrada = antes.fixers > 0 && antes.fixers_gnd === 0
+  if (yaMigrada) {
+    console.log('   (esta base YA tiene la migración: el control del estado previo no aplica)')
+  } else {
+    caso('CONTROL — todavía todos los fixers tienen prefijo de gondolero', antes.fixers_gnd, antes.fixers)
+  }
 
   // ── Aplicar la migración ───────────────────────────────────────────────────
   //

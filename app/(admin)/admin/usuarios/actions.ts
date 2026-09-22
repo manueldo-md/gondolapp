@@ -19,7 +19,21 @@ async function getAdmin() {
   )
 }
 
-export async function cambiarTipoActor(userId: string, nuevoTipo: TipoActor) {
+/**
+ * El código personal NO se toca acá, y es deliberado: lo reasigna el trigger
+ * `profiles_sincronizar_codigo` (migración 20260923100000), que corre sobre
+ * cualquier UPDATE de `tipo_actor` venga de donde venga.
+ *
+ * Hasta esa migración esta función no lo tocaba **porque nadie se había
+ * acordado**, y el efecto era que un gondolero convertido en marca se quedaba
+ * con su GND y seguía apareciendo en las búsquedas por código de los paneles de
+ * vinculación. Que la regla la haga cumplir la base es lo que cierra eso para
+ * los dos caminos —este y `crearUsuario`— y para los que no existen todavía.
+ */
+export async function cambiarTipoActor(
+  userId: string,
+  nuevoTipo: TipoActor,
+): Promise<{ error?: string }> {
   const admin = await getAdmin()
   // Limpiar distri_id/marca_id si el nuevo tipo no los usa
   const updateData: Record<string, unknown> = { tipo_actor: nuevoTipo }
@@ -29,8 +43,16 @@ export async function cambiarTipoActor(userId: string, nuevoTipo: TipoActor) {
   if (nuevoTipo !== 'marca') {
     updateData.marca_id = null
   }
-  await admin.from('profiles').update(updateData).eq('id', userId)
+
+  // Se chequea el error: es una de las 137 escrituras que lo ignoraban. Un
+  // fallo silencioso acá deja al usuario con el tipo VIEJO y al admin creyendo
+  // que lo cambió — y desde la migración del prefijo, el trigger tampoco corre,
+  // así que el código queda del tipo equivocado sin que nada avise.
+  const { error } = await admin.from('profiles').update(updateData).eq('id', userId)
+  if (error) return { error: `No se pudo cambiar el tipo: ${error.message}` }
+
   revalidatePath('/admin/usuarios')
+  return {}
 }
 
 export async function cambiarPasswordAdmin(
@@ -291,22 +313,29 @@ export async function crearUsuario(payload: {
     repositora_id: repositoraId,
   }
 
-  // El código personal ya lo puso handle_new_user(), que es el único generador
-  // (generar_codigo_gondolero en la base). Acá solo falta el alias.
+  // El código personal NO se escribe acá. Lo pone `handle_new_user()` al alta
+  // —siempre GND, porque la whitelist fuerza tipo_actor='gondolero'— y lo
+  // CORRIGE el trigger `profiles_sincronizar_codigo` en el UPDATE de abajo:
+  // FXR si el tipo real es fixer, NULL si es una empresa.
   //
-  // El trigger fuerza tipo_actor='gondolero' para cualquier alta — es la
-  // whitelist que impide registrarse como admin con la anon key — así que
-  // también le genera código a marcas, distris y repositoras. Ellas no lo usan,
-  // y dejarles uno puesto las haría aparecer en las búsquedas por código de los
-  // paneles de vinculación. Se limpia acá, en el mismo UPDATE que les corrige el
-  // tipo_actor.
+  // Antes del 23/9/2026 el `codigo_gondolero: null` de las empresas se escribía
+  // a mano justo acá. Se sacó porque era la mitad de la regla: `cambiarTipoActor`
+  // —el otro camino que cambia el tipo— no lo hacía, y ahí el GND heredado
+  // quedaba puesto. Con el trigger, los dos caminos quedan iguales sin que
+  // ninguno tenga que acordarse.
   if (payload.tipo_actor === 'gondolero' || payload.tipo_actor === 'fixer') {
     profileUpdate.alias = await generarAlias(admin)
-  } else {
-    profileUpdate.codigo_gondolero = null
   }
 
-  await admin.from('profiles').update(profileUpdate).eq('id', authData.user.id)
+  // Se chequea el error: es una de las 137 escrituras que lo ignoraban, y es la
+  // que decide QUÉ ES este usuario. Si falla, la cuenta queda creada en auth
+  // como gondolero con código GND —no como la marca que el admin quiso crear— y
+  // el panel no muestra nada. Peor que fallar: queda un actor equivocado suelto.
+  const { error: updateError } = await admin
+    .from('profiles').update(profileUpdate).eq('id', authData.user.id)
+  if (updateError) {
+    return { error: `El usuario se creó pero quedó mal configurado: ${updateError.message}. Cambiale el tipo desde la lista.` }
+  }
 
   revalidatePath('/admin/usuarios')
   revalidatePath('/admin/marcas')

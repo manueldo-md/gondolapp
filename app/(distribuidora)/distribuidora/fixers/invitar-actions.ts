@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
+import { revisarCodigo } from '@/lib/codigo-gondolero'
 
 function adminClient() {
   return createAdminClient(
@@ -52,18 +53,25 @@ export async function buscarFixerPorCodigo(
 
   const admin = adminClient()
 
+  // Se normaliza y se rechaza por PREFIJO antes de consultar. El mensaje cruzado
+  // ya existía, pero salía solo si el código estaba en la base: un GND mal
+  // tipeado o de otro ambiente caía en "no encontrado", indistinguible de un
+  // typo. Ver lib/codigo-gondolero.ts.
+  const revisado = revisarCodigo(codigo, 'fixer',
+    'Para vincularlo andá a la sección Gondoleros de tu panel.')
+  if (revisado.error) return { error: revisado.error }
+
   const { data: perfil } = await admin
     .from('profiles')
     .select('id, alias, nombre, tipo_actor')
-    .eq('codigo_gondolero', codigo.toUpperCase())
+    .eq('codigo_gondolero', revisado.codigo)
     .maybeSingle()
 
   if (!perfil) return { error: 'Código no encontrado. Verificá que sea correcto.' }
 
-  if (perfil.tipo_actor === 'gondolero') {
-    return { error: 'Este código pertenece a un Gondolero. Para vincularlo andá a la sección Gondoleros de tu panel.' }
-  }
-
+  // El prefijo ya garantiza el tipo salvo que la base esté inconsistente —el
+  // trigger `profiles_sincronizar_codigo` lo impide—, pero el chequeo se queda:
+  // es el que decide, y no se apoya en un prefijo que es una convención.
   if (perfil.tipo_actor !== 'fixer') {
     return { error: 'Código no encontrado. Verificá que sea correcto.' }
   }
