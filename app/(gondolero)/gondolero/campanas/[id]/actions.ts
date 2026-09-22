@@ -105,78 +105,25 @@ async function validarUnion(
   return {}
 }
 
-export async function unirseACampana(campanaId: string): Promise<{ error: string } | void> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
-  const admin = createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-
-  const permiso = await validarUnion(campanaId, user.id, admin)
-  if (permiso.error) return { error: permiso.error }
-
-  // Buscar cualquier participación existente (cualquier estado)
-  const { data: existente, error: existenteError } = await admin
-    .from('participaciones')
-    .select('id, estado')
-    .eq('campana_id', campanaId)
-    .eq('gondolero_id', user.id)
-    .maybeSingle()
-
-  console.log('[unirse] existente:', existente, 'error:', existenteError)
-
-  if (existente?.estado === 'activa') {
-    redirect(`/gondolero/captura?campana=${campanaId}`)
-  }
-
-  if (existente) {
-    // Ya existe fila (completada/abandonada) → UPDATE para reactivar
-    console.log('[unirse] haciendo UPDATE de id:', existente.id)
-    const { error } = await admin
-      .from('participaciones')
-      .update({
-        estado:                'activa',
-        comercios_completados: 0,
-        puntos_acumulados:     0,
-        joined_at:             new Date().toISOString(),
-      })
-      .eq('id', existente.id)
-
-    console.log('[unirse] UPDATE error:', error)
-    if (error) return { error: `No pudimos reactivar tu inscripción: ${error.message}` }
-  } else {
-    // Primera vez → INSERT
-    console.log('[unirse] haciendo INSERT')
-    const { error } = await admin
-      .from('participaciones')
-      .insert({
-        campana_id:            campanaId,
-        gondolero_id:          user.id,
-        estado:                'activa',
-        comercios_completados: 0,
-        puntos_acumulados:     0,
-      })
-
-    console.log('[unirse] INSERT error:', error)
-    if (error) return { error: `No pudimos inscribirte: ${error.message}` }
-  }
-
-  revalidatePath('/gondolero/misiones')
-  revalidatePath('/gondolero/campanas')
-  redirect(`/gondolero/captura?campana=${campanaId}`)
-}
+// `unirseACampana` se borró el 22/9/2026. No la llamaba NADIE — el único botón
+// de unirse usa `soloUnirse`, verificado con grep sobre todo el repo.
+//
+// No se dejó "por las dudas" a propósito: una función muerta con los controles
+// adentro es la que alguien va a "arreglar" algún día creyendo que es la que
+// corre, y el arreglo no va a tener efecto. Lo que valía la pena —los seis
+// controles— ya está en `validarUnion`, que `soloUnirse` comparte.
+//
+// Hacía además un `redirect()` a captura, que es lo único que no sobrevive:
+// el botón actual navega desde el cliente.
 
 /**
  * Unirse sin redirect. La llama el botón "Unirme" del detalle de campaña.
  *
  * Hasta el 18/9/2026 no validaba NADA: creaba la participación y devolvía ok.
- * Ahora usa `validarUnion`, los mismos seis controles que `unirseACampana`.
- * Dos puertas al mismo lugar no pueden pedir cosas distintas — la que se usa
- * termina siendo la que no valida.
+ * Ahora usa `validarUnion`, que tiene los seis controles. Dos puertas al mismo
+ * lugar no pueden pedir cosas distintas — la que se usa termina siendo la que
+ * no valida. Desde el 22/9/2026 hay UNA sola puerta: `unirseACampana` se borró
+ * por no tener llamadores.
  */
 export async function soloUnirse(campanaId: string): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient()

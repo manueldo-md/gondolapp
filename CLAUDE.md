@@ -4284,25 +4284,65 @@ mención en el repo es un comentario sobre un param de redirect), pero si se
 vuelve a enganchar hay que darle el mismo tratamiento — y ahí es
 `getCurrentPosition`, que sin timeout puede colgarse sin error ni salida.
 
-### 2. Precache al unirse, y TTL del caché de campañas
+### 2. ✅ Precache al unirse, y TTL del caché de campañas — hecho el 22/9/2026
 
-El precache de campañas (`campanas-sections.tsx`, useEffect 2) recorre
-`misCampanas` —o sea "En curso"— así que **sí cubre las campañas a las que se
-unió sin abrirlas**. Las de "Disponibles" no se precachean, y está bien.
+**Los tres agujeros que tenía el caché de campañas** (`lib/campana-cache.ts`):
 
-Lo que falla es **cuándo** corre: en el `useEffect` de la pantalla de la LISTA.
-La secuencia que rompe es `detalle → Unirme → captura → modo avión`, sin volver
-a la lista con conexión.
+1. **No tenía timestamp.** Los otros dos cachés guardan `{ data, timestamp }`;
+   éste hacía `set(clave, campanaData)` con el objeto pelado. Sin fecha no hay
+   forma de saber si quedó viejo.
+2. **`if (already) continue` nunca refrescaba.** Una campaña cacheada hace dos
+   semanas se capturaba offline con los bloques de hace dos semanas. Si el
+   creador agregaba una pregunta, la misión llegaba sin esa respuesta.
+3. **El precache solo corría en la pantalla de la LISTA.** La secuencia
+   `detalle → Unirme → captura → modo avión` dejaba al gondolero sin nada,
+   porque nunca volvió a la lista con señal.
 
-Tres cosas para arreglar juntas:
+**Cómo quedó:**
 
-- **Precachear al unirse.** `soloUnirse` y `unirseACampana` ya saben el
-  `campanaId`.
-- **TTL.** `if (already) continue` no refresca nunca: una campaña cacheada hace
-  dos semanas se captura offline con los bloques y campos viejos. El caché de
-  comercios ya tiene timestamp; éste no.
-- El efecto **no depende de `misCampanas`**, solo corre al montar. Volver con el
-  back puede reusar la pantalla sin re-ejecutarlo.
+| | |
+|---|---|
+| TTL | **12 h** — cubre una jornada: si precargó a las 7, a las 19 sigue vigente |
+| Al vencer | **se usa igual**, nunca se borra |
+| Con red y vencido | chequeo de `updated_at` (dos columnas), refetch solo si cambió |
+| Sin red y vencido | se usa, con aviso que dice la fecha |
+| Al unirse | `unirse-button.tsx` precachea apenas `soloUnirse` devuelve ok |
+
+**Vencido no es inválido, y esa es la decisión de producto.** El gondolero está
+parado en el comercio: mejor formulario viejo que ningún formulario. El daño
+está acotado porque las respuestas se guardan contra `campo_id`, no contra el
+texto: una pregunta agregada llega como dato faltante, no como dato falso, y una
+renombrada queda bien atada igual. El caso feo sería que borraran un campo, y
+ningún camino de la app borra `bloque_campos` — `republicarCampana` hace append.
+
+Lo que sí se hace es **decirlo, con la fecha**: *"Los datos de esta campaña son
+del martes. Abrila con señal para actualizarlos."* Mismo criterio que
+`relevadosFresco`.
+
+**El chequeo barato es lo que hace que el TTL no cueste datos.** Una sola
+consulta de `id, updated_at` para todas las campañas cacheadas; el
+`CAMPANA_CACHE_SELECT` con los bloques anidados solo se baja si algo cambió.
+Depende de la migración `20260922200000`, que es la que mueve
+`campanas.updated_at` también cuando el cambio es en un bloque o un campo.
+
+**`soloUnirse` es un server action**, así que no puede escribir IndexedDB: el
+precache al unirse tiene que estar del lado del cliente, en el botón. Y va sin
+bloquear — si falla por falta de señal, el gondolero igual se unió y la lista lo
+precachea después.
+
+**El punto "que el efecto se vuelva a correr si cambian las campañas" ya estaba
+hecho** y lo había relevado mal: el dep array del efecto es
+`[misCampanas, gondoleroLocalidadIds]`, así que sí vuelve a correr. Lo que no
+hacía nada era el cuerpo, por el `if (already) continue`.
+
+**De paso se borró `unirseACampana`**, que no tenía ningún llamador. Una función
+muerta con los controles adentro es la que alguien va a "arreglar" algún día
+creyendo que es la que corre. Los seis controles ya están en `validarUnion`, que
+`soloUnirse` comparte.
+
+**Probado:** `scripts/probar-campana-cache.ts` — 12 casos de TTL y de los textos
+del aviso, incluido el caché del formato viejo (`timestamp: 0`), que nace
+vencido a propósito para que se revise en la primera oportunidad con señal.
 
 ### 3. Zona horaria en lo que ya existe — C y C′, separados
 

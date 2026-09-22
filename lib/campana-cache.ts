@@ -12,6 +12,7 @@
  */
 
 import { get, set } from 'idb-keyval'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 // ── Claves de IndexedDB ────────────────────────────────────────────────────────
 
@@ -70,7 +71,11 @@ export const CAMPANA_CACHE_SELECT =
   // `fecha_fin` está acá para que captura pueda cerrarse ANTES de que el
   // gondolero saque la primera foto. Sin ella, la única barrera era el gate del
   // servidor al enviar: rechazo tardío sobre una misión ya hecha entera.
-  'id, nombre, tipo, modalidad, fecha_fin, puntos_por_foto, puntos_por_mision, ' +
+  // `updated_at` es la marca de cambio del caché: con ella, un TTL vencido se
+  // resuelve con una consulta de dos columnas en vez de bajar los bloques
+  // anidados otra vez. La mueven los triggers de la migración 20260922200000,
+  // también cuando el cambio es en un bloque o un campo.
+  'id, nombre, tipo, modalidad, fecha_fin, updated_at, puntos_por_foto, puntos_por_mision, ' +
   'bloques_foto ( id, instruccion, orden, ' +
   'bloque_campos ( id, tipo, pregunta, opciones, obligatorio, orden, blur_requerido ) )'
 
@@ -199,4 +204,219 @@ export function toCampanaData(raw: any): CampanaData {
     bloques: bloquesData,
     primerBloqueId: bloquesData[0]?.id ?? null,
   }
+}
+
+// ── Helpers de campañas (único acceso a CAMPANA_CACHE_PREFIX) ────────────────
+//
+// Hasta el 22/9/2026 acá no había helpers: cada pantalla hacía
+// `set(CAMPANA_CACHE_PREFIX + id, campanaData)` con el objeto pelado, sin
+// timestamp. Eso dejaba dos agujeros:
+//
+//   · No se podía saber si el caché estaba viejo. El precache de la lista hacía
+//     `if (already) continue` y NUNCA refrescaba: una campaña cacheada hace dos
+//     semanas se capturaba offline con los bloques de hace dos semanas. Si el
+//     creador agregaba una pregunta, la misión llegaba sin esa respuesta.
+//   · El precache solo corría en la pantalla de la LISTA, así que la secuencia
+//     `detalle → Unirme → captura → modo avión` dejaba al gondolero sin nada.
+
+/**
+ * 12 horas.
+ *
+ * El ciclo real es "abro la app en casa a la mañana, salgo a la ruta". Doce
+ * horas cubren una jornada entera: si precargó a las 7, a las 19 sigue vigente
+ * y no gasta datos. Dos o cuatro harían que a media tarde todo esté vencido —y
+ * como igual se usa, sería ruido—. Una semana deja pasar demasiadas ediciones
+ * en los ratos en que sí hay señal para detectarlas.
+ *
+ * **Vencido no es inválido.** Ver `leerCampana`.
+ */
+export const CAMPANA_CACHE_TTL_MS = 12 * 60 * 60 * 1000
+
+export interface CampanaCacheEntry {
+  data: CampanaData
+  /** Cuándo se guardó. `0` en los caches viejos, que no lo tenían. */
+  timestamp: number
+  /** `campanas.updated_at` al guardar. `null` en los caches viejos. */
+  updatedAt: string | null
+}
+
+export async function guardarCampana(
+  campanaId: string,
+  data: CampanaData,
+  updatedAt: string | null,
+): Promise<void> {
+  await set(CAMPANA_CACHE_PREFIX + campanaId, { data, timestamp: Date.now(), updatedAt })
+}
+
+/**
+ * LA GUARDA DEL FORMATO VIEJO NO ES OPCIONAL.
+ *
+ * Los teléfonos que ya usaron la app tienen en IDB el `CampanaData` pelado, sin
+ * envoltorio. Sin este chequeo, el primer arranque después del deploy leería
+ * `entry.data` como `undefined` y la pantalla de captura quedaría sin campaña
+ * —sin conexión, sin forma de recuperarse— justo en el teléfono del que más usa
+ * la app. Es el mismo modo de falla que ya documenta `leerRelevados`.
+ *
+ * Un caché viejo se interpreta como lo que era, con `timestamp: 0`: se usa
+ * igual, y queda vencido, así que la primera vez que haya señal se revisa.
+ */
+export async function leerCampana(campanaId: string): Promise<CampanaCacheEntry | null> {
+  const entry = await get(CAMPANA_CACHE_PREFIX + campanaId)
+  if (!entry) return null
+
+  // Formato viejo: el CampanaData pelado.
+  if (Array.isArray(entry.bloques)) {
+    return { data: entry as CampanaData, timestamp: 0, updatedAt: null }
+  }
+  if (entry.data && Array.isArray(entry.data.bloques)) {
+    return {
+      data:      entry.data as CampanaData,
+      timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : 0,
+      updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : null,
+    }
+  }
+  return null
+}
+
+/** ¿Pasó el TTL? Vencido significa "hay que revisarlo con señal", no "es basura". */
+export function campanaCacheVencido(entry: CampanaCacheEntry, ahora = Date.now()): boolean {
+  return ahora - entry.timestamp > CAMPANA_CACHE_TTL_MS
+}
+
+/**
+ * Renueva el plazo sin volver a bajar nada.
+ *
+ * Es lo que se llama cuando el TTL venció pero `updated_at` dice que la campaña
+ * no cambió: el contenido sigue siendo bueno, lo único viejo era el plazo.
+ */
+export async function renovarCampana(campanaId: string): Promise<void> {
+  const entry = await leerCampana(campanaId)
+  if (!entry) return
+  await guardarCampana(campanaId, entry.data, entry.updatedAt)
+}
+
+/**
+ * Baja la campaña entera y la guarda. Devuelve si lo logró.
+ *
+ * No lanza: sin señal esto es un no-op y el llamador sigue su camino. Todos los
+ * llamadores son caminos de precarga, donde fallar no tiene que romper nada.
+ */
+export async function precacheCampana(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  campanaId: string,
+): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from('campanas')
+      .select(CAMPANA_CACHE_SELECT)
+      .eq('id', campanaId)
+      .single()
+    if (!data) return false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = data as any
+    await guardarCampana(campanaId, toCampanaData(raw), raw.updated_at ?? null)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * El chequeo barato: `id, updated_at` de varias campañas en UNA consulta.
+ *
+ * Son bytes. Lo caro es `CAMPANA_CACHE_SELECT`, con los bloques y campos
+ * anidados, y eso solo se baja cuando esto dice que algo cambió.
+ */
+export async function leerUpdatedAt(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  campanaIds: string[],
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>()
+  if (campanaIds.length === 0) return out
+  try {
+    const { data } = await supabase.from('campanas').select('id, updated_at').in('id', campanaIds)
+    for (const c of (data ?? []) as { id: string; updated_at: string | null }[]) {
+      out.set(c.id, c.updated_at ?? null)
+    }
+  } catch { /* sin señal: el llamador se queda con lo que tiene */ }
+  return out
+}
+
+/**
+ * Pone al día el caché de varias campañas, gastando lo mínimo.
+ *
+ *   sin caché              → baja la campaña entera
+ *   caché fresco           → no consulta nada
+ *   vencido y sin cambios  → renueva el plazo, no baja nada
+ *   vencido y con cambios  → baja la campaña entera
+ *
+ * Devuelve los ids que quedaron cacheados, para que la pantalla marque cuáles
+ * están listos para trabajar sin señal.
+ */
+export async function sincronizarCampanas(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  campanaIds: string[],
+): Promise<Set<string>> {
+  const cacheadas = new Set<string>()
+  const aRevisar: string[] = []
+  const entradas = new Map<string, CampanaCacheEntry | null>()
+
+  for (const id of campanaIds) {
+    const entry = await leerCampana(id).catch(() => null)
+    entradas.set(id, entry)
+    if (entry) cacheadas.add(id)
+    if (!entry || campanaCacheVencido(entry)) aRevisar.push(id)
+  }
+
+  if (aRevisar.length === 0) return cacheadas
+
+  const remotos = await leerUpdatedAt(supabase, aRevisar)
+
+  for (const id of aRevisar) {
+    const entry = entradas.get(id) ?? null
+    const remoto = remotos.get(id)
+
+    // Sin respuesta del servidor —sin señal, o la campaña ya no existe— se deja
+    // lo que haya. Un caché vencido se sigue usando: mejor formulario viejo que
+    // ningún formulario.
+    if (remoto === undefined) continue
+
+    if (entry && entry.updatedAt && remoto && entry.updatedAt === remoto) {
+      await renovarCampana(id).catch(() => {})
+      continue
+    }
+
+    if (await precacheCampana(supabase, id)) cacheadas.add(id)
+  }
+
+  return cacheadas
+}
+
+/**
+ * "de hoy a las 07:30", "de ayer", "del martes", "del 15 de septiembre".
+ *
+ * Va en el aviso de caché vencido. Lo importante es que diga CUÁNDO y no
+ * "hace mucho": el gondolero sabe si el martes pasó algo o no, y con eso decide
+ * si vale la pena buscar señal antes de entrar al comercio.
+ *
+ * Se formatea con la hora del dispositivo, no del servidor, porque esto solo se
+ * renderiza en client components — el teléfono ya está en hora argentina.
+ */
+export function fechaCacheRelativa(timestamp: number, ahora = Date.now()): string {
+  // `0` es el caché escrito antes de que existiera el envoltorio. Decir "del 1
+  // de enero de 1970" sería peor que no decir nada.
+  if (!timestamp) return 'de una versión anterior de la app'
+
+  const d = new Date(timestamp)
+  const hoy = new Date(ahora)
+  const soloDia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const dias = Math.round((soloDia(hoy) - soloDia(d)) / 86_400_000)
+
+  if (dias <= 0) return `de hoy a las ${d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+  if (dias === 1) return 'de ayer'
+  if (dias < 7) return `del ${d.toLocaleDateString('es-AR', { weekday: 'long' })}`
+  return `del ${d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}`
 }

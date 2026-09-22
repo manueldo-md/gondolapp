@@ -5,7 +5,6 @@ import Link from 'next/link'
 import {
   Star, Clock, Camera, CheckCircle2, ChevronDown, ChevronRight, DollarSign, WifiOff,
 } from 'lucide-react'
-import { get, set } from 'idb-keyval'
 import { createClient } from '@/lib/supabase/client'
 import {
   labelTipoCampana,
@@ -17,9 +16,8 @@ import type { TipoCampana, NivelGondolero, EstadoParticipacion } from '@/types'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import {
-  CAMPANA_CACHE_PREFIX,
-  CAMPANA_CACHE_SELECT,
-  toCampanaData,
+  leerCampana,
+  sincronizarCampanas,
   guardarComercios,
   leerComercios,
 } from '@/lib/campana-cache'
@@ -477,7 +475,7 @@ export function CampanasSections({
       Promise.all(
         ids.map(async (id) => {
           try {
-            const cached = await get(CAMPANA_CACHE_PREFIX + id)
+            const cached = await leerCampana(id)
             return cached ? id : null
           } catch {
             return null
@@ -499,22 +497,17 @@ export function CampanasSections({
     const prefetch = async () => {
       const supabase = createClient()
 
-      // 1. IndexedDB: datos de captura de cada campaña activa
-      for (const c of misCampanas) {
-        try {
-          const already = await get(CAMPANA_CACHE_PREFIX + c.id)
-          if (already) continue
-          const { data } = await supabase
-            .from('campanas')
-            .select(CAMPANA_CACHE_SELECT)
-            .eq('id', c.id)
-            .single()
-          if (data) {
-            await set(CAMPANA_CACHE_PREFIX + c.id, toCampanaData(data))
-            setCampanasCacheadas(prev => new Set(prev).add(c.id))
-          }
-        } catch { /* sin red — se reintentará la próxima vez */ }
-      }
+      // 1. IndexedDB: datos de captura de cada campaña activa.
+      //
+      // Antes era `if (already) continue`, que NUNCA refrescaba: una campaña
+      // cacheada hace dos semanas se capturaba offline con los bloques de hace
+      // dos semanas. Ahora `sincronizarCampanas` mira el TTL y, si venció,
+      // compara `updated_at` —dos columnas— antes de decidir si vale la pena
+      // bajar los bloques anidados otra vez.
+      try {
+        const cacheadas = await sincronizarCampanas(supabase, misCampanas.map(c => c.id))
+        if (cacheadas.size > 0) setCampanasCacheadas(cacheadas)
+      } catch { /* sin red — se reintentará la próxima vez */ }
 
       // 2. IndexedDB: comercios filtrados por localidad (o todos si no hay localidades)
       try {

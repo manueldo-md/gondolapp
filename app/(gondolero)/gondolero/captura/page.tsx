@@ -33,7 +33,8 @@ import type { ConfigCompresion } from '@/lib/config'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 import type { TipoComercio } from '@/types'
 import {
-  CAMPANA_CACHE_PREFIX, CAMPANA_CACHE_SELECT, toCampanaData,
+  CAMPANA_CACHE_SELECT, toCampanaData, leerCampana, guardarCampana, campanaCacheVencido,
+  fechaCacheRelativa,
   guardarComercios, leerComercios, guardarRelevados, leerRelevados,
   type CampoBloque, type BloqueData, type CampanaData,
   type EstadoComerciosCache,
@@ -687,6 +688,15 @@ function CapturaContent() {
 
   // Offline
   const [modoOffline, setModoOffline] = useState(false)
+  /**
+   * Cuándo se guardó el caché de esta campaña, si está vencido.
+   *
+   * `null` = está fresco o se acaba de bajar, y no hay nada que avisar. Un
+   * caché vencido NO se descarta —el gondolero está parado en el comercio y
+   * mejor formulario viejo que ningún formulario— pero se dice con la fecha,
+   * que es lo que convierte una falla silenciosa en una decisión informada.
+   */
+  const [cacheDesde, setCacheDesde] = useState<number | null>(null)
   const comerciosCacheRef = useRef<ComercioRow[]>([])
 
   // ── Stream de cámara compartido entre bloques ─────────────────────────────
@@ -841,9 +851,15 @@ function CapturaContent() {
       // Sin conexión: cargar desde IndexedDB
       if (!navigator.onLine) {
         try {
-          const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
+          const entry = await leerCampana(campanaId)
+          const cached = entry?.data
           if (cached && Array.isArray(cached.bloques) && cached.primerBloqueId !== undefined) {
             setCampana(cached)
+            // Un caché vencido se USA igual: mejor formulario viejo que ningún
+            // formulario, porque el gondolero está parado en el comercio. Pero
+            // se dice, con la fecha: convierte una falla silenciosa en una
+            // decisión informada.
+            if (entry && campanaCacheVencido(entry)) setCacheDesde(entry.timestamp)
           } else if (cached) {
             // Dato existe pero estructura incompleta — mejor error legible que pantalla en blanco
             setErrorGlobal('Los datos guardados de esta campaña están incompletos. Abrila con conexión para actualizarlos.')
@@ -901,9 +917,11 @@ function CapturaContent() {
           if (error || !data) {
             // Intentar desde caché como fallback
             try {
-              const cached: CampanaData | undefined = await get(CAMPANA_CACHE_PREFIX + campanaId)
+              const entry = await leerCampana(campanaId)
+              const cached = entry?.data
               if (cached && Array.isArray(cached.bloques) && cached.primerBloqueId !== undefined) {
                 setCampana(cached)
+                if (entry && campanaCacheVencido(entry)) setCacheDesde(entry.timestamp)
               } else {
                 setErrorGlobal('No encontramos la campaña o ya no está activa.')
               }
@@ -920,7 +938,9 @@ function CapturaContent() {
                 blur_requerido: c.blur_requerido,
               })),
             })))
-            await set(CAMPANA_CACHE_PREFIX + campanaId, campanaData)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await guardarCampana(campanaId, campanaData, (data as any).updated_at ?? null)
+            setCacheDesde(null)   // se acaba de refrescar: el aviso no aplica
           }
           setCargando(false)
         })
@@ -2501,6 +2521,16 @@ function CapturaContent() {
               <WifiOff size={14} className="text-amber-500 shrink-0" />
               <p className="text-xs text-amber-700">
                 Modo sin conexión — mostrando comercios guardados
+              </p>
+            </div>
+          )}
+
+          {cacheDesde !== null && (
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+              <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Los datos de esta campaña son {fechaCacheRelativa(cacheDesde)}.
+                Abrila con señal para actualizarlos.
               </p>
             </div>
           )}

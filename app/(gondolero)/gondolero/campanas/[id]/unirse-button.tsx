@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { XCircle, Loader2 } from 'lucide-react'
 import { soloUnirse } from './actions'
+import { createClient } from '@/lib/supabase/client'
+import { precacheCampana } from '@/lib/campana-cache'
 import { AbandonarBtn } from '../../misiones/abandonar-btn'
 import { BotonReportarError } from '@/components/shared/boton-reportar-error'
 
@@ -48,6 +50,20 @@ export function UnirseButton({
       if ('error' in result) {
         setError(result.error)
       } else {
+        // Precache ACÁ y no solo en la lista de campañas.
+        //
+        // El precache vivía en un useEffect de la pantalla de la LISTA, así que
+        // la secuencia `detalle → Unirme → captura → modo avión` dejaba al
+        // gondolero sin los bloques: nunca volvió a la lista con señal. Este es
+        // el momento exacto en que sabemos que va a trabajar en esta campaña.
+        //
+        // `soloUnirse` es un server action y no puede escribir IndexedDB, así
+        // que esto tiene que estar del lado del cliente.
+        //
+        // Sin await bloqueante sobre el resultado: si falla —sin señal justo
+        // acá— el gondolero igual se unió, y la lista lo va a precachear
+        // después. Nunca puede impedir que la unión se dé por hecha.
+        precacheCampana(createClient(), campanaId).catch(() => {})
         router.refresh()
       }
     } catch {
