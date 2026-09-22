@@ -4208,15 +4208,16 @@ vínculo, el botón, y el camino de aprobación del lado del ejecutor.
 
 En este orden de prioridad. Los tres salieron de probar el flujo offline en dev.
 
-### 1. GPS sin señal — PRIMERO
+### 1. ✅ GPS sin señal — hecho el 22/9/2026
 
-Trabajar sin señal es el caso **normal** en el interior, no el raro, y hoy el
-paso de comercios cercanos falla en modo avión con *"No pudimos obtener tu
-ubicación"* aunque el GPS funcione: unos pasos después, el chequeo de distancia
-valida bien.
+Trabajar sin señal es el caso **normal** en el interior, no el raro. Hasta el
+22/9/2026 el paso de comercios cercanos fallaba en modo avión con *"No pudimos
+obtener tu ubicación"* aunque el GPS funcionara: unos pasos después, el chequeo
+de distancia validaba bien.
 
-**La causa no es la lista** —`captura/page.tsx` tiene una rama offline correcta
-que filtra desde el caché— **sino `useGPS`** (`lib/hooks/index.ts`):
+**La causa no era la lista** —`captura/page.tsx` tiene una rama offline correcta
+que filtra desde el caché— **sino `useGPS`** (`lib/hooks/index.ts`), que estaba
+así:
 
 ```ts
 { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
@@ -4232,10 +4233,56 @@ Detalle que lo confirma: `watchPosition` **sigue observando después del error**
 así que el fix probablemente llegaba solo unos segundos más tarde — pero la
 pantalla ya había mostrado el error y un botón de reintentar.
 
-**Qué hacer:** timeout más largo cuando no hay red, `maximumAge` alto (una
-posición de hace un minuto sirve de sobra para filtrar comercios a 200 m), y
-**no pintar error mientras el `watch` sigue vivo**. *"Buscando señal GPS, puede
-tardar"* es la verdad; el error es mentira mientras el watch sigue buscando.
+**Cómo quedó** (`lib/hooks/index.ts`):
+
+| | Antes | Ahora |
+|---|---|---|
+| `timeout` | 15000 | **omitido** |
+| `maximumAge` | 5000 | **120000** |
+| Edad máxima para VALIDAR distancia | — | **30000** |
+| Texto "puede tardar" | — | a los **12 s** |
+| Texto accionable + reintentar | — | a los **60 s** |
+
+**El `timeout` se sacó en vez de agrandarlo.** El de `watchPosition` no es
+cuánto se espera: es cuándo se dispara el callback de error, **y el watch sigue
+vivo igual**. Agrandarlo a 60000 solo mueve la mentira 45 segundos. Sin timeout,
+el error queda para lo que de verdad es un error —permiso denegado, dispositivo
+sin GPS— y la espera se comunica como espera.
+
+**`maximumAge` alto SÍ afecta la validación de distancia, y por eso es por
+propósito y no global.** Hay un solo `useGPS` en la app y de su `posicion` salen
+TRES cosas, no dos: la lista de cercanos, el aviso de 50 m / bloqueo de 200 m, y
+**el par lat/lng que se manda a `registrarMision`** — el que queda guardado en
+`fotos.distancia_metros` y el que ve quien aprueba. Un minuto a pie son ~80 m;
+en moto por el pueblo, 500: más que el radio de bloqueo entero.
+
+La salida fue guardar `Position.timestamp` —que antes se tiraba, solo se
+guardaba `coords.accuracy`— en `GPSData.medidaEn`, y exponer `fresca`. La lista
+de cercanos usa la posición tenga la edad que tenga; la validación exige que sea
+fresca, y si no lo es muestra "Actualizando tu ubicación" con el watch vivo, que
+lo resuelve solo en un par de segundos.
+
+**Y `solicitar()` pisaba `watchIdRef` sin limpiar el watch anterior.** Se llama
+desde los efectos de los dos pasos y desde dos botones de reintentar, así que
+quedaban watchers apilados y `detener()` solo mataba el último. Cada watch vivo
+mantiene la radio del GPS encendida: batería en un teléfono que ya está
+sufriendo sin señal.
+
+**El riesgo de no tener timeout**, dicho de frente: un teléfono con la ubicación
+apagada por hardware puede no dar ni fix ni error. Está cubierto en los dos
+pasos — a los 60 s el texto pasa a *"Si no aparece, revisá que la ubicación del
+teléfono esté activada y probá al aire libre"* con botón de reintentar, y
+`comercios-gps` además tiene la búsqueda por nombre sin gate de GPS. Aparte, si
+el navegador expone `permissions.query({name:'geolocation'})` y dice `denied`,
+se dice de entrada en vez de quedarse buscando; ese chequeo falla ABIERTO
+—Safari viejo tira— porque una cortesía nunca puede ser lo que impide pedir GPS.
+
+**PENDIENTE, mismo bug en otra pantalla:** `gondolero/comercios/nuevo/page.tsx`
+tiene su propio `getCurrentPosition` con `timeout: 15000`. Hoy no muerde porque
+**ninguna pantalla linkea a esa ruta** (verificado el 22/9/2026: la única
+mención en el repo es un comentario sobre un param de redirect), pero si se
+vuelve a enganchar hay que darle el mismo tratamiento — y ahí es
+`getCurrentPosition`, que sin timeout puede colgarse sin error ni salida.
 
 ### 2. Precache al unirse, y TTL del caché de campañas
 

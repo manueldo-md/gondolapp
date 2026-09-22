@@ -17,7 +17,8 @@ import {
   getDeviceId,
   formatearPuntos,
 } from '@/lib/utils'
-import { useGPS } from '@/lib/hooks'
+import { useGPS, EDAD_MAX_VALIDACION_MS } from '@/lib/hooks'
+import { GpsBuscando } from '@/components/gondolero/gps-buscando'
 import {
   registrarMision, registrarRecaptura, descartarRecaptura, subirFoto,
   asegurarBloqueGenerico, obtenerConfigCompresion, getMisionParaRetake,
@@ -2523,10 +2524,11 @@ function CapturaContent() {
               </>
             )}
             {gps.estado === 'solicitando' && (
-              <>
-                <Loader2 size={36} className="text-gondo-verde-400 mx-auto mb-3 animate-spin" />
-                <p className="text-sm text-gray-600">Obteniendo tu ubicación...</p>
-              </>
+              <GpsBuscando
+                tardando={gps.tardando}
+                necesitaAyuda={gps.necesitaAyuda}
+                onReintentar={gps.solicitar}
+              />
             )}
             {gps.estado === 'error' && (
               <>
@@ -3180,10 +3182,11 @@ function CapturaContent() {
               )}
 
               {gps.estado === 'solicitando' && (
-                <>
-                  <Loader2 size={36} className="text-gondo-verde-400 mx-auto mb-3 animate-spin" />
-                  <p className="text-sm text-gray-600">Obteniendo tu ubicación...</p>
-                </>
+                <GpsBuscando
+                  tardando={gps.tardando}
+                  necesitaAyuda={gps.necesitaAyuda}
+                  onReintentar={gps.solicitar}
+                />
               )}
 
               {gps.estado === 'error' && (
@@ -3199,7 +3202,29 @@ function CapturaContent() {
                 </>
               )}
 
-              {gps.estado === 'activo' && gps.posicion && (() => {
+              {/* Posición vieja: el watch entregó algo de su caché —hasta dos
+                  minutos— y eso alcanza para SUGERIR comercios, pero no para
+                  decidir si está parado en éste. En moto, un minuto son 500 m:
+                  más que el radio de bloqueo entero. El watch sigue vivo, así
+                  que esto se resuelve solo en un par de segundos. */}
+              {gps.estado === 'activo' && gps.posicion && !gps.fresca && (
+                <>
+                  <Loader2 size={36} className="text-gondo-verde-400 mx-auto mb-3 animate-spin" />
+                  <p className="text-sm font-medium text-gray-700 mb-1">Actualizando tu ubicación</p>
+                  <p className="text-xs text-gray-500 leading-relaxed mb-4">
+                    La última medición tiene más de {Math.round(EDAD_MAX_VALIDACION_MS / 1000)} segundos.
+                    Para confirmar que estás en el comercio necesitamos una de ahora.
+                  </p>
+                  <button
+                    onClick={gps.solicitar}
+                    className="w-full py-2.5 bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl text-sm"
+                  >
+                    Actualizar ahora
+                  </button>
+                </>
+              )}
+
+              {gps.estado === 'activo' && gps.posicion && gps.fresca && (() => {
                 const distancia = distanciaAlComercio ?? 0
                 const dentroDelRadio = distancia <= 50
                 return (
@@ -3286,9 +3311,9 @@ function CapturaContent() {
                   </div>
                 )}
                 <button
-                  disabled={demasiadoLejos}
+                  disabled={demasiadoLejos || !gps.fresca}
                   onClick={async () => {
-                    if (demasiadoLejos) return
+                    if (demasiadoLejos || !gps.fresca) return
                     if (esRetake) {
                       await comenzarCapturaRetake()
                       return
@@ -3301,12 +3326,14 @@ function CapturaContent() {
                     irAlCampo(0)
                   }}
                   className={`w-full py-4 font-bold rounded-2xl min-h-touch ${
-                    demasiadoLejos
+                    demasiadoLejos || !gps.fresca
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                       : 'bg-gondo-verde-400 text-white'
                   }`}
                 >
-                  {demasiadoLejos
+                  {!gps.fresca
+                    ? 'Actualizando ubicación...'
+                    : demasiadoLejos
                     ? 'Acercate al comercio para continuar'
                     : esRetake
                     ? 'Continuar — Rehacer la foto'
