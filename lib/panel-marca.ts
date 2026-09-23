@@ -463,6 +463,44 @@ export function formatearValor(valor: number | null, unidad: UnidadMetrica): str
 }
 
 /**
+ * Los tramos de línea que se pueden dibujar sin inventar nada.
+ *
+ * Devuelve índices sobre `meses` —el eje continuo—, agrupados en rachas de
+ * meses consecutivos CON valor. Un mes sin medición abre un tramo nuevo.
+ *
+ * ── POR QUÉ ESTO NO ES PRESENTACIÓN ─────────────────────────────────────────
+ * Es la regla de "el mes sin datos corta la línea", que es una decisión del
+ * tramo y no un detalle de dibujo. Escrita adentro del componente, la única
+ * forma de verificar que un hueco no se cruza sería mirar el gráfico — y una
+ * línea recta entre abril y septiembre se ve perfectamente normal: dibuja cinco
+ * mediciones que nadie hizo y nada delata que son inventadas.
+ *
+ * Un tramo de un solo punto es válido y se devuelve igual: el que dibuja sabrá
+ * que ahí va un círculo y no una línea.
+ *
+ * Un punto con `valor: null` —una métrica que el código no sabe agregar, o un
+ * mes cuyas observaciones no trajeron ningún valor usable— NO es dibujable y
+ * corta igual que un mes ausente. Tiene observaciones, pero no tiene altura.
+ */
+export function tramosContinuos(serie: SerieMetrica, meses: string[]): number[][] {
+  const conValor = new Set(
+    serie.puntos.filter(p => p.valor !== null).map(p => p.mes)
+  )
+  const tramos: number[][] = []
+  let actual: number[] = []
+  meses.forEach((mes, i) => {
+    if (conValor.has(mes)) {
+      actual.push(i)
+    } else if (actual.length > 0) {
+      tramos.push(actual)
+      actual = []
+    }
+  })
+  if (actual.length > 0) tramos.push(actual)
+  return tramos
+}
+
+/**
  * Los meses de una serie que quedaron vacíos DENTRO de su propio tramo.
  *
  * Sirve para explicar el corte en palabras: "sin mediciones entre mayo y

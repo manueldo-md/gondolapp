@@ -48,3 +48,6 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Renders estáticos de scripts/ver-serie-mensual.mts (artefactos, no fuente)
+serie-mensual-*.html

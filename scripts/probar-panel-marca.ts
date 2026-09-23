@@ -33,7 +33,7 @@
  */
 import {
   armarPanel, rangoDeMeses, etiquetaMes, valorDeFila, unidadDe,
-  textoBase, formatearValor, huecosDe, resumenDe, textoPeriodo,
+  textoBase, formatearValor, huecosDe, resumenDe, textoPeriodo, tramosContinuos,
   type FilaSerie, type FilaVisitas, type PuntoSerie,
 } from '../lib/panel-marca'
 
@@ -184,6 +184,65 @@ console.log('\n▸ Regla 2 — el mes sin datos corta la línea, pero sigue en e
     punto(p, 'precio', '2026-06'), undefined)
   caso('y el hueco se puede nombrar',
     huecosDe(p.series[0], p.meses), ['2026-05', '2026-06', '2026-07', '2026-08'])
+}
+
+console.log('\n▸ DÓNDE SE CORTA LA LÍNEA')
+// La regla que el gráfico aplica. Un bug acá dibuja una recta entre abril y
+// septiembre: cinco mediciones que nadie hizo, y NADA en pantalla delata que
+// son inventadas. Es el error más caro del tramo y el más difícil de ver.
+//
+// Con los datos de prod del 23/9 este código no se ejercita: ninguna serie
+// tiene dos meses consecutivos, así que el render real no dibuja ni una sola
+// polyline. Estos casos son lo único que lo cubre.
+{
+  const serieCon = (mesesConDatos: string[], eje: string[]) => {
+    const p = armarPanel({ series: mesesConDatos.map(mes =>
+      fila({ mes, metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
+             obs_con_valor: 1, suma_numerica: 100 })) })
+    return { serie: p.series[0], eje }
+  }
+  const EJE = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05']
+
+  const { serie: seguidos } = serieCon(['2026-01', '2026-02', '2026-03'], EJE)
+  caso('tres meses seguidos: UN solo tramo',
+    tramosContinuos(seguidos, EJE), [[0, 1, 2]])
+
+  const { serie: conHueco } = serieCon(['2026-01', '2026-04'], EJE)
+  caso('con un hueco en el medio: DOS tramos, y no se cruza',
+    tramosContinuos(conHueco, EJE), [[0], [3]])
+
+  const { serie: dosYdos } = serieCon(['2026-01', '2026-02', '2026-04', '2026-05'], EJE)
+  caso('dos rachas de a dos: dos tramos',
+    tramosContinuos(dosYdos, EJE), [[0, 1], [3, 4]])
+
+  caso('CONTROL — los índices son del EJE, no de los puntos',
+    tramosContinuos(conHueco, EJE).flat(), [0, 3])
+
+  const { serie: uno } = serieCon(['2026-03'], EJE)
+  caso('un solo mes: un tramo de un punto (el que dibuja pone un círculo)',
+    tramosContinuos(uno, EJE), [[2]])
+}
+
+console.log('\n▸ Un punto sin valor corta igual que un mes ausente')
+// Tiene observaciones pero no tiene altura: no se puede dibujar. Si se colara,
+// el gráfico lo pondría en el cero del eje — "medimos y dio cero", que es lo
+// contrario de lo que pasó.
+{
+  const EJE = ['2026-01', '2026-02', '2026-03']
+  const p = armarPanel({ series: [
+    fila({ mes: '2026-01', metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
+           obs_con_valor: 1, suma_numerica: 100 }),
+    // Observaciones sí, valor usable no.
+    fila({ mes: '2026-02', metrica_slug: 'precio', observaciones: 3, base_pdv: 3,
+           obs_con_valor: 0 }),
+    fila({ mes: '2026-03', metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
+           obs_con_valor: 1, suma_numerica: 200 }),
+  ] })
+  caso('el mes sin valor no entra en ningún tramo',
+    tramosContinuos(p.series[0], EJE), [[0], [2]])
+  caso('CONTROL — pero el punto existe y conserva sus observaciones',
+    punto(p, 'precio', '2026-02')!.observaciones, 3)
+  caso('y su valor es null, no 0', punto(p, 'precio', '2026-02')!.valor, null)
 }
 
 console.log('\n▸ Un mes de solo visitas también estira el eje')

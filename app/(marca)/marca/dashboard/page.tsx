@@ -8,13 +8,17 @@ import {
   Camera, AlertTriangle, Clock, CheckCircle2,
 } from 'lucide-react'
 import type { DashboardVisualizacionesProps } from './dashboard-visualizaciones'
+import { SerieMensual } from './serie-mensual'
 import { formatearInstante } from '@/lib/fecha-ar'
 import {
   armarPanel, resumenDe, formatearValor, textoPeriodo,
   type FilaSerie, type FilaVisitas,
 } from '@/lib/panel-marca'
 
-// ── Único dynamic import — recharts + leaflet NUNCA tocan el servidor ─────────
+// ── Único dynamic import ─────────────────────────────────────────────────────
+// Sin ssr a propósito, aunque el componente NO usa ninguna librería de browser:
+// el comentario viejo decía "recharts + leaflet" y hace rato que no hay ni una
+// ni la otra (ver la primera línea de dashboard-visualizaciones.tsx).
 const DashboardVisualizaciones = dynamic(
   () => import('./dashboard-visualizaciones'),
   {
@@ -116,12 +120,16 @@ export default async function DashboardPage() {
   // Los dos RPC solo necesitan el marca_id, así que van EN PARALELO con las
   // campañas en vez de sumarse a la cascada de abajo. La cascada geográfica
   // —fotos → comercios → localidades— queda para su propio tramo.
-  const [campanasRes, serieRes, visitasRes] = await Promise.all([
+  const [campanasRes, serieRes, visitasRes, metricasRes] = await Promise.all([
     admin.from('campanas')
       .select('id, nombre, estado, fecha_fin, fecha_inicio')
       .eq('marca_id', marcaId),
     admin.rpc('panel_marca_series',  { _marca_id: marcaId }),
     admin.rpc('panel_marca_visitas', { _marca_id: marcaId }),
+    // El catálogo es lo único que permite NOMBRAR lo que no se está midiendo:
+    // los RPC solo devuelven métricas con observaciones, así que sin esto el
+    // panel puede decir qué hay pero no qué falta.
+    admin.from('metricas').select('slug, nombre').eq('activa', true).order('orden'),
   ])
 
   const campanas: CampanaRow[] = campanasRes.data ?? []
@@ -132,10 +140,14 @@ export default async function DashboardPage() {
   // con el error en el log de alguien.
   if (serieRes.error)  console.error('[dashboard marca] panel_marca_series:', serieRes.error.message)
   if (visitasRes.error) console.error('[dashboard marca] panel_marca_visitas:', visitasRes.error.message)
+  // Si falla el catálogo, `noMedidas` queda vacío y el panel igual funciona —
+  // pierde la línea de "no se está midiendo X", no los datos.
+  if (metricasRes.error) console.error('[dashboard marca] metricas:', metricasRes.error.message)
 
   const panel = armarPanel({
     series:  (serieRes.data  ?? []) as FilaSerie[],
     visitas: (visitasRes.data ?? []) as FilaVisitas[],
+    metricas: metricasRes.data ?? [],
   })
   const presencia = resumenDe(panel.series.find(s => s.slug === 'presencia'))
   const campanaIds = campanas.map(c => c.id)
@@ -381,7 +393,12 @@ export default async function DashboardPage() {
         <KpiCard label="Fotos recibidas"   valor={totalFotos}      icon={Camera}   color="bg-gray-100 text-gray-600"     sub="aprobadas" />
       </div>
 
-      {/* Visualizaciones — todo recharts + leaflet en un solo chunk cliente */}
+      {/* Evolución mensual — server-rendered, SVG a mano, cero JS al cliente.
+          Va acá arriba a propósito: es la pregunta que el panel vino a
+          responder, y el resto son cortes de un momento. */}
+      <SerieMensual panel={panel} />
+
+      {/* Visualizaciones — todo en un solo chunk cliente */}
       <DashboardVisualizaciones
         zonaMapData={zonaMapData}
         ciudadRows={ciudadRows}
