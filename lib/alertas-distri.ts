@@ -138,3 +138,127 @@ export async function contarCamposTipificados(
   }
   return count ?? 0
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAS DOS ALERTAS QUE MEDÍAN FOTOS
+//
+// `fotos` es una fuente equivocada para "¿hubo actividad?" desde que existen
+// las campañas de solo preguntas: no producen una sola foto. La unidad de
+// trabajo es la MISIÓN, y el ancla es `capturada_at` —cuándo se hizo el
+// trabajo de campo— y no `created_at`, que es cuándo entró la fila. Esa
+// distinción ya nos mintió en el tramo del panel, donde `created_at` decía
+// 2026-09 en el 100% de las filas y colapsaba toda la historia en un punto.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Los gondoleros que SÍ registraron alguna misión en las campañas del actor
+ * dentro de la ventana. El llamador resta para obtener los inactivos.
+ *
+ * ── DOS DECISIONES QUE NO SON OBVIAS ────────────────────────────────────────
+ *
+ * **1. El scope son las campañas del actor, no todas.** Un gondolero puede
+ * estar vinculado a varias distribuidoras a la vez (ver el Walled Garden en
+ * CLAUDE.md), así que "trabajó" y "trabajó PARA VOS" son preguntas distintas.
+ * Medir todas las campañas escondería al que está activo para otro y no
+ * produce nada acá, que es justo lo que la distri quiere saber.
+ *
+ * Eso obliga a cambiar el texto: la pantalla no puede seguir diciendo "sin
+ * actividad en los últimos 14 días" —una afirmación sobre la persona, que
+ * sería falsa— sino "sin actividad en tus campañas".
+ *
+ * **2. NO se excluyen las misiones descartadas ni rechazadas.** Todo el resto
+ * de este tramo las excluye, y acá sería un error: la pregunta no es "¿este
+ * trabajo cuenta?" sino "¿esta persona trabajó?". Una misión rechazada es
+ * trabajo hecho. Excluirlas acusaría de inactivo a alguien cuya única misión
+ * de la quincena se rechazó, que es exactamente la clase de error que esta
+ * etapa vino a sacar.
+ */
+export async function gondolerosConMision(
+  gondoleroIds: string[],
+  campanaIds: string[],
+  desde: Date,
+  admin: Admin,
+): Promise<Set<string>> {
+  if (gondoleroIds.length === 0 || campanaIds.length === 0) return new Set()
+
+  const d = desde.toISOString()
+  const { data, error } = await admin
+    .from('misiones')
+    .select('gondolero_id')
+    .in('gondolero_id', gondoleroIds)
+    .in('campana_id', campanaIds)
+    // PostgREST no tiene COALESCE en un filtro, así que el fallback a
+    // `created_at` se escribe como un OR. Hoy todas las misiones de las dos
+    // bases tienen `capturada_at`, pero una fila sin él no puede volverse
+    // invisible: eso acusaría a alguien por un dato que no cargó él.
+    .or(`capturada_at.gte.${d},and(capturada_at.is.null,created_at.gte.${d})`)
+
+  if (error) {
+    console.error('[alertas distri] misiones recientes:', error.message)
+    // Falla CERRADA: sin datos no se acusa a nadie. Devolver un set vacío
+    // marcaría inactivos a los 13, que es el daño que esto viene a evitar.
+    return new Set(gondoleroIds)
+  }
+  return new Set((data ?? []).map((m: { gondolero_id: string }) => m.gondolero_id))
+}
+
+/** Una fila de `panel_pdv`, con lo poco que esta alerta necesita. */
+export type PdvVisitado = {
+  comercio_id: string
+  comercio_nombre: string | null
+  /**
+   * El nombre de la columna dice "medicion" pero es la última VISITA: sale de
+   * `max(COALESCE(capturada_at, created_at))` sobre las misiones, midieran o no.
+   * Es justo lo que esta alerta necesita, y por eso no hace falta otra consulta.
+   */
+  ultima_medicion: string | null
+}
+
+export type ComercioSinVisita = { id: string; nombre: string; dias: number }
+
+/**
+ * Los comercios que no reciben una visita desde hace más de `diasCorte`.
+ *
+ * ── EL UNIVERSO ES LO QUE CAMBIÓ ────────────────────────────────────────────
+ * La versión vieja partía de las FOTOS de los últimos 60 días y después
+ * filtraba "hace más de 30". O sea que la banda visible era 30–60 días, y todo
+ * comercio con más de 60 sin visita **desaparecía de la alerta**: los más
+ * abandonados se escondían justo por estar más abandonados. Medido el
+ * 23/9/2026: 23 comercios en cada base.
+ *
+ * Ahora el universo es `panel_pdv` —los comercios con alguna misión en las
+ * campañas del actor— y no hay techo. Un comercio que nunca recibió una misión
+ * no aparece, y está bien que así sea: sin asignación de comercios no existe la
+ * lista de "los que me interesan", así que "nadie lo tocó nunca" no se
+ * distingue de "no es mío". Esa es otra alerta y necesita otra feature.
+ *
+ * Devuelve el TOTAL aparte de la lista recortada: el badge tiene que decir
+ * cuántos hay, no cuántos entran en pantalla.
+ */
+export function comerciosSinVisita(
+  filas: PdvVisitado[],
+  opciones: { ahora: Date; diasCorte?: number; tope?: number; ignorar?: (id: string) => boolean },
+): { lista: ComercioSinVisita[]; total: number } {
+  const { ahora, diasCorte = 30, tope = 50, ignorar } = opciones
+  const corte = ahora.getTime() - diasCorte * 24 * 60 * 60 * 1000
+
+  const todos: ComercioSinVisita[] = []
+  for (const f of filas) {
+    // Sin fecha no se puede afirmar nada. No entra: decir "hace 19.000 días"
+    // por un null sería inventar un número.
+    if (!f.ultima_medicion) continue
+    const t = new Date(f.ultima_medicion).getTime()
+    if (Number.isNaN(t) || t >= corte) continue
+    if (ignorar?.(f.comercio_id)) continue
+    todos.push({
+      id: f.comercio_id,
+      nombre: f.comercio_nombre ?? 'Comercio',
+      dias: Math.floor((ahora.getTime() - t) / (24 * 60 * 60 * 1000)),
+    })
+  }
+
+  // El más abandonado primero: es el orden en que la distri querría atacarlos,
+  // y es el que hace que el recorte se lleve los menos urgentes.
+  todos.sort((a, b) => b.dias - a.dias)
+  return { lista: todos.slice(0, tope), total: todos.length }
+}

@@ -6,7 +6,11 @@ import { PackageX, Store, Megaphone, UserX } from 'lucide-react'
 import { calcularPorcentaje } from '@/lib/utils'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
-import { contarCamposTipificados, estadoQuiebre, textoQuiebre } from '@/lib/alertas-distri'
+import {
+  contarCamposTipificados, estadoQuiebre, textoQuiebre,
+  gondolerosConMision, comerciosSinVisita, type PdvVisitado,
+} from '@/lib/alertas-distri'
+import { campanasDe, idsDe } from '@/lib/campanas-de'
 import { IgnorarAlertaBoton } from './ignorar-alerta-boton'
 import { AlertasEnPausa } from './alertas-en-pausa'
 import type { AlertaIgnoradaConNombre } from './alertas-en-pausa'
@@ -34,19 +38,16 @@ export default async function AlertasPage() {
   const distriId = profile?.distri_id
   if (!distriId) redirect('/auth')
 
-  // Gondoleros activos — solo para alerta de inactividad (TIPO 4)
-  // Campañas propias — fuente de verdad para fotos (TIPOs 1 y 2)
-  const [gondoleroIds, todasCampanasRes] = await Promise.all([
+  // Las campañas de la distri pasan por la función compartida: es el único
+  // lugar que sabe cuáles son las de cada actor, y de ahí salen los TIPOs 1, 2
+  // y 4. Los gondoleros son otra pregunta y siguen por su propio camino.
+  const [gondoleroIds, campanas] = await Promise.all([
     getGondolerosDeDistri(distriId, admin, false),
-    admin.from('campanas').select('id').eq('distri_id', distriId),
+    campanasDe({ tipo: 'distri', distriId }, admin),
   ])
-  const campanaIds = (todasCampanasRes.data ?? []).map((c: { id: string }) => c.id)
-  const NULL_UUID = '00000000-0000-0000-0000-000000000000'
-  const safeCampanaIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
+  const campanaIds = idsDe(campanas)
 
   // Date helpers
-  const treintaAtras     = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const sesentaAtras     = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
   const catorceDiasAtras = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
   const tresDiasAdelante = new Date(Date.now() + 3  * 24 * 60 * 60 * 1000)
 
@@ -110,46 +111,20 @@ export default async function AlertasPage() {
     await contarCamposTipificados(campanaIds, 'quiebre_stock', admin))
 
   // ── TIPO 2: Comercios sin visita ──────────────────────────────────────────
-  interface ComercioSinVisita { id: string; nombre: string; diasSinVisita: number }
-  let sinVisita: ComercioSinVisita[] = []
+  // El universo sale de `panel_pdv`, que ya devuelve un comercio por fila con
+  // su última visita —`max(COALESCE(capturada_at, created_at))` sobre las
+  // misiones— para las campañas que se le pasan. No hace falta otra consulta ni
+  // volver a escribir la regla, y de paso el nombre del comercio viene pegado.
+  //
+  // Antes partía de las FOTOS de los últimos 60 días: la banda visible era
+  // 30–60, y todo comercio con más de 60 sin visita desaparecía de la alerta.
+  // Los más abandonados se escondían justo por estar más abandonados.
+  const pdvRes = await admin.rpc('panel_pdv', { _campanas: campanaIds })
+  if (pdvRes.error) console.error('[alertas distri] panel_pdv:', pdvRes.error.message)
 
-  {
-    const { data: fotasRec } = await admin
-      .from('fotos')
-      .select('comercio_id, created_at')
-      .in('campana_id', safeCampanaIds)
-      .gte('created_at', sesentaAtras.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(2000)
-
-    const lastVisitMap = new Map<string, Date>()
-    for (const f of fotasRec ?? []) {
-      const fo = f as { comercio_id: string; created_at: string }
-      if (!lastVisitMap.has(fo.comercio_id)) {
-        lastVisitMap.set(fo.comercio_id, new Date(fo.created_at))
-      }
-    }
-
-    const sinVisitaEntries = [...lastVisitMap.entries()]
-      .filter(([id, d]) => d < treintaAtras && !esIgnorada('sin_visita', id))
-      .sort((a, b) => a[1].getTime() - b[1].getTime())
-      .slice(0, 50)
-
-    if (sinVisitaEntries.length > 0) {
-      const sinVisitaIds = sinVisitaEntries.map(([id]) => id)
-      const { data: comerciosData } = await admin
-        .from('comercios')
-        .select('id, nombre')
-        .in('id', sinVisitaIds)
-
-      const comMap = new Map((comerciosData ?? []).map((c: { id: string; nombre: string }) => [c.id, c.nombre]))
-      sinVisita = sinVisitaEntries.map(([id, fecha]) => ({
-        id,
-        nombre:        comMap.get(id) ?? 'Comercio',
-        diasSinVisita: Math.floor((Date.now() - fecha.getTime()) / (24 * 60 * 60 * 1000)),
-      }))
-    }
-  }
+  const { lista: sinVisita, total: sinVisitaTotal } = comerciosSinVisita(
+    (pdvRes.data ?? []) as PdvVisitado[],
+    { ahora: new Date(), ignorar: id => esIgnorada('sin_visita', id) })
 
   // ── TIPO 3: Campañas en riesgo ────────────────────────────────────────────
   const { data: campanasRaw } = await admin
@@ -185,12 +160,13 @@ export default async function AlertasPage() {
   let gondolerosInactivos: GondoleroInactivo[] = []
 
   if (gondoleroIds.length > 0) {
-    const { data: gondActivos } = await admin
-      .from('fotos')
-      .select('gondolero_id')
-      .in('gondolero_id', gondoleroIds)
-      .gte('created_at', catorceDiasAtras.toISOString())
-    const activoSet = new Set((gondActivos ?? []).map((f: { gondolero_id: string }) => f.gondolero_id))
+    // Medía `fotos`, y una campaña de solo preguntas no produce ninguna.
+    // Ahora mide misiones por `capturada_at`, y solo en las campañas de esta
+    // distri: "trabajó" y "trabajó PARA VOS" son preguntas distintas cuando un
+    // gondolero puede estar vinculado a varias. Por eso el texto dice "en tus
+    // campañas" y no "sin actividad" a secas.
+    const activoSet = await gondolerosConMision(
+      gondoleroIds, campanaIds, catorceDiasAtras, admin)
 
     // Obtener perfiles de gondoleros actuales para el nombre/alias
     const { data: gondoleroProfiles } = await admin
@@ -203,17 +179,24 @@ export default async function AlertasPage() {
     ) as { id: string; nombre: string; alias: string | null }[]
 
     if (inactivoProfiles.length > 0) {
-      const { data: ultimasFotos } = await admin
-        .from('fotos')
-        .select('gondolero_id, created_at')
+      // "Hace cuánto" también sale de misiones, y de las campañas de esta
+      // distri: la alerta dice que no trabajó para vos, así que el "hace N
+      // días" tiene que contar desde la última vez que sí lo hizo, no desde su
+      // última foto en el sistema.
+      const { data: ultimasMisiones } = await admin
+        .from('misiones')
+        .select('gondolero_id, capturada_at, created_at')
         .in('gondolero_id', inactivoProfiles.map(g => g.id))
-        .order('created_at', { ascending: false })
+        .in('campana_id', campanaIds)
+        .order('capturada_at', { ascending: false, nullsFirst: false })
         .limit(500)
 
       const ultimaMap = new Map<string, Date>()
-      for (const f of ultimasFotos ?? []) {
-        const fo = f as { gondolero_id: string; created_at: string }
-        if (!ultimaMap.has(fo.gondolero_id)) ultimaMap.set(fo.gondolero_id, new Date(fo.created_at))
+      for (const m of ultimasMisiones ?? []) {
+        const mi = m as { gondolero_id: string; capturada_at: string | null; created_at: string }
+        if (!ultimaMap.has(mi.gondolero_id)) {
+          ultimaMap.set(mi.gondolero_id, new Date(mi.capturada_at ?? mi.created_at))
+        }
       }
 
       gondolerosInactivos = inactivoProfiles.map(g => ({
@@ -230,7 +213,10 @@ export default async function AlertasPage() {
   // Quiebre de stock no suma: no está midiendo, y un contador que incluyera
   // un cero de algo que no se mide vuelve a mezclar "no pasa nada" con "no
   // estamos mirando".
-  const totalAlertas = sinVisita.length + campanasRiesgo.length + gondolerosInactivos.length
+  // `sinVisitaTotal` y no `sinVisita.length`: la lista viene recortada para
+  // que la pantalla sea legible, y un badge que contara lo que entra en
+  // pantalla diría 50 habiendo 51.
+  const totalAlertas = sinVisitaTotal + campanasRiesgo.length + gondolerosInactivos.length
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -258,8 +244,8 @@ export default async function AlertasPage() {
       {/* ── Tipo 2: Comercios sin visita ── */}
       <AlertSection
         icon={<Store size={18} className="text-amber-500" />}
-        titulo="Comercios sin visita (últimos 30 días)"
-        badge={sinVisita.length}
+        titulo="Comercios sin visita hace más de 30 días"
+        badge={sinVisitaTotal}
         badgeColor="bg-amber-400"
       >
         {sinVisita.length === 0 ? (
@@ -269,7 +255,7 @@ export default async function AlertasPage() {
             <div key={c.id} className="flex items-center justify-between px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{c.nombre}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{c.diasSinVisita} días sin visita</p>
+                <p className="text-xs text-gray-500 mt-0.5">{c.dias} días sin visita</p>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-3">
                 <Link
@@ -335,7 +321,7 @@ export default async function AlertasPage() {
       {/* ── Tipo 4: Gondoleros inactivos ── */}
       <AlertSection
         icon={<UserX size={18} className="text-amber-500" />}
-        titulo="Gondoleros sin actividad (últimos 14 días)"
+        titulo="Gondoleros sin misiones en tus campañas (últimos 14 días)"
         badge={gondolerosInactivos.length}
         badgeColor="bg-amber-400"
       >
@@ -349,8 +335,8 @@ export default async function AlertasPage() {
                 {g.alias && <p className="text-xs text-gray-400">@{g.alias}</p>}
                 <p className="text-xs text-gray-500 mt-0.5">
                   {g.diasSinActividad < 0
-                    ? 'Sin fotos registradas'
-                    : `${g.diasSinActividad} días sin actividad`}
+                    ? 'Nunca hizo una misión en tus campañas'
+                    : `${g.diasSinActividad} días sin misiones tuyas`}
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-3">

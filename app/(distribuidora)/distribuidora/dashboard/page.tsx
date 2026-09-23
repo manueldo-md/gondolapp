@@ -13,7 +13,8 @@ import { getConfig } from '@/lib/config'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { nivelPorMisiones, inicioDelMes } from '@/lib/nivel-mensual'
 import { formatearInstante } from '@/lib/fecha-ar'
-import { contarCamposTipificados, estadoQuiebre, textoQuiebre } from '@/lib/alertas-distri'
+import { contarCamposTipificados, estadoQuiebre, textoQuiebre, gondolerosConMision } from '@/lib/alertas-distri'
+import { campanasDe, idsDe } from '@/lib/campanas-de'
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
@@ -93,8 +94,7 @@ export default async function DashboardPage() {
     movPuntosRes,
     campanasActivasRes,
     comerciosPendientesRes,
-    fotos14dRes,
-    campanasDistriRes,
+    campanasDistri,
     config,
   ] = await Promise.all([
     // Perfiles de gondoleros
@@ -153,16 +153,12 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false })
       .limit(5),
 
-    // Actividad reciente (14 días) para badge inactivo
-    admin.from('fotos')
-      .select('gondolero_id')
-      .in('gondolero_id', safeGond)
-      .gte('created_at', hace14d.toISOString()),
-
-    // TODAS las campañas de la distri, no solo las activas: la pregunta es si
-    // alguna vez se configuró la medición, y una campaña cerrada que la tenía
-    // igual cuenta como "esto se está midiendo".
-    admin.from('campanas').select('id').eq('distri_id', distriId),
+    // TODAS las campañas de la distri, no solo las activas. Dos preguntas la
+    // usan: si alguna vez se configuró la medición de quiebre —una campaña
+    // cerrada que la tenía igual cuenta— y en qué campañas mirar la actividad
+    // de los gondoleros. Sale de la función compartida, que es el único lugar
+    // que sabe cuáles son las campañas de cada actor.
+    campanasDe({ tipo: 'distri', distriId }, admin),
 
     // Umbrales de nivel: la insignia se deriva de las misiones del mes, que esta
     // pantalla ya cuenta por gondolero.
@@ -186,9 +182,7 @@ export default async function DashboardPage() {
   const campanasActivas    = (campanasActivasRes.data ?? []) as any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const comerciosPendientes = (comerciosPendientesRes.data ?? []) as any[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fotos14d           = (fotos14dRes.data ?? []) as any[]
-  const campanaIdsDistri   = ((campanasDistriRes.data ?? []) as { id: string }[]).map(c => c.id)
+  const campanaIdsDistri   = idsDe(campanasDistri)
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
 
@@ -204,11 +198,14 @@ export default async function DashboardPage() {
       .filter(Boolean)
   ).size
 
-  // ── Set de gondoleros activos (14 días) ───────────────────────────────────
-
-  const gondolerosActivos14Set = new Set(
-    fotos14d.map((f: { gondolero_id: string }) => f.gondolero_id)
-  )
+  // ── Gondoleros sin actividad EN LAS CAMPAÑAS DE ESTA DISTRI (14 días) ─────
+  // Medía `fotos`, y una campaña de solo preguntas no produce ninguna: un
+  // gondolero que trabajó ayer aparecía acusado de inactivo, con nombre propio.
+  // Ahora mide misiones por `capturada_at`. Ver lib/alertas-distri.ts, que
+  // además explica por qué el scope son las campañas de la distri y por qué las
+  // misiones descartadas SÍ cuentan como actividad.
+  const gondolerosActivos14Set = await gondolerosConMision(
+    gondoleroIds, campanaIdsDistri, hace14d, admin)
   const gondolerosInactivos14 = gondoleroIds.filter(id => !gondolerosActivos14Set.has(id)).length
 
   // ── Bloque 2: Cobertura por localidad ────────────────────────────────────
@@ -329,7 +326,9 @@ export default async function DashboardPage() {
             valor={gondolerosTotales}
             icon={Users}
             color="bg-gondo-amber-50 text-gondo-amber-400"
-            sub={gondolerosInactivos14 > 0 ? `${gondolerosInactivos14} inactivos >14d` : 'Todos activos'}
+            sub={gondolerosInactivos14 > 0
+              ? `${gondolerosInactivos14} sin misiones tuyas >14d`
+              : 'Todos con misiones tuyas'}
           />
           <KpiCard
             label="Comercios este mes"
@@ -394,7 +393,7 @@ export default async function DashboardPage() {
             {gondolerosInactivos14 > 0 && (
               <AlertaRow
                 emoji="🟡"
-                texto={`${gondolerosInactivos14} gondolero${gondolerosInactivos14 > 1 ? 's' : ''} sin actividad en los últimos 14 días`}
+                texto={`${gondolerosInactivos14} gondolero${gondolerosInactivos14 > 1 ? 's' : ''} sin misiones en tus campañas en los últimos 14 días`}
                 href="/distribuidora/gondoleros"
               />
             )}
