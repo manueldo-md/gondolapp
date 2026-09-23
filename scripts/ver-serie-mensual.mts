@@ -23,7 +23,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import pg from 'pg'
 import { credencialesDeRef, nombreDeRef } from './lib/entorno.mjs'
 import { armarPanel } from '../lib/panel-marca'
-import { SerieMensual } from '../app/(marca)/marca/dashboard/serie-mensual'
+import { SerieMensual, type Seleccion } from '../app/(marca)/marca/dashboard/serie-mensual'
 
 const ref = process.argv.includes('--prod') ? 'xzznzustgsacmfwsupux' : 'mqeymmprvpclpyjpujvf'
 const cred = credencialesDeRef(ref) as { vars: Record<string, string> }
@@ -54,6 +54,17 @@ UPDATE misiones mi
  WHERE o.id = mi.id AND o.n <= 35`
 
 const simular = process.argv.includes('--simular-linea')
+
+/**
+ * --abrir <metrica>:<mes> — rinde con el desglose de ese punto ABIERTO, que es
+ * el estado que la URL produce al tocarlo. Sin esto habría que navegar en el
+ * deploy para ver si el bloque sale bien.
+ */
+const abrirArg = process.argv[process.argv.indexOf('--abrir') + 1]
+const abrir: Seleccion | undefined =
+  process.argv.includes('--abrir') && abrirArg?.includes(':')
+    ? { metrica: abrirArg.split(':')[0], mes: abrirArg.split(':')[1] }
+    : undefined
 if (simular) {
   await c.query('BEGIN')
   const r = await c.query(SQL_SIMULAR)
@@ -69,7 +80,7 @@ for (const m of marcas) {
   const { rows: visitas } = await c.query(`SELECT * FROM public.panel_marca_visitas($1)`, [m.id])
   if (series.length === 0 && visitas.length === 0) continue
   const panel = armarPanel({ series, visitas, metricas })
-  const marcado = renderToStaticMarkup(React.createElement(SerieMensual, { panel }))
+  const marcado = renderToStaticMarkup(React.createElement(SerieMensual, { panel, seleccion: abrir }))
 
   // Lo que el render normal no puede mostrar: cuántos trazos de línea salieron
   // y con qué puntos. Es la parte que ningún dato real ejercita.

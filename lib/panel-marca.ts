@@ -463,6 +463,25 @@ export function formatearValor(valor: number | null, unidad: UnidadMetrica): str
 }
 
 /**
+ * Cuántos comercios del mes relevó más de una campaña.
+ *
+ * ── POR QUÉ HACE FALTA DECIRLO ──────────────────────────────────────────────
+ * Al abrir un punto, la suma de los PDV de las campañas puede dar MÁS que el
+ * PDV del mes, y el lector se queda haciendo una resta que no cierra. No es un
+ * error: `basePdv` es un COUNT(DISTINCT comercio), así que un comercio
+ * relevado por dos campañas cuenta una vez arriba y una vez en cada fila.
+ *
+ * Devuelve 0 cuando no hay solapamiento, que es el caso normal. Está acá y no
+ * en el componente porque es la misma aritmética que el panel promete no
+ * falsear, y porque con los datos del 24/9/2026 **ningún punto tiene dos
+ * campañas**: sin un test, este cálculo no se ejercita nunca.
+ */
+export function comerciosCompartidos(punto: PuntoSerie): number {
+  const suma = punto.desglose.reduce((s, d) => s + d.basePdv, 0)
+  return Math.max(0, suma - punto.basePdv)
+}
+
+/**
  * Los tramos de línea que se pueden dibujar sin inventar nada.
  *
  * Devuelve índices sobre `meses` —el eje continuo—, agrupados en rachas de

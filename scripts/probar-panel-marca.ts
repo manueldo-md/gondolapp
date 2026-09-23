@@ -33,7 +33,8 @@
  */
 import {
   armarPanel, rangoDeMeses, etiquetaMes, valorDeFila, unidadDe,
-  textoBase, formatearValor, huecosDe, resumenDe, textoPeriodo, tramosContinuos,
+  textoBase, formatearValor, huecosDe, resumenDe, textoPeriodo,
+  tramosContinuos, comerciosCompartidos,
   type FilaSerie, type FilaVisitas, type PuntoSerie,
 } from '../lib/panel-marca'
 
@@ -388,6 +389,58 @@ console.log('\n▸ El desglose viene ordenado por peso')
     punto(p, 'precio', '2026-04')!.desglose.map(d => d.campanaNombre), ['Grande', 'Chica'])
   caso('y cada una dice de qué fuente sale',
     punto(p, 'precio', '2026-04')!.desglose.every(d => d.fuente === 'respuestas'), true)
+}
+
+console.log('\n▸ LOS PDV DEL DESGLOSE PUEDEN SUMAR MÁS QUE LOS DEL MES')
+// Al abrir un punto, el lector hace la resta. Si no cierra y nadie lo explica,
+// el número de arriba pasa a ser sospechoso — y es el correcto. Un comercio
+// relevado por dos campañas cuenta una vez en el total y una vez en cada fila.
+//
+// Con los datos del 24/9/2026 NINGÚN punto tiene dos campañas, así que esto no
+// se ejercita ni una vez en el render real. Mismo hueco que la polyline.
+{
+  const conSolape = armarPanel({ series: [
+    fila({ mes: '2026-05', metrica_slug: 'presencia', tipo_respuesta: 'binaria',
+           observaciones: 14, base_pdv: 10, obs_con_valor: 14, verdaderos: 7 }),
+    fila({ mes: '2026-05', metrica_slug: 'presencia', tipo_respuesta: 'binaria', campana_id: 'a',
+           campana_nombre: 'A', fuente: 'respuestas', observaciones: 8, base_pdv: 8,
+           obs_con_valor: 8, verdaderos: 4 }),
+    fila({ mes: '2026-05', metrica_slug: 'presencia', tipo_respuesta: 'binaria', campana_id: 'b',
+           campana_nombre: 'B', fuente: 'respuestas', observaciones: 6, base_pdv: 6,
+           obs_con_valor: 6, verdaderos: 3 }),
+  ] })
+  caso('8 + 6 sobre un mes de 10: hay 4 comercios compartidos',
+    comerciosCompartidos(punto(conSolape, 'presencia', '2026-05')!), 4)
+
+  const sinSolape = armarPanel({ series: [
+    fila({ mes: '2026-05', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
+           obs_con_valor: 25, suma_numerica: 1000 }),
+    fila({ mes: '2026-05', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'A',
+           fuente: 'respuestas', observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 900 }),
+    fila({ mes: '2026-05', metrica_slug: 'precio', campana_id: 'b', campana_nombre: 'B',
+           fuente: 'respuestas', observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 100 }),
+  ] })
+  caso('CONTROL — sin solape da 0 y no se dice nada',
+    comerciosCompartidos(punto(sinSolape, 'precio', '2026-05')!), 0)
+
+  // El caso de prod: un solo desglose, que no puede solapar con nada.
+  const unaSola = armarPanel({ series: [
+    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 23, base_pdv: 23,
+           obs_con_valor: 23, suma_numerica: 86920 }),
+    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'Auditoría',
+           fuente: 'respuestas', observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 86920 }),
+  ] })
+  caso('una sola campaña: 0', comerciosCompartidos(punto(unaSola, 'precio', '2026-04')!), 0)
+
+  // Nunca negativo: un desglose incompleto no puede producir una frase al revés.
+  const incompleto = armarPanel({ series: [
+    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
+           obs_con_valor: 25, suma_numerica: 1000 }),
+    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'A',
+           fuente: 'respuestas', observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 100 }),
+  ] })
+  caso('desglose incompleto: 0, nunca negativo',
+    comerciosCompartidos(punto(incompleto, 'precio', '2026-04')!), 0)
 }
 
 console.log('\n▸ Las dos fuentes de Presencia conviven en el mismo punto')

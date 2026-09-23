@@ -28,10 +28,32 @@
  *
  * Los `<title>` de cada punto son un extra para el que pasa el mouse, no el
  * lugar donde vive el dato.
+ *
+ * ── EL DESGLOSE VIVE EN LA URL, NO EN UN useState ───────────────────────────
+ * Tocar un punto navega a `?metrica=precio&mes=2026-04` y el servidor rinde el
+ * detalle. Se evaluaron tres formas y esta ganó por dos razones concretas:
+ *
+ *   · El panel sigue sin mandar JS. Un `useState` obligaba a convertir todo el
+ *     bloque en Client Component, y con él los cinco gráficos.
+ *   · **El link se puede mandar.** El caso real es alguien de la marca
+ *     diciendo "mirá el salto de precio de abril": con la selección en la URL
+ *     manda el link y el otro ve exactamente eso. Con estado en memoria tiene
+ *     que explicar dónde tocar.
+ *
+ * Es además el patrón que el proyecto ya usa (`searchParams.tab` en los
+ * resultados por campaña).
+ *
+ * El costo, dicho de frente: cada click re-rinde la página, o sea las dos RPC
+ * más la cascada geográfica. Se aceptó porque el desglose se abre de a uno y
+ * porque la alternativa instantánea —`:target` de CSS— es un truco que el
+ * próximo que lea esto no va a reconocer.
  */
 
 import type { PanelMarca, SerieMetrica, PuntoSerie, UnidadMetrica } from '@/lib/panel-marca'
-import { formatearValor, textoBase, resumenDe, textoPeriodo, huecosDe, tramosContinuos } from '@/lib/panel-marca'
+import {
+  formatearValor, textoBase, resumenDe, textoPeriodo, huecosDe,
+  tramosContinuos, comerciosCompartidos,
+} from '@/lib/panel-marca'
 
 // ── Geometría ────────────────────────────────────────────────────────────────
 
@@ -72,9 +94,21 @@ function escala(serie: SerieMetrica): { min: number; max: number } {
   return { min: 0, max: max > 0 ? max * 1.15 : 1 }
 }
 
+/** La ruta de esta pantalla. El desglose se abre navegando acá con query. */
+const RUTA = '/marca/dashboard'
+
+export interface Seleccion { metrica: string; mes: string }
+
+/** El ancla del punto: abre el desglose, o lo cierra si ya era el abierto. */
+function hrefPunto(slug: string, mes: string, abierto: boolean): string {
+  return abierto ? RUTA : `${RUTA}?metrica=${encodeURIComponent(slug)}&mes=${mes}`
+}
+
 // ── Gráfico ──────────────────────────────────────────────────────────────────
 
-function Grafico({ serie, meses }: { serie: SerieMetrica; meses: string[] }) {
+function Grafico({ serie, meses, seleccion }: {
+  serie: SerieMetrica; meses: string[]; seleccion?: Seleccion
+}) {
   const color = COLOR[serie.slug] ?? COLOR_DEFAULT
   const { min, max } = escala(serie)
 
@@ -139,14 +173,38 @@ function Grafico({ serie, meses }: { serie: SerieMetrica; meses: string[] }) {
         />
       ))}
 
-      {/* Los puntos */}
-      {puntos.filter(p => p !== null).map(p => (
-        <circle key={p!.mes} cx={p!.cx} cy={p!.cy} r="4" fill={color} stroke="#fff" strokeWidth="1.5">
-          <title>
-            {`${p!.punto.etiqueta}: ${formatearValor(p!.punto.valor, serie.unidad)} — ${textoBase(p!.punto)}`}
-          </title>
-        </circle>
-      ))}
+      {/* Los puntos, cada uno un link al desglose.
+          El área clickeable es la COLUMNA entera y no el círculo: un círculo de
+          4px es un blanco imposible con el dedo, y este panel se mira también
+          desde un celular. El rect es transparente y va primero para que quede
+          debajo del punto. */}
+      {puntos.filter(p => p !== null).map(p => {
+        const abierto = seleccion?.metrica === serie.slug && seleccion?.mes === p!.mes
+        return (
+          <a key={p!.mes} href={hrefPunto(serie.slug, p!.mes, abierto)}>
+            {/* UN solo nodo de texto. Con dos hijos, React avisa que el
+                browser va a renderizar el markup como texto adentro del
+                tooltip — y el typecheck no lo agarra. */}
+            <title>
+              {`${p!.punto.etiqueta}: ${formatearValor(p!.punto.valor, serie.unidad)}`
+               + ` — ${textoBase(p!.punto)}`
+               + (abierto ? ' (tocá para cerrar)' : ' — tocá para ver por campaña')}
+            </title>
+            <rect
+              x={p!.cx - paso / 2} y={PAD_SUP}
+              width={paso} height={ALTO_AREA + PAD_INF}
+              fill="transparent"
+            />
+            {abierto && (
+              <circle cx={p!.cx} cy={p!.cy} r="9" fill={color} opacity="0.18" />
+            )}
+            <circle
+              cx={p!.cx} cy={p!.cy} r={abierto ? 5.5 : 4}
+              fill={color} stroke="#fff" strokeWidth="1.5"
+            />
+          </a>
+        )
+      })}
 
       {/* Eje X: dos renglones. El de abajo es la BASE DE CÁLCULO, que es el
           punto del tramo entero. Un mes sin medición lleva una raya, no un
@@ -183,9 +241,94 @@ function mesCorto(mes: string): string {
   return MESES[m - 1] ?? '—'
 }
 
+// ── El desglose de un punto ──────────────────────────────────────────────────
+
+const NOMBRE_FUENTE: Record<string, string> = {
+  respuestas:       'preguntas de la campaña',
+  declaracion_foto: 'declaración del gondolero',
+}
+
+/**
+ * Qué campañas componen un punto.
+ *
+ * ── POR QUÉ ESTO NO ES UN LUJO ──────────────────────────────────────────────
+ * El precio de Georgalos pasa de $3.779 en abril a $2.690 en septiembre. Eso
+ * NO es una baja de precios: son dos campañas distintas, una sobre 23 PDV y
+ * otra sobre 2. Sin poder abrir el punto, la marca ve un derrumbe del 29% y no
+ * tiene forma de averiguar que no ocurrió — y con razón no se lo va a creer.
+ *
+ * La suma de los desgloses no tiene por qué dar el total, y eso está dicho en
+ * pantalla cuando pasa: `basePdv` es un COUNT(DISTINCT comercio), así que un
+ * comercio relevado por dos campañas el mismo mes cuenta una vez arriba y una
+ * vez en cada fila. Callarlo dejaría al lector haciendo una resta que no cierra.
+ */
+function Desglose({ serie, punto }: { serie: SerieMetrica; punto: PuntoSerie }) {
+  const filas = punto.desglose
+  const compartidos = comerciosCompartidos(punto)
+  const fuentes = new Set(filas.map(d => d.fuente))
+
+  return (
+    <div className="border-t border-gray-100 bg-gray-50 px-5 py-4">
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">
+            {punto.etiqueta} · {formatearValor(punto.valor, serie.unidad)}
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">{textoBase(punto)}</p>
+        </div>
+        <a
+          href={RUTA}
+          className="text-xs text-gray-400 hover:text-gray-600 shrink-0 underline underline-offset-2"
+        >
+          Cerrar
+        </a>
+      </div>
+
+      {filas.length === 0 ? (
+        <p className="text-xs text-gray-400">
+          Sin desglose disponible para este punto.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {filas.map(d => (
+            <li key={`${d.campanaId}|${d.fuente}`} className="flex items-baseline justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-gray-800 truncate">{d.campanaNombre}</p>
+                <p className="text-xs text-gray-400">
+                  {d.observaciones} observaci{d.observaciones === 1 ? 'ón' : 'ones'}
+                  {' · '}{d.basePdv} PDV
+                  {/* La fuente solo cuando hay más de una: si todas vienen de
+                      lo mismo, repetirlo en cada fila es ruido. */}
+                  {fuentes.size > 1 && <> · {NOMBRE_FUENTE[d.fuente] ?? d.fuente}</>}
+                </p>
+              </div>
+              <p className="text-sm font-medium text-gray-900 shrink-0">
+                {formatearValor(d.valor, serie.unidad)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {compartidos > 0 && (
+        <p className="text-xs text-gray-400 mt-3">
+          Los PDV de las campañas suman más que los del mes:
+          hay {compartidos} comercio{compartidos === 1 ? '' : 's'} que relevó más de una
+          campaña, y en el total del mes cuenta una sola vez.
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ── Una métrica ──────────────────────────────────────────────────────────────
 
-function TarjetaSerie({ serie, meses }: { serie: SerieMetrica; meses: string[] }) {
+function TarjetaSerie({ serie, meses, seleccion }: {
+  serie: SerieMetrica; meses: string[]; seleccion?: Seleccion
+}) {
+  const puntoAbierto = seleccion?.metrica === serie.slug
+    ? serie.puntos.find(p => p.mes === seleccion.mes)
+    : undefined
   const resumen = resumenDe(serie)
   const huecos  = huecosDe(serie, meses)
 
@@ -212,7 +355,7 @@ function TarjetaSerie({ serie, meses }: { serie: SerieMetrica; meses: string[] }
       </div>
 
       <div className="px-4 pt-4 pb-2 overflow-x-auto">
-        <Grafico serie={serie} meses={meses} />
+        <Grafico serie={serie} meses={meses} seleccion={seleccion} />
       </div>
 
       <div className="px-5 pb-4 space-y-1">
@@ -235,14 +378,25 @@ function TarjetaSerie({ serie, meses }: { serie: SerieMetrica; meses: string[] }
             Un solo mes medido: todavía no hay evolución que mostrar.
           </p>
         )}
+        {!puntoAbierto && (
+          <p className="text-xs text-gray-400">
+            Tocá un punto para ver qué campañas lo componen.
+          </p>
+        )}
       </div>
+
+      {puntoAbierto && <Desglose serie={serie} punto={puntoAbierto} />}
     </div>
   )
 }
 
 // ── El bloque completo ───────────────────────────────────────────────────────
 
-export function SerieMensual({ panel }: { panel: PanelMarca }) {
+export function SerieMensual({ panel, seleccion }: {
+  panel: PanelMarca
+  /** El punto abierto, desde la URL. Ver el encabezado. */
+  seleccion?: Seleccion
+}) {
   // ── Regla: una métrica sin datos no se dibuja ──────────────────────────────
   // `armarPanel` ya las dejó afuera, así que acá no hay nada que filtrar. Si
   // NINGUNA tiene datos, el bloque entero se reemplaza por el vacío explicado:
@@ -275,7 +429,7 @@ export function SerieMensual({ panel }: { panel: PanelMarca }) {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {panel.series.map(serie => (
-          <TarjetaSerie key={serie.slug} serie={serie} meses={panel.meses} />
+          <TarjetaSerie key={serie.slug} serie={serie} meses={panel.meses} seleccion={seleccion} />
         ))}
       </div>
 

@@ -95,7 +95,16 @@ function KpiCard({
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  /**
+   * El punto abierto del desglose. Vive acá y no en un useState para que el
+   * bloque de la serie siga siendo Server Component y para que el link se
+   * pueda mandar. Ver el encabezado de serie-mensual.tsx.
+   */
+  searchParams: { metrica?: string; mes?: string }
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -150,6 +159,16 @@ export default async function DashboardPage() {
     metricas: metricasRes.data ?? [],
   })
   const presencia = resumenDe(panel.series.find(s => s.slug === 'presencia'))
+
+  // La selección se valida contra lo que el panel realmente tiene: una URL con
+  // una métrica que esta marca no mide, o un mes sin punto, simplemente no abre
+  // nada. Un link viejo o tipeado a mano no puede romper la pantalla.
+  const seleccion =
+    searchParams.metrica && searchParams.mes &&
+    panel.series.some(s =>
+      s.slug === searchParams.metrica && s.puntos.some(pt => pt.mes === searchParams.mes))
+      ? { metrica: searchParams.metrica, mes: searchParams.mes }
+      : undefined
   const campanaIds = campanas.map(c => c.id)
   const NULL_UUID  = '00000000-0000-0000-0000-000000000000'
   const safeIds    = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
@@ -396,7 +415,7 @@ export default async function DashboardPage() {
       {/* Evolución mensual — server-rendered, SVG a mano, cero JS al cliente.
           Va acá arriba a propósito: es la pregunta que el panel vino a
           responder, y el resto son cortes de un momento. */}
-      <SerieMensual panel={panel} />
+      <SerieMensual panel={panel} seleccion={seleccion} />
 
       {/* Visualizaciones — todo en un solo chunk cliente */}
       <DashboardVisualizaciones
