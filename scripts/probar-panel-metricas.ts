@@ -57,11 +57,22 @@ function caso(nombre: string, real: unknown, esperado: unknown) {
   if (!ok) console.log(`       esperaba ${JSON.stringify(esperado)} y dio ${JSON.stringify(real)}`)
 }
 
-/** Una fila del RPC con lo mínimo escrito a mano. */
+/**
+ * Una fila del RPC con lo mínimo escrito a mano.
+ *
+ * El default es **binaria** desde que las numéricas se parten por campaña: una
+ * binaria se arma desde la fila de TOTAL, así que un fixture de una sola fila
+ * sigue produciendo una serie. Con 'numero' de default, cualquier caso que no
+ * trajera su desglose dejaba de producir serie y el test se caía con un
+ * `undefined` en vez de decir qué esperaba.
+ *
+ * Los casos que son sobre valores numéricos ponen `tipo_respuesta: 'numero'` y
+ * su fila de campaña, que es como los devuelve el RPC.
+ */
 function fila(p: Partial<FilaSerie> & Pick<FilaSerie, 'mes' | 'metrica_slug'>): FilaSerie {
   return {
     metrica_nombre: p.metrica_slug,
-    tipo_respuesta: 'numero',
+    tipo_respuesta: 'binaria',
     orden: 1,
     campana_id: null,
     campana_nombre: null,
@@ -78,34 +89,92 @@ function fila(p: Partial<FilaSerie> & Pick<FilaSerie, 'mes' | 'metrica_slug'>): 
 const punto = (s: ReturnType<typeof armarPanel>, slug: string, mes: string) =>
   s.series.find(x => x.slug === slug)?.puntos.find(p => p.mes === mes)
 
+/** La serie de una métrica numérica, que ahora es una por campaña. */
+const serieDe = (s: ReturnType<typeof armarPanel>, clave: string) =>
+  s.series.find(x => x.clave === clave)
+
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n▸ EL PROMEDIO PONDERADO — el número que se ve bien y está mal')
-// Georgalos, abril: una campaña de 23 PDV a $3.779 promedio y otra de 2 a
-// $500. Promediar los dos promedios daría $2.140. El promedio real es $3.516.
+console.log('\n▸ UNA MÉTRICA NUMÉRICA NO SE AGREGA ENTRE CAMPAÑAS')
+// Decisión de producto: precio y frentes solo significan algo DENTRO de una
+// campaña, porque cada campaña mide un producto distinto. Promediar el precio
+// del aceite de coco con el de la pasta de maní da un número que no describe
+// nada. Antes este panel devolvía ese número: una sola serie de Precio con el
+// promedio ponderado de las dos campañas.
+//
+// Los datos son los de Georgalos en abril: una campaña de 23 PDV a $3.779 y
+// otra de 2 a $500.
 {
   const GRANDE = { obs: 23, suma: 86920 }   // 3779,13 de promedio
   const CHICA  = { obs: 2,  suma: 1000  }   // 500 de promedio
   const p = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
            obs_con_valor: 25, suma_numerica: GRANDE.suma + CHICA.suma }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'c1', campana_nombre: 'Auditoría',
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', campana_id: 'c1', campana_nombre: 'Auditoría',
            fuente: 'respuestas', observaciones: GRANDE.obs, base_pdv: GRANDE.obs,
            obs_con_valor: GRANDE.obs, suma_numerica: GRANDE.suma }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'c2', campana_nombre: 'Piloto chico',
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', campana_id: 'c2', campana_nombre: 'Piloto chico',
            fuente: 'respuestas', observaciones: CHICA.obs, base_pdv: CHICA.obs,
            obs_con_valor: CHICA.obs, suma_numerica: CHICA.suma }),
   ] })
 
-  const real = punto(p, 'precio', '2026-04')!.valor!
-  const promedioDePromedios = (GRANDE.suma / GRANDE.obs + CHICA.suma / CHICA.obs) / 2
+  caso('dos campañas → DOS series, no una', p.series.length, 2)
+  caso('y ninguna es la agregada',
+    p.series.some(x => x.campanaId === null), false)
+  caso('cada una dice de qué campaña es',
+    p.series.map(x => x.campanaNombre), ['Auditoría', 'Piloto chico'])
+  caso('cada una tiene su propia clave para la URL',
+    p.series.map(x => x.clave), ['precio::c1', 'precio::c2'])
 
-  caso('el punto es suma/observaciones', Math.round(real), Math.round(87920 / 25))
-  caso('CONTROL — y NO es el promedio de los dos promedios',
+  // EL CONTROL: el número que ya no existe. La fila de TOTAL sigue llegando del
+  // RPC —el GROUPING SETS la emite igual— y lo que cambió es que no se usa para
+  // armar una serie. Si alguien la vuelve a tomar, esto se pone rojo.
+  const TOTAL_PONDERADO = Math.round(87920 / 25)   // 3.517
+  caso('CONTROL — el promedio entre campañas NO se dibuja en ningún lado',
+    p.series.flatMap(x => x.puntos).map(pt => Math.round(pt.valor!)).includes(TOTAL_PONDERADO),
+    false)
+
+  caso('cada serie conserva SU promedio',
+    p.series.map(x => Math.round(x.puntos[0].valor!)), [3779, 500])
+  caso('y su propia base', p.series.map(x => x.puntos[0].basePdv), [23, 2])
+
+  // Sin `pdvVisitados`: el denominador de visitas es de TODAS las campañas del
+  // alcance, así que en una serie por campaña mostraría una brecha inventada.
+  caso('la serie por campaña no arrastra el PDV visitado del mes',
+    p.series.map(x => x.puntos[0].pdvVisitados), [null, null])
+  caso('y su texto de base no promete una brecha',
+    textoBase(p.series[0].puntos[0]), 'sobre 23 PDV')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▸ …pero una BINARIA sí agrega, y ahí el ponderado sigue mandando')
+// Presencia, quiebre y exhibición son el porcentaje de una condición que
+// significa lo mismo en cualquier campaña. Se suman, y sumarlas bien importa:
+// promediar los dos porcentajes daría otro número.
+{
+  const p = armarPanel({ series: [
+    fila({ mes: '2026-04', metrica_slug: 'presencia', tipo_respuesta: 'binaria',
+           observaciones: 25, base_pdv: 25, obs_con_valor: 25, verdaderos: 5 }),
+    fila({ mes: '2026-04', metrica_slug: 'presencia', tipo_respuesta: 'binaria',
+           campana_id: 'c1', campana_nombre: 'Grande', fuente: 'respuestas',
+           observaciones: 23, base_pdv: 23, obs_con_valor: 23, verdaderos: 3 }),
+    fila({ mes: '2026-04', metrica_slug: 'presencia', tipo_respuesta: 'binaria',
+           campana_id: 'c2', campana_nombre: 'Chica', fuente: 'respuestas',
+           observaciones: 2, base_pdv: 2, obs_con_valor: 2, verdaderos: 2 }),
+  ] })
+
+  caso('una sola serie', p.series.length, 1)
+  caso('y es la agregada', p.series[0].campanaId, null)
+  caso('la clave es el slug pelado', p.series[0].clave, 'presencia')
+
+  const real = punto(p, 'presencia', '2026-04')!.valor!
+  const promedioDePromedios = ((3 / 23) * 100 + (2 / 2) * 100) / 2
+  caso('el punto es verdaderos/conValor', Math.round(real), 20)
+  caso('CONTROL — y NO es el promedio de los dos porcentajes',
     Math.round(real) === Math.round(promedioDePromedios), false)
-  caso('la diferencia entre las dos cuentas es enorme, no un redondeo',
-    Math.abs(real - promedioDePromedios) > 1000, true)
-  caso('cada campaña del desglose conserva SU promedio',
-    punto(p, 'precio', '2026-04')!.desglose.map(d => Math.round(d.valor!)), [3779, 500])
+  caso('la diferencia es enorme, no un redondeo',
+    Math.abs(real - promedioDePromedios) > 30, true)
+  caso('cada campaña del desglose conserva SU porcentaje',
+    punto(p, 'presencia', '2026-04')!.desglose.map(d => Math.round(d.valor!)), [13, 100])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,11 +240,19 @@ console.log('\n▸ Regla 1 — una métrica sin observaciones no se dibuja')
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n▸ Regla 2 — el mes sin datos corta la línea, pero sigue en el eje')
 // El caso real de Georgalos: precio en abril y en septiembre, nada en el medio.
+// Las filas van con su desglose porque así las devuelve el RPC —el GROUPING
+// SETS emite los dos granos— y porque una numérica se arma desde el desglose.
 {
   const p = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 23, base_pdv: 23,
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', observaciones: 23, base_pdv: 23,
            obs_con_valor: 23, suma_numerica: 86920 }),
-    fila({ mes: '2026-09', metrica_slug: 'precio', observaciones: 2, base_pdv: 2,
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', campana_id: 'c1', campana_nombre: 'Mantecol',
+           fuente: 'respuestas', observaciones: 23, base_pdv: 23,
+           obs_con_valor: 23, suma_numerica: 86920 }),
+    fila({ tipo_respuesta: 'numero', mes: '2026-09', metrica_slug: 'precio', observaciones: 2, base_pdv: 2,
+           obs_con_valor: 2, suma_numerica: 5380 }),
+    fila({ tipo_respuesta: 'numero', mes: '2026-09', metrica_slug: 'precio', campana_id: 'c1', campana_nombre: 'Mantecol',
+           fuente: 'respuestas', observaciones: 2, base_pdv: 2,
            obs_con_valor: 2, suma_numerica: 5380 }),
   ] })
   caso('el eje va de abril a septiembre, sin saltearse nada',
@@ -186,6 +263,7 @@ console.log('\n▸ Regla 2 — el mes sin datos corta la línea, pero sigue en e
     punto(p, 'precio', '2026-06'), undefined)
   caso('y el hueco se puede nombrar',
     huecosDe(p.series[0], p.meses), ['2026-05', '2026-06', '2026-07', '2026-08'])
+  caso('la serie es la de esa campaña', serieDe(p, 'precio::c1')?.campanaNombre, 'Mantecol')
 }
 
 console.log('\n▸ DÓNDE SE CORTA LA LÍNEA')
@@ -198,9 +276,15 @@ console.log('\n▸ DÓNDE SE CORTA LA LÍNEA')
 // polyline. Estos casos son lo único que lo cubre.
 {
   const serieCon = (mesesConDatos: string[], eje: string[]) => {
-    const p = armarPanel({ series: mesesConDatos.map(mes =>
-      fila({ mes, metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
-             obs_con_valor: 1, suma_numerica: 100 })) })
+    // Los dos granos, como los devuelve el RPC: una métrica numérica se arma
+    // desde el DESGLOSE, así que un fixture de solo totales no produce serie.
+    const p = armarPanel({ series: mesesConDatos.flatMap(mes => [
+      fila({ tipo_respuesta: 'numero', mes, metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
+             obs_con_valor: 1, suma_numerica: 100 }),
+      fila({ tipo_respuesta: 'numero', mes, metrica_slug: 'precio', campana_id: 'c1', campana_nombre: 'Una',
+             fuente: 'respuestas', observaciones: 1, base_pdv: 1,
+             obs_con_valor: 1, suma_numerica: 100 }),
+    ]) })
     return { serie: p.series[0], eje }
   }
   const EJE = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05']
@@ -232,12 +316,13 @@ console.log('\n▸ Un punto sin valor corta igual que un mes ausente')
 {
   const EJE = ['2026-01', '2026-02', '2026-03']
   const p = armarPanel({ series: [
-    fila({ mes: '2026-01', metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-01', metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
            obs_con_valor: 1, suma_numerica: 100 }),
     // Observaciones sí, valor usable no.
-    fila({ mes: '2026-02', metrica_slug: 'precio', observaciones: 3, base_pdv: 3,
-           obs_con_valor: 0 }),
-    fila({ mes: '2026-03', metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña',
+           fuente: 'respuestas', mes: '2026-02', metrica_slug: 'precio',
+           observaciones: 3, base_pdv: 3, obs_con_valor: 0 }),
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-03', metrica_slug: 'precio', observaciones: 1, base_pdv: 1,
            obs_con_valor: 1, suma_numerica: 200 }),
   ] })
   caso('el mes sin valor no entra en ningún tramo',
@@ -252,7 +337,7 @@ console.log('\n▸ Un mes de solo visitas también estira el eje')
 // si marzo no estuviera en el eje, abril y el punto anterior se acercarían.
 {
   const p = armarPanel({
-    series: [fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 8, base_pdv: 8,
+    series: [fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'precio', observaciones: 8, base_pdv: 8,
                     obs_con_valor: 8, suma_numerica: 800 })],
     visitas: [{ mes: '2026-03', pdv_visitados: 15, misiones: 15 },
               { mes: '2026-04', pdv_visitados: 8,  misiones: 8  }],
@@ -291,7 +376,7 @@ caso('binaria da porcentaje',
   valorDeFila(fila({ mes: '2026-04', metrica_slug: 'presencia', tipo_respuesta: 'binaria',
                      observaciones: 12, obs_con_valor: 12, verdaderos: 8 })), (8 / 12) * 100)
 caso('numero da promedio',
-  valorDeFila(fila({ mes: '2026-04', metrica_slug: 'frentes', observaciones: 8,
+  valorDeFila(fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'frentes', observaciones: 8,
                      obs_con_valor: 8, suma_numerica: 26 })), 26 / 8)
 caso('una métrica que el código no conoce no se agrega sola',
   unidadDe('seleccion_multiple'), 'crudo')
@@ -318,11 +403,11 @@ console.log('\n▸ LOS STRINGS — bigint y numeric pueden llegar así')
 {
   // Las mismas dos filas, una con números y otra con strings.
   const conNumeros = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 23, base_pdv: 23,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'precio', observaciones: 23, base_pdv: 23,
            obs_con_valor: 23, suma_numerica: 86920, orden: 4 }),
   ] })
   const conStrings = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: '23', base_pdv: '23',
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'precio', observaciones: '23', base_pdv: '23',
            obs_con_valor: '23', suma_numerica: '86920.0000000000000000', orden: '4' }),
   ] })
   caso('dan exactamente lo mismo', conStrings, conNumeros)
@@ -359,9 +444,9 @@ caso('sin valor, una raya y no un cero', formatearValor(null, 'porcentaje'), '�
 console.log('\n▸ Orden y forma de la salida')
 {
   const p = armarPanel({ series: [
-    fila({ mes: '2026-09', metrica_slug: 'precio', orden: 4, observaciones: 2, base_pdv: 2,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-09', metrica_slug: 'precio', orden: 4, observaciones: 2, base_pdv: 2,
            obs_con_valor: 2, suma_numerica: 5380 }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', orden: 4, observaciones: 23, base_pdv: 23,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'precio', orden: 4, observaciones: 23, base_pdv: 23,
            obs_con_valor: 23, suma_numerica: 86920 }),
     fila({ mes: '2026-04', metrica_slug: 'presencia', tipo_respuesta: 'binaria', orden: 1,
            observaciones: 8, base_pdv: 8, obs_con_valor: 8, verdaderos: 4 }),
@@ -377,19 +462,22 @@ console.log('\n▸ Orden y forma de la salida')
 }
 
 console.log('\n▸ El desglose viene ordenado por peso')
+// Sobre una BINARIA, que es la que agrega varias campañas en un mismo punto.
+// En una numérica cada campaña es su propia serie, así que su desglose tiene
+// una fila sola y no hay orden que probar.
 {
   const p = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
-           obs_con_valor: 25, suma_numerica: 87920 }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'chica', campana_nombre: 'Chica',
-           fuente: 'respuestas', observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 1000 }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'grande', campana_nombre: 'Grande',
-           fuente: 'respuestas', observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 86920 }),
+    fila({ mes: '2026-04', metrica_slug: 'presencia', observaciones: 25, base_pdv: 25,
+           obs_con_valor: 25, verdaderos: 12 }),
+    fila({ mes: '2026-04', metrica_slug: 'presencia', campana_id: 'chica', campana_nombre: 'Chica',
+           fuente: 'respuestas', observaciones: 2, base_pdv: 2, obs_con_valor: 2, verdaderos: 1 }),
+    fila({ mes: '2026-04', metrica_slug: 'presencia', campana_id: 'grande', campana_nombre: 'Grande',
+           fuente: 'respuestas', observaciones: 23, base_pdv: 23, obs_con_valor: 23, verdaderos: 11 }),
   ] })
   caso('la campaña que más aporta va primero',
-    punto(p, 'precio', '2026-04')!.desglose.map(d => d.campanaNombre), ['Grande', 'Chica'])
+    punto(p, 'presencia', '2026-04')!.desglose.map(d => d.campanaNombre), ['Grande', 'Chica'])
   caso('y cada una dice de qué fuente sale',
-    punto(p, 'precio', '2026-04')!.desglose.every(d => d.fuente === 'respuestas'), true)
+    punto(p, 'presencia', '2026-04')!.desglose.every(d => d.fuente === 'respuestas'), true)
 }
 
 console.log('\n▸ LOS PDV DEL DESGLOSE PUEDEN SUMAR MÁS QUE LOS DEL MES')
@@ -414,11 +502,11 @@ console.log('\n▸ LOS PDV DEL DESGLOSE PUEDEN SUMAR MÁS QUE LOS DEL MES')
     comerciosCompartidos(punto(conSolape, 'presencia', '2026-05')!), 4)
 
   const sinSolape = armarPanel({ series: [
-    fila({ mes: '2026-05', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
+    fila({ tipo_respuesta: 'numero', mes: '2026-05', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
            obs_con_valor: 25, suma_numerica: 1000 }),
-    fila({ mes: '2026-05', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'A',
+    fila({ tipo_respuesta: 'numero', mes: '2026-05', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'A',
            fuente: 'respuestas', observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 900 }),
-    fila({ mes: '2026-05', metrica_slug: 'precio', campana_id: 'b', campana_nombre: 'B',
+    fila({ tipo_respuesta: 'numero', mes: '2026-05', metrica_slug: 'precio', campana_id: 'b', campana_nombre: 'B',
            fuente: 'respuestas', observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 100 }),
   ] })
   caso('CONTROL — sin solape da 0 y no se dice nada',
@@ -426,18 +514,18 @@ console.log('\n▸ LOS PDV DEL DESGLOSE PUEDEN SUMAR MÁS QUE LOS DEL MES')
 
   // El caso de prod: un solo desglose, que no puede solapar con nada.
   const unaSola = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 23, base_pdv: 23,
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', observaciones: 23, base_pdv: 23,
            obs_con_valor: 23, suma_numerica: 86920 }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'Auditoría',
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'Auditoría',
            fuente: 'respuestas', observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 86920 }),
   ] })
   caso('una sola campaña: 0', comerciosCompartidos(punto(unaSola, 'precio', '2026-04')!), 0)
 
   // Nunca negativo: un desglose incompleto no puede producir una frase al revés.
   const incompleto = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', observaciones: 25, base_pdv: 25,
            obs_con_valor: 25, suma_numerica: 1000 }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'A',
+    fila({ tipo_respuesta: 'numero', mes: '2026-04', metrica_slug: 'precio', campana_id: 'a', campana_nombre: 'A',
            fuente: 'respuestas', observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 100 }),
   ] })
   caso('desglose incompleto: 0, nunca negativo',
@@ -473,9 +561,9 @@ console.log('\n▸ LOS NÚMEROS DE PRODUCCIÓN, tal como los devuelve el RPC')
     fila({ mes: '2026-03', metrica_slug: 'presencia', metrica_nombre: 'Presencia',
            tipo_respuesta: 'binaria', orden: 1, observaciones: 56, base_pdv: 56,
            obs_con_valor: 56, verdaderos: 45 }),
-    fila({ mes: '2026-04', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
            observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 86920 }),
-    fila({ mes: '2026-09', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-09', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
            observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 5380 }),
   ]
   const visitas: FilaVisitas[] = [
@@ -512,9 +600,9 @@ console.log('\n▸ Suprante: el caso que hoy la pantalla muestra como 0%')
       fila({ mes: '2026-09', metrica_slug: 'presencia', metrica_nombre: 'Presencia',
              tipo_respuesta: 'binaria', orden: 1, observaciones: 3, base_pdv: 3,
              obs_con_valor: 3, verdaderos: 3 }),
-      fila({ mes: '2026-04', metrica_slug: 'frentes', metrica_nombre: 'Frentes', orden: 3,
+      fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'frentes', metrica_nombre: 'Frentes', orden: 3,
              observaciones: 8, base_pdv: 8, obs_con_valor: 8, suma_numerica: 26 }),
-      fila({ mes: '2026-09', metrica_slug: 'frentes', metrica_nombre: 'Frentes', orden: 3,
+      fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-09', metrica_slug: 'frentes', metrica_nombre: 'Frentes', orden: 3,
              observaciones: 3, base_pdv: 3, obs_con_valor: 3, suma_numerica: 22 }),
     ],
     visitas: [
@@ -575,9 +663,9 @@ console.log('\n▸ El promedio global también se repondera')
 {
   // Georgalos: precio de abril sobre 23 PDV y de septiembre sobre 2.
   const p = armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
            observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 86920 }),
-    fila({ mes: '2026-09', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-09', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
            observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 5380 }),
   ] })
   const r = resumenDe(p.series[0])!
@@ -592,7 +680,7 @@ console.log('\n▸ El resumen no suma lo que no se puede sumar')
 // alguien agrega el campo algún día, este control lo obliga a pensarlo.
 caso('ResumenMetrica no expone ningún basePdv',
   Object.keys(resumenDe(armarPanel({ series: [
-    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 1, base_pdv: 99,
+    fila({ tipo_respuesta: 'numero', campana_id: 'c1', campana_nombre: 'Campaña', fuente: 'respuestas', mes: '2026-04', metrica_slug: 'precio', observaciones: 1, base_pdv: 99,
            obs_con_valor: 1, suma_numerica: 10 }),
   ] }).series[0])!).some(k => /pdv/i.test(k)), false)
 

@@ -228,14 +228,23 @@ export default async function PanelDistriPage({
   const ciudades = agruparCobertura(pdvs, 'localidad')
   const tipos    = agruparCobertura(pdvs, 'tipo').map(g => ({ ...g, nombre: etiquetaTipo(g.clave) }))
 
+  // Presencia SÍ se puede resumir en un número: es el porcentaje de una
+  // condición que significa lo mismo en cualquier campaña. Precio NO —cada
+  // campaña mide un producto distinto— así que no tiene KPI y se muestra una
+  // serie por campaña más abajo. Ver esAgregableEntreCampanas.
   const presencia = resumenDe(panel.series.find(s => s.slug === 'presencia'))
-  const precio    = resumenDe(panel.series.find(s => s.slug === 'precio'))
   const totalPdv      = pdvs.length
   const totalCiudades = ciudades.filter(c => c.clave !== 'sin-localidad').length
+  const totalCampanas = campanas.length
 
   const seleccion = searchParams.metrica && searchParams.mes
     ? { metrica: searchParams.metrica, mes: searchParams.mes }
     : undefined
+
+  // `searchParams.alcance` es seguro acá: `alcanceDesde` ya lo validó contra
+  // las opciones de esta distri, y si no fuera válido la función habría cortado
+  // mucho más arriba.
+  const rutaConAlcance = `${RUTA}?alcance=${encodeURIComponent(searchParams.alcance!)}`
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -256,20 +265,15 @@ export default async function PanelDistriPage({
             ? `${presencia.verdaderos} de ${presencia.conValor} observaciones · ${textoPeriodo(presencia)}`
             : 'no se está midiendo'}
         />
-        <KpiCard
-          label="Precio promedio"
-          valor={precio ? formatearValor(precio.valor, precio.unidad) : '—'}
-          icon={Layers}
-          color="bg-blue-50 text-blue-600"
-          sub={precio
-            ? `${precio.conValor} observaciones · ${textoPeriodo(precio)}`
-            : 'no se está midiendo'}
-        />
+        <KpiCard label="Campañas" valor={totalCampanas} icon={Layers}
+          color="bg-blue-50 text-blue-600" sub="en este alcance" />
         <KpiCard label="Ciudades cubiertas" valor={totalCiudades} icon={MapPin}
           color="bg-purple-50 text-purple-600" />
       </div>
 
-      <SerieMensual panel={panel} seleccion={seleccion} rutaBase={RUTA} />
+      {/* La ruta base lleva el alcance adentro: sin eso, tocar un punto lo
+          perdía y la pantalla volvía al estado sin elegir. */}
+      <SerieMensual panel={panel} seleccion={seleccion} rutaBase={rutaConAlcance} />
 
       <Cobertura
         ciudades={ciudades}

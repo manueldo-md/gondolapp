@@ -153,8 +153,19 @@ export interface PuntoSerie {
 }
 
 export interface SerieMetrica {
+  /**
+   * La clave que identifica ESTA tarjeta en la URL del desglose.
+   *
+   * Igual al `slug` cuando la métrica es agregable, y `slug::campanaId` cuando
+   * se dibuja una serie por campaña. Sin esto, dos tarjetas de Precio
+   * compartirían el `?metrica=precio` y el desglose abriría en las dos.
+   */
+  clave: string
   slug: string
   nombre: string
+  /** La campaña de esta serie, o `null` si agrega todas. */
+  campanaId: string | null
+  campanaNombre: string | null
   tipoRespuesta: string
   orden: number
   unidad: UnidadMetrica
@@ -226,6 +237,37 @@ export function unidadDe(tipoRespuesta: string): UnidadMetrica {
   if (tipoRespuesta === 'binaria') return 'porcentaje'
   if (tipoRespuesta === 'numero')  return 'promedio'
   return 'crudo'
+}
+
+/**
+ * ¿Los valores de esta métrica se pueden sumar ENTRE CAMPAÑAS?
+ *
+ * ── LA REGLA, QUE ES DE PRODUCTO Y NO TÉCNICA ───────────────────────────────
+ * **Las numéricas NO agregan.** Precio y Frentes solo significan algo dentro de
+ * una campaña, porque cada campaña mide un producto distinto: promediar el
+ * precio del aceite de coco con el de la pasta de maní da un número que no
+ * describe nada, y cinco frentes de un producto con dos de otro no son 3,5.
+ *
+ * **Las binarias SÍ.** Presencia, Quiebre de stock y Exhibición son el
+ * porcentaje de una condición que significa lo mismo en cualquier campaña: "el
+ * producto de esta campaña está en la góndola" se puede contar junto, aunque
+ * el producto sea otro.
+ *
+ * Por eso una métrica numérica se dibuja **una serie por campaña** y una
+ * binaria una sola serie con el desglose adentro.
+ *
+ * ── SE DERIVA DE `tipo_respuesta`, Y ESO TIENE UN LÍMITE ─────────────────────
+ * No hay una columna `agregable` en `metricas`: hoy la frontera coincide
+ * exactamente con el tipo, y agregar una columna que siempre vale lo mismo que
+ * otra es inventar dos fuentes para un dato.
+ *
+ * El día que aparezca una métrica numérica que SÍ sea comparable entre
+ * campañas —metros de góndola, cantidad de bocas, cualquier cosa que no dependa
+ * del producto— esta derivación la va a partir mal, y ahí sí hace falta la
+ * columna. Es el único caso que la justifica.
+ */
+export function esAgregableEntreCampanas(tipoRespuesta: string): boolean {
+  return unidadDe(tipoRespuesta) !== 'promedio'
 }
 
 /**
@@ -321,22 +363,75 @@ export function armarPanel(params: {
   // directamente no entra. El que consume no puede equivocarse.
   const porMetrica = new Map<string, SerieMetrica>()
 
+  const nuevaSerie = (f: FilaSerie, clave: string, campanaId: string | null,
+                      campanaNombre: string | null): SerieMetrica => ({
+    clave,
+    slug:               f.metrica_slug,
+    nombre:             f.metrica_nombre,
+    campanaId,
+    campanaNombre,
+    tipoRespuesta:      f.tipo_respuesta,
+    orden:              num(f.orden),
+    unidad:             unidadDe(f.tipo_respuesta),
+    puntos:             [],
+    totalObservaciones: 0,
+  })
+
+  // ── Regla 1b: las numéricas se parten POR CAMPAÑA ──────────────────────────
+  // Ver `esAgregableEntreCampanas`. Las agregables salen de las filas de TOTAL;
+  // las que no, de las de DESGLOSE, que el GROUPING SETS ya devuelve en la
+  // misma respuesta. No hace falta consultar nada más.
+  const filasDeSerie = [
+    ...totales.filter(t => esAgregableEntreCampanas(t.tipo_respuesta)),
+    ...desgloses.filter(d => !esAgregableEntreCampanas(d.tipo_respuesta)),
+  ]
+
+  // Una numérica se arma SOLO desde el desglose, así que un total sin desglose
+  // no produciría ninguna serie: el dato desaparecería de la pantalla sin que
+  // nadie se entere. El GROUPING SETS garantiza que eso no pase —todo total
+  // tiene al menos una fila de campaña que lo compone— y este chequeo existe
+  // para el día que deje de garantizarlo.
+  //
+  // No se cae al total como respaldo a propósito: ese número es el promedio
+  // entre campañas, que es justo el que esta regla vino a sacar. Antes que
+  // dibujar un número que no describe nada, que falte y que quede en el log.
+  const conDesglose = new Set(desgloses.map(d => `${d.mes}|${d.metrica_slug}`))
   for (const t of totales) {
+    if (esAgregableEntreCampanas(t.tipo_respuesta)) continue
+    if (num(t.observaciones) <= 0) continue
+    if (!conDesglose.has(`${t.mes}|${t.metrica_slug}`)) {
+      console.error('[panel] métrica numérica con total y sin desglose, no se dibuja:',
+        t.metrica_slug, t.mes)
+    }
+  }
+
+  for (const t of filasDeSerie) {
     const observaciones = num(t.observaciones)
     if (observaciones <= 0) continue
 
-    let serie = porMetrica.get(t.metrica_slug)
+    const porCampana = t.campana_id !== null
+    const clave = porCampana ? `${t.metrica_slug}::${t.campana_id}` : t.metrica_slug
+
+    let serie = porMetrica.get(clave)
     if (!serie) {
-      serie = {
-        slug:               t.metrica_slug,
-        nombre:             t.metrica_nombre,
-        tipoRespuesta:      t.tipo_respuesta,
-        orden:              num(t.orden),
-        unidad:             unidadDe(t.tipo_respuesta),
-        puntos:             [],
-        totalObservaciones: 0,
-      }
-      porMetrica.set(t.metrica_slug, serie)
+      serie = nuevaSerie(t, clave, t.campana_id,
+        porCampana ? (t.campana_nombre ?? 'Campaña') : null)
+      porMetrica.set(clave, serie)
+    }
+
+    // Una serie por campaña puede recibir más de una fila por mes si la métrica
+    // tuviera dos fuentes. Hoy no pasa —`declaracion_foto` solo alimenta
+    // Presencia, que es binaria y por lo tanto agregable— pero si pasara, los
+    // conteos se SUMAN y el valor se recalcula sobre la suma. Promediar los dos
+    // valores sería el error que este panel evita en todas partes.
+    const yaDelMes = porCampana ? serie.puntos.find(p => p.mes === t.mes) : undefined
+    if (yaDelMes) {
+      yaDelMes.observaciones += observaciones
+      yaDelMes.conValor      += num(t.obs_con_valor)
+      yaDelMes.verdaderos    += num(t.verdaderos)
+      yaDelMes.basePdv        = Math.max(yaDelMes.basePdv, num(t.base_pdv))
+      serie.totalObservaciones += observaciones
+      continue
     }
 
     // ── Regla 2: el mes sin datos no produce un punto ────────────────────────
@@ -350,16 +445,25 @@ export function armarPanel(params: {
       conValor:      num(t.obs_con_valor),
       verdaderos:    num(t.verdaderos),
       basePdv:       num(t.base_pdv),
-      pdvVisitados:  visitasPorMes.get(t.mes) ?? null,
-      desglose:      (desglosePorPunto.get(`${t.mes}|${t.metrica_slug}`) ?? [])
-                       .sort((a, b) => b.observaciones - a.observaciones),
+      // En una serie por campaña, `pdvVisitados` sería los PDV visitados por
+      // TODAS las campañas del alcance ese mes: un denominador que no es de
+      // esta serie. Dejarlo mostraría "4 de 69 PDV" para una campaña que
+      // cubrió 13. Sin él, `textoBase` dice "sobre N PDV" y no inventa brecha.
+      pdvVisitados:  porCampana ? null : (visitasPorMes.get(t.mes) ?? null),
+      desglose:      porCampana
+        ? (desglosePorPunto.get(`${t.mes}|${t.metrica_slug}`) ?? [])
+            .filter(d => d.campanaId === t.campana_id)
+        : (desglosePorPunto.get(`${t.mes}|${t.metrica_slug}`) ?? [])
+            .sort((a, b) => b.observaciones - a.observaciones),
     })
     serie.totalObservaciones += observaciones
   }
 
   const seriesArmadas = [...porMetrica.values()]
     .map(s => ({ ...s, puntos: s.puntos.sort((a, b) => a.mes.localeCompare(b.mes)) }))
-    .sort((a, b) => a.orden - b.orden || a.slug.localeCompare(b.slug))
+    .sort((a, b) => a.orden - b.orden
+      || a.slug.localeCompare(b.slug)
+      || (a.campanaNombre ?? '').localeCompare(b.campanaNombre ?? ''))
 
   const medidas = new Set(seriesArmadas.map(s => s.slug))
   const noMedidas = metricas

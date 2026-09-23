@@ -102,9 +102,21 @@ export interface Seleccion { metrica: string; mes: string }
  * `rutaBase` viene de quien monta el componente y no de una constante: la
  * misma serie la usan el panel de marca y el de distribuidora, y el desglose
  * navega a SU propia pantalla. Era `const RUTA = '/marca/dashboard'`.
+ *
+ * ── Y PUEDE TRAER SU PROPIA QUERY ───────────────────────────────────────────
+ * El panel de la distribuidora monta esto con
+ * `/distribuidora/panel?alcance=<marca>`, porque el alcance es un control
+ * obligatorio. La primera versión pegaba un `?` fijo, así que tocar un punto
+ * **se comía el alcance** y la pantalla volvía al estado sin elegir, en blanco:
+ * el desglose que se pedía no llegaba a dibujarse nunca.
+ *
+ * El separador se decide mirando la ruta, y el "cerrar" devuelve `rutaBase`
+ * tal cual, que ya conserva lo que traía.
  */
-function hrefPunto(rutaBase: string, slug: string, mes: string, abierto: boolean): string {
-  return abierto ? rutaBase : `${rutaBase}?metrica=${encodeURIComponent(slug)}&mes=${mes}`
+function hrefPunto(rutaBase: string, clave: string, mes: string, abierto: boolean): string {
+  if (abierto) return rutaBase
+  const sep = rutaBase.includes('?') ? '&' : '?'
+  return `${rutaBase}${sep}metrica=${encodeURIComponent(clave)}&mes=${mes}`
 }
 
 // ── Gráfico ──────────────────────────────────────────────────────────────────
@@ -184,7 +196,7 @@ function Grafico({ serie, meses, seleccion, rutaBase }: {
       {puntos.filter(p => p !== null).map(p => {
         const abierto = seleccion?.metrica === serie.slug && seleccion?.mes === p!.mes
         return (
-          <a key={p!.mes} href={hrefPunto(rutaBase, serie.slug, p!.mes, abierto)}>
+          <a key={p!.mes} href={hrefPunto(rutaBase, serie.clave, p!.mes, abierto)}>
             {/* UN solo nodo de texto. Con dos hijos, React avisa que el
                 browser va a renderizar el markup como texto adentro del
                 tooltip — y el typecheck no lo agarra. */}
@@ -329,17 +341,38 @@ function Desglose({ serie, punto, rutaBase }: { serie: SerieMetrica; punto: Punt
 function TarjetaSerie({ serie, meses, seleccion, rutaBase }: {
   serie: SerieMetrica; meses: string[]; seleccion?: Seleccion; rutaBase: string
 }) {
-  const puntoAbierto = seleccion?.metrica === serie.slug
+  // Por `clave` y no por `slug`: dos tarjetas de Precio de campañas distintas
+  // comparten el slug, y con él las dos abrirían el desglose a la vez.
+  const puntoAbierto = seleccion?.metrica === serie.clave
     ? serie.puntos.find(p => p.mes === seleccion.mes)
     : undefined
   const resumen = resumenDe(serie)
   const huecos  = huecosDe(serie, meses)
 
+  // ── UN SOLO PUNTO NO NECESITA GRÁFICO ──────────────────────────────────────
+  // Con una sola medición el eje se estira para acomodar un punto —0 a 15.008
+  // para un valor de 13.050— y la tipografía del SVG crece con él. Peor que
+  // feo: un gráfico dibuja una tendencia, y con un punto no hay ninguna que
+  // mostrar. El número y su base dicen todo lo que hay.
+  //
+  // Se cuentan los puntos CON VALOR y no los puntos a secas: un mes con
+  // observaciones y sin valor usable no se dibuja, así que tampoco cuenta para
+  // decidir si hay algo que graficar.
+  const conValor = serie.puntos.filter(p => p.valor !== null)
+  const hayEvolucion = conValor.length > 1
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100 flex items-baseline justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h4 className="font-semibold text-gray-900">{serie.nombre}</h4>
+          {/* Una métrica numérica se dibuja una serie POR CAMPAÑA, porque cada
+              campaña mide un producto distinto. Sin el nombre al lado, dos
+              tarjetas de "Precio" con números muy distintos se leen como un
+              error. Ver esAgregableEntreCampanas en lib/panel-metricas.ts. */}
+          {serie.campanaNombre && (
+            <p className="text-xs text-gray-500 mt-0.5 truncate">{serie.campanaNombre}</p>
+          )}
           {resumen && (
             <p className="text-xs text-gray-400 mt-0.5">
               {resumen.observaciones} observaci{resumen.observaciones === 1 ? 'ón' : 'ones'}
@@ -357,9 +390,13 @@ function TarjetaSerie({ serie, meses, seleccion, rutaBase }: {
         )}
       </div>
 
-      <div className="px-4 pt-4 pb-2 overflow-x-auto">
-        <Grafico serie={serie} meses={meses} seleccion={seleccion} rutaBase={rutaBase} />
-      </div>
+      {hayEvolucion ? (
+        <div className="px-4 pt-4 pb-2 overflow-x-auto">
+          <Grafico serie={serie} meses={meses} seleccion={seleccion} rutaBase={rutaBase} />
+        </div>
+      ) : (
+        <UnicoPunto serie={serie} />
+      )}
 
       <div className="px-5 pb-4 space-y-1">
         <p className="text-xs text-gray-400">
@@ -376,12 +413,7 @@ function TarjetaSerie({ serie, meses, seleccion, rutaBase }: {
               : `Sin mediciones en ${huecos.length} meses del período, por eso la línea se corta.`}
           </p>
         )}
-        {serie.puntos.length === 1 && (
-          <p className="text-xs text-gray-400">
-            Un solo mes medido: todavía no hay evolución que mostrar.
-          </p>
-        )}
-        {!puntoAbierto && (
+        {hayEvolucion && !puntoAbierto && (
           <p className="text-xs text-gray-400">
             Tocá un punto para ver qué campañas lo componen.
           </p>
@@ -389,6 +421,40 @@ function TarjetaSerie({ serie, meses, seleccion, rutaBase }: {
       </div>
 
       {puntoAbierto && <Desglose serie={serie} punto={puntoAbierto} rutaBase={rutaBase} />}
+    </div>
+  )
+}
+
+/**
+ * Lo que se muestra en lugar del gráfico cuando hay una sola medición.
+ *
+ * Dice el valor, de qué mes es y sobre qué se calculó — la misma base que el
+ * eje del gráfico pone bajo cada punto. Lo único que se pierde es la
+ * comparación, que con un punto no existe.
+ */
+function UnicoPunto({ serie }: { serie: SerieMetrica }) {
+  const punto = serie.puntos.find(p => p.valor !== null)
+
+  if (!punto) {
+    return (
+      <div className="px-5 py-5">
+        <p className="text-sm text-gray-500">
+          Hay observaciones pero ninguna con un valor usable, así que no hay número que mostrar.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-5 py-5 flex items-baseline gap-3 flex-wrap">
+      <span className="text-3xl font-bold text-gray-900 leading-none">
+        {formatearValor(punto.valor, serie.unidad)}
+      </span>
+      <span className="text-sm text-gray-500">en {punto.etiqueta}</span>
+      <span className="text-xs text-gray-400">· {textoBase(punto)}</span>
+      <p className="w-full text-xs text-gray-400 mt-1">
+        Una sola medición: todavía no hay evolución que mostrar. Con un mes más, acá va el gráfico.
+      </p>
     </div>
   )
 }
