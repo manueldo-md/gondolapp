@@ -34,8 +34,11 @@ export type CoberturaProps = {
   /**
    * A qué mapa linkea "Ver en el mapa". Lo pasa quien monta el componente,
    * porque el de marca y el de distribuidora son pantallas distintas.
+   *
+   * `null` esconde el link. Es para el panel que todavía no tiene su mapa: un
+   * link a una pantalla que no existe es peor que no ofrecerlo.
    */
-  rutaMapa: string
+  rutaMapa: string | null
   /**
    * La presencia global, ya calculada por `lib/panel-metricas`. `null` = la marca
    * no está midiendo presencia, que NO es lo mismo que medir cero.
@@ -317,9 +320,11 @@ export default function Cobertura({
             {/* El mapa vive en su propia pantalla para que el dashboard siga
                 sin mandar JS. El link va acá porque es donde alguien ya está
                 mirando geografía. */}
-            <a href={rutaMapa} className="text-xs text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0">
-              Ver en el mapa
-            </a>
+            {rutaMapa && (
+              <a href={rutaMapa} className="text-xs text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0">
+                Ver en el mapa
+              </a>
+            )}
           </div>
           {/* Los dos bloques de abajo se miden en PDV y el dónut de arriba en
               observaciones. Decirlo es lo que evita que parezcan dos números

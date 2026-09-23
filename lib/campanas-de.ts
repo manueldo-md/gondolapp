@@ -39,8 +39,14 @@ type Admin = any
  * esta distri", que es una rama más y no otra función.
  */
 export type Alcance =
+  /** Una marca ve las campañas de las que es dueña. */
   | { tipo: 'marca';  marcaId: string }
+  /** Todas las de la distri, mezclando marcas. Lo usan las ALERTAS, no el panel. */
   | { tipo: 'distri'; distriId: string }
+  /** Las que la distri ejecuta para una marca. Es un grupo del panel. */
+  | { tipo: 'distri-marca'; distriId: string; marcaId: string }
+  /** Las propias de la distri: `marca_id IS NULL`. El otro grupo del panel. */
+  | { tipo: 'distri-propias'; distriId: string }
 
 /** Lo que el panel necesita de una campaña. Un solo select para los dos actores. */
 export type CampanaDelPanel = {
@@ -70,11 +76,18 @@ export async function campanasDe(alcance: Alcance, admin: Admin): Promise<Campan
   // El orden por nombre no es cosmético: el selector de campañas del mapa lo
   // usaba con su propio `.order()`, y dejarlo acá evita que cada pantalla
   // ordene distinto la misma lista.
+  // ── OJO CON MEZCLAR MARCAS ──────────────────────────────────────────────
+  // `tipo: 'distri'` devuelve las campañas de TODAS las marcas que la distri
+  // ejecuta, y eso está bien para una alerta —"¿alguien dejó de trabajar?"— y
+  // MAL para el panel de métricas: sumar la presencia de Georgalos con la de
+  // Suprante da un número que no es de ninguna de las dos. Por eso el panel usa
+  // `distri-marca` o `distri-propias`, y su selector no tiene opción "todas".
   const q = admin.from('campanas').select(SELECT).order('nombre')
   const { data, error } = await (
-    alcance.tipo === 'marca'
-      ? q.eq('marca_id', alcance.marcaId)
-      : q.eq('distri_id', alcance.distriId)
+    alcance.tipo === 'marca'          ? q.eq('marca_id', alcance.marcaId) :
+    alcance.tipo === 'distri'         ? q.eq('distri_id', alcance.distriId) :
+    alcance.tipo === 'distri-marca'   ? q.eq('distri_id', alcance.distriId).eq('marca_id', alcance.marcaId)
+    /* distri-propias */              : q.eq('distri_id', alcance.distriId).is('marca_id', null)
   )
 
   if (error) {
