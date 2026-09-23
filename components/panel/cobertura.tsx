@@ -8,12 +8,12 @@
 import { useState } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown, MapPin } from 'lucide-react'
 import { formatearInstante } from '@/lib/fecha-ar'
-import { textoBaseCobertura, type GrupoCobertura } from '@/lib/panel-marca'
+import { textoBaseCobertura, type GrupoCobertura } from '@/lib/panel-metricas'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type DashboardVisualizacionesProps = {
+export type CoberturaProps = {
   /**
    * La cobertura por ciudad y por tipo de comercio, ya agrupada por
    * `agruparCobertura`. Los dos bloques leen la MISMA estructura porque son la
@@ -32,7 +32,12 @@ export type DashboardVisualizacionesProps = {
   ciudades: GrupoCobertura[]
   tipos: GrupoCobertura[]
   /**
-   * La presencia global, ya calculada por `lib/panel-marca`. `null` = la marca
+   * A qué mapa linkea "Ver en el mapa". Lo pasa quien monta el componente,
+   * porque el de marca y el de distribuidora son pantallas distintas.
+   */
+  rutaMapa: string
+  /**
+   * La presencia global, ya calculada por `lib/panel-metricas`. `null` = la marca
    * no está midiendo presencia, que NO es lo mismo que medir cero.
    *
    * Antes llegaban `totalFotos` y `conPresenciaGlobal` y el dónut hacía la
@@ -270,11 +275,12 @@ function CiudadTable({ rows }: { rows: GrupoCobertura[] }) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export default function DashboardVisualizaciones({
+export default function Cobertura({
   ciudades,
   tipos,
   presencia,
-}: DashboardVisualizacionesProps) {
+  rutaMapa,
+}: CoberturaProps) {
   return (
     <div className="space-y-6">
 
@@ -311,7 +317,7 @@ export default function DashboardVisualizaciones({
             {/* El mapa vive en su propia pantalla para que el dashboard siga
                 sin mandar JS. El link va acá porque es donde alguien ya está
                 mirando geografía. */}
-            <a href="/marca/mapa" className="text-xs text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0">
+            <a href={rutaMapa} className="text-xs text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0">
               Ver en el mapa
             </a>
           </div>

@@ -26,7 +26,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { MapIcon, AlertTriangle } from 'lucide-react'
-import { MapaCliente, type Pintado } from './mapa-cliente'
+import { MapaCliente, type Pintado } from '@/components/panel/mapa'
 import { COLOR_PRESENCIA, type PuntoMapa } from '@/lib/mapa-pdv'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 

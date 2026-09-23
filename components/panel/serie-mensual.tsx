@@ -7,7 +7,7 @@
  * compararlas.
  *
  * ── SERVER COMPONENT, Y SVG A MANO ──────────────────────────────────────────
- * El proyecto no tiene ninguna librería de gráficos —`dashboard-visualizaciones`
+ * El proyecto no tiene ninguna librería de gráficos —`components/panel/cobertura`
  * lo dice en su primera línea y `package.json` lo confirma— así que la línea se
  * dibuja con `<polyline>`. Para 3 a 12 puntos es poco código y, sobre todo,
  * renderiza en el servidor: no hay `dynamic`, no hay `ssr: false`, no hay
@@ -49,11 +49,11 @@
  * próximo que lea esto no va a reconocer.
  */
 
-import type { PanelMarca, SerieMetrica, PuntoSerie, UnidadMetrica } from '@/lib/panel-marca'
+import type { PanelMarca, SerieMetrica, PuntoSerie, UnidadMetrica } from '@/lib/panel-metricas'
 import {
   formatearValor, textoBase, resumenDe, textoPeriodo, huecosDe,
   tramosContinuos, comerciosCompartidos,
-} from '@/lib/panel-marca'
+} from '@/lib/panel-metricas'
 
 // ── Geometría ────────────────────────────────────────────────────────────────
 
@@ -94,20 +94,23 @@ function escala(serie: SerieMetrica): { min: number; max: number } {
   return { min: 0, max: max > 0 ? max * 1.15 : 1 }
 }
 
-/** La ruta de esta pantalla. El desglose se abre navegando acá con query. */
-const RUTA = '/marca/dashboard'
-
 export interface Seleccion { metrica: string; mes: string }
 
-/** El ancla del punto: abre el desglose, o lo cierra si ya era el abierto. */
-function hrefPunto(slug: string, mes: string, abierto: boolean): string {
-  return abierto ? RUTA : `${RUTA}?metrica=${encodeURIComponent(slug)}&mes=${mes}`
+/**
+ * El ancla del punto: abre el desglose, o lo cierra si ya era el abierto.
+ *
+ * `rutaBase` viene de quien monta el componente y no de una constante: la
+ * misma serie la usan el panel de marca y el de distribuidora, y el desglose
+ * navega a SU propia pantalla. Era `const RUTA = '/marca/dashboard'`.
+ */
+function hrefPunto(rutaBase: string, slug: string, mes: string, abierto: boolean): string {
+  return abierto ? rutaBase : `${rutaBase}?metrica=${encodeURIComponent(slug)}&mes=${mes}`
 }
 
 // ── Gráfico ──────────────────────────────────────────────────────────────────
 
-function Grafico({ serie, meses, seleccion }: {
-  serie: SerieMetrica; meses: string[]; seleccion?: Seleccion
+function Grafico({ serie, meses, seleccion, rutaBase }: {
+  serie: SerieMetrica; meses: string[]; seleccion?: Seleccion; rutaBase: string
 }) {
   const color = COLOR[serie.slug] ?? COLOR_DEFAULT
   const { min, max } = escala(serie)
@@ -126,7 +129,7 @@ function Grafico({ serie, meses, seleccion }: {
     return p && p.valor !== null ? { i, mes, punto: p, cx: x(i), cy: y(p.valor) } : null
   })
 
-  // Dónde se corta la línea lo decide `lib/panel-marca`, no este archivo: es la
+  // Dónde se corta la línea lo decide `lib/panel-metricas`, no este archivo: es la
   // regla del tramo —un mes sin datos no se interpola— y acá no se podría
   // verificar más que mirando el gráfico.
   const tramos = tramosContinuos(serie, meses)
@@ -181,7 +184,7 @@ function Grafico({ serie, meses, seleccion }: {
       {puntos.filter(p => p !== null).map(p => {
         const abierto = seleccion?.metrica === serie.slug && seleccion?.mes === p!.mes
         return (
-          <a key={p!.mes} href={hrefPunto(serie.slug, p!.mes, abierto)}>
+          <a key={p!.mes} href={hrefPunto(rutaBase, serie.slug, p!.mes, abierto)}>
             {/* UN solo nodo de texto. Con dos hijos, React avisa que el
                 browser va a renderizar el markup como texto adentro del
                 tooltip — y el typecheck no lo agarra. */}
@@ -262,7 +265,7 @@ const NOMBRE_FUENTE: Record<string, string> = {
  * comercio relevado por dos campañas el mismo mes cuenta una vez arriba y una
  * vez en cada fila. Callarlo dejaría al lector haciendo una resta que no cierra.
  */
-function Desglose({ serie, punto }: { serie: SerieMetrica; punto: PuntoSerie }) {
+function Desglose({ serie, punto, rutaBase }: { serie: SerieMetrica; punto: PuntoSerie; rutaBase: string }) {
   const filas = punto.desglose
   const compartidos = comerciosCompartidos(punto)
   const fuentes = new Set(filas.map(d => d.fuente))
@@ -277,7 +280,7 @@ function Desglose({ serie, punto }: { serie: SerieMetrica; punto: PuntoSerie }) 
           <p className="text-xs text-gray-500 mt-0.5">{textoBase(punto)}</p>
         </div>
         <a
-          href={RUTA}
+          href={rutaBase}
           className="text-xs text-gray-400 hover:text-gray-600 shrink-0 underline underline-offset-2"
         >
           Cerrar
@@ -323,8 +326,8 @@ function Desglose({ serie, punto }: { serie: SerieMetrica; punto: PuntoSerie }) 
 
 // ── Una métrica ──────────────────────────────────────────────────────────────
 
-function TarjetaSerie({ serie, meses, seleccion }: {
-  serie: SerieMetrica; meses: string[]; seleccion?: Seleccion
+function TarjetaSerie({ serie, meses, seleccion, rutaBase }: {
+  serie: SerieMetrica; meses: string[]; seleccion?: Seleccion; rutaBase: string
 }) {
   const puntoAbierto = seleccion?.metrica === serie.slug
     ? serie.puntos.find(p => p.mes === seleccion.mes)
@@ -355,7 +358,7 @@ function TarjetaSerie({ serie, meses, seleccion }: {
       </div>
 
       <div className="px-4 pt-4 pb-2 overflow-x-auto">
-        <Grafico serie={serie} meses={meses} seleccion={seleccion} />
+        <Grafico serie={serie} meses={meses} seleccion={seleccion} rutaBase={rutaBase} />
       </div>
 
       <div className="px-5 pb-4 space-y-1">
@@ -385,17 +388,19 @@ function TarjetaSerie({ serie, meses, seleccion }: {
         )}
       </div>
 
-      {puntoAbierto && <Desglose serie={serie} punto={puntoAbierto} />}
+      {puntoAbierto && <Desglose serie={serie} punto={puntoAbierto} rutaBase={rutaBase} />}
     </div>
   )
 }
 
 // ── El bloque completo ───────────────────────────────────────────────────────
 
-export function SerieMensual({ panel, seleccion }: {
+export function SerieMensual({ panel, seleccion, rutaBase }: {
   panel: PanelMarca
   /** El punto abierto, desde la URL. Ver el encabezado. */
   seleccion?: Seleccion
+  /** La pantalla que monta esta serie: a dónde navega el desglose. */
+  rutaBase: string
 }) {
   // ── Regla: una métrica sin datos no se dibuja ──────────────────────────────
   // `armarPanel` ya las dejó afuera, así que acá no hay nada que filtrar. Si
@@ -429,7 +434,7 @@ export function SerieMensual({ panel, seleccion }: {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {panel.series.map(serie => (
-          <TarjetaSerie key={serie.slug} serie={serie} meses={panel.meses} seleccion={seleccion} />
+          <TarjetaSerie key={serie.slug} serie={serie} meses={panel.meses} seleccion={seleccion} rutaBase={rutaBase} />
         ))}
       </div>
 

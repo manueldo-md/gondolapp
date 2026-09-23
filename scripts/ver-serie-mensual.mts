@@ -22,8 +22,8 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import pg from 'pg'
 import { credencialesDeRef, nombreDeRef } from './lib/entorno.mjs'
-import { armarPanel } from '../lib/panel-marca'
-import { SerieMensual, type Seleccion } from '../app/(marca)/marca/dashboard/serie-mensual'
+import { armarPanel } from '../lib/panel-metricas'
+import { SerieMensual, type Seleccion } from '../components/panel/serie-mensual'
 
 const ref = process.argv.includes('--prod') ? 'xzznzustgsacmfwsupux' : 'mqeymmprvpclpyjpujvf'
 const cred = credencialesDeRef(ref) as { vars: Record<string, string> }
@@ -80,7 +80,7 @@ for (const m of marcas) {
   const { rows: visitas } = await c.query(`SELECT * FROM public.panel_marca_visitas($1)`, [m.id])
   if (series.length === 0 && visitas.length === 0) continue
   const panel = armarPanel({ series, visitas, metricas })
-  const marcado = renderToStaticMarkup(React.createElement(SerieMensual, { panel, seleccion: abrir }))
+  const marcado = renderToStaticMarkup(React.createElement(SerieMensual, { panel, seleccion: abrir, rutaBase: '/marca/dashboard' }))
 
   // Lo que el render normal no puede mostrar: cuántos trazos de línea salieron
   // y con qué puntos. Es la parte que ningún dato real ejercita.

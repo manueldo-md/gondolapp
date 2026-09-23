@@ -1,5 +1,5 @@
 /**
- * lib/panel-marca.ts
+ * lib/panel-metricas.ts
  * El rollup del panel general de la marca: de las filas del RPC a la serie.
  *
  * ── POR QUÉ ACÁ Y NO EN LA PANTALLA ─────────────────────────────────────────

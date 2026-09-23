@@ -1,5 +1,5 @@
 /**
- * probar-panel-marca.ts — SOLO LÓGICA, sin base.
+ * probar-panel-metricas.ts — SOLO LÓGICA, sin base.
  *
  * ESTE ARCHIVO EXISTE PARA QUE FALLE SI UN NÚMERO DEL PANEL ES UNA MENTIRA
  * PLAUSIBLE.
@@ -29,7 +29,7 @@
  * Igual que probar-formato-ar.ts: la etiqueta del mes pasa por Intl, y en una
  * máquina argentina un formateo roto devuelve el mes correcto por casualidad.
  *
- *   npx tsx scripts/probar-panel-marca.ts
+ *   npx tsx scripts/probar-panel-metricas.ts
  */
 import {
   armarPanel, rangoDeMeses, etiquetaMes, valorDeFila, unidadDe,
@@ -37,7 +37,7 @@ import {
   tramosContinuos, comerciosCompartidos, agruparCobertura, textoBaseCobertura,
   type FilaPdv,
   type FilaSerie, type FilaVisitas, type PuntoSerie,
-} from '../lib/panel-marca'
+} from '../lib/panel-metricas'
 
 process.env.TZ = 'UTC'
 
@@ -45,7 +45,7 @@ const zona = Intl.DateTimeFormat().resolvedOptions().timeZone
 if (zona !== 'UTC') {
   console.error(`\n✗ No se pudo poner el proceso en UTC (quedó en "${zona}").\n` +
     `  Sin eso esta prueba da un FALSO VERDE.\n` +
-    `  Correla con: TZ=UTC npx tsx scripts/probar-panel-marca.ts\n`)
+    `  Correla con: TZ=UTC npx tsx scripts/probar-panel-metricas.ts\n`)
   process.exit(1)
 }
 

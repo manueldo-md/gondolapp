@@ -7,21 +7,20 @@ import {
   Megaphone, Store, TrendingUp, MapPin,
   Camera, AlertTriangle, Clock, CheckCircle2,
 } from 'lucide-react'
-import type { DashboardVisualizacionesProps } from './dashboard-visualizaciones'
-import { SerieMensual } from './serie-mensual'
+import { SerieMensual } from '@/components/panel/serie-mensual'
 import { formatearInstante } from '@/lib/fecha-ar'
 import {
   armarPanel, resumenDe, formatearValor, textoPeriodo, agruparCobertura,
   type FilaSerie, type FilaVisitas, type FilaPdv,
-} from '@/lib/panel-marca'
+} from '@/lib/panel-metricas'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 
 // ── Único dynamic import ─────────────────────────────────────────────────────
 // Sin ssr a propósito, aunque el componente NO usa ninguna librería de browser:
 // el comentario viejo decía "recharts + leaflet" y hace rato que no hay ni una
-// ni la otra (ver la primera línea de dashboard-visualizaciones.tsx).
-const DashboardVisualizaciones = dynamic(
-  () => import('./dashboard-visualizaciones'),
+// ni la otra (ver la primera línea de components/panel/cobertura.tsx).
+const Cobertura = dynamic(
+  () => import('@/components/panel/cobertura'),
   {
     ssr: false,
     loading: () => (
@@ -42,7 +41,6 @@ type FotoRow = {
   id: string
   campana_id: string
   comercio_id: string | null
-  declaracion: 'producto_presente' | 'producto_no_encontrado' | 'solo_competencia' | null
   created_at: string
 }
 
@@ -191,7 +189,7 @@ export default async function DashboardPage({
   // ── 3. Fotos aprobadas ───────────────────────────────────────────────────────
   const { data: fotosRaw } = await admin
     .from('fotos')
-    .select('id, campana_id, comercio_id, declaracion, created_at')
+    .select('id, campana_id, comercio_id, created_at')
     .in('campana_id', safeIds)
     .eq('estado', 'aprobada')
 
@@ -288,7 +286,7 @@ export default async function DashboardPage({
     .filter(c => c.estado === 'activa')
     .sort((a, b) => (a.fecha_fin ?? '').localeCompare(b.fecha_fin ?? ''))
 
-  // Count de fotos aprobadas por campaña (todas, independientemente de declaracion)
+  // Count de fotos aprobadas por campaña
   const fotosPorCampana = new Map<string, number>()
   for (const f of fotos) {
     fotosPorCampana.set(f.campana_id, (fotosPorCampana.get(f.campana_id) ?? 0) + 1)
@@ -333,12 +331,13 @@ export default async function DashboardPage({
       {/* Evolución mensual — server-rendered, SVG a mano, cero JS al cliente.
           Va acá arriba a propósito: es la pregunta que el panel vino a
           responder, y el resto son cortes de un momento. */}
-      <SerieMensual panel={panel} seleccion={seleccion} />
+      <SerieMensual panel={panel} seleccion={seleccion} rutaBase="/marca/dashboard" />
 
       {/* Visualizaciones — todo en un solo chunk cliente */}
-      <DashboardVisualizaciones
+      <Cobertura
         ciudades={ciudades}
         tipos={tipos}
+        rutaMapa="/marca/mapa"
         presencia={presencia && {
           valor:      presencia.valor,
           verdaderos: presencia.verdaderos,

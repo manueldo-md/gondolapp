@@ -116,7 +116,7 @@ const nextConfig = {
       // redirects más arriba: ya mordió tres veces).
       //
       // Si falta, el browser bloquea los tiles y el mapa queda gris. Eso ya
-      // está cubierto: la sonda de mapa-cliente.tsx lo detecta igual que una
+      // está cubierto: la sonda de components/panel/mapa.tsx lo detecta igual que una
       // key inválida y muestra el cartel — verificado en browser, un <img>
       // bloqueado dispara onerror.
       "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://*.googleusercontent.com https://picsum.photos https://*.picsum.photos https://maps.geoapify.com",
