@@ -60,8 +60,22 @@ export type DashboardVisualizacionesProps = {
   penetracionData: PenetracionData[]
   tipoComercioData: TipoComercioData[]
   semanas: EvolucionData[]
-  totalFotos: number
-  conPresenciaGlobal: number
+  /**
+   * La presencia global, ya calculada por `lib/panel-marca`. `null` = la marca
+   * no está midiendo presencia, que NO es lo mismo que medir cero.
+   *
+   * Antes llegaban `totalFotos` y `conPresenciaGlobal` y el dónut hacía la
+   * división acá: presentes sobre TODAS las fotos aprobadas, contando como
+   * "sin presencia" las 25 fotos de Georgalos que no declararon nada. Ahora
+   * llega el numerador y el denominador ya decididos, y no queda ninguna
+   * división que alguien pueda hacer distinto.
+   */
+  presencia: {
+    valor: number | null
+    verdaderos: number
+    conValor: number
+    periodo: string
+  } | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -137,11 +151,12 @@ function CoberturaGrid({ zonas }: { zonas: ZonaMapData[] }) {
 
 // ── Presencia global — CSS conic-gradient ─────────────────────────────────────
 
-function PresenciaDonut({ presente, ausente }: { presente: number; ausente: number }) {
-  const total = presente + ausente
+function PresenciaDonut({ pct, presente, total, periodo }: {
+  pct: number; presente: number; total: number; periodo: string
+}) {
   if (total === 0) return null
-  const pct = Math.round((presente / total) * 100)
-  const deg = Math.round((presente / total) * 360)
+  const ausente = total - presente
+  const deg = Math.round((pct / 100) * 360)
 
   return (
     <div className="flex flex-col items-center gap-4 py-4">
@@ -163,6 +178,11 @@ function PresenciaDonut({ presente, ausente }: { presente: number; ausente: numb
           <span className="text-gray-600">{ausente} sin presencia</span>
         </div>
       </div>
+      {/* La base de cálculo, que es el punto del tramo: un porcentaje sin decir
+          sobre cuántas observaciones se sacó no se puede comparar con nada. */}
+      <p className="text-xs text-gray-400">
+        {total} observaci{total === 1 ? 'ón' : 'ones'} · {periodo}
+      </p>
     </div>
   )
 }
@@ -398,8 +418,7 @@ export default function DashboardVisualizaciones({
   penetracionData,
   tipoComercioData,
   semanas,
-  totalFotos,
-  conPresenciaGlobal,
+  presencia,
 }: DashboardVisualizacionesProps) {
   return (
     <div className="space-y-6">
@@ -422,9 +441,23 @@ export default function DashboardVisualizaciones({
             <h3 className="font-semibold text-gray-900">Presencia global</h3>
           </div>
           <div className="p-5">
-            {totalFotos === 0
-              ? <p className="text-sm text-gray-400 text-center py-8">Sin datos aún.</p>
-              : <PresenciaDonut presente={conPresenciaGlobal} ausente={totalFotos - conPresenciaGlobal} />
+            {presencia === null || presencia.valor === null
+              // "Sin datos aún" decía lo mismo para una marca que no mide
+              // presencia y para una que mide y da cero. No son lo mismo, y la
+              // segunda es una noticia grave. Ahora el vacío dice qué es.
+              ? (
+                <p className="text-sm text-gray-400 text-center py-8">
+                  Ninguna de tus campañas está midiendo presencia.
+                </p>
+              )
+              : (
+                <PresenciaDonut
+                  pct={Math.round(presencia.valor)}
+                  presente={presencia.verdaderos}
+                  total={presencia.conValor}
+                  periodo={presencia.periodo}
+                />
+              )
             }
           </div>
         </div>

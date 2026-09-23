@@ -33,7 +33,7 @@
  */
 import {
   armarPanel, rangoDeMeses, etiquetaMes, valorDeFila, unidadDe,
-  textoBase, formatearValor, huecosDe,
+  textoBase, formatearValor, huecosDe, resumenDe, textoPeriodo,
   type FilaSerie, type FilaVisitas, type PuntoSerie,
 } from '../lib/panel-marca'
 
@@ -430,6 +430,79 @@ console.log('\n▸ Suprante: el caso que hoy la pantalla muestra como 0%')
   // punto — es un hueco, no un punto con base cero.
   caso('abril no inventa una brecha que no existe',
     textoBase(punto(p, 'presencia', '2026-04')!), 'sobre 8 PDV')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▸ EL RESUMEN GLOBAL — el número de la tarjeta')
+// Es el mismo error que el del punto, un nivel más arriba: promediar los
+// porcentajes de los meses le da a un mes de 3 observaciones el mismo peso que
+// a uno de 8. Lo que se suma son las observaciones, no los porcentajes.
+{
+  // Suprante en prod: 4 de 8 en abril, 3 de 3 en septiembre.
+  const p = armarPanel({ series: [
+    fila({ mes: '2026-04', metrica_slug: 'presencia', metrica_nombre: 'Presencia',
+           tipo_respuesta: 'binaria', orden: 1, observaciones: 8, base_pdv: 8,
+           obs_con_valor: 8, verdaderos: 4 }),
+    fila({ mes: '2026-09', metrica_slug: 'presencia', metrica_nombre: 'Presencia',
+           tipo_respuesta: 'binaria', orden: 1, observaciones: 3, base_pdv: 3,
+           obs_con_valor: 3, verdaderos: 3 }),
+  ] })
+  const r = resumenDe(p.series[0])!
+
+  caso('la tarjeta dice 64%', formatearValor(r.valor, 'porcentaje'), '64%')
+  caso('CONTROL — promediar los dos meses daría 75%, que no es el de nadie',
+    formatearValor((50 + 100) / 2, 'porcentaje'), '75%')
+  caso('el denominador son las observaciones, no los meses',
+    { verdaderos: r.verdaderos, conValor: r.conValor }, { verdaderos: 7, conValor: 11 })
+  caso('y dice de qué período habla', textoPeriodo(r), 'abr – sept 2026')
+  caso('con dos meses medidos', r.mesesConDatos, 2)
+}
+
+console.log('\n▸ El promedio global también se repondera')
+{
+  // Georgalos: precio de abril sobre 23 PDV y de septiembre sobre 2.
+  const p = armarPanel({ series: [
+    fila({ mes: '2026-04', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
+           observaciones: 23, base_pdv: 23, obs_con_valor: 23, suma_numerica: 86920 }),
+    fila({ mes: '2026-09', metrica_slug: 'precio', metrica_nombre: 'Precio', orden: 4,
+           observaciones: 2, base_pdv: 2, obs_con_valor: 2, suma_numerica: 5380 }),
+  ] })
+  const r = resumenDe(p.series[0])!
+  caso('es (86920 + 5380) / 25', Math.round(r.valor!), Math.round(92300 / 25))
+  caso('CONTROL — y NO el promedio de los dos promedios',
+    Math.round(r.valor!) === Math.round((86920 / 23 + 5380 / 2) / 2), false)
+}
+
+console.log('\n▸ El resumen no suma lo que no se puede sumar')
+// basePdv no está en ResumenMetrica a propósito: un comercio relevado en marzo
+// y en septiembre es UN PDV, y sumar los meses lo contaría dos veces. Si
+// alguien agrega el campo algún día, este control lo obliga a pensarlo.
+caso('ResumenMetrica no expone ningún basePdv',
+  Object.keys(resumenDe(armarPanel({ series: [
+    fila({ mes: '2026-04', metrica_slug: 'precio', observaciones: 1, base_pdv: 99,
+           obs_con_valor: 1, suma_numerica: 10 }),
+  ] }).series[0])!).some(k => /pdv/i.test(k)), false)
+
+console.log('\n▸ El resumen sin datos')
+caso('serie inexistente', resumenDe(undefined), null)
+caso('serie nula', resumenDe(null), null)
+caso('observaciones sin ningún valor usable: valor null, pero el conteo queda',
+  (() => { const r = resumenDe(armarPanel({ series: [
+    fila({ mes: '2026-04', metrica_slug: 'presencia', tipo_respuesta: 'binaria',
+           observaciones: 5, base_pdv: 5, obs_con_valor: 0, verdaderos: 0 }),
+  ] }).series[0])!
+    return { valor: r.valor, observaciones: r.observaciones } })(),
+  { valor: null, observaciones: 5 })
+
+console.log('\n▸ El período, en palabras')
+{
+  const r = (desde: string, hasta: string) => textoPeriodo(
+    resumenDe(armarPanel({ series: [desde, hasta].map(mes =>
+      fila({ mes, metrica_slug: 'presencia', tipo_respuesta: 'binaria',
+             observaciones: 1, base_pdv: 1, obs_con_valor: 1, verdaderos: 1 })) }).series[0])!)
+  caso('un solo mes no dice un rango', r('2026-03', '2026-03'), 'mar 2026')
+  caso('mismo año no repite el año', r('2026-04', '2026-09'), 'abr – sept 2026')
+  caso('años distintos los dice los dos', r('2025-11', '2026-02'), 'nov 2025 – feb 2026')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

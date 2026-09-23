@@ -9,6 +9,10 @@ import {
 } from 'lucide-react'
 import type { DashboardVisualizacionesProps } from './dashboard-visualizaciones'
 import { formatearInstante } from '@/lib/fecha-ar'
+import {
+  armarPanel, resumenDe, formatearValor, textoPeriodo,
+  type FilaSerie, type FilaVisitas,
+} from '@/lib/panel-marca'
 
 // ── Único dynamic import — recharts + leaflet NUNCA tocan el servidor ─────────
 const DashboardVisualizaciones = dynamic(
@@ -108,13 +112,32 @@ export default async function DashboardPage() {
   const marcaId: string | null = profile?.marca_id ?? null
   if (!marcaId) redirect('/auth')
 
-  // ── 2. Campañas ──────────────────────────────────────────────────────────────
-  const { data: campanasRaw } = await admin
-    .from('campanas')
-    .select('id, nombre, estado, fecha_fin, fecha_inicio')
-    .eq('marca_id', marcaId)
+  // ── 2. Campañas + la serie de métricas ───────────────────────────────────────
+  // Los dos RPC solo necesitan el marca_id, así que van EN PARALELO con las
+  // campañas en vez de sumarse a la cascada de abajo. La cascada geográfica
+  // —fotos → comercios → localidades— queda para su propio tramo.
+  const [campanasRes, serieRes, visitasRes] = await Promise.all([
+    admin.from('campanas')
+      .select('id, nombre, estado, fecha_fin, fecha_inicio')
+      .eq('marca_id', marcaId),
+    admin.rpc('panel_marca_series',  { _marca_id: marcaId }),
+    admin.rpc('panel_marca_visitas', { _marca_id: marcaId }),
+  ])
 
-  const campanas: CampanaRow[] = campanasRaw ?? []
+  const campanas: CampanaRow[] = campanasRes.data ?? []
+
+  // supabase-js NO lanza ante un error de Postgres: lo devuelve en .error. Sin
+  // este chequeo, un RPC caído daría `data: null` → panel vacío → "—", que es
+  // indistinguible de "esta marca no mide nada". Prefiero el "—" igual, pero
+  // con el error en el log de alguien.
+  if (serieRes.error)  console.error('[dashboard marca] panel_marca_series:', serieRes.error.message)
+  if (visitasRes.error) console.error('[dashboard marca] panel_marca_visitas:', visitasRes.error.message)
+
+  const panel = armarPanel({
+    series:  (serieRes.data  ?? []) as FilaSerie[],
+    visitas: (visitasRes.data ?? []) as FilaVisitas[],
+  })
+  const presencia = resumenDe(panel.series.find(s => s.slug === 'presencia'))
   const campanaIds = campanas.map(c => c.id)
   const NULL_UUID  = '00000000-0000-0000-0000-000000000000'
   const safeIds    = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
@@ -169,9 +192,23 @@ export default async function DashboardPage() {
   const totalCiudades   = localidadIds.length
   const campanasActivas = campanas.filter(c => c.estado === 'activa').length
 
-  const conPresenciaGlobal = fotos.filter(f => f.declaracion === 'producto_presente').length
-  const presenciaPctGlobal = totalFotos > 0
-    ? Math.round((conPresenciaGlobal / totalFotos) * 100) : 0
+  // ── La Presencia sale de `panel_marca_series`, no de contar fotos ────────────
+  //
+  // La cuenta que había acá era `producto_presente / TODAS las fotos aprobadas`,
+  // y tenía los dos errores a la vez. Medido en prod el 23/9/2026:
+  //
+  //   · Suprante leía "0%". No tiene ni una foto con `declaracion` —la columna
+  //     está congelada desde 20260407124015— pero sí 11 observaciones de
+  //     presencia tipificadas, 7 afirmativas. El número real es 64%. Un 0% no
+  //     es "no sabemos": le dice a la marca que su producto no está en ningún
+  //     lado, que es lo contrario de lo que pasó.
+  //
+  //   · Georgalos leía "66%", de dividir 90 presentes por 137 fotos, 25 de las
+  //     cuales no declararon nada. Sobre sus observaciones reales son 80%.
+  //
+  // El denominador ahora son OBSERVACIONES con valor usable, no fotos: una
+  // misión, no una imagen. Y `null` cuando no hay ninguna, que se muestra como
+  // "—" y no como cero.
 
   // ── 8. Stats por localidad ────────────────────────────────────────────────────
   type LocalidadStat = {
@@ -330,7 +367,15 @@ export default async function DashboardPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         <KpiCard label="PDV relevados"     valor={totalPdv}        icon={Store}    color="bg-indigo-50 text-indigo-600"  sub="con fotos aprobadas" />
-        <KpiCard label="Presencia"         valor={totalFotos > 0 ? `${presenciaPctGlobal}%` : '—'} icon={TrendingUp} color="bg-green-50 text-green-600"  sub={totalFotos > 0 ? `${conPresenciaGlobal} de ${totalFotos} fotos` : 'sin datos'} />
+        <KpiCard
+          label="Presencia"
+          valor={presencia ? formatearValor(presencia.valor, 'porcentaje') : '—'}
+          icon={TrendingUp}
+          color="bg-green-50 text-green-600"
+          sub={presencia
+            ? `${presencia.verdaderos} de ${presencia.conValor} observaciones · ${textoPeriodo(presencia)}`
+            : 'no se está midiendo'}
+        />
         <KpiCard label="Ciudades cubiertas" valor={totalCiudades}  icon={MapPin}   color="bg-blue-50 text-blue-600" />
         <KpiCard label="Campañas activas"  valor={campanasActivas} icon={Megaphone} color="bg-purple-50 text-purple-600" />
         <KpiCard label="Fotos recibidas"   valor={totalFotos}      icon={Camera}   color="bg-gray-100 text-gray-600"     sub="aprobadas" />
@@ -343,8 +388,12 @@ export default async function DashboardPage() {
         penetracionData={penetracionData}
         tipoComercioData={tipoComercioData}
         semanas={semanas}
-        totalFotos={totalFotos}
-        conPresenciaGlobal={conPresenciaGlobal}
+        presencia={presencia && {
+          valor:      presencia.valor,
+          verdaderos: presencia.verdaderos,
+          conValor:   presencia.conValor,
+          periodo:    textoPeriodo(presencia),
+        }}
       />
 
       {/* Campañas activas — server-rendered, sin librerías de browser */}

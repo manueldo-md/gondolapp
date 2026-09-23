@@ -119,6 +119,14 @@ export interface PuntoSerie {
   /** `null` cuando no hay ninguna observación con valor usable. */
   valor: number | null
   observaciones: number
+  /**
+   * Las observaciones con un valor usable: el DENOMINADOR de `valor`.
+   * Puede ser menor que `observaciones` —una visita que se hizo pero cuya
+   * respuesta no servía— y es lo que permite sumar meses sin volver a la base.
+   */
+  conValor: number
+  /** Observaciones afirmativas. Solo significa algo si la métrica es binaria. */
+  verdaderos: number
   /** PDV que midieron ESTA métrica ese mes. Es el denominador real. */
   basePdv: number
   /** PDV visitados ese mes, de `panel_marca_visitas`. `null` si no se pasó. */
@@ -320,6 +328,8 @@ export function armarPanel(params: {
       etiqueta:      etiquetaMes(t.mes),
       valor:         valorDeFila(t),
       observaciones,
+      conValor:      num(t.obs_con_valor),
+      verdaderos:    num(t.verdaderos),
       basePdv:       num(t.base_pdv),
       pdvVisitados:  visitasPorMes.get(t.mes) ?? null,
       desglose:      (desglosePorPunto.get(`${t.mes}|${t.metrica_slug}`) ?? [])
@@ -352,6 +362,84 @@ export function armarPanel(params: {
     noMedidas,
     vacio: seriesArmadas.length === 0,
   }
+}
+
+// ── El número de arriba de todo ──────────────────────────────────────────────
+
+/** La lectura de una métrica sumando todos sus meses. */
+export interface ResumenMetrica {
+  slug: string
+  nombre: string
+  unidad: UnidadMetrica
+  /** `null` si no hay ninguna observación con valor usable. */
+  valor: number | null
+  /** Observaciones afirmativas. Solo para binarias. */
+  verdaderos: number
+  /** El denominador de `valor`: observaciones con valor usable. */
+  conValor: number
+  observaciones: number
+  /** Primer y último mes CON datos. Sirve para decir de qué período habla. */
+  desde: string
+  hasta: string
+  /** Cuántos meses tienen medición. `1` significa que no hay evolución que ver. */
+  mesesConDatos: number
+}
+
+/**
+ * Suma los meses de una serie en un solo número.
+ *
+ * ── LO QUE SE PUEDE SUMAR Y LO QUE NO ───────────────────────────────────────
+ * `observaciones`, `conValor` y `verdaderos` sí: una observación es una misión,
+ * y una misión cae en un mes y en uno solo, así que no hay nada que se cuente
+ * dos veces.
+ *
+ * `basePdv` NO, y por eso no está acá. Es un COUNT(DISTINCT comercio): un
+ * comercio relevado en marzo y en septiembre es UN PDV, y sumar los meses lo
+ * contaría dos veces. El único que sabe el distinto global es Postgres, y este
+ * resumen no lo pide — el denominador honesto de un porcentaje son las
+ * observaciones, no los PDV, y los PDV ya tienen su propia tarjeta.
+ *
+ * El promedio se repondera por `conValor`: promediar los promedios mensuales le
+ * daría a un mes de 2 mediciones el mismo peso que a uno de 56.
+ */
+export function resumenDe(serie: SerieMetrica | undefined | null): ResumenMetrica | null {
+  if (!serie || serie.puntos.length === 0) return null
+
+  let observaciones = 0, conValor = 0, verdaderos = 0, sumaPonderada = 0
+  for (const p of serie.puntos) {
+    observaciones += p.observaciones
+    conValor      += p.conValor
+    verdaderos    += p.verdaderos
+    if (p.valor !== null) sumaPonderada += p.valor * p.conValor
+  }
+
+  const valor =
+    conValor <= 0                  ? null :
+    serie.unidad === 'porcentaje'  ? (verdaderos / conValor) * 100 :
+    serie.unidad === 'promedio'    ? sumaPonderada / conValor :
+    /* crudo */                      null
+
+  return {
+    slug: serie.slug,
+    nombre: serie.nombre,
+    unidad: serie.unidad,
+    valor,
+    verdaderos,
+    conValor,
+    observaciones,
+    desde: serie.puntos[0].mes,
+    hasta: serie.puntos[serie.puntos.length - 1].mes,
+    mesesConDatos: serie.puntos.length,
+  }
+}
+
+/** El período que cubre un resumen, en palabras: `'mar 2026'` o `'mar – sep 2026'`. */
+export function textoPeriodo(r: ResumenMetrica): string {
+  if (r.desde === r.hasta) return etiquetaMes(r.desde)
+  const a = etiquetaMes(r.desde), b = etiquetaMes(r.hasta)
+  // Mismo año: no hace falta repetirlo. 'mar – sep 2026'.
+  const anioA = r.desde.slice(0, 4), anioB = r.hasta.slice(0, 4)
+  return anioA === anioB ? `${a.replace(` ${anioA}`, '')} – ${b}` : `${a} – ${b}`
 }
 
 // ── Ayudas de presentación ───────────────────────────────────────────────────
