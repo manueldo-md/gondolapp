@@ -3,16 +3,26 @@
 /**
  * MisionesPendientes
  *
- * Widget informativo que aparece arriba de la lista de campañas cuando hay
- * misiones guardadas offline en IDB. Sin botón de enviar manual — la subida es
- * automática (ColaSyncOffline en el layout). Este módulo muestra estado y,
- * cuando hay un rechazo del servidor, permite Reintentar o Descartar.
+ * Widget que aparece arriba de la lista de campañas cuando hay misiones
+ * guardadas offline en IDB. Muestra el estado de cada una y ofrece las acciones
+ * que correspondan.
  *
- * **Reintentar solo aparece si reintentar puede terminar distinto.** Con una
- * campaña vencida o un comercio que otro ya tomó, el botón vuelve a subir todas
- * las fotos para recibir el mismo rechazo: un bucle con el trabajo del gondolero
- * adentro. Quién es definitivo lo dice `rechazoEsDefinitivo` a partir del código
- * que manda el servidor, NO del texto del motivo — ver lib/rechazo-mision.ts.
+ * ── REINTENTAR ESTÁ SIEMPRE, SALVO QUE NO PUEDA TERMINAR DISTINTO ───────────
+ * Hasta el 24/9/2026 el botón vivía adentro de la rama 'rechazada', así que en
+ * 'esperando' y 'sin_señal' no había ninguno: el gondolero leía que se enviaría
+ * solo y no tenía nada que tocar. Y ésos son justo los estados donde reintentar
+ * más puede terminar distinto, porque lo único que falta es señal.
+ *
+ * La excepción es el rechazo DEFINITIVO. Con una campaña vencida o un comercio
+ * que otro ya tomó, el botón vuelve a subir todas las fotos para recibir el
+ * mismo rechazo: un bucle con el trabajo del gondolero adentro. Quién es
+ * definitivo lo dice `rechazoEsDefinitivo` a partir del código que manda el
+ * servidor, NO del texto del motivo — ver lib/rechazo-mision.ts.
+ *
+ * ── DESCARTAR NO ────────────────────────────────────────────────────────────
+ * Solo con rechazo del servidor. Una misión que espera señal se va a enviar
+ * sola en cuanto la haya; poner un tacho al lado sería dejar a un click la
+ * destrucción de trabajo que no tiene ningún problema.
  *
  * Estados por misión:
  *   - 'esperando'  → en IDB, sin error, no se está enviando ahora
@@ -28,12 +38,11 @@ import { useEffect, useState } from 'react'
 import { WifiOff, Loader2, AlertTriangle, AlertCircle, Clock, RefreshCw, Trash2 } from 'lucide-react'
 import {
   listarMisionesPendientes,
-  borrarMisionDeCola,
   actualizarMisionEnCola,
   misionesEnviando,
   type MisionPendienteIDB,
 } from '@/lib/mision-queue'
-import { registrarDescarte } from '@/app/(gondolero)/gondolero/captura/actions'
+import { descartarMision } from '@/lib/descarte-cola'
 import { rechazoEsDefinitivo } from '@/lib/rechazo-mision'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -134,27 +143,15 @@ export function MisionesPendientes() {
   }
 
   /**
-   * Descartar: registra un registro liviano en el servidor (best-effort)
-   * y borra de IDB. Sin señal, borra igualmente.
+   * Descartar. La regla —y sobre todo el rastro que queda si el servidor no
+   * contesta— vive en `lib/descarte-cola.ts`, compartida con el TTL. Acá
+   * estaba la segunda copia del mismo bloque, y ya se habían separado: el
+   * `motivoFallo` por defecto era distinto en cada una.
    */
   async function handleDescartar(mision: MisionPendienteIDB) {
     setAccionando(prev => new Set(prev).add(mision.idempotenciaKey))
     try {
-      try {
-        await registrarDescarte({
-          campanaId:       mision.campanaId,
-          comercioId:      mision.comercioId,
-          puntosTotal:     mision.puntosTotal,
-          idempotenciaKey: mision.idempotenciaKey,
-          motivoFallo:     mision.motivoRechazo ?? mision.ultimoError ?? 'Descartada manualmente',
-          descartadaAt:    Date.now(),
-          // Cuándo la CAPTURÓ, que no es cuándo apretó Descartar.
-          capturadoAt:     mision.guardadaAt,
-        })
-      } catch {
-        // Best-effort: sin señal, descartamos igual
-      }
-      await borrarMisionDeCola(mision.idempotenciaKey)
+      await descartarMision(mision, 'Descartada manualmente')
       await actualizar()
       window.dispatchEvent(new CustomEvent('gondolapp:cola-update'))
     } finally {
@@ -251,9 +248,14 @@ export function MisionesPendientes() {
                 )}
                 {estado === 'sin_señal' && (
                   <div>
+                    {/* "se reintentará automáticamente" era verdad siete
+                        minutos y mentira después: el backoff son 3 intentos a
+                        30s/2min/5min y al agotarse queda esperando un
+                        disparador externo. Ahora dice cuáles son, y el botón de
+                        abajo está siempre para no depender de ninguno. */}
                     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-orange-600">
                       <AlertTriangle size={12} />
-                      Sin señal — se reintentará automáticamente
+                      Sin señal — se reintenta al recuperar la conexión
                     </span>
                     {mision.ultimoIntentoAt && (
                       <p className="text-xs text-orange-400 mt-0.5 pl-4">
@@ -289,46 +291,68 @@ export function MisionesPendientes() {
                         sacarla de la lista — el trabajo no se cobra.
                       </p>
                     )}
-
-                    {/* Botones de acción */}
-                    <div className="flex gap-2 mt-3">
-                      {!esDefinitivo && (
-                      <button
-                        onClick={() => handleReintentar(mision)}
-                        disabled={enAccion}
-                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium
-                          bg-white border border-red-200 text-red-700
-                          hover:bg-red-50 active:bg-red-100
-                          disabled:opacity-50 disabled:cursor-not-allowed
-                          transition-colors"
-                      >
-                        {enAccion ? (
-                          <Loader2 size={11} className="animate-spin" />
-                        ) : (
-                          <RefreshCw size={11} />
-                        )}
-                        Reintentar
-                      </button>
-                      )}
-                      <button
-                        onClick={() => handleDescartar(mision)}
-                        disabled={enAccion}
-                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium
-                          bg-white border border-red-200 text-red-500
-                          hover:bg-red-50 active:bg-red-100
-                          disabled:opacity-50 disabled:cursor-not-allowed
-                          transition-colors"
-                      >
-                        {enAccion ? (
-                          <Loader2 size={11} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={11} />
-                        )}
-                        Descartar
-                      </button>
-                    </div>
                   </div>
                 )}
+
+                {/* ── Botones, FUERA de la rama 'rechazada' ─────────────────
+                    Reintentar vivía adentro de ese bloque, así que en
+                    'esperando' y 'sin_señal' no había ningún botón: el
+                    gondolero solo podía leer que se enviaría solo y esperar
+                    que un evento llegara. Y el caso en que reintentar más
+                    puede terminar distinto es justamente ése.
+
+                    Es además la red de seguridad de todo lo demás: si
+                    'visibilitychange' falla en algún teléfono raro, esto
+                    sigue estando y no depende de ningún evento. */}
+                <div className="flex gap-2 mt-3">
+                  {!esDefinitivo && (
+                    <button
+                      onClick={() => handleReintentar(mision)}
+                      // En vuelo no se reintenta: `procesarColaOffline` tiene
+                      // su propio guard, pero un botón activo sobre algo que
+                      // ya se está enviando invita a apretarlo dos veces.
+                      disabled={enAccion || estado === 'enviando'}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium
+                        bg-white border transition-colors
+                        disabled:opacity-50 disabled:cursor-not-allowed
+                        ${esRechazada
+                          ? 'border-red-200 text-red-700 hover:bg-red-50 active:bg-red-100'
+                          : 'border-amber-300 text-amber-800 hover:bg-amber-100 active:bg-amber-200'}`}
+                    >
+                      {enAccion ? (
+                        <Loader2 size={11} className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={11} />
+                      )}
+                      {estado === 'enviando' ? 'Enviando…' : 'Reintentar ahora'}
+                    </button>
+                  )}
+
+                  {/* Descartar SOLO con rechazo del servidor.
+                      Una misión que espera señal se va a enviar sola en cuanto
+                      la haya; ofrecer un tacho al lado sería poner a un click
+                      de distancia la destrucción de trabajo que no tiene ningún
+                      problema. El tacho es la salida de un callejón, no una
+                      forma de limpiar la lista. */}
+                  {esRechazada && (
+                    <button
+                      onClick={() => handleDescartar(mision)}
+                      disabled={enAccion}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium
+                        bg-white border border-red-200 text-red-500
+                        hover:bg-red-50 active:bg-red-100
+                        disabled:opacity-50 disabled:cursor-not-allowed
+                        transition-colors"
+                    >
+                      {enAccion ? (
+                        <Loader2 size={11} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={11} />
+                      )}
+                      Descartar
+                    </button>
+                  )}
+                </div>
               </div>
             </li>
           )
@@ -343,7 +367,8 @@ export function MisionesPendientes() {
       {hayEnEspera && (
         <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-100">
           <p className="text-xs text-amber-700">
-            Tu trabajo está guardado. Se enviará automáticamente cuando recuperes señal.
+            Tu trabajo está guardado. Se envía solo al recuperar señal o al volver
+            a abrir la app — o tocá Reintentar ahora.
           </p>
         </div>
       )}

@@ -43,6 +43,7 @@
  */
 
 import { diaAR } from '@/lib/fecha-ar'
+import { DIAS_TTL_COLA } from '@/lib/cola-ttl'
 
 /** Campañas de seguimiento no vencen: no tienen fecha_fin por definición. */
 export function estaVencida(
@@ -61,11 +62,18 @@ export function estaVencida(
  * en plazo. Pero el timestamp de captura lo manda el cliente, y con una campaña
  * vencida el incentivo para falsearlo es directo: plata.
  *
- * El tope es el TTL de la cola (lib/mision-queue.ts borra a los 7 días): una
- * misión legítima nunca puede haber esperado más que eso, así que un timestamp
- * de abril no sirve para revivir nada.
+ * El tope es el TTL de la cola: una misión legítima nunca puede haber esperado
+ * más que eso, así que un timestamp de abril no sirve para revivir nada.
+ *
+ * ── SALE DE LA CONSTANTE COMPARTIDA, Y TIENE QUE SEGUIR SALIENDO DE AHÍ ─────
+ * Es el MISMO número que el TTL del cliente, mirado desde el otro lado. Si
+ * alguien sube el TTL a 14 y deja este gate en 7, la cola guarda siete días de
+ * misiones que el servidor rechaza por viejas: trabajo hecho, conservado, y
+ * muerto al llegar. Si lo baja y no toca el gate, el gate deja de proteger de
+ * nada. Hasta el 24/9/2026 eran dos números sueltos y un comentario que
+ * apuntaba al archivo equivocado.
  */
-export const DIAS_GRACIA_COLA = 7
+export const DIAS_GRACIA_COLA = DIAS_TTL_COLA
 
 /**
  * ¿Se puede registrar una misión para esta campaña?

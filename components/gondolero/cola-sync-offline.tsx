@@ -7,10 +7,15 @@
  * misiones guardadas en IDB. Vive en el layout del gondolero para que
  * corra en cualquier pantalla, no solo en captura.
  *
- * Disparadores externos (resetean el backoff):
- *   1. Mount del layout
- *   2. Evento 'online' del navegador
- *   3. Evento 'gondolapp:trigger-cola' (botón Reintentar en módulo de pendientes)
+ * Disparadores externos (todos resetean el backoff):
+ *   1. Mount del layout — corre UNA sola vez por sesión: App Router no remonta
+ *      un layout al navegar entre sus hijos
+ *   2. Evento 'online' — se PIERDE si la pestaña está congelada en segundo
+ *      plano, y no se vuelve a emitir al despertar
+ *   3. 'visibilitychange' y 'focus' — preguntan por el ESTADO al volver la app
+ *      al frente. Es lo único que cubre el 'online' perdido, y es el arreglo
+ *      del 24/9/2026
+ *   4. Evento 'gondolapp:trigger-cola' (botón Reintentar del módulo)
  *
  * Backoff interno (solo para errores de red, no para rechazos del servidor):
  *   3 reintentos a 30s / 2min / 5min. Al agotar, espera el próximo disparador
@@ -25,15 +30,16 @@ import {
   misionesEnviando,
   esErrorDeRed,
 } from '@/lib/mision-queue'
+import { listarDescartesPendientes } from '@/lib/mision-queue'
 import { mensajeErrorInfra } from '@/lib/error-infra'
-import { rechazoEsDefinitivo } from '@/lib/rechazo-mision'
+import { venceEnCola, debeDrenar, DIAS_TTL_COLA } from '@/lib/cola-ttl'
+import { descartarMision, enviarDescartesPendientes } from '@/lib/descarte-cola'
 import { enviarReportesPendientes } from '@/lib/reporte-ubicacion-queue'
 import type { FotoMisionInput } from '@/app/(gondolero)/gondolero/captura/actions'
 import {
   subirFoto,
   registrarMision,
   obtenerConfigCompresion,
-  registrarDescarte,
 } from '@/app/(gondolero)/gondolero/captura/actions'
 import { comprimirImagen, generarPathFoto } from '@/lib/utils'
 
@@ -242,27 +248,14 @@ export async function procesarColaOffline(fromBackoff = false) {
   }
 }
 
-// ── TTL de 7 días ─────────────────────────────────────────────────────────────
-
-const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000
+// ── TTL ───────────────────────────────────────────────────────────────────────
 
 /**
- * Elimina de IDB las misiones con más de 7 días de antigüedad (calculado desde
- * guardadaAt). Intenta registrar un registro liviano best-effort antes de borrar.
- * Se llama al montar el layout, una vez por sesión.
+ * Elimina de IDB las misiones vencidas, dejando la lápida de cada una.
  *
- * ── LOS RECHAZOS DEFINITIVOS NO VENCEN (18/9/2026) ─────────────────────────
- * El TTL existe para que la cola no crezca sola: protege del caso "una misión
- * que se reintenta para siempre". Una misión con rechazo DEFINITIVO no se
- * reintenta nunca —no hay botón que la mande— así que no hay nada de qué
- * proteger, y borrarla tiene un costo real.
- *
- * Si la única acción posible es descartar y la descartamos nosotros por él, le
- * sacamos el único registro de que trabajó y de por qué no le sirvió. Un día va
- * a mirar la lista y no va a estar: sin aviso, sin rastro, y sin forma de
- * reclamar. Esa entrada se queda hasta que él decida borrarla.
- *
- * Las reintentables sí vencen, que es donde el TTL hace su trabajo.
+ * El plazo y la regla de qué vence viven en `lib/cola-ttl.ts`, porque el tope
+ * anti-falseo del SERVIDOR está atado al mismo número desde el otro lado. El
+ * descarte en sí lo hace `descartarMision`, que es el mismo que usa el botón.
  */
 async function limpiarMisionesVencidas() {
   const ahora = Date.now()
@@ -271,30 +264,45 @@ async function limpiarMisionesVencidas() {
     pendientes = await listarMisionesPendientes()
   } catch { return }
 
-  const vencidas = pendientes.filter(m =>
-    ahora - m.guardadaAt > SIETE_DIAS_MS &&
-    !(m.estado === 'rechazada' && rechazoEsDefinitivo(m.codigoRechazo))
-  )
+  const vencidas = pendientes.filter(m => venceEnCola(m, ahora))
   if (vencidas.length === 0) return
 
   for (const mision of vencidas) {
-    try {
-      await registrarDescarte({
-        campanaId:       mision.campanaId,
-        comercioId:      mision.comercioId,
-        puntosTotal:     mision.puntosTotal,
-        idempotenciaKey: mision.idempotenciaKey,
-        motivoFallo:     mision.motivoRechazo ?? mision.ultimoError ?? 'TTL de 7 días alcanzado',
-        descartadaAt:    ahora,
-        // Cuándo la CAPTURÓ, que no es cuándo venció el TTL.
-        capturadoAt:     mision.guardadaAt,
-      })
-    } catch {
-      // Best-effort: si falla (sin señal), borrar igual
-    }
-    await borrarMisionDeCola(mision.idempotenciaKey).catch(() => {})
+    await descartarMision(mision, `TTL de ${DIAS_TTL_COLA} días alcanzado`, ahora)
     dispatch()
   }
+}
+
+// ── Disparadores ──────────────────────────────────────────────────────────────
+
+/**
+ * Drena todo lo que espera: misiones, lápidas de descarte y reportes de GPS.
+ *
+ * ── LA CONDICIÓN SE PREGUNTA, NO SE ESPERA ──────────────────────────────────
+ * Ver `debeDrenar` en `lib/cola-ttl.ts`. El punto es que este trigger se puede
+ * llamar cuantas veces se quiera y desde cualquier lado: si no hay nada que
+ * mandar o no hay red, no hace nada y no cuesta nada.
+ */
+async function drenarTodo() {
+  // Si IDB no contesta, se asume que HAY cola y se intenta igual. Falla
+  // abierto: el intento sobre una cola vacía es un no-op —`procesarColaOffline`
+  // vuelve a listar y sale— mientras que asumir que está vacía por un error de
+  // lectura dejaría trabajo sin enviar por la misma clase de fallo silencioso
+  // que este tramo vino a cerrar.
+  let hayCola = true
+  try {
+    hayCola = (await listarMisionesPendientes()).length > 0
+             || (await listarDescartesPendientes()).length > 0
+  } catch { /* se queda en true */ }
+
+  if (!debeDrenar({ hayCola, online: navigator.onLine })) return
+
+  procesarColaOffline()
+  enviarDescartesPendientes().catch(() => {})
+  // Los reportes de ubicación tienen su propia cola —son tres números, no
+  // justifican la maquinaria de esta— pero comparten el disparador: sin esto
+  // solo se enviarían si el gondolero vuelve a entrar a captura.
+  enviarReportesPendientes().catch(() => {})
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
@@ -303,24 +311,41 @@ export function ColaSyncOffline() {
   useEffect(() => {
     // Limpiar vencidas antes de intentar envíos
     limpiarMisionesVencidas()
-    // Drene inicial: cubre "app abierta ya con señal"
-    procesarColaOffline()
-    // Los reportes de ubicación tienen su propia cola —son tres números, no
-    // justifican la maquinaria de esta— pero comparten el disparador: sin esto
-    // solo se enviarían si el gondolero vuelve a entrar a captura.
-    enviarReportesPendientes().catch(() => {})
+    // Drene inicial: cubre "app abierta ya con señal". El mount de ESTE efecto
+    // corre una sola vez por sesión: el componente vive en el layout del grupo
+    // y App Router no remonta un layout al navegar entre sus hijos.
+    drenarTodo()
 
-    const triggerCola = () => {
-      procesarColaOffline()
-      enviarReportesPendientes().catch(() => {})
+    // ── OJO CON PASAR `drenarTodo` DIRECTO A addEventListener ────────────────
+    // Sería `procesarColaOffline(evento)`, y ese primer parámetro es
+    // `fromBackoff`: un Event es truthy, así que el contador de reintentos NO
+    // se resetearía y el drenaje quedaría con el backoff agotado. El wrapper
+    // no es estilo, es lo que hace que el punto 2 funcione.
+    const trigger = () => { drenarTodo() }
+
+    // El evento de transición. Se pierde si la pestaña está congelada, que es
+    // exactamente por lo que no puede ser el único.
+    window.addEventListener('online', trigger)
+
+    // Los dos que preguntan por el ESTADO al volver la app al frente. Cubren el
+    // caso que `online` no puede cubrir: la señal volvió mientras el navegador
+    // tenía la pestaña en segundo plano, ese evento no llegó, y nadie lo repite
+    // al despertar.
+    const alVolverAlFrente = () => {
+      if (document.visibilityState !== 'visible') return
+      drenarTodo()
     }
-    window.addEventListener('online', triggerCola)
+    document.addEventListener('visibilitychange', alVolverAlFrente)
+    window.addEventListener('focus', alVolverAlFrente)
+
     // Botón Reintentar en el módulo de pendientes
-    window.addEventListener('gondolapp:trigger-cola', triggerCola)
+    window.addEventListener('gondolapp:trigger-cola', trigger)
 
     return () => {
-      window.removeEventListener('online', triggerCola)
-      window.removeEventListener('gondolapp:trigger-cola', triggerCola)
+      window.removeEventListener('online', trigger)
+      document.removeEventListener('visibilitychange', alVolverAlFrente)
+      window.removeEventListener('focus', alVolverAlFrente)
+      window.removeEventListener('gondolapp:trigger-cola', trigger)
     }
   }, [])
 

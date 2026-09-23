@@ -1777,6 +1777,44 @@ en misiones, fotos, mision_respuestas, acreditar puntos) va en la función compa
 Este patrón aplica a cualquier operación que deba ser accesible tanto desde la
 UI como desde el SW.
 
+### TRAMO PROPIO — Background Sync, con la extracción de registrarMision adentro
+
+Anotado el 24/9/2026, después de arreglar el drenaje en primer plano.
+
+**Qué queda sin resolver.** El drenaje ahora se dispara al volver la app al
+frente (`visibilitychange` + `focus`, con la condición en estado), lo que cubre
+"el gondolero vuelve a abrir la app". **No cubre "la cerró y no la volvió a
+abrir en todo el día"**: sin pestaña viva no hay nadie que pregunte.
+
+Background Sync es la única API que despierta al service worker sin pestaña
+abierta cuando vuelve la conexión.
+
+**Lo que hay que hacer, en orden:**
+
+1. **Extraer `registrarMision` a `lib/misiones/registrar.ts`** — es el
+   prerrequisito y es la mitad del trabajo. El SW **no puede llamar Server
+   Actions**: son POST a `/_next/action` con headers que Next valida y que no
+   se pueden reproducir desde un contexto de SW. Hace falta un Route Handler
+   (`app/api/gondolero/sync-mision/route.ts`) y que los dos —el Action y el
+   Handler— llamen a la misma función. Duplicar la lógica es el patrón que ya
+   mordió tres veces en este proyecto.
+2. **Registrar el `sync` desde la app** cuando se guarda una misión en la cola.
+3. **El handler `sync` en `public/sw.js`**: leer IDB —`idb-keyval` es accesible
+   desde el SW, los blobs también— y postear al Route Handler.
+
+**Límites conocidos, para no prometer de más:**
+
+- **Es solo Chromium.** En iOS no existe Background Sync. Para esa parte de la
+  flota el arreglo del 24/9 es todo lo que va a haber.
+- El evento `sync` lo agenda el browser, no nosotros: dispara "cuando vuelva la
+  conectividad", con su propio criterio de cuándo.
+- Necesita que el SW haya sido registrado con una pestaña abierta antes.
+
+**Por qué va después y no antes**, que fue la decisión del 24/9: si el drenaje
+en primer plano no es confiable, un bug en el SW es imposible de aislar — no se
+puede distinguir "Background Sync no disparó" de "disparó y falló" de "no hacía
+falta porque el otro camino ya lo había mandado".
+
 ---
 
 ## 19. Bugs conocidos / pendientes de pulido

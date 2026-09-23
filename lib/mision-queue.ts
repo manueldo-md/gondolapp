@@ -42,7 +42,12 @@ export interface MisionPendienteIDB {
   version: 1
   /** UUID generado en el cliente — clave de idempotencia en registrarMision. */
   idempotenciaKey: string
-  /** epoch ms de cuando se guardó — usado para TTL de 7 días en 3.4. */
+  /**
+   * epoch ms de cuando se guardó. Es el reloj del TTL (`venceEnCola` en
+   * `lib/cola-ttl.ts` — NO en este archivo, aunque un comentario viejo de acá
+   * decía que sí) y además el `capturadoAt` que se le manda al servidor: el
+   * gate juzga por cuándo se hizo el trabajo, no por cuándo llegó.
+   */
   guardadaAt: number
   /** Estado actual en IDB. 'rechazada' = el servidor la rechazó con un motivo. */
   estado: 'pendiente' | 'rechazada'
@@ -84,6 +89,67 @@ export interface MisionPendienteIDB {
 
 export function misionQueueKey(idempotenciaKey: string): string {
   return `${MISION_QUEUE_PREFIX}${idempotenciaKey}`
+}
+
+// ── Lápidas de descarte ───────────────────────────────────────────────────────
+
+export const DESCARTE_QUEUE_PREFIX = 'mision_descartada:'
+
+/**
+ * El rastro que queda cuando una misión se descarta y el servidor no contesta.
+ *
+ * ── EL MECANISMO QUE BORRA TRABAJO ERA EL QUE PEOR SE AUDITABA ──────────────
+ * Hasta el 24/9/2026, los dos caminos de descarte —el TTL y el botón— hacían
+ * lo mismo: llamar a `registrarDescarte` dentro de un `try/catch` vacío y
+ * **borrar la entrada igual si fallaba**. Y el caso en que falla es
+ * precisamente el caso natural: si hubiera señal, la misión se habría enviado
+ * en vez de vencer. O sea que el escenario para el que se escribió el rastro
+ * era justo aquel en el que el rastro no se escribía.
+ *
+ * El resultado medido el 24/9/2026: 7 descartes en dev y 1 en prod, **todos
+ * manuales y con señal**, y cero rastros de TTL. Ese cero no significa que no
+ * haya pasado: significa que si pasó, no quedó escrito en ninguna parte.
+ *
+ * La lápida cierra ese agujero sin reabrir el que el TTL vino a cerrar. La
+ * entrada pesada —con los blobs de las fotos, que es lo que hace que la cola
+ * crezca— se borra. Queda esto, que son unos cientos de bytes, y se reintenta
+ * contra el servidor en el próximo drenaje con señal. Una vez que el servidor
+ * lo acusa, se borra también.
+ */
+export interface DescarteIDB {
+  version: 1
+  idempotenciaKey: string
+  campanaId: string
+  campanaNombre: string
+  comercioId: string
+  comercioNombre: string
+  puntosTotal: number
+  motivoFallo: string
+  /** epoch ms de cuándo se descartó. */
+  descartadaAt: number
+  /** epoch ms de cuándo se CAPTURÓ. No es lo mismo y el servidor usa éste. */
+  capturadoAt: number
+}
+
+export function descarteQueueKey(idempotenciaKey: string): string {
+  return `${DESCARTE_QUEUE_PREFIX}${idempotenciaKey}`
+}
+
+export async function guardarDescartePendiente(d: DescarteIDB): Promise<void> {
+  await set(descarteQueueKey(d.idempotenciaKey), d)
+}
+
+export async function borrarDescartePendiente(idempotenciaKey: string): Promise<void> {
+  await del(descarteQueueKey(idempotenciaKey))
+}
+
+export async function listarDescartesPendientes(): Promise<DescarteIDB[]> {
+  const allKeys = await keys()
+  const descarteKeys = allKeys.filter(
+    (k): k is string => typeof k === 'string' && k.startsWith(DESCARTE_QUEUE_PREFIX)
+  )
+  const descartes = await Promise.all(descarteKeys.map(k => get<DescarteIDB>(k)))
+  return descartes.filter((d): d is DescarteIDB => d != null)
 }
 
 /**
