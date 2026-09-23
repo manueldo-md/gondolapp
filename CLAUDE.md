@@ -4479,6 +4479,205 @@ lo usa todo el panel `(repositora)/`. Ese uso está bien y no se toca. La column
 está sobrecargada con dos significados, y solo uno es el problema.
 
 
+### 3. Panel general de la marca — ✅ HECHO el 24/9/2026, en seis etapas
+
+**La pregunta que responde:** cómo evolucionan la presencia, los frentes y los
+precios en el tiempo, **sumando todas las campañas de la marca**. Hasta este
+tramo cada campaña tenía su dashboard y no había forma de compararlas. Es lo que
+justificaba el tramo de métricas.
+
+| Etapa | Qué | Migración |
+|---|---|---|
+| 1 | `panel_marca_series` + `panel_marca_visitas` | `20260925100000` |
+| 2 | `lib/panel-marca.ts` — el rollup, sin base | — |
+| 3 | El KPI de Presencia y el dónut | — |
+| 4 | La serie mensual (SVG a mano, server-rendered) | — |
+| 5 | El desglose por campaña al tocar un punto | — |
+| 6 | Cobertura por ciudad y por tipo; dos bloques afuera | `20260926100000` |
+
+#### Números que dejaron de ser falsos en producción
+
+La etapa 3 no agregó una feature: **arregló tres números que la marca miraba
+para decidir**.
+
+```
+marca        antes                     después
+Suprante      0%  0 de 26 fotos        64%  7 de 11 observaciones · abr – sept
+Georgalos    66%  90 de 137 fotos      80%  45 de 56 observaciones · mar 2026
+ACME          0%  0 de 22 fotos         —   no se está midiendo
+```
+
+La cuenta era `producto_presente / TODAS las fotos aprobadas`. Suprante no tiene
+ni una foto con `declaracion` —la columna está congelada desde `20260407124015`—
+pero sí 11 observaciones tipificadas, 7 afirmativas. Leía **0%**, y un 0% no dice
+"no sabemos": le dice a la marca que su producto no está en ningún lado.
+
+---
+
+#### Las decisiones que NO hay que revertir
+
+**1. El ancla es `misiones.capturada_at`, nunca `created_at`.**
+Medido en prod: `mision_respuestas.created_at` dice `2026-09` en el **100%** de
+las filas, porque es cuándo entró el registro. `capturada_at` las reparte en
+abril y septiembre, que es cuándo se hizo el trabajo de campo. Con el ancla
+equivocada **toda la historia colapsa en un punto y el panel dibuja una raya**.
+Las 365 misiones de las dos bases tienen `capturada_at`, así que el `COALESCE`
+es un cinturón y no un parche en uso.
+
+**2. El mes sale de SQL como texto `'YYYY-MM'`.**
+`date_trunc('month', ts AT TIME ZONE …)` devuelve un `timestamp without time
+zone`: exactamente el tipo que `new Date()` reinterpreta en la zona del que mira.
+Es el bug del tramo C′. `lib/panel-marca.ts` hace aritmética de meses sobre
+enteros y **no construye un `Date` en ningún lado**; la única conversión es la
+etiqueta, que pasa por `formatearDia`.
+
+**3. Suma y conteo, nunca AVG.**
+El RPC devuelve `suma_numerica` y `obs_con_valor`; el promedio se hace
+dividiendo. Con 23 PDV a $3.779 y 2 PDV a $500, promediar los dos promedios da
+**$2.140 contra los $3.516 reales** — un número que no es el de ninguna de las
+dos campañas y que igual se dibuja lindo. Vale igual para el resumen global, que
+se repondera por `conValor`.
+
+**4. `basePdv` NO se suma, y por eso existe el `GROUPING SETS`.**
+Es un `COUNT(DISTINCT comercio)`: un comercio relevado por dos campañas el mismo
+mes cuenta **una vez** en el total y una vez en cada desglose. Por eso
+`ResumenMetrica` **no tiene** ningún campo de PDV —sumar meses lo contaría dos
+veces— y por eso un mes sin su fila de total se **ignora** en vez de
+reconstruirse desde el desglose.
+
+**5. Una métrica sin datos no se dibuja; un mes sin datos corta la línea.**
+Y el eje es **continuo de punta a punta**: si tuviera solo los meses con datos,
+abril y septiembre quedarían pegados y el hueco de cuatro meses desaparecería —
+la misma mentira que interpolar, contada de otra forma.
+
+**6. Cada punto muestra su BASE DE CÁLCULO, en el eje X y no en un tooltip.**
+Un tooltip no existe en un celular y no sale en una captura de pantalla, que es
+como este gráfico viaja adentro de la marca. Un mes sin medición lleva **una
+raya, no un cero**.
+
+**7. El eje Y de un porcentaje va de 0 a 100 SIEMPRE.**
+Con eje automático, una variación de dos puntos se dibuja como una montaña: es
+la forma más común de mentir con una línea. Las numéricas se ajustan pero
+arrancan **desde cero** por lo mismo.
+
+**8. VISITAR NO ES MEDIR (etapa 6).**
+Un comercio visitado sin pregunta de presencia tiene `con_valor = 0` y su ciudad
+dice **"sin medir"**, no 0%. Un 0% dice *"el producto no está"*; "sin medir" dice
+*"no preguntamos"*, y la marca actúa distinto en cada caso. En dev son 9 de los
+65 PDV de Georgalos. De ahí sale el denominador: **el % se calcula sobre los PDV
+que midieron, no sobre los visitados**.
+
+**9. Dos unidades conviven, y las dos dicen en qué están medidas.**
+El KPI y el dónut cuentan **observaciones**; la cobertura por ciudad y por tipo
+cuenta **PDV**. Son dos preguntas distintas y las dos son legítimas —"de lo que
+medimos, ¿qué dio presente?" contra "¿en cuántos comercios está?"— pero un
+número sin unidad al lado de otro con otra unidad es exactamente cómo una
+pantalla se contradice a sí misma.
+
+**10. La selección del desglose vive en la URL, no en un `useState`.**
+Dos razones: el bloque sigue sin mandar JS (`/marca/dashboard` quedó en **4,07
+kB**, menos que antes del tramo), y **el link se puede mandar** — "mirá el salto
+de precio de abril" es un link, no una explicación de dónde tocar.
+
+**11. Un guard redundante no es un guard: es una copia de la condición.**
+La etapa 5 salió con una validación en `page.tsx` que chequeaba que la métrica y
+el mes existieran en el panel. `TarjetaSerie` ya hacía ese `find`. **La copia no
+agregaba seguridad y sí agregaba el único lugar donde una selección válida podía
+perderse en silencio** — y se perdió: el desglose no abría. Se sacó y quedó una
+traza para el caso que decía cubrir.
+
+---
+
+#### LOS DOS HUECOS QUE NINGÚN DATO REAL EJERCITA
+
+**Esto es lo que se pierde si no queda escrito.** Son dos caminos de código que
+no se ejecutan ni una sola vez con los datos de dev ni de prod, así que **ningún
+render, ninguna prueba manual y ningún deploy los toca**. Si alguien los rompe,
+la pantalla va a seguir viéndose perfecta.
+
+**Hueco 1 — la línea entre dos meses consecutivos.**
+
+Al 24/9/2026 **ninguna serie tiene dos meses consecutivos**: todas son abril y
+septiembre con el hueco en el medio. El render de prod produce **cero
+`<polyline>`**. O sea que el código que traza la línea —y con él la regla de que
+un hueco NO se cruza— nunca corre.
+
+Un bug ahí dibuja una recta entre abril y septiembre: **cinco mediciones que
+nadie hizo, y nada en pantalla lo delata**. Una recta se ve perfectamente normal.
+
+Lo que lo cubre:
+- `tramosContinuos` está en `lib/panel-marca.ts` y **no** en el componente, para
+  que se pueda probar sin mirar el gráfico.
+- `scripts/probar-panel-marca.ts` tiene 8 controles de corte, incluido el punto
+  con observaciones y **sin valor usable**, que corta igual que un mes ausente
+  (si se colara iría al cero del eje).
+- `scripts/ver-serie-mensual.mts --simular-linea` reparte el piloto en tres
+  meses **dentro de una transacción que se revierte** y dibuja el trazo. Es la
+  única forma de VERLO. Verificado: un tramo de tres puntos en x = 46, 98, 150
+  que se corta en mayo y no llega a septiembre.
+
+**Hueco 2 — dos campañas en el mismo punto.**
+
+Ningún punto de ninguna marca tiene más de una campaña en su desglose. Entonces
+no se ejercitan:
+- `comerciosCompartidos`, que detecta cuando los PDV de las campañas suman
+  **más** que los del mes. Es correcto —un comercio relevado por dos campañas
+  cuenta una vez arriba y una en cada fila— pero si no cierra y nadie lo
+  explica, **el número correcto pasa a ser el sospechoso**.
+- La etiqueta de fuente por fila, que solo aparece cuando hay más de una.
+
+Cubierto por 4 controles, incluido que **nunca dé negativo** con un desglose
+incompleto.
+
+**Hueco 3, menor pero de la misma familia — las dos fuentes en la misma misión.**
+
+`panel_marca_series` y `panel_marca_pdv` cuentan una observación por
+`(misión, fuente)`. Si una misión tuviera respuesta tipificada **y** declaración
+de foto, las dos la contarían dos veces — y las dos igual, que es lo que importa:
+no pueden contradecirse entre sí. Hoy ese caso tiene **cero filas** en las dos
+bases. **El día que deje de ser cero, hay que arreglar LAS DOS juntas.**
+
+> La regla que sale de los tres: cuando una rama de código no la ejercita ningún
+> dato real, el test **es** la única cobertura que tiene, y el comentario que
+> dice por qué es lo único que evita que alguien lo borre por "redundante".
+
+---
+
+#### El invariante que ata las dos funciones
+
+La migración `20260926100000` **no commitea** si los afirmativos de
+`panel_marca_pdv` no coinciden con los de `panel_marca_series`. Es lo que impide
+que vuelva el bug que la etapa 6 cerró: la misma pantalla diciendo 64% arriba y
+0% por ciudad.
+
+#### Herramientas que quedaron
+
+| | |
+|---|---|
+| `scripts/probar-panel-marca.ts` | 109 controles, sin base, con `TZ=UTC` |
+| `scripts/probar-migracion-panel-marca.mjs` | dry-run de la etapa 1, con el control del ancla |
+| `scripts/probar-migracion-pdv.mjs` | dry-run de la etapa 6, con el invariante cruzado |
+| `scripts/ver-serie-mensual.mts` | rinde el bloque a HTML con datos reales de cualquiera de las dos bases |
+
+El último encontró **tres bugs que `tsc` no puede ver**: dos hijos en un
+`<title>` de SVG, las cero polylines, y la geometría del eje. Mirar el artefacto
+servido no es lo mismo que mirar el código.
+
+#### Lo que NO entró, y por qué
+
+- **El mapa.** Va después a propósito: el tablero define qué métricas existen y
+  el mapa las pinta.
+- **La unidad semanal.** El panel arranca mensual porque una marca piensa en
+  trimestres. Lo que ya es genérico: `tramosContinuos` y `agruparCobertura`
+  trabajan sobre una lista de claves, no sobre meses. Lo que NO lo es y hay que
+  duplicar o generalizar el día que se agreguen semanas: `rangoDeMeses` y
+  `etiquetaMes` validan el formato `YYYY-MM` con un regex propio, y el `to_char`
+  de los dos RPC emite `YYYY-MM`. No lo pinto más fácil de lo que es.
+- **El tope del eje.** `meses` no tiene límite: una marca con una campaña de
+  2024 y otra de hoy produce decenas de columnas. Recortar en la lib sería
+  esconder datos sin decirlo; la ventana la decide quien dibuja.
+
+
 ---
 
 ## Tramos abiertos después del dashboard de cobertura (21/9/2026)
