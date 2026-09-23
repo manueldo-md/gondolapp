@@ -70,9 +70,39 @@ export function MapaCliente({ puntos, pintar, apiKey }: {
   useEffect(() => {
     const el = contenedor.current
     if (!el) return
-    const esTile = (e: Event) => (e.target as HTMLElement | null)?.tagName === 'IMG'
-    const onLoad  = (e: Event) => { if (esTile(e)) setTiles(t => ({ ...t, cargados: t.cargados + 1 })) }
-    const onError = (e: Event) => { if (esTile(e)) setTiles(t => ({ ...t, fallidos: t.fallidos + 1 })) }
+    const tileDe = (e: Event) => {
+      const el = e.target as HTMLElement | null
+      return el?.tagName === 'IMG' ? (el as HTMLImageElement) : null
+    }
+
+    const onLoad = (e: Event) => {
+      const img = tileDe(e)
+      if (!img) return
+      // Si el mismo <img> se reusa con un src nuevo que sí carga, vuelve a
+      // mostrarse. Sin esto quedaría oculto para siempre después de un fallo.
+      img.style.visibility = ''
+      setTiles(t => ({ ...t, cargados: t.cargados + 1 }))
+    }
+
+    const onError = (e: Event) => {
+      const img = tileDe(e)
+      if (!img) return
+      // ── UN TILE QUE FALLA NO DEJA UN ÍCONO DE IMAGEN ROTA ─────────────────
+      // `pigeon-maps` no tiene `onError`: su `ImgTile` solo pasa `onLoad`
+      // (verificado en el bundle, cero ocurrencias). Y aunque pone `alt=''`,
+      // Chrome igual dibuja el ícono roto cuando el <img> tiene ancho y alto
+      // explícitos, que es el caso.
+      //
+      // Ocultarlo deja ver el fondo del mapa, que se lee como "esta parte no
+      // cargó". El ícono roto se lee como "la app está rota", que es otra cosa
+      // y no es cierta: el resto del mapa y todos los puntos están bien.
+      //
+      // Se hace acá y no con un `tileComponent` propio —pigeon lo permite—
+      // porque el listener ya existe para contar, y una copia de `ImgTile`
+      // habría que mantenerla sincronizada con la de la librería.
+      img.style.visibility = 'hidden'
+      setTiles(t => ({ ...t, fallidos: t.fallidos + 1 }))
+    }
     // `true` = fase de captura. Los eventos load/error de <img> NO burbujean.
     el.addEventListener('load', onLoad, true)
     el.addEventListener('error', onError, true)
