@@ -160,15 +160,28 @@ export default async function DashboardPage({
   })
   const presencia = resumenDe(panel.series.find(s => s.slug === 'presencia'))
 
-  // La selección se valida contra lo que el panel realmente tiene: una URL con
-  // una métrica que esta marca no mide, o un mes sin punto, simplemente no abre
-  // nada. Un link viejo o tipeado a mano no puede romper la pantalla.
-  const seleccion =
-    searchParams.metrica && searchParams.mes &&
-    panel.series.some(s =>
-      s.slug === searchParams.metrica && s.puntos.some(pt => pt.mes === searchParams.mes))
-      ? { metrica: searchParams.metrica, mes: searchParams.mes }
-      : undefined
+  // ── LA SELECCIÓN PASA DERECHO, SIN VALIDAR ACÁ ─────────────────────────────
+  // Hubo una guarda que además chequeaba que la métrica y el mes existieran en
+  // el panel, y se sacó: era REDUNDANTE y por eso peligrosa. Quien decide si
+  // algo se abre es `TarjetaSerie`, que busca el punto con un `find` y no
+  // dibuja nada si no está. Una segunda validación no agregaba seguridad —el
+  // `find` ya la da— pero sí agregaba un lugar donde una selección válida
+  // podía perderse en silencio, que es exactamente lo que pasó el 24/9/2026.
+  //
+  // La regla general: un guard que no puede rechazar nada que el consumidor no
+  // rechace igual no es un guard, es una copia de la condición.
+  const seleccion = searchParams.metrica && searchParams.mes
+    ? { metrica: searchParams.metrica, mes: searchParams.mes }
+    : undefined
+
+  // Si llegó una selección y no hay punto para ella, queda la traza. Un link
+  // viejo o tipeado a mano no rompe nada —no se abre y listo— pero enterarse
+  // es la diferencia entre "no abre" y "no abre y no sabemos por qué".
+  if (seleccion && !panel.series.some(s =>
+        s.slug === seleccion.metrica && s.puntos.some(pt => pt.mes === seleccion.mes))) {
+    console.warn('[dashboard marca] selección sin punto:', JSON.stringify(seleccion),
+      '— métricas:', panel.series.map(s => `${s.slug}:[${s.puntos.map(pt => pt.mes).join(',')}]`).join(' '))
+  }
   const campanaIds = campanas.map(c => c.id)
   const NULL_UUID  = '00000000-0000-0000-0000-000000000000'
   const safeIds    = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
