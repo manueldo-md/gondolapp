@@ -14,6 +14,7 @@ import {
   type FilaSerie, type FilaVisitas, type FilaPdv,
 } from '@/lib/panel-metricas'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
+import { campanasDe, idsDe, type CampanaDelPanel } from '@/lib/campanas-de'
 
 // ── Único dynamic import ─────────────────────────────────────────────────────
 // Sin ssr a propósito, aunque el componente NO usa ninguna librería de browser:
@@ -55,14 +56,6 @@ type ComercioRow = {
 type LocalidadRow = {
   id: number
   nombre: string
-}
-
-type CampanaRow = {
-  id: string
-  nombre: string
-  estado: string
-  fecha_fin: string | null
-  fecha_inicio: string | null
 }
 
 // ── Helpers server-rendered (sin librerías de browser) ────────────────────────
@@ -125,30 +118,29 @@ export default async function DashboardPage({
   if (!marcaId) redirect('/auth')
 
   // ── 2. Campañas + la serie de métricas ───────────────────────────────────────
-  // Los dos RPC solo necesitan el marca_id, así que van EN PARALELO con las
-  // campañas en vez de sumarse a la cascada de abajo. La cascada geográfica
-  // —fotos → comercios → localidades— queda para su propio tramo.
-  const [campanasRes, serieRes, visitasRes, pdvRes, metricasRes] = await Promise.all([
-    admin.from('campanas')
-      .select('id, nombre, estado, fecha_fin, fecha_inicio')
-      .eq('marca_id', marcaId),
-    admin.rpc('panel_marca_series',  { _marca_id: marcaId }),
-    admin.rpc('panel_marca_visitas', { _marca_id: marcaId }),
-    admin.rpc('panel_marca_pdv',     { _marca_id: marcaId }),
+  // Las campañas van PRIMERO y solas: desde que el scope de los RPC es una
+  // lista de campañas y no un marca_id, los tres dependen de esta consulta. Es
+  // un viaje secuencial más, y es el precio de que el panel de marca y el de
+  // distribuidora corran exactamente el mismo SQL.
+  const campanas: CampanaDelPanel[] = await campanasDe({ tipo: 'marca', marcaId }, admin)
+  const _campanas = idsDe(campanas)
+
+  const [serieRes, visitasRes, pdvRes, metricasRes] = await Promise.all([
+    admin.rpc('panel_series',  { _campanas }),
+    admin.rpc('panel_visitas', { _campanas }),
+    admin.rpc('panel_pdv',     { _campanas }),
     // El catálogo es lo único que permite NOMBRAR lo que no se está midiendo:
     // los RPC solo devuelven métricas con observaciones, así que sin esto el
     // panel puede decir qué hay pero no qué falta.
     admin.from('metricas').select('slug, nombre').eq('activa', true).order('orden'),
   ])
 
-  const campanas: CampanaRow[] = campanasRes.data ?? []
-
   // supabase-js NO lanza ante un error de Postgres: lo devuelve en .error. Sin
   // este chequeo, un RPC caído daría `data: null` → panel vacío → "—", que es
   // indistinguible de "esta marca no mide nada". Prefiero el "—" igual, pero
   // con el error en el log de alguien.
-  if (serieRes.error)  console.error('[dashboard marca] panel_marca_series:', serieRes.error.message)
-  if (visitasRes.error) console.error('[dashboard marca] panel_marca_visitas:', visitasRes.error.message)
+  if (serieRes.error)  console.error('[dashboard marca] panel_series:', serieRes.error.message)
+  if (visitasRes.error) console.error('[dashboard marca] panel_visitas:', visitasRes.error.message)
   // Si falla el catálogo, `noMedidas` queda vacío y el panel igual funciona —
   // pierde la línea de "no se está midiendo X", no los datos.
   if (metricasRes.error) console.error('[dashboard marca] metricas:', metricasRes.error.message)
@@ -201,7 +193,7 @@ export default async function DashboardPage({
   // El RPC devuelve un comercio por fila con su localidad y su tipo pegados, y
   // agrupar por uno u otro eje es una suma del lado de acá.
   const pdvs = (pdvRes.data ?? []) as FilaPdv[]
-  if (pdvRes.error) console.error('[dashboard marca] panel_marca_pdv:', pdvRes.error.message)
+  if (pdvRes.error) console.error('[dashboard marca] panel_pdv:', pdvRes.error.message)
 
   // Presencia por campaña, para la lista de campañas activas. Sale del
   // DESGLOSE del panel —que ya suma las dos fuentes— y no de contar

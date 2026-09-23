@@ -76,8 +76,14 @@ const { rows: marcas }   = await c.query(`SELECT id, razon_social FROM marcas OR
 
 const bloques: string[] = []
 for (const m of marcas) {
-  const { rows: series }  = await c.query(`SELECT * FROM public.panel_marca_series($1)`, [m.id])
-  const { rows: visitas } = await c.query(`SELECT * FROM public.panel_marca_visitas($1)`, [m.id])
+  // El scope es una lista de campañas desde 20260928100000. Acá se arma con la
+  // misma regla que `campanasDe({ tipo: 'marca' })`, en SQL porque este script
+  // habla por `pg` y no por PostgREST.
+  const { rows: cam } = await c.query(
+    `SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) AS ids FROM campanas WHERE marca_id = $1`, [m.id])
+  const ids = cam[0].ids
+  const { rows: series }  = await c.query(`SELECT * FROM public.panel_series($1)`,  [ids])
+  const { rows: visitas } = await c.query(`SELECT * FROM public.panel_visitas($1)`, [ids])
   if (series.length === 0 && visitas.length === 0) continue
   const panel = armarPanel({ series, visitas, metricas })
   const marcado = renderToStaticMarkup(React.createElement(SerieMensual, { panel, seleccion: abrir, rutaBase: '/marca/dashboard' }))

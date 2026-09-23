@@ -29,6 +29,7 @@ import { MapIcon, AlertTriangle } from 'lucide-react'
 import { MapaCliente, type Pintado } from '@/components/panel/mapa'
 import { COLOR_PRESENCIA, type PuntoMapa } from '@/lib/mapa-pdv'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
+import { campanasDe, idsDe } from '@/lib/campanas-de'
 
 const RUTA = '/marca/mapa'
 
@@ -98,17 +99,19 @@ export default async function MapaPage({
   const campanaId = searchParams.campana || null
   const pintar: Pintado = searchParams.pintar === 'tipo' ? 'tipo' : 'presencia'
 
-  const [pdvRes, campanasRes] = await Promise.all([
-    admin.rpc('panel_marca_pdv', { _marca_id: marcaId, _campana_id: campanaId }),
-    admin.from('campanas').select('id, nombre').eq('marca_id', marcaId).order('nombre'),
-  ])
+  // El `_campana_id` del RPC viejo se fue: filtrar por una campaña es pasar un
+  // arreglo de un elemento. Y ese arreglo NO se arma con lo que viene en la
+  // URL: `idsDe` intersecta el pedido contra las campañas de esta marca y
+  // devuelve vacío si no es suya. Antes la red de seguridad era el `_marca_id`
+  // que la función también filtraba; ahora la lista ES el permiso.
+  const campanas = await campanasDe({ tipo: 'marca', marcaId }, admin)
+  const pdvRes = await admin.rpc('panel_pdv', { _campanas: idsDe(campanas, campanaId) })
 
   // supabase-js devuelve el error en .error, no lo lanza. Sin esto, un RPC
   // caído sería un mapa vacío, que se lee como "no tenés PDV".
-  if (pdvRes.error) console.error('[mapa marca] panel_marca_pdv:', pdvRes.error.message)
+  if (pdvRes.error) console.error('[mapa marca] panel_pdv:', pdvRes.error.message)
 
   const filas = (pdvRes.data ?? []) as FilaPdvMapa[]
-  const campanas = campanasRes.data ?? []
 
   const puntos: PuntoMapa[] = []
   let sinCoordenadas = 0
