@@ -19,7 +19,8 @@
  */
 import {
   proyectar, agruparEnMapa, encuadrar, anilloGrupo, colorPunto, textoGrupo,
-  SEPARACION_PX, COLOR_PRESENCIA, type PuntoMapa,
+  SEPARACION_PX, COLOR_PRESENCIA, decidirFallo, mensajeFallo, urlTile, MINIMO_FALLOS,
+  type PuntoMapa,
 } from '../lib/mapa-pdv'
 
 let fallos = 0
@@ -182,6 +183,64 @@ caso('22 px', SEPARACION_PX, 22)
   caso('a 5 px son uno solo',
     agruparEnMapa([base, pdv('b', -32, -58 + grados(5))], 14).length, 1)
   caso('CONTROL — la proyección devolvió algo usable', Number.isFinite(bx) && Number.isFinite(by), true)
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▸ EL CARTEL — y el falso positivo que costó el primer uso real')
+// La primera versión usaba una SONDA: pedía un tile aparte al montar y miraba
+// su onerror. En dev, con la key real, los tiles cargaban, los puntos se veían
+// y el cartel decía igual "el proveedor rechazó el pedido".
+//
+// La causa fue de método: una sonda prueba una request DISTINTA de la que hace
+// el mapa. Y el control que yo había dado por bueno corrió contra una URL
+// escrita a mano en un HTML de prueba, no contra la del componente — o sea que
+// verificaba `new Image()`, no la sonda.
+//
+// Un aviso que aparece cuando no pasa nada es peor que no tener aviso.
+{
+  caso('EL CASO QUE FALLÓ: tiles cargando + alguno que falló → SIN cartel',
+    decidirFallo({ hayKey: true, cargados: 12, fallidos: 4 }), null)
+  caso('un solo tile cargado ya alcanza para no avisar',
+    decidirFallo({ hayKey: true, cargados: 1, fallidos: 40 }), null)
+
+  caso('nada carga y fallan varios → cartel',
+    decidirFallo({ hayKey: true, cargados: 0, fallidos: MINIMO_FALLOS }), 'tiles_no_cargan')
+  caso('un fallo suelto no alcanza: puede ser el borde del mundo',
+    decidirFallo({ hayKey: true, cargados: 0, fallidos: 1 }), null)
+  caso('dos tampoco', decidirFallo({ hayKey: true, cargados: 0, fallidos: 2 }), null)
+
+  caso('recién montado, sin nada todavía: no parpadea',
+    decidirFallo({ hayKey: true, cargados: 0, fallidos: 0 }), null)
+
+  caso('sin key es OTRO problema y otro mensaje',
+    decidirFallo({ hayKey: false, cargados: 0, fallidos: 0 }), 'sin_key')
+  caso('y sin key manda aunque los tiles anduvieran',
+    decidirFallo({ hayKey: false, cargados: 50, fallidos: 0 }), 'sin_key')
+}
+
+console.log('\n▸ Los dos mensajes mandan a lugares distintos')
+{
+  const sinKey = mensajeFallo('sin_key')
+  const caidos = mensajeFallo('tiles_no_cargan')
+  caso('el de sin key nombra la variable', sinKey.detalle.includes('NEXT_PUBLIC_GEOAPIFY_KEY'), true)
+  caso('el de tiles caídos NO la nombra: se arregla en otro lado',
+    caidos.detalle.includes('NEXT_PUBLIC_GEOAPIFY_KEY'), false)
+  caso('y nombra las tres causas reales',
+    ['clave', 'dominio', 'cuota'].every(t => caidos.detalle.includes(t)), true)
+  caso('los dos aclaran que los DATOS están bien',
+    [sinKey.detalle, caidos.detalle].every(d => d.includes('datos')), true)
+}
+
+console.log('\n▸ La URL del tile')
+{
+  const u = urlTile(1372, 2401, 12, 'K')
+  caso('lleva la key', u.includes('apiKey=K'), true)
+  caso('sin dpr no pide @2x', u.includes('@2x'), false)
+  caso('con dpr 2 sí', urlTile(1372, 2401, 12, 'K', 2).includes('@2x'), true)
+  caso('con dpr 1 no', urlTile(1372, 2401, 12, 'K', 1).includes('@2x'), false)
+  caso('una key con caracteres raros se escapa',
+    urlTile(1, 1, 1, 'a b&c').includes('a%20b%26c'), true)
 }
 
 console.log(fallos ? `\n✗ ${fallos} mal\n` : '\n✓ Todo como se esperaba.\n')

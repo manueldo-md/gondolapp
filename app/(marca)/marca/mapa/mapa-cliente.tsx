@@ -17,16 +17,21 @@
  * allowlist dan un rectángulo gris con puntitos — que no se lee como "el mapa
  * falló" sino como "no tenés PDV por acá". Es una respuesta, y es falsa.
  *
- * Se detecta con una sonda: se pide UN tile al montar y se escucha su `onerror`.
- * Geoapify responde 401 con un JSON cuando la key no sirve, así que la imagen
- * falla y la sonda se entera. No se espera a que fallen los 50 tiles del mapa.
+ * Se miran LOS TILES DE VERDAD, no una sonda aparte. Los eventos `load` y
+ * `error` de las imágenes no burbujean, pero sí se pueden escuchar en fase de
+ * CAPTURA sobre el contenedor: por eso los `addEventListener(..., true)`.
+ *
+ * La primera versión usaba una sonda —un tile pedido aparte al montar— y dio un
+ * falso positivo en el primer uso real. Ver `decidirFallo` en lib/mapa-pdv.ts:
+ * una sonda prueba una request distinta de la que hace el mapa, y cualquier
+ * diferencia se convierte en un aviso falso sobre un mapa que anda.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Map, Overlay } from 'pigeon-maps'
 import {
   agruparEnMapa, encuadrar, anilloGrupo, colorPunto, textoGrupo, urlTile,
-  mensajeFallo, type PuntoMapa, type GrupoMapa, type FalloMapa,
+  mensajeFallo, decidirFallo, type PuntoMapa, type GrupoMapa,
 } from '@/lib/mapa-pdv'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 import { AlertTriangle } from 'lucide-react'
@@ -55,22 +60,29 @@ export function MapaCliente({ puntos, pintar, apiKey }: {
   const [zoom, setZoom] = useState(inicial.zoom)
   const [abierto, setAbierto] = useState<GrupoMapa | null>(null)
 
-  // ── La sonda ──────────────────────────────────────────────────────────────
-  // `undefined` = todavía no se sabe. No se dibuja el cartel mientras tanto:
-  // un cartel de error que parpadea en cada carga enseña a ignorarlo.
-  const [fallo, setFallo] = useState<FalloMapa | null | undefined>(
-    apiKey ? undefined : 'sin_key'
-  )
+  // ── Los tiles de verdad ───────────────────────────────────────────────────
+  // Se cuentan los que cargan y los que fallan, escuchando en fase de captura
+  // las imágenes que el mapa ya pide. Sin request extra y sin adivinar cuál
+  // tile pedir: son exactamente los que el usuario está mirando.
+  const contenedor = useRef<HTMLDivElement>(null)
+  const [tiles, setTiles] = useState({ cargados: 0, fallidos: 0 })
 
   useEffect(() => {
-    if (!apiKey) return
-    const img = new Image()
-    // Un tile cualquiera del centro del país: si este carga, cargan todos.
-    img.src = urlTile(1372, 2401, 12, apiKey)
-    img.onload  = () => setFallo(null)
-    img.onerror = () => setFallo('tiles_no_cargan')
-    return () => { img.onload = null; img.onerror = null }
-  }, [apiKey])
+    const el = contenedor.current
+    if (!el) return
+    const esTile = (e: Event) => (e.target as HTMLElement | null)?.tagName === 'IMG'
+    const onLoad  = (e: Event) => { if (esTile(e)) setTiles(t => ({ ...t, cargados: t.cargados + 1 })) }
+    const onError = (e: Event) => { if (esTile(e)) setTiles(t => ({ ...t, fallidos: t.fallidos + 1 })) }
+    // `true` = fase de captura. Los eventos load/error de <img> NO burbujean.
+    el.addEventListener('load', onLoad, true)
+    el.addEventListener('error', onError, true)
+    return () => {
+      el.removeEventListener('load', onLoad, true)
+      el.removeEventListener('error', onError, true)
+    }
+  }, [])
+
+  const fallo = decidirFallo({ hayKey: !!apiKey, ...tiles })
 
   const grupos = useMemo(() => agruparEnMapa(puntos, Math.round(zoom)), [puntos, zoom])
 
@@ -98,7 +110,7 @@ export function MapaCliente({ puntos, pintar, apiKey }: {
         </div>
       )}
 
-      <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-100" style={{ height: ALTO }}>
+      <div ref={contenedor} className="rounded-xl overflow-hidden border border-gray-200 bg-gray-100" style={{ height: ALTO }}>
         <Map
           provider={(x, y, z, dpr) => urlTile(x, y, z, apiKey, dpr)}
           defaultCenter={inicial.centro}

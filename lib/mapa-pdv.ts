@@ -267,3 +267,46 @@ export function mensajeFallo(fallo: FalloMapa): { titulo: string; detalle: strin
       }
   }
 }
+
+/**
+ * ¿Hay que mostrar el cartel, y cuál?
+ *
+ * ── POR QUÉ NO HAY UNA SONDA ────────────────────────────────────────────────
+ * La primera versión pedía UN tile aparte al montar y miraba su `onerror`. Dio
+ * un falso positivo en el primer uso real: los tiles del mapa cargaban, los
+ * puntos se veían, y el cartel decía que el proveedor había rechazado el
+ * pedido.
+ *
+ * La causa es de método, no de código: **una sonda prueba una request DISTINTA
+ * de la que hace el mapa**. La sonda pedía `12/1372/2401` fijo y sin `@2x`; el
+ * mapa pide los tiles de la vista, con `@2x`. Cualquier diferencia —un tile que
+ * el proveedor no tiene en ese estilo, un zoom fuera de rango, un corte
+ * puntual en esa sola request— se convierte en un aviso falso sobre un mapa
+ * que anda.
+ *
+ * Y un aviso que aparece cuando no pasa nada es peor que no tener aviso: se
+ * aprende a ignorarlo, y el día que el mapa falle de verdad nadie lo va a leer.
+ * Es el mismo defecto que sacamos del "se reintentará automáticamente" de la
+ * cola offline.
+ *
+ * Ahora se miran **los tiles de verdad**: el componente cuenta cuántos
+ * cargaron y cuántos fallaron, escuchando los eventos de las imágenes que el
+ * mapa ya pide. Sin request extra.
+ *
+ * ── LAS DOS CONDICIONES, Y POR QUÉ HACEN FALTA LAS DOS ──────────────────────
+ * - `cargados === 0`: si UN solo tile cargó, el mapa funciona. Es lo que
+ *   impide el falso positivo: el caso que falló tenía tiles cargando.
+ * - `fallidos >= MINIMO_FALLOS`: un tile suelto que falla es normal —el borde
+ *   del mundo, un corte de un segundo— y no es motivo para un cartel.
+ */
+export const MINIMO_FALLOS = 3
+
+export function decidirFallo(estado: {
+  hayKey: boolean
+  cargados: number
+  fallidos: number
+}): FalloMapa | null {
+  if (!estado.hayKey) return 'sin_key'
+  if (estado.cargados === 0 && estado.fallidos >= MINIMO_FALLOS) return 'tiles_no_cargan'
+  return null
+}
