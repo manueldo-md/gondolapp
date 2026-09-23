@@ -111,7 +111,15 @@ const nextConfig = {
       // La CSP se evalúa contra la URL final, así que permitir solo el primero
       // no alcanza y el error habla de un dominio que no está en ningún lado
       // del código.
-      "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://*.googleusercontent.com https://picsum.photos https://*.picsum.photos",
+      // maps.geoapify.com: los tiles del mapa de la marca. Verificado que NO
+      // redirige a otro dominio, así que alcanza con este (ver la nota de los
+      // redirects más arriba: ya mordió tres veces).
+      //
+      // Si falta, el browser bloquea los tiles y el mapa queda gris. Eso ya
+      // está cubierto: la sonda de mapa-cliente.tsx lo detecta igual que una
+      // key inválida y muestra el cartel — verificado en browser, un <img>
+      // bloqueado dispara onerror.
+      "img-src 'self' blob: data: https://*.supabase.co https://drive.google.com https://*.googleusercontent.com https://picsum.photos https://*.picsum.photos https://maps.geoapify.com",
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",
       "media-src 'self' blob:",

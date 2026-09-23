@@ -207,3 +207,63 @@ export function textoGrupo(g: GrupoMapa): string {
   if (g.sinMedir)  partes.push(`${g.sinMedir} sin medir`)
   return `${g.puntos.length} PDV · ${partes.join(' · ')}`
 }
+
+// ── Los tiles ────────────────────────────────────────────────────────────────
+
+/**
+ * El estilo de Geoapify. `positron` es el más liviano visualmente: gris claro
+ * con poco detalle, que es lo que un mapa de datos necesita — los puntos tienen
+ * que ganarle al fondo, no competir con él.
+ */
+export const ESTILO_TILES = 'positron'
+
+/**
+ * La URL de un tile.
+ *
+ * ── LA KEY ES PÚBLICA Y ESTÁ BIEN QUE LO SEA ────────────────────────────────
+ * Viaja en el `src` de un `<img>`: cualquiera que abra el inspector la ve, y no
+ * hay forma de esconderla sin proxear cada tile por nuestro servidor. Lo que la
+ * protege es la allowlist de dominios del proveedor, no el secreto. Por eso se
+ * llama `NEXT_PUBLIC_GEOAPIFY_KEY`: el prefijo dice la verdad.
+ *
+ * Con `@2x` en pantallas densas — Geoapify lo cobra igual (0,25 créditos) y en
+ * un monitor de escritorio la diferencia se ve.
+ */
+export function urlTile(
+  x: number, y: number, z: number, apiKey: string, dpr?: number,
+): string {
+  const retina = dpr && dpr >= 2 ? '@2x' : ''
+  return `https://maps.geoapify.com/v1/tile/${ESTILO_TILES}/${z}/${x}/${y}${retina}.png?apiKey=${encodeURIComponent(apiKey)}`
+}
+
+/**
+ * Por qué el mapa no se puede dibujar. `null` = se puede.
+ *
+ * ── SON DOS PROBLEMAS DISTINTOS Y SE ARREGLAN EN LUGARES DISTINTOS ──────────
+ * Sin key es un deploy al que le falta una variable. Con key y tiles que no
+ * cargan es la key inválida, el dominio fuera de la allowlist o la cuota
+ * agotada. Un solo mensaje para los dos manda a mirar donde no es.
+ *
+ * Y el tercero, el que motivó todo esto: **ninguno de los dos puede quedar en
+ * un mapa gris sin explicación**. Un mapa gris parece un mapa vacío, y un mapa
+ * vacío responde "no tenés PDV acá", que es una respuesta falsa.
+ */
+export type FalloMapa = 'sin_key' | 'tiles_no_cargan'
+
+export function mensajeFallo(fallo: FalloMapa): { titulo: string; detalle: string } {
+  switch (fallo) {
+    case 'sin_key':
+      return {
+        titulo: 'El mapa no está configurado',
+        detalle: 'Falta la variable NEXT_PUBLIC_GEOAPIFY_KEY en este deploy. ' +
+                 'Los datos de abajo son correctos; lo que no se puede dibujar es el fondo.',
+      }
+    case 'tiles_no_cargan':
+      return {
+        titulo: 'No se pudieron cargar los mapas',
+        detalle: 'El proveedor rechazó el pedido. Suele ser la clave vencida, este dominio ' +
+                 'fuera de la lista permitida, o la cuota del mes agotada. ' +
+                 'Los datos de abajo son correctos.',
+      }
+  }
+}

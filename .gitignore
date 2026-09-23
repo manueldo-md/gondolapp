@@ -51,3 +51,7 @@ next-env.d.ts
 
 # Renders estáticos de scripts/ver-serie-mensual.mts (artefactos, no fuente)
 serie-mensual-*.html
+
+# Artefactos de spikes y sondas (no son fuente)
+spike-mapa.html
+sonda-tiles.html

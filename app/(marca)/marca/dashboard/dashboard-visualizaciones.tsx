@@ -306,7 +306,15 @@ export default function DashboardVisualizaciones({
       {/* Cobertura por ciudad */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900">Cobertura por ciudad</h3>
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="font-semibold text-gray-900">Cobertura por ciudad</h3>
+            {/* El mapa vive en su propia pantalla para que el dashboard siga
+                sin mandar JS. El link va acá porque es donde alguien ya está
+                mirando geografía. */}
+            <a href="/marca/mapa" className="text-xs text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0">
+              Ver en el mapa
+            </a>
+          </div>
           {/* Los dos bloques de abajo se miden en PDV y el dónut de arriba en
               observaciones. Decirlo es lo que evita que parezcan dos números
               del mismo tipo que no coinciden. */}
