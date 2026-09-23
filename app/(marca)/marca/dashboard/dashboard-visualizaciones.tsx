@@ -8,58 +8,29 @@
 import { useState } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown, MapPin } from 'lucide-react'
 import { formatearInstante } from '@/lib/fecha-ar'
+import { textoBaseCobertura, type GrupoCobertura } from '@/lib/panel-marca'
+import { etiquetaTipo } from '@/lib/tipos-comercio'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ZonaMapData = {
-  id: string
-  nombre: string
-  lat: number
-  lng: number
-  pdvRelevados: number
-  conPresencia: number
-  presenciaPct: number
-  fotosRecibidas: number
-}
-
-export type CiudadRow = {
-  id: string
-  nombre: string
-  pdvRelevados: number
-  conPresencia: number
-  sinPresencia: number
-  fotosRecibidas: number
-  ultimaVisita: string | null
-  presenciaPct: number
-}
-
-export type PenetracionData = {
-  nombre: string
-  presente: number
-  noEncontrado: number
-  soloCompetencia: number
-  total: number
-  pct: number
-}
-
-export type TipoComercioData = {
-  tipo: string
-  label: string
-  relevados: number
-  conPresencia: number
-}
-
-export type EvolucionData = {
-  label: string
-  fotos: number
-}
-
 export type DashboardVisualizacionesProps = {
-  zonaMapData: ZonaMapData[]
-  ciudadRows: CiudadRow[]
-  penetracionData: PenetracionData[]
-  tipoComercioData: TipoComercioData[]
-  semanas: EvolucionData[]
+  /**
+   * La cobertura por ciudad y por tipo de comercio, ya agrupada por
+   * `agruparCobertura`. Los dos bloques leen la MISMA estructura porque son la
+   * misma pregunta sobre dos ejes distintos.
+   *
+   * Antes cada uno traía su propia forma —`ZonaMapData`, `CiudadRow`,
+   * `TipoComercioData`— con la presencia calculada en la página a partir de
+   * `fotos.declaracion` y nada más. Por eso, después de arreglar el KPI en la
+   * etapa 3, Suprante leía 64% arriba y 0% en cada ciudad y en cada tipo: la
+   * misma pantalla contradiciéndose a sí misma.
+   *
+   * `ZonaMapData` además declaraba `lat` y `lng` que no leía nadie, y la
+   * página calculaba un centroide por localidad para llenarlos. Se fueron con
+   * el tipo.
+   */
+  ciudades: GrupoCobertura[]
+  tipos: GrupoCobertura[]
   /**
    * La presencia global, ya calculada por `lib/panel-marca`. `null` = la marca
    * no está midiendo presencia, que NO es lo mismo que medir cero.
@@ -96,53 +67,59 @@ function presenciaBarColor(pct: number) {
 
 // ── Cobertura por ciudad (reemplaza mapa Leaflet) ─────────────────────────────
 
-function CoberturaGrid({ zonas }: { zonas: ZonaMapData[] }) {
-  if (zonas.length === 0) {
-    return (
-      <div className="py-10 text-center text-sm text-gray-400">
-        Los puntos de venta aparecerán aquí cuando haya fotos aprobadas con datos de zona.
-      </div>
-    )
+/**
+ * Una tarjeta por grupo. Sirve igual para ciudades y para tipos de comercio:
+ * es la misma pregunta —¿dónde está el producto?— sobre dos ejes.
+ */
+function CoberturaGrid({ grupos, vacio }: { grupos: GrupoCobertura[]; vacio: string }) {
+  if (grupos.length === 0) {
+    return <div className="py-10 text-center text-sm text-gray-400">{vacio}</div>
   }
-
-  const sorted = [...zonas].sort((a, b) => b.pdvRelevados - a.pdvRelevados)
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {sorted.map(z => (
-        <div key={z.id} className="border border-gray-100 rounded-xl p-4 hover:bg-gray-50 transition-colors">
+      {grupos.map(g => (
+        <div key={g.clave} className="border border-gray-100 rounded-xl p-4">
           <div className="flex items-start justify-between gap-2 mb-3">
             <div className="flex items-center gap-2 min-w-0">
               <MapPin size={14} className="text-gray-400 shrink-0 mt-0.5" />
-              <span className="text-sm font-semibold text-gray-900 truncate">{z.nombre}</span>
+              <span className="text-sm font-semibold text-gray-900 truncate">{g.nombre}</span>
             </div>
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${presenciaBadgeClass(z.presenciaPct)}`}>
-              {z.presenciaPct}%
+            {/* null NO es 0%: es "acá no se midió presencia". Pintarlo de rojo
+                como un 0% mandaría a la marca a resolver un problema que no
+                existe, y le escondería el que sí tiene, que es que no se
+                está preguntando. */}
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${
+              g.presenciaPct === null ? 'bg-gray-100 text-gray-500' : presenciaBadgeClass(g.presenciaPct)
+            }`}>
+              {g.presenciaPct === null ? 'sin medir' : `${g.presenciaPct}%`}
             </span>
           </div>
 
-          {/* Barra de presencia */}
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
-            <div
-              className={`h-full rounded-full transition-all ${presenciaBarColor(z.presenciaPct)}`}
-              style={{ width: `${Math.min(z.presenciaPct, 100)}%` }}
-            />
+            {g.presenciaPct !== null && (
+              <div
+                className={`h-full rounded-full ${presenciaBarColor(g.presenciaPct)}`}
+                style={{ width: `${Math.min(g.presenciaPct, 100)}%` }}
+              />
+            )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-2 gap-2 text-center">
             <div>
-              <p className="text-xs text-gray-400">PDV</p>
-              <p className="text-sm font-bold text-gray-900">{z.pdvRelevados}</p>
+              <p className="text-xs text-gray-400">PDV visitados</p>
+              <p className="text-sm font-bold text-gray-900">{g.pdv}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400">Con pres.</p>
-              <p className="text-sm font-bold text-green-700">{z.conPresencia}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Fotos</p>
-              <p className="text-sm font-bold text-gray-600">{z.fotosRecibidas}</p>
+              <p className="text-xs text-gray-400">Con presencia</p>
+              <p className="text-sm font-bold text-green-700">
+                {g.pdvMidieron > 0 ? g.conPresencia : '—'}
+              </p>
             </div>
           </div>
+
+          {/* La base de cálculo, igual que en la serie mensual. */}
+          <p className="text-xs text-gray-400 mt-2.5 text-center">{textoBaseCobertura(g)}</p>
         </div>
       ))}
     </div>
@@ -187,143 +164,14 @@ function PresenciaDonut({ pct, presente, total, periodo }: {
   )
 }
 
-// ── Penetración por campaña — barras horizontales apiladas ────────────────────
-
-function PenetracionBars({ data }: { data: PenetracionData[] }) {
-  if (data.length === 0) {
-    return (
-      <p className="text-sm text-gray-400 text-center py-8">
-        Activá campañas para empezar a relevar la presencia de tus productos en góndola.
-      </p>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-4 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-green-500" />Presente</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-red-400" />No encontrado</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-amber-400" />Solo competencia</span>
-      </div>
-      {data.map(d => {
-        const pP = d.total > 0 ? (d.presente        / d.total) * 100 : 0
-        const pN = d.total > 0 ? (d.noEncontrado    / d.total) * 100 : 0
-        const pS = d.total > 0 ? (d.soloCompetencia / d.total) * 100 : 0
-        return (
-          <div key={d.nombre}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-medium text-gray-800 truncate max-w-[60%]">{d.nombre}</span>
-              <span className="text-xs text-gray-500">
-                {d.total} fotos · <span className="font-semibold text-green-700">{d.pct}%</span>
-              </span>
-            </div>
-            <div className="flex h-5 rounded-md overflow-hidden bg-gray-100">
-              {pP > 0 && <div className="bg-green-500 h-full" style={{ width: `${pP}%` }} title={`Presente: ${d.presente}`} />}
-              {pN > 0 && <div className="bg-red-400  h-full" style={{ width: `${pN}%` }} title={`No encontrado: ${d.noEncontrado}`} />}
-              {pS > 0 && <div className="bg-amber-400 h-full" style={{ width: `${pS}%` }} title={`Solo competencia: ${d.soloCompetencia}`} />}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 // ── Tipo de comercio — barras paralelas CSS ───────────────────────────────────
-
-function TipoComercioChart({ data }: { data: TipoComercioData[] }) {
-  if (data.length === 0 || data.every(d => d.relevados === 0)) {
-    return (
-      <p className="text-sm text-gray-400 text-center py-8">
-        Los datos de tipo de comercio aparecerán cuando haya fotos aprobadas.
-      </p>
-    )
-  }
-
-  const maxVal = Math.max(...data.map(d => d.relevados), 1)
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-4 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-200" />PDV relevados</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-600" />Con presencia</span>
-      </div>
-      {data.map(d => {
-        const wR = (d.relevados    / maxVal) * 100
-        const wP = (d.conPresencia / maxVal) * 100
-        const pct = d.relevados > 0 ? Math.round((d.conPresencia / d.relevados) * 100) : 0
-        return (
-          <div key={d.tipo}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-medium text-gray-800">{d.label}</span>
-              <span className="text-xs text-gray-500">
-                {d.conPresencia}/{d.relevados} PDV · <span className="font-semibold text-indigo-700">{pct}%</span>
-              </span>
-            </div>
-            <div className="space-y-1">
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-200 rounded-full" style={{ width: `${wR}%` }} />
-              </div>
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${wP}%` }} />
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Evolución semanal — mini barras verticales ────────────────────────────────
-
-function EvolucionBars({ data }: { data: EvolucionData[] }) {
-  const total  = data.reduce((s, d) => s + d.fotos, 0)
-  const maxVal = Math.max(...data.map(d => d.fotos), 1)
-
-  if (total === 0) {
-    return (
-      <p className="text-sm text-gray-400 text-center py-8">
-        La evolución temporal aparecerá cuando haya fotos recibidas en tus campañas.
-      </p>
-    )
-  }
-
-  return (
-    <div>
-      <div className="flex items-end gap-1 h-28">
-        {data.map((d, i) => {
-          const h = d.fotos > 0 ? Math.max((d.fotos / maxVal) * 100, 4) : 0
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center group relative">
-              {d.fotos > 0 && (
-                <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  {d.fotos} fotos
-                </div>
-              )}
-              <div className="w-full rounded-t-sm bg-indigo-500" style={{ height: `${h}%` }} />
-            </div>
-          )
-        })}
-      </div>
-      <div className="flex gap-1 mt-1.5">
-        {data.map((d, i) => (
-          <div key={i} className="flex-1 text-center">
-            {i % 3 === 0 && <span className="text-[9px] text-gray-400">{d.label}</span>}
-          </div>
-        ))}
-      </div>
-      <p className="text-xs text-gray-400 mt-2 text-right">{total} fotos · últimas 12 semanas</p>
-    </div>
-  )
-}
 
 // ── Tabla de ciudades ─────────────────────────────────────────────────────────
 
-type SortKey = 'nombre' | 'pdvRelevados' | 'conPresencia' | 'presenciaPct' | 'fotosRecibidas' | 'ultimaVisita'
+type SortKey = 'nombre' | 'pdv' | 'pdvMidieron' | 'conPresencia' | 'presenciaPct' | 'ultimaVisita'
 
-function CiudadTable({ rows }: { rows: CiudadRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>('pdvRelevados')
+function CiudadTable({ rows }: { rows: GrupoCobertura[] }) {
+  const [sortKey, setSortKey] = useState<SortKey>('pdv')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   if (rows.length === 0) {
@@ -356,11 +204,10 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
 
   const cols: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
     { key: 'nombre',         label: 'Ciudad',        align: 'left'  },
-    { key: 'pdvRelevados',   label: 'PDV',           align: 'right' },
-    { key: 'conPresencia',   label: 'Con pres.',     align: 'right' },
-    { key: 'pdvRelevados',   label: 'Sin pres.',     align: 'right' },
+    { key: 'pdv',            label: 'PDV visitados', align: 'right' },
+    { key: 'pdvMidieron',    label: 'Midieron',      align: 'right' },
+    { key: 'conPresencia',   label: 'Con presencia', align: 'right' },
     { key: 'presenciaPct',   label: 'Presencia %',   align: 'right' },
-    { key: 'fotosRecibidas', label: 'Fotos',         align: 'right' },
     { key: 'ultimaVisita',   label: 'Última visita', align: 'right' },
   ]
 
@@ -386,17 +233,28 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
         </thead>
         <tbody className="divide-y divide-gray-50">
           {sorted.map(r => (
-            <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+            <tr key={r.clave} className="hover:bg-gray-50 transition-colors">
               <td className="px-4 py-3 font-medium text-gray-900">{r.nombre}</td>
-              <td className="px-4 py-3 text-right font-semibold text-gray-900">{r.pdvRelevados}</td>
-              <td className="px-4 py-3 text-right text-green-700 font-medium">{r.conPresencia}</td>
-              <td className="px-4 py-3 text-right text-red-600 font-medium">{r.sinPresencia}</td>
-              <td className="px-4 py-3 text-right">
-                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${presenciaBadgeClass(r.presenciaPct)}`}>
-                  {r.presenciaPct}%
-                </span>
+              <td className="px-4 py-3 text-right font-semibold text-gray-900">{r.pdv}</td>
+              {/* La columna que antes no existía y es la que explica el resto:
+                  cuántos de los visitados midieron presencia. Sin ella, un
+                  "0 con presencia" se lee como ausencia del producto cuando
+                  puede ser simplemente que nadie preguntó. */}
+              <td className={`px-4 py-3 text-right ${r.pdvMidieron < r.pdv ? 'text-amber-700 font-medium' : 'text-gray-700'}`}>
+                {r.pdvMidieron}
               </td>
-              <td className="px-4 py-3 text-right text-gray-700">{r.fotosRecibidas}</td>
+              <td className="px-4 py-3 text-right text-green-700 font-medium">
+                {r.pdvMidieron > 0 ? r.conPresencia : '—'}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {r.presenciaPct === null ? (
+                  <span className="text-[11px] text-gray-400">sin medir</span>
+                ) : (
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${presenciaBadgeClass(r.presenciaPct)}`}>
+                    {r.presenciaPct}%
+                  </span>
+                )}
+              </td>
               <td className="px-4 py-3 text-right text-xs text-gray-400">
                 {r.ultimaVisita
                   ? formatearInstante(r.ultimaVisita, { day: '2-digit', month: 'short', year: 'numeric' })
@@ -413,73 +271,68 @@ function CiudadTable({ rows }: { rows: CiudadRow[] }) {
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function DashboardVisualizaciones({
-  zonaMapData,
-  ciudadRows,
-  penetracionData,
-  tipoComercioData,
-  semanas,
+  ciudades,
+  tipos,
   presencia,
 }: DashboardVisualizacionesProps) {
   return (
     <div className="space-y-6">
 
-      {/* Cobertura por ciudad (cards) */}
+      {/* Presencia global */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Presencia global</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Medida por observación</p>
+        </div>
+        <div className="p-5">
+          {presencia === null || presencia.valor === null
+            ? (
+              <p className="text-sm text-gray-400 text-center py-8">
+                Ninguna de tus campañas está midiendo presencia.
+              </p>
+            )
+            : (
+              <PresenciaDonut
+                pct={Math.round(presencia.valor)}
+                presente={presencia.verdaderos}
+                total={presencia.conValor}
+                periodo={presencia.periodo}
+              />
+            )
+          }
+        </div>
+      </div>
+
+      {/* Cobertura por ciudad */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Cobertura por ciudad</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Ordenado por PDV relevados</p>
+          {/* Los dos bloques de abajo se miden en PDV y el dónut de arriba en
+              observaciones. Decirlo es lo que evita que parezcan dos números
+              del mismo tipo que no coinciden. */}
+          <p className="text-xs text-gray-400 mt-0.5">
+            En cuántos puntos de venta está el producto · ordenado por PDV visitados
+          </p>
         </div>
         <div className="p-5">
-          <CoberturaGrid zonas={zonaMapData} />
+          <CoberturaGrid
+            grupos={ciudades}
+            vacio="Las ciudades aparecen acá cuando tus campañas registran misiones."
+          />
         </div>
       </div>
 
-      {/* Presencia global + Penetración */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900">Presencia global</h3>
-          </div>
-          <div className="p-5">
-            {presencia === null || presencia.valor === null
-              // "Sin datos aún" decía lo mismo para una marca que no mide
-              // presencia y para una que mide y da cero. No son lo mismo, y la
-              // segunda es una noticia grave. Ahora el vacío dice qué es.
-              ? (
-                <p className="text-sm text-gray-400 text-center py-8">
-                  Ninguna de tus campañas está midiendo presencia.
-                </p>
-              )
-              : (
-                <PresenciaDonut
-                  pct={Math.round(presencia.valor)}
-                  presente={presencia.verdaderos}
-                  total={presencia.conValor}
-                  periodo={presencia.periodo}
-                />
-              )
-            }
-          </div>
-        </div>
-
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900">Penetración por campaña</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Resultado declarado por foto aprobada</p>
-          </div>
-          <div className="p-5">
-            <PenetracionBars data={penetracionData} />
-          </div>
-        </div>
-      </div>
-
-      {/* Tipo de comercio */}
+      {/* Tipo de comercio — el mismo bloque, otro eje */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Presencia por tipo de comercio</h3>
+          <p className="text-xs text-gray-400 mt-0.5">En cuántos puntos de venta está el producto</p>
         </div>
         <div className="p-5">
-          <TipoComercioChart data={tipoComercioData} />
+          <CoberturaGrid
+            grupos={tipos}
+            vacio="Los tipos de comercio aparecen acá cuando tus campañas registran misiones."
+          />
         </div>
       </div>
 
@@ -489,18 +342,7 @@ export default function DashboardVisualizaciones({
           <h3 className="font-semibold text-gray-900">Análisis por ciudad</h3>
           <p className="text-xs text-gray-400 mt-0.5">Hacé clic en los encabezados para ordenar</p>
         </div>
-        <CiudadTable rows={ciudadRows} />
-      </div>
-
-      {/* Evolución semanal */}
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900">Evolución semanal de fotos recibidas</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Últimas 12 semanas</p>
-        </div>
-        <div className="p-5">
-          <EvolucionBars data={semanas} />
-        </div>
+        <CiudadTable rows={ciudades} />
       </div>
 
     </div>

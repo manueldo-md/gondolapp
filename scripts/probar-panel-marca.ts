@@ -34,7 +34,8 @@
 import {
   armarPanel, rangoDeMeses, etiquetaMes, valorDeFila, unidadDe,
   textoBase, formatearValor, huecosDe, resumenDe, textoPeriodo,
-  tramosContinuos, comerciosCompartidos,
+  tramosContinuos, comerciosCompartidos, agruparCobertura, textoBaseCobertura,
+  type FilaPdv,
   type FilaSerie, type FilaVisitas, type PuntoSerie,
 } from '../lib/panel-marca'
 
@@ -627,6 +628,113 @@ console.log('\n▸ Nada de entrada no rompe nada')
     (() => { const q = armarPanel({ series: [], visitas: [{ mes: '2026-04', pdv_visitados: 8, misiones: 8 }] })
              return { vacio: q.vacio, meses: q.meses } })(),
     { vacio: true, meses: ['2026-04'] })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▸ COBERTURA — UN PDV QUE NO MIDIÓ NO ES UN PDV SIN PRESENCIA')
+// Es el bug de la etapa 6, y es el mismo de la etapa 3 un nivel más abajo:
+// "Cobertura por ciudad" y "Presencia por tipo" contaban solo
+// fotos.declaracion, así que después de arreglar el KPI, Suprante leía 64%
+// arriba y 0% en cada ciudad. La misma pantalla contradiciéndose.
+//
+// Un 0% dice "el producto no está". "Sin medir" dice "no preguntamos". La
+// marca actúa distinto en cada caso, y el primero la manda a resolver un
+// problema que no sabemos si existe.
+{
+  const pdv = (p: Partial<FilaPdv>): FilaPdv => ({
+    comercio_id: Math.random().toString(36).slice(2),
+    comercio_nombre: 'Comercio', comercio_tipo: 'kiosco',
+    localidad_id: 1, localidad_nombre: 'Concordia',
+    misiones: 1, con_valor: 1, verdaderos: 0, ultima_medicion: null, ...p,
+  })
+
+  const ciudades = agruparCobertura([
+    pdv({ localidad_id: 1, localidad_nombre: 'Concordia', con_valor: 1, verdaderos: 1 }),
+    pdv({ localidad_id: 1, localidad_nombre: 'Concordia', con_valor: 1, verdaderos: 0 }),
+    // Visitado y sin medir: cuenta como PDV, NO como ausencia.
+    pdv({ localidad_id: 1, localidad_nombre: 'Concordia', con_valor: 0, verdaderos: 0 }),
+    pdv({ localidad_id: 2, localidad_nombre: 'Colón', con_valor: 0, verdaderos: 0 }),
+  ], 'localidad')
+
+  const concordia = ciudades.find(c => c.nombre === 'Concordia')!
+  const colon     = ciudades.find(c => c.nombre === 'Colón')!
+
+  caso('Concordia: 3 PDV visitados, 2 midieron, 1 con presencia',
+    { pdv: concordia.pdv, midieron: concordia.pdvMidieron, con: concordia.conPresencia },
+    { pdv: 3, midieron: 2, con: 1 })
+  caso('el % se calcula sobre los que MIDIERON, no sobre los visitados',
+    concordia.presenciaPct, 50)
+  caso('CONTROL — sobre los visitados habría dado 33%',
+    Math.round((concordia.conPresencia / concordia.pdv) * 100), 33)
+  caso('y el texto dice la brecha',
+    textoBaseCobertura(concordia), 'sobre 2 de 3 PDV visitados')
+
+  caso('LO QUE IMPORTA: una ciudad sin medir da null, NO 0',
+    colon.presenciaPct, null)
+  caso('y su texto no promete un porcentaje',
+    textoBaseCobertura(colon), '1 PDV visitados · presencia sin medir')
+}
+
+console.log('\n▸ Un PDV cuenta una vez, lo visiten las veces que lo visiten')
+// La unidad del bloque de cobertura es el PDV y no la observación: contar
+// observaciones le daría a un comercio visitado tres veces el peso de tres.
+{
+  const pdv = (con: number, ver: number, mis: number): FilaPdv => ({
+    comercio_id: Math.random().toString(36).slice(2),
+    comercio_nombre: 'C', comercio_tipo: 'almacen',
+    localidad_id: 1, localidad_nombre: 'Rosario',
+    misiones: mis, con_valor: con, verdaderos: ver, ultima_medicion: null,
+  })
+  const g = agruparCobertura([pdv(3, 3, 3), pdv(1, 0, 1)], 'localidad')[0]
+  caso('2 PDV, no 4 observaciones', g.pdv, 2)
+  caso('50% y no 75%', g.presenciaPct, 50)
+}
+
+console.log('\n▸ Sin localidad y sin tipo se agrupan aparte, no se esconden')
+// Esconderlos haría que los PDV del panel no sumen los que hay, y el que haga
+// la resta va a desconfiar del resto de los números.
+{
+  const base: FilaPdv = {
+    comercio_id: 'x', comercio_nombre: 'X', comercio_tipo: null,
+    localidad_id: null, localidad_nombre: null,
+    misiones: 1, con_valor: 1, verdaderos: 1, ultima_medicion: null,
+  }
+  const porCiudad = agruparCobertura([base], 'localidad')
+  const porTipo   = agruparCobertura([base], 'tipo')
+  caso('sin localidad tiene su grupo',
+    { clave: porCiudad[0].clave, nombre: porCiudad[0].nombre },
+    { clave: 'sin-localidad', nombre: 'Sin ciudad asignada' })
+  caso('sin tipo también',
+    { clave: porTipo[0].clave, nombre: porTipo[0].nombre },
+    { clave: 'sin-tipo', nombre: 'Sin clasificar' })
+}
+
+console.log('\n▸ La última visita es la más reciente del grupo')
+{
+  const pdv = (id: string, ultima: string | null): FilaPdv => ({
+    comercio_id: id, comercio_nombre: id, comercio_tipo: 'kiosco',
+    localidad_id: 1, localidad_nombre: 'Paraná',
+    misiones: 1, con_valor: 1, verdaderos: 1, ultima_medicion: ultima,
+  })
+  const g = agruparCobertura([
+    pdv('a', '2026-03-11T12:00:00.000Z'),
+    pdv('b', '2026-09-21T12:00:00.000Z'),
+    pdv('c', null),
+  ], 'localidad')[0]
+  caso('gana la más nueva', g.ultimaVisita, '2026-09-21T12:00:00.000Z')
+  caso('y el null no la pisa', g.pdv, 3)
+}
+
+console.log('\n▸ Orden y vacío')
+caso('sin filas, sin grupos', agruparCobertura([], 'localidad'), [])
+{
+  const mk = (loc: number, nom: string): FilaPdv => ({
+    comercio_id: Math.random().toString(36).slice(2), comercio_nombre: 'C',
+    comercio_tipo: 'kiosco', localidad_id: loc, localidad_nombre: nom,
+    misiones: 1, con_valor: 1, verdaderos: 1, ultima_medicion: null,
+  })
+  const g = agruparCobertura([mk(1, 'Chica'), mk(2, 'Grande'), mk(2, 'Grande'), mk(2, 'Grande')], 'localidad')
+  caso('ordena por PDV, de mayor a menor', g.map(x => x.nombre), ['Grande', 'Chica'])
 }
 
 console.log(fallos ? `\n✗ ${fallos} mal\n` : '\n✓ Todo como se esperaba.\n')

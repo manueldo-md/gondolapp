@@ -73,6 +73,20 @@ export interface FilaVisitas {
   misiones: number | string
 }
 
+/** Una fila de `panel_marca_pdv`: un comercio, con su presencia y su geografía. */
+export interface FilaPdv {
+  comercio_id: string
+  comercio_nombre: string | null
+  comercio_tipo: string | null
+  localidad_id: number | null
+  localidad_nombre: string | null
+  misiones: number | string
+  /** Visitas que MIDIERON presencia. Menor o igual que `misiones`. */
+  con_valor: number | string
+  verdaderos: number | string
+  ultima_medicion: string | null
+}
+
 /**
  * Los tipos dicen `number | string` a propósito, y no es pereza: `count(*)`
  * devuelve `bigint` y los promedios `numeric`, y los dos viajan como string por
@@ -106,6 +120,9 @@ export interface DesglosePunto {
   campanaNombre: string
   fuente: string
   observaciones: number
+  /** Denominador y numerador crudos, para poder sumar campañas sin reconstruir. */
+  conValor: number
+  verdaderos: number
   basePdv: number
   /** El valor de ESA campaña, con la misma regla que el del punto. */
   valor: number | null
@@ -291,6 +308,8 @@ export function armarPanel(params: {
       campanaNombre: d.campana_nombre ?? 'Campaña',
       fuente:        d.fuente ?? 'respuestas',
       observaciones: num(d.observaciones),
+      conValor:      num(d.obs_con_valor),
+      verdaderos:    num(d.verdaderos),
       basePdv:       num(d.base_pdv),
       valor:         valorDeFila(d),
     })
@@ -362,6 +381,95 @@ export function armarPanel(params: {
     noMedidas,
     vacio: seriesArmadas.length === 0,
   }
+}
+
+// ── Cobertura: la presencia agrupada por ciudad o por tipo de comercio ───────
+
+export interface GrupoCobertura {
+  clave: string
+  nombre: string
+  /** PDV visitados en el grupo. */
+  pdv: number
+  /** PDV donde se MIDIÓ presencia. Es el denominador de `presenciaPct`. */
+  pdvMidieron: number
+  /** PDV con al menos una observación afirmativa. */
+  conPresencia: number
+  /** `null` cuando nadie midió: no es 0%, es "no sabemos". */
+  presenciaPct: number | null
+  ultimaVisita: string | null
+}
+
+/**
+ * Agrupa los PDV por ciudad o por tipo de comercio.
+ *
+ * ── ACÁ LA UNIDAD ES EL PDV, NO LA OBSERVACIÓN ──────────────────────────────
+ * Y es deliberado, aunque el KPI de arriba use observaciones. Son dos
+ * preguntas distintas:
+ *
+ *   KPI      "de todo lo que medimos, ¿qué proporción dio presente?"
+ *   Ciudad   "¿en cuántos comercios de esta ciudad está el producto?"
+ *
+ * La segunda es sobre la que una marca actúa: manda a alguien a los que no lo
+ * tienen. Contar observaciones ahí le daría más peso a un comercio visitado
+ * tres veces que a tres comercios visitados una. Por eso un PDV cuenta como
+ * "con presencia" si tuvo AL MENOS una observación afirmativa.
+ *
+ * Las dos unidades conviven en la misma pantalla, así que las dos tienen que
+ * decir en qué están medidas. Un número sin unidad al lado de otro con otra
+ * unidad es cómo una pantalla se contradice a sí misma.
+ *
+ * ── EL DENOMINADOR SON LOS QUE MIDIERON, NO LOS VISITADOS ───────────────────
+ * Una ciudad donde se visitaron 15 PDV y solo 8 midieron presencia tiene que
+ * decir 8, no 15. Con 15 abajo, el porcentaje castiga a la ciudad por algo que
+ * no pasó ahí —se relevó mucho y se preguntó poco— y esconde el dato que sí
+ * es accionable, que es esa brecha.
+ */
+export function agruparCobertura(
+  filas: FilaPdv[],
+  por: 'localidad' | 'tipo',
+): GrupoCobertura[] {
+  const grupos = new Map<string, GrupoCobertura>()
+
+  for (const f of filas) {
+    // Un comercio sin localidad o sin tipo no se descarta: se agrupa aparte y
+    // se muestra. Esconderlo haría que los PDV del panel no sumen los que hay,
+    // y el que haga la resta va a desconfiar del resto de los números.
+    const clave = por === 'localidad'
+      ? (f.localidad_id !== null ? String(f.localidad_id) : 'sin-localidad')
+      : (f.comercio_tipo ?? 'sin-tipo')
+    const nombre = por === 'localidad'
+      ? (f.localidad_nombre ?? 'Sin ciudad asignada')
+      : (f.comercio_tipo ?? 'Sin clasificar')
+
+    let g = grupos.get(clave)
+    if (!g) {
+      g = { clave, nombre, pdv: 0, pdvMidieron: 0, conPresencia: 0, presenciaPct: null, ultimaVisita: null }
+      grupos.set(clave, g)
+    }
+
+    g.pdv++
+    if (num(f.con_valor) > 0)  g.pdvMidieron++
+    if (num(f.verdaderos) > 0) g.conPresencia++
+    if (f.ultima_medicion && (!g.ultimaVisita || f.ultima_medicion > g.ultimaVisita)) {
+      g.ultimaVisita = f.ultima_medicion
+    }
+  }
+
+  return [...grupos.values()]
+    .map(g => ({
+      ...g,
+      presenciaPct: g.pdvMidieron > 0
+        ? Math.round((g.conPresencia / g.pdvMidieron) * 100)
+        : null,
+    }))
+    .sort((a, b) => b.pdv - a.pdv || a.nombre.localeCompare(b.nombre))
+}
+
+/** La frase de base de un grupo, con la misma disciplina que `textoBase`. */
+export function textoBaseCobertura(g: GrupoCobertura): string {
+  if (g.pdvMidieron === 0) return `${g.pdv} PDV visitados · presencia sin medir`
+  if (g.pdvMidieron === g.pdv) return `sobre ${g.pdv} PDV`
+  return `sobre ${g.pdvMidieron} de ${g.pdv} PDV visitados`
 }
 
 // ── El número de arriba de todo ──────────────────────────────────────────────

@@ -11,9 +11,10 @@ import type { DashboardVisualizacionesProps } from './dashboard-visualizaciones'
 import { SerieMensual } from './serie-mensual'
 import { formatearInstante } from '@/lib/fecha-ar'
 import {
-  armarPanel, resumenDe, formatearValor, textoPeriodo,
-  type FilaSerie, type FilaVisitas,
+  armarPanel, resumenDe, formatearValor, textoPeriodo, agruparCobertura,
+  type FilaSerie, type FilaVisitas, type FilaPdv,
 } from '@/lib/panel-marca'
+import { etiquetaTipo } from '@/lib/tipos-comercio'
 
 // ── Único dynamic import ─────────────────────────────────────────────────────
 // Sin ssr a propósito, aunque el componente NO usa ninguna librería de browser:
@@ -129,12 +130,13 @@ export default async function DashboardPage({
   // Los dos RPC solo necesitan el marca_id, así que van EN PARALELO con las
   // campañas en vez de sumarse a la cascada de abajo. La cascada geográfica
   // —fotos → comercios → localidades— queda para su propio tramo.
-  const [campanasRes, serieRes, visitasRes, metricasRes] = await Promise.all([
+  const [campanasRes, serieRes, visitasRes, pdvRes, metricasRes] = await Promise.all([
     admin.from('campanas')
       .select('id, nombre, estado, fecha_fin, fecha_inicio')
       .eq('marca_id', marcaId),
     admin.rpc('panel_marca_series',  { _marca_id: marcaId }),
     admin.rpc('panel_marca_visitas', { _marca_id: marcaId }),
+    admin.rpc('panel_marca_pdv',     { _marca_id: marcaId }),
     // El catálogo es lo único que permite NOMBRAR lo que no se está midiendo:
     // los RPC solo devuelven métricas con observaciones, así que sin esto el
     // panel puede decir qué hay pero no qué falta.
@@ -195,175 +197,78 @@ export default async function DashboardPage({
 
   const fotos: FotoRow[] = (fotosRaw ?? []) as FotoRow[]
 
-  // ── 4. Comercios ─────────────────────────────────────────────────────────────
-  const comercioIdsSet = new Set(fotos.map(f => f.comercio_id).filter(Boolean) as string[])
-  const comercioIds    = [...comercioIdsSet]
+  // ── 4. Cobertura por PDV ─────────────────────────────────────────────────────
+  // Reemplaza la cascada fotos → comercios → localidades, que eran tres
+  // consultas encadenadas para terminar contando presencia con una sola fuente.
+  // El RPC devuelve un comercio por fila con su localidad y su tipo pegados, y
+  // agrupar por uno u otro eje es una suma del lado de acá.
+  const pdvs = (pdvRes.data ?? []) as FilaPdv[]
+  if (pdvRes.error) console.error('[dashboard marca] panel_marca_pdv:', pdvRes.error.message)
 
-  let comercios: ComercioRow[] = []
-  if (comercioIds.length > 0) {
-    const { data } = await admin
-      .from('comercios').select('id, tipo, localidad_id, lat, lng').in('id', comercioIds)
-    comercios = (data ?? []) as ComercioRow[]
+  // Presencia por campaña, para la lista de campañas activas. Sale del
+  // DESGLOSE del panel —que ya suma las dos fuentes— y no de contar
+  // declaraciones de foto, que era la fuente única que dejaba a Suprante en 0%.
+  const presenciaPorCampana = new Map<string, { verdaderos: number; conValor: number }>()
+  for (const s of panel.series) {
+    if (s.slug !== 'presencia') continue
+    for (const pt of s.puntos) {
+      for (const d of pt.desglose) {
+        const acc = presenciaPorCampana.get(d.campanaId) ?? { verdaderos: 0, conValor: 0 }
+        // Numerador y denominador CRUDOS, no reconstruidos desde el porcentaje:
+        // un round-trip por un % redondeado pierde exactamente lo que este
+        // panel promete no perder.
+        acc.conValor   += d.conValor
+        acc.verdaderos += d.verdaderos
+        presenciaPorCampana.set(d.campanaId, acc)
+      }
+    }
   }
 
-  // ── 5. Localidades ────────────────────────────────────────────────────────────
-  const localidadIdsSet = new Set(comercios.map(c => c.localidad_id).filter((v): v is number => v !== null))
-  const localidadIds    = [...localidadIdsSet]
+  const ciudades = agruparCobertura(pdvs, 'localidad')
+  const tipos    = agruparCobertura(pdvs, 'tipo').map(g => ({ ...g, nombre: etiquetaTipo(g.clave) }))
 
-  let localidades: LocalidadRow[] = []
-  if (localidadIds.length > 0) {
-    const { data } = await admin
-      .from('localidades').select('id, nombre').in('id', localidadIds)
-    localidades = (data ?? []) as LocalidadRow[]
-  }
-
-  // Centroide lat/lng por localidad (calculado desde coords de comercios)
-  const localidadCentroid = new Map<number, { lat: number; lng: number }>()
-  for (const c of comercios) {
-    if (!c.localidad_id || !c.lat || !c.lng) continue
-    const prev = localidadCentroid.get(c.localidad_id)
-    if (!prev) { localidadCentroid.set(c.localidad_id, { lat: c.lat, lng: c.lng }) }
-    else { prev.lat = (prev.lat + c.lat) / 2; prev.lng = (prev.lng + c.lng) / 2 }
-  }
-
-  // ── 6. Índices ───────────────────────────────────────────────────────────────
-  const comercioMap    = new Map(comercios.map(c => [c.id, c]))
-  const localidadMap   = new Map(localidades.map(l => [l.id, l]))
-
-  // ── 7. KPIs globales ──────────────────────────────────────────────────────────
+  // ── 5. KPIs globales ─────────────────────────────────────────────────────────
   const totalFotos      = fotos.length
-  const totalPdv        = comercioIds.length
-  const totalCiudades   = localidadIds.length
+  const totalPdv        = pdvs.length
+  const totalCiudades   = ciudades.filter(c => c.clave !== 'sin-localidad').length
   const campanasActivas = campanas.filter(c => c.estado === 'activa').length
 
-  // ── La Presencia sale de `panel_marca_series`, no de contar fotos ────────────
-  //
-  // La cuenta que había acá era `producto_presente / TODAS las fotos aprobadas`,
-  // y tenía los dos errores a la vez. Medido en prod el 23/9/2026:
-  //
-  //   · Suprante leía "0%". No tiene ni una foto con `declaracion` —la columna
-  //     está congelada desde 20260407124015— pero sí 11 observaciones de
-  //     presencia tipificadas, 7 afirmativas. El número real es 64%. Un 0% no
-  //     es "no sabemos": le dice a la marca que su producto no está en ningún
-  //     lado, que es lo contrario de lo que pasó.
-  //
-  //   · Georgalos leía "66%", de dividir 90 presentes por 137 fotos, 25 de las
-  //     cuales no declararon nada. Sobre sus observaciones reales son 80%.
-  //
-  // El denominador ahora son OBSERVACIONES con valor usable, no fotos: una
-  // misión, no una imagen. Y `null` cuando no hay ninguna, que se muestra como
-  // "—" y no como cero.
-
-  // ── 8. Stats por localidad ────────────────────────────────────────────────────
-  type LocalidadStat = {
-    pdvSet: Set<string>
-    pdvConPresenciaSet: Set<string>
-    fotosCount: number
-    ultimaFecha: string | null
-  }
-  const localidadStats = new Map<number, LocalidadStat>()
-
-  for (const f of fotos) {
-    if (!f.comercio_id) continue
-    const comercio = comercioMap.get(f.comercio_id)
-    if (!comercio?.localidad_id) continue
-    const lid = comercio.localidad_id
-    if (!localidadStats.has(lid)) localidadStats.set(lid, { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null })
-    const stat = localidadStats.get(lid)!
-    stat.pdvSet.add(f.comercio_id)
-    stat.fotosCount++
-    if (f.declaracion === 'producto_presente') stat.pdvConPresenciaSet.add(f.comercio_id)
-    if (!stat.ultimaFecha || f.created_at > stat.ultimaFecha) stat.ultimaFecha = f.created_at
-  }
-
-  const mkLocalidadStat = (lid: number) => {
-    const localidad = localidadMap.get(lid)!
-    const stat = localidadStats.get(lid) ?? { pdvSet: new Set(), pdvConPresenciaSet: new Set(), fotosCount: 0, ultimaFecha: null }
-    const pdvRelevados = stat.pdvSet.size
-    const conPresencia = stat.pdvConPresenciaSet.size
-    const pct = pdvRelevados > 0 ? Math.round((conPresencia / pdvRelevados) * 100) : 0
-    return { localidad, stat, pdvRelevados, conPresencia, pct }
-  }
-
-  const zonaMapData: DashboardVisualizacionesProps['zonaMapData'] = localidadIds.map(lid => {
-    const { localidad, stat, pdvRelevados, conPresencia, pct } = mkLocalidadStat(lid)
-    const centroid = localidadCentroid.get(lid)
-    return { id: String(lid), nombre: localidad.nombre, lat: centroid?.lat ?? 0, lng: centroid?.lng ?? 0, pdvRelevados, conPresencia, presenciaPct: pct, fotosRecibidas: stat.fotosCount }
-  })
-
-  const ciudadRows: DashboardVisualizacionesProps['ciudadRows'] = localidadIds.map(lid => {
-    const { localidad, stat, pdvRelevados, conPresencia, pct } = mkLocalidadStat(lid)
-    return { id: String(lid), nombre: localidad.nombre, pdvRelevados, conPresencia, sinPresencia: pdvRelevados - conPresencia, fotosRecibidas: stat.fotosCount, ultimaVisita: stat.ultimaFecha, presenciaPct: pct }
-  })
-
-  // ── 9. Penetración por campaña ────────────────────────────────────────────────
-  type CampanaStat = { presente: number; noEncontrado: number; soloCompetencia: number }
-  const campanaStatMap = new Map<string, CampanaStat>()
-
-  for (const f of fotos) {
-    if (!campanaStatMap.has(f.campana_id)) campanaStatMap.set(f.campana_id, { presente: 0, noEncontrado: 0, soloCompetencia: 0 })
-    const cs = campanaStatMap.get(f.campana_id)!
-    if (f.declaracion === 'producto_presente')           cs.presente++
-    else if (f.declaracion === 'producto_no_encontrado') cs.noEncontrado++
-    else if (f.declaracion === 'solo_competencia')       cs.soloCompetencia++
-  }
-
-  const campanaNameMap = new Map(campanas.map(c => [c.id, c.nombre]))
-  const penetracionData: DashboardVisualizacionesProps['penetracionData'] = [...campanaStatMap.entries()]
-    .map(([cid, s]) => {
-      const total = s.presente + s.noEncontrado + s.soloCompetencia
-      return { nombre: campanaNameMap.get(cid) ?? 'Campaña', presente: s.presente, noEncontrado: s.noEncontrado, soloCompetencia: s.soloCompetencia, total, pct: total > 0 ? Math.round((s.presente / total) * 100) : 0 }
-    })
-    .sort((a, b) => b.total - a.total)
-
-  // ── 10. Tipo de comercio ──────────────────────────────────────────────────────
-  const TIPO_LABELS: Record<string, string> = { autoservicio: 'Autoservicio', almacen: 'Almacén', kiosco: 'Kiosco', mayorista: 'Mayorista' }
-  type TipoStat = { pdvSet: Set<string>; pdvConPresenciaSet: Set<string> }
-  const tipoStatsMap = new Map<string, TipoStat>()
-
-  for (const f of fotos) {
-    if (!f.comercio_id) continue
-    const tipo = comercioMap.get(f.comercio_id)?.tipo ?? 'otro'
-    if (!tipoStatsMap.has(tipo)) tipoStatsMap.set(tipo, { pdvSet: new Set(), pdvConPresenciaSet: new Set() })
-    const ts = tipoStatsMap.get(tipo)!
-    ts.pdvSet.add(f.comercio_id)
-    if (f.declaracion === 'producto_presente') ts.pdvConPresenciaSet.add(f.comercio_id)
-  }
-
-  const tipoComercioData: DashboardVisualizacionesProps['tipoComercioData'] = [...tipoStatsMap.entries()]
-    .map(([tipo, ts]) => ({ tipo, label: TIPO_LABELS[tipo] ?? tipo, relevados: ts.pdvSet.size, conPresencia: ts.pdvConPresenciaSet.size }))
-    .sort((a, b) => b.relevados - a.relevados)
-
-  // ── 11. Evolución semanal ─────────────────────────────────────────────────────
-  const ahora  = new Date()
-  const semanas: DashboardVisualizacionesProps['semanas'] = []
-  for (let i = 11; i >= 0; i--) {
-    const start = new Date(ahora); start.setDate(start.getDate() - (i + 1) * 7)
-    const end   = new Date(ahora); end.setDate(end.getDate() - i * 7)
-    const count = fotos.filter(f => { const t = new Date(f.created_at); return t >= start && t < end }).length
-    semanas.push({ label: formatearInstante(start, { day: '2-digit', month: 'short' }), fotos: count })
-  }
-
-  // ── 12. Alertas ───────────────────────────────────────────────────────────────
+  // ── 6. Alertas ───────────────────────────────────────────────────────────────
   type Alerta = { tipo: 'warning' | 'error'; mensaje: string }
   const alertas: Alerta[] = []
+  const ahora  = new Date()
   const hace30 = new Date(ahora); hace30.setDate(hace30.getDate() - 30)
 
-  const ciudadesSinActividad = localidadIds.filter(lid => {
-    const stat = localidadStats.get(lid)
-    return !stat?.ultimaFecha || new Date(stat.ultimaFecha) < hace30
-  })
+  // La alerta decía "sin FOTOS" y medía la última foto. Ahora mide la última
+  // VISITA, que es lo que la marca quiere saber y lo que el RPC ya trae: una
+  // campaña de solo preguntas no produce fotos, y su ciudad aparecía
+  // abandonada aunque se hubiera relevado ayer.
+  const ciudadesSinActividad = ciudades.filter(c =>
+    !c.ultimaVisita || new Date(c.ultimaVisita) < hace30)
   if (ciudadesSinActividad.length > 0) {
-    const nombres = ciudadesSinActividad.map(lid => localidadMap.get(lid)?.nombre ?? 'Ciudad').slice(0, 3).join(', ')
+    const nombres = ciudadesSinActividad.map(c => c.nombre).slice(0, 3).join(', ')
     const extra   = ciudadesSinActividad.length > 3 ? ` y ${ciudadesSinActividad.length - 3} más` : ''
-    alertas.push({ tipo: 'warning', mensaje: `Sin fotos en los últimos 30 días: ${nombres}${extra}.` })
+    alertas.push({ tipo: 'warning', mensaje: `Sin visitas en los últimos 30 días: ${nombres}${extra}.` })
   }
 
-  const ciudadesBajaPres = ciudadRows.filter(c => c.pdvRelevados > 0 && c.presenciaPct < 5)
+  // `presenciaPct === null` NO entra, y es la corrección que más importa: una
+  // ciudad donde no se midió presencia no tiene presencia baja, tiene
+  // presencia DESCONOCIDA. Antes entraba con 0% y mandaba a la marca a
+  // resolver un problema que no sabemos si existe.
+  const ciudadesBajaPres = ciudades.filter(c => c.presenciaPct !== null && c.presenciaPct < 5)
   if (ciudadesBajaPres.length > 0) {
     const nombres = ciudadesBajaPres.map(c => `${c.nombre} (${c.presenciaPct}%)`).slice(0, 3).join(', ')
     const extra   = ciudadesBajaPres.length > 3 ? ` y ${ciudadesBajaPres.length - 3} más` : ''
     alertas.push({ tipo: 'error', mensaje: `Presencia baja (<5%): ${nombres}${extra}.` })
+  }
+
+  // Y la que no existía: visitas que no midieron nada. Es el dato accionable
+  // que el 0% escondía, y dice qué hacer con él.
+  const pdvSinMedir = ciudades.reduce((n, c) => n + (c.pdv - c.pdvMidieron), 0)
+  if (pdvSinMedir > 0) {
+    alertas.push({ tipo: 'warning', mensaje:
+      `${pdvSinMedir} punto${pdvSinMedir === 1 ? '' : 's'} de venta se visitaron sin medir presencia. ` +
+      `Para que cuenten, la campaña necesita una pregunta tipificada con esa métrica.` })
   }
 
   const en7 = new Date(ahora); en7.setDate(en7.getDate() + 7)
@@ -432,11 +337,8 @@ export default async function DashboardPage({
 
       {/* Visualizaciones — todo en un solo chunk cliente */}
       <DashboardVisualizaciones
-        zonaMapData={zonaMapData}
-        ciudadRows={ciudadRows}
-        penetracionData={penetracionData}
-        tipoComercioData={tipoComercioData}
-        semanas={semanas}
+        ciudades={ciudades}
+        tipos={tipos}
         presencia={presencia && {
           valor:      presencia.valor,
           verdaderos: presencia.verdaderos,
@@ -458,9 +360,10 @@ export default async function DashboardPage({
           <div className="divide-y divide-gray-50">
             {campanasActivasList.map(c => {
               const total = fotosPorCampana.get(c.id) ?? 0
-              const stat  = campanaStatMap.get(c.id)
-              const totalDecl = stat ? stat.presente + stat.noEncontrado + stat.soloCompetencia : 0
-              const pct   = totalDecl > 0 && stat ? Math.round((stat.presente / totalDecl) * 100) : null
+              const pres  = presenciaPorCampana.get(c.id)
+              const pct   = pres && pres.conValor > 0
+                ? Math.round((pres.verdaderos / pres.conValor) * 100)
+                : null
               // Cuarta copia de la regla: esta calculaba los días a mano en vez
               // de usar el helper, y también decía "Hoy" para una campaña que
               // había terminado hace meses. Ver lib/campana-vigencia.ts.
