@@ -4677,6 +4677,274 @@ servido no es lo mismo que mirar el código.
   2024 y otra de hoy produce decenas de columnas. Recortar en la lib sería
   esconder datos sin decirlo; la ventana la decide quien dibuja.
 
+---
+
+### 4. El mapa de la marca — ✅ HECHO el 23/9/2026, en tres etapas
+
+**La pregunta que responde:** dónde está cada PDV y cómo le fue. El panel de
+métricas dice *cuánto*; el mapa dice *dónde*, que es lo que convierte un
+porcentaje en una decisión de ruta.
+
+| Etapa | Qué | Migración |
+|---|---|---|
+| 1 y 2 | `lat`/`lng` en el RPC, y el agrupamiento sin librería | `20260927100000` |
+| 3 | La pantalla `/marca/mapa` | — |
+
+Corrida en dev y prod, y en producción desde el 23/9/2026.
+
+---
+
+#### Las decisiones que NO hay que revertir
+
+**1. `pigeon-maps`, no Leaflet.** 11,3 kB de ruta y 98,8 kB de First Load,
+contra los ~150 kB que agrega Leaflet solo. Lo que hay que saber de la
+librería, verificado en su bundle y no en su README:
+
+- `dprs: []` por default — **nunca pide tiles `@2x`**. Importa para la cuota.
+- `maxZoom: 18`.
+- **CERO `onError`**: su `ImgTile` solo pasa `onLoad`. De ahí sale la decisión 9.
+- Dibuja **DOS capas**: los tiles del zoom actual y los `oldTiles` del anterior.
+  Un contador de tiles que no lo sepa cuenta el doble.
+
+**2. Geoapify, y no MapTiler ni Stadia.** El motivo no es técnico y por eso es
+fácil de perder: **el plan gratuito de Geoapify permite uso COMERCIAL**
+—textual de su FAQ—, y los de MapTiler y Stadia **lo prohíben**. GondolApp le
+cobra a marcas y distribuidoras: el mapa es parte de un producto pago.
+
+Cuota al 23/9/2026: 3.000 créditos/día, 1 tile = 0,25 créditos, y los límites
+son *soft* — avisa por mail, no corta ni cobra.
+
+**3. La key de tiles es pública y está bien que lo sea.**
+`NEXT_PUBLIC_GEOAPIFY_KEY` viaja al browser porque el `<img>` del tile la
+necesita. Lo que la protege **no es esconderla, es la allowlist de dominios**
+en el panel de Geoapify. Buscar la forma de ocultarla es trabajo perdido: una
+key de tiles restringida por origen es el modelo de todos los proveedores.
+
+**4. El clustering es nuestro** (`lib/mapa-pdv.ts`), y no una dependencia.
+`proyectar` + `agruparEnMapa(puntos, zoom, separacionPx = 22)`: 22 px es el
+tamaño del marker, o sea que dos PDV más cerca que eso **se taparían**, que es
+la única definición de "hay que agrupar" que no es arbitraria.
+
+> **El invariante:** la suma de los puntos de todos los grupos es SIEMPRE igual
+> a los puntos de entrada. Un mapa que se come un PDV al agrupar miente igual
+> que uno que lo tapa, y en silencio.
+
+**5. El anillo partido en tres.** Un grupo con presencias y ausencias no se
+pinta del color de la mayoría: `anilloGrupo` arma un `conic-gradient` con las
+tres proporciones. **Nada esconde a la minoría** — un grupo de 9 con 1 ausencia
+tiene que dejar ver esa ausencia, que es justo el PDV al que hay que ir. Con el
+pintado por tipo el grupo mixto va neutro y el número dice que hay varios: ahí
+no hay proporción que mostrar, hay categorías.
+
+**6. Dos controles, y el estado es el ÚLTIMO CONOCIDO.** Qué se muestra (todos
+los PDV o los de una campaña) y cómo se pinta (presencia o tipo). El punto NO
+dice "hoy": dice lo último que se midió, y la lista lo fecha. Un mapa que
+promete tiempo real sobre relevamientos mensuales es la forma más cara de
+mentir.
+
+**7. Un `200` no prueba que el contenido sirva.** Descarté CARTO diciendo que no
+pedía key porque el tile devolvía `200`. Era falso: **el PNG venía con una marca
+de agua "API KEY RE…"** impresa encima. El status dice que hubo respuesta, no
+que la respuesta sea la que se pidió. Con imágenes, hay que mirarlas.
+
+**8. El cartel de fallo mide los tiles REALES, con listeners en fase de
+captura.** La primera versión tenía una sonda aparte que pedía un tile fijo
+(`12/1372/2401`, sin `@2x`) y daba **falso positivo**: el cartel aparecía con el
+mapa funcionando perfecto.
+
+> *"Un aviso que aparece siempre enseña a ignorarlo — el mismo defecto del 'se
+> reintentará automáticamente' que sacamos de la cola."*
+
+Y lo que de verdad enseñó no fue el bug sino el test: **mi control corrió contra
+una URL escrita a mano en el HTML de prueba, no contra la del componente.** Daba
+verde sobre una cadena que la app nunca pide. Ahora no hay sonda: se escuchan
+`load` y `error` **en fase de captura** sobre el contenedor —los de `<img>` no
+burbujean— así que lo que se cuenta es exactamente lo que el usuario está
+mirando. `decidirFallo` exige `cargados === 0 && fallidos >= 3`
+(`MINIMO_FALLOS`): un tile suelto que falla no enciende nada.
+
+**9. Un tile que falla esconde su `<img>`, no muestra el ícono roto.** Chrome
+dibuja el ícono roto aunque el `alt` esté vacío, si el `<img>` tiene ancho y
+alto explícitos — que es el caso. El ícono roto se lee como *"la app está
+rota"*, y no es cierto: el resto del mapa y todos los puntos están bien. Se hace
+en el mismo listener que ya cuenta, y **no con un `tileComponent` propio**
+—pigeon lo permite— porque una copia de su `ImgTile` habría que mantenerla
+sincronizada con la de la librería. El `onLoad` restaura la visibilidad: el
+mismo `<img>` se reusa con otro `src`, y sin eso quedaría oculto para siempre.
+
+---
+
+#### LOS HUECOS DEL MAPA QUE NINGÚN DATO EJERCITA
+
+Medido el 23/9/2026 corriendo `agruparEnMapa` sobre los datos reales de las dos
+bases, a z6, z9, z12, z15 y z18, para las tres marcas:
+
+```
+                      PDV   sin coord.   grupos mixtos   ANILLO TRICOLOR
+Georgalos (prod)       58        0         hasta 6             0
+Suprante  (prod)       26        0         hasta 1             0
+ACME      (prod)       22        0              0              0
+(dev da lo mismo en las tres)
+```
+
+**Hueco 1 — el anillo partido en TRES no se dibuja nunca.** Grupos mixtos de dos
+colores sí hay —hasta 6 en Georgalos a z9—, así que `anilloGrupo` corre. Pero
+**ningún grupo, en ningún zoom, en ninguna de las dos bases, tiene presencias y
+ausencias y sin-medir a la vez**: el tercer tramo del gradiente es código que no
+se ejecutó una sola vez. Y es justo la parte que se pidió explícitamente, porque
+es la que impide que la minoría desaparezca.
+
+Lo cubre `scripts/probar-mapa-pdv.ts` (48 controles) y nada más. Si alguien lo
+rompe, **el mapa se va a seguir viendo perfecto**.
+
+**Hueco 2 — el aviso de PDV sin coordenadas.** `sinCoordenadas` es **cero en las
+dos bases**, así que el bloque que lo declara nunca se rinde. Existe porque un
+mapa que omite puntos en silencio miente; hoy no omite ninguno. El día que entre
+un comercio sin `lat`/`lng` —o cuando se arregle `localidad_id`— ese camino se
+estrena en producción sin haber corrido nunca.
+
+**Hueco 3 — los dos estados de `decidirFallo`.** `sin_key` y `tiles_no_cargan`
+no se alcanzan con datos: se alcanzan rompiendo algo. Se probaron a mano
+apuntando la key a basura. Ningún deploy los va a ejercitar.
+
+> Los tres son de la misma familia que los del panel: **cuando ninguna rama de
+> datos reales toca un camino, el test es la única cobertura que tiene**, y el
+> comentario que explica por qué es lo único que evita que alguien lo borre por
+> "redundante".
+
+---
+
+### 5. El renombre y las alertas muertas de la distri (23/9/2026)
+
+Las dos primeras etapas del tramo que comparte el panel entre marca y
+distribuidora. **El caso que lo justifica**, para no perderlo: una distri arma
+una campaña para relevar competencia —"hay marca X", "hay producto X", foto— y
+con el mapa define precios por zona. Sube en Colón donde no hay competencia,
+baja en Concordia donde está a full. **Eso es una decisión de plata, no un
+reporte.**
+
+#### Etapa 0 — el renombre
+
+```
+lib/panel-marca.ts                    →  lib/panel-metricas.ts
+marca/dashboard/serie-mensual.tsx     →  components/panel/serie-mensual.tsx
+marca/dashboard/dashboard-visualiz…   →  components/panel/cobertura.tsx
+marca/mapa/mapa-cliente.tsx           →  components/panel/mapa.tsx
+scripts/probar-panel-marca.ts         →  scripts/probar-panel-metricas.ts
+```
+
+**Lo que impedía montarlos en otra pantalla eran dos rutas escritas a mano:**
+`const RUTA = '/marca/dashboard'` en la serie y `href="/marca/mapa"` en
+cobertura. Ahora entran por prop (`rutaBase`, `rutaMapa`), así que el desglose y
+el link navegan a la pantalla que los monta. `mapa.tsx` no necesitó **un solo
+cambio**: no hardcodeaba nada.
+
+**Cómo se prueba que un renombre fue mecánico:** no alcanza con que compile y
+los tests pasen. Se rindió el bloque de la serie con `ver-serie-mensual.mts`
+contra dev, se stasheó el renombre entero, se rindió desde `HEAD`, y `diff` no
+devolvió nada — **idéntico byte a byte**. Es el control que conviene repetir en
+cualquier mudanza de componentes.
+
+De paso se fue el `declaracion` muerto de `marca/dashboard/page.tsx` —el tipo y
+el select—, que quedó sin lectores en la etapa 6 del panel, y un
+`import type` que no usaba nadie.
+
+#### Etapa 1 — la alerta que afirmaba lo que no medía
+
+Tres superficies —el dashboard de la distri, la pantalla de alertas y el puntito
+rojo del sidebar— tenían **la misma consulta copiada**:
+
+```
+fotos.declaracion = 'producto_no_encontrado'
+  AND estado = 'aprobada' AND created_at >= hace 7 días
+```
+
+Medido el 23/9/2026 en las dos bases:
+
+```
+producto_no_encontrado, total      22   ← TODAS del 11 y 12 de marzo de 2026
+   … en los últimos 7 días          0
+   … en los últimos 90 días         0
+```
+
+El dashboard mostraba **"✅ Sin alertas de stock activas"** en verde y la
+pantalla **"✅ Todo en orden"**. Hace seis meses que ese cero no es una
+medición. **Un tilde verde no es la ausencia de un número: es una afirmación**,
+y era falsa. Mismo defecto que dejaba a Suprante en 0% de presencia.
+
+**Y la fuente no era la que el catálogo declara.** `metricas.fuentes` para
+`quiebre_stock` es `{respuestas}` y nada más: la declaración de la foto **no es
+fuente suya**. (Para `presencia` sí, y por eso el panel de marca la lee.) O sea
+que no se arreglaba moviendo la ventana de 7 días — leía por una puerta que esa
+métrica no tiene.
+
+Cómo quedó, **derivado del catálogo y no escrito a mano**
+(`lib/alertas-distri.ts`):
+
+| Preguntas tipificadas con la métrica | Qué dice |
+|---|---|
+| 0 | **No se está midiendo** + cómo configurarla |
+| ≥ 1 | **Todavía sin leer** + cuántas hay |
+
+Se cuenta sobre las **preguntas** y no sobre las respuestas a propósito: una
+campaña recién publicada, con la pregunta puesta y sin una sola misión, **sí**
+está midiendo. Contar respuestas la mostraría como un hueco de configuración
+cuando es solo una campaña que arranca.
+
+Las dos ramas existen en datos reales: **Biomega en dev tiene 1 pregunta
+tipificada** con `quiebre_stock`; todas las demás distris de dev y de prod
+tienen 0.
+
+**El puntito del sidebar se borró, no se reemplazó.** El layout corre en cada
+navegación del panel, y recalcular ahí los cuatro tipos de alerta sería una
+segunda copia de las reglas de `/distribuidora/alertas`. Cuando la alerta vuelva
+a estar viva, el contador sale de la misma función que usa la pantalla.
+
+**Lo que NO se hizo y por qué:** reconstruir la alerta sobre `mision_respuestas`
+necesita el scope por campaña de la etapa siguiente. Hacerlo antes era escribir
+a mano, en TypeScript, las reglas que ya viven en el SQL de `panel_marca_pdv`
+—las dos fuentes, el grano por (misión, fuente), los estados de misión
+excluidos—. Duplicar eso es duplicar lo que más costó del tramo del panel.
+
+`scripts/probar-alertas-distri.ts`, 21 controles sin base. **Verificado que 4 se
+ponen rojos** poniendo el cartel viejo a propósito. Los controles son sobre el
+TEXTO y no sobre el booleano, porque el daño estaba en la frase: un test que
+solo mirara `midiendo` habría pasado con el cartel de ayer.
+
+#### PENDIENTE — las otras dos alertas que miden fotos en vez de misiones
+
+Va **después** de la etapa del scope, y no junto con ella: las dos necesitan
+saber cuáles son las campañas de la distri, y hoy eso está escrito inline en
+**tres** lugares (la pantalla de alertas, el dashboard y el layout). La etapa
+del scope crea el único lugar que contesta esa pregunta. Hacerlas antes es
+escribir una cuarta copia y después tener que sacarla.
+
+**Gondoleros inactivos.** Mide `fotos.created_at` en 14 días. Una campaña de
+solo preguntas no produce fotos, así que **un gondolero que trabajó ayer aparece
+acusado de inactivo, con nombre y apellido**, en el dashboard de la distri. En
+dev el bloque dice *"11 de 13 sin actividad"* y **2 de esos 11 habían trabajado**
+en la ventana. Es el peor de los tres: no es un número que falta, es una
+acusación falsa sobre una persona.
+
+Pasa a medir `misiones.capturada_at`. **El ancla importa y ya nos mintió una
+vez**: `created_at` es cuándo entró la fila, no cuándo se hizo el trabajo.
+
+**Comercios sin visita.** Mismo cambio de fuente, más un corte. La consulta
+fuente está acotada a 60 días y el filtro pide "más de 30", así que la banda
+visible es 30–60 días: **23 comercios en cada base, cuyo último dato es de hace
+más de 60 días, son invisibles**. Los más abandonados desaparecen justo por
+estar más abandonados. El universo pasa a ser *los comercios con alguna misión
+en campañas de la distri*, y esos 23 entran.
+
+#### PENDIENTE — "comercios que nadie tocó nunca", atado a la asignación
+
+Es una alerta **distinta** de la anterior, y hoy **no se puede hacer**: no
+existe asignación de comercios —quedó afuera de V1—, así que la pregunta no
+tiene universo. La distribuidora no declara en ningún lado cuáles comercios le
+interesan, y sin eso "nadie lo tocó nunca" no se distingue de "no es suyo".
+
+No empezar sin que exista la asignación. Cuando exista, el universo es la lista
+asignada y la alerta es la resta contra las misiones.
 
 ---
 
