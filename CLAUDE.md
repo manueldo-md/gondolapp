@@ -1779,7 +1779,7 @@ UI como desde el SW.
 
 ### TRAMO PROPIO — Background Sync, con la extracción de registrarMision adentro
 
-Anotado el 24/9/2026, después de arreglar el drenaje en primer plano.
+Anotado el 23/9/2026, después de arreglar el drenaje en primer plano.
 
 **Qué queda sin resolver.** El drenaje ahora se dispara al volver la app al
 frente (`visibilitychange` + `focus`, con la condición en estado), lo que cubre
@@ -1805,12 +1805,12 @@ abierta cuando vuelve la conexión.
 **Límites conocidos, para no prometer de más:**
 
 - **Es solo Chromium.** En iOS no existe Background Sync. Para esa parte de la
-  flota el arreglo del 24/9 es todo lo que va a haber.
+  flota el arreglo del 23/9 es todo lo que va a haber.
 - El evento `sync` lo agenda el browser, no nosotros: dispara "cuando vuelva la
   conectividad", con su propio criterio de cuándo.
 - Necesita que el SW haya sido registrado con una pestaña abierta antes.
 
-**Por qué va después y no antes**, que fue la decisión del 24/9: si el drenaje
+**Por qué va después y no antes**, que fue la decisión del 23/9: si el drenaje
 en primer plano no es confiable, un bug en el SW es imposible de aislar — no se
 puede distinguir "Background Sync no disparó" de "disparó y falló" de "no hacía
 falta porque el otro camino ya lo había mandado".
@@ -3372,7 +3372,7 @@ disparaba nunca.
 
 ### Cortar el vínculo cierra el trabajo en curso (18/9/2026)
 
-> **CORRECCIÓN (24/9/2026): este párrafo decía que un gondolero pertenece a UNA
+> **CORRECCIÓN (22/9/2026): este párrafo decía que un gondolero pertenece a UNA
 > distribuidora a la vez y quedó viejo.** El Walled Garden protege los DATOS de
 > cada ejecutor —que A no vea lo que se hizo para B—, no la exclusividad de la
 > persona. Un gondolero o un fixer puede estar vinculado a varias distribuidoras
@@ -4167,7 +4167,7 @@ no garantiza que el objeto exista.
 
 ## Próximos tramos (anotado el 21/9/2026, sin empezar)
 
-### 1. Prefijo `FXR` para los fixers — ✅ HECHO el 23/9/2026
+### 1. Prefijo `FXR` para los fixers — ✅ HECHO el 22/9/2026
 
 Al unificar el generador el 16/9 el prefijo quedó fijo en `GND` para los dos,
 con el argumento de que las tres búsquedas por código filtran por `tipo_actor` y
@@ -4220,7 +4220,7 @@ que migrar a los 14 no los habría visto. La condición es "el prefijo que le
 corresponde a SU `tipo_actor`", y eso es lo que al mismo tiempo la deja
 idempotente.
 
-**Corrido el 23/9/2026 en dev y prod: 6 y 8 asignados, cero fallidos.**
+**Corrido el 22/9/2026 en dev y prod: 6 y 8 asignados, cero fallidos.**
 
 #### La corrección sobre el DROP, que vale más que el tramo
 
@@ -4289,7 +4289,7 @@ Importa más desde este tramo: un fallo silencioso ahí dejaba al usuario con el
 tipo VIEJO y al admin viendo *"Rol cambiado a marca"*; ahora arrastra además el
 código, porque el trigger tampoco llegó a correr.
 
-**`cambiar-rol-btn.tsx` se borró el 23/9/2026.** No lo montaba nadie —
+**`cambiar-rol-btn.tsx` se borró el 22/9/2026.** No lo montaba nadie —
 verificado con grep sobre el repo entero, la única mención era su propia
 declaración— y era una segunda copia del cambio de rol, la que además se tragaba
 el error entero. El que se usa está en `acciones-usuario.tsx`.
@@ -4311,7 +4311,7 @@ y rechazo por prefijo).
 > `COMMIT` cerraría su transacción y escribiría sobre dev. Un reemplazo que no
 > matchea sería un borrado silencioso con daño real.
 
-### 2. Postulación de fixers a campañas — ✅ HECHA el 24/9/2026, en seis etapas
+### 2. Postulación de fixers a campañas — ✅ HECHA el 22/9/2026, en seis etapas
 
 **El problema.** Un fixer no trabaja libre —toca la góndola, arma exhibidores,
 repone producto ajeno, y alguien tiene que responder por quién entra al
@@ -4347,7 +4347,7 @@ vínculo, el botón, y el camino de aprobación del lado del ejecutor.
 - Qué ve el fixer de una campaña a la que todavía no entró. Hoy el detalle le
   muestra todo; una oferta abierta probablemente tenga que mostrar menos.
 
-#### Decidido el 24/9/2026, y el plan en seis etapas
+#### Decidido el 22/9/2026, y el plan en seis etapas
 
 **Se postula AL ACTOR que ejecuta, no a la campaña.** Aprobado, queda vinculado
 de forma duradera y ve esa campaña y las siguientes. Usa las dos tablas que ya
@@ -4479,7 +4479,7 @@ lo usa todo el panel `(repositora)/`. Ese uso está bien y no se toca. La column
 está sobrecargada con dos significados, y solo uno es el problema.
 
 
-### 3. Panel general de la marca — ✅ HECHO el 24/9/2026, en seis etapas
+### 3. Panel general de la marca — ✅ HECHO el 23/9/2026, en seis etapas
 
 **La pregunta que responde:** cómo evolucionan la presencia, los frentes y los
 precios en el tiempo, **sumando todas las campañas de la marca**. Hasta este
@@ -4597,7 +4597,7 @@ la pantalla va a seguir viéndose perfecta.
 
 **Hueco 1 — la línea entre dos meses consecutivos.**
 
-Al 24/9/2026 **ninguna serie tiene dos meses consecutivos**: todas son abril y
+Al 23/9/2026 **ninguna serie tiene dos meses consecutivos**: todas son abril y
 septiembre con el hueco en el medio. El render de prod produce **cero
 `<polyline>`**. O sea que el código que traza la línea —y con él la regla de que
 un hueco NO se cruza— nunca corre.
