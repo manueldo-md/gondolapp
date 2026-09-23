@@ -1,5 +1,22 @@
+// ── La versión del service worker ────────────────────────────────────────────
+// El SW se registra como `/sw.js?v=<esto>` y usa el mismo valor como nombre de
+// su cache. Cambiar el scriptURL es lo que hace que el browser reinstale y que
+// `activate` borre el cache anterior; sin eso, la versión era una constante
+// que alguien tenía que acordarse de bumpear en cada deploy.
+//
+// El SHA del commit y no un timestamp, por dos razones: next.config.js se
+// evalúa más de una vez por build (compilación de server y de cliente) y dos
+// `Date.now()` distintos darían dos versiones distintas en el mismo deploy; y
+// además el SHA es rastreable — la versión del cache dice de qué commit salió.
+// Fuera de Vercel queda 'dev', que es lo correcto en local.
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) || 'dev'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
+  },
+
   // PWA — para que funcione offline en celulares de gondoleros
   // En V2 agregar next-pwa aquí
 

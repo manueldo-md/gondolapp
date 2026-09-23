@@ -1,12 +1,62 @@
-// OJO: este número es lo ÚNICO que hace que el browser reinstale el SW. El
-// archivo se compara byte a byte, así que un deploy que no lo toca deja el SW
-// —y su precache— congelado. Entre el 11/9 y el 15/9 entraron 39 commits sin
-// bumpearlo y ninguno reinstaló nada.
+// ── La versión ya no se bumpea a mano ────────────────────────────────────────
 //
-// Bumpear en CADA deploy que toque código del gondolero. Está anotado en
-// CLAUDE.md como pendiente automatizarlo desde generate-sw-manifest.js, que ya
-// corre en build time y ya escribe en public/.
-const CACHE_NAME = 'gondolapp-v48'
+// Antes era una constante `gondolapp-v<NN>` que alguien tenía que acordarse de
+// subir. Entre el 11/9 y el 15/9 entraron 39 commits sin bumpearla y ninguno
+// reinstaló nada. Y el 23/9 pasó lo caro: el deploy que arreglaba el KPI de
+// Presencia no tocó el número, así que `activate` no borró nada y el HTML
+// viejo del panel de marca se siguió sirviendo desde el cache.
+//
+// Ahora sale del query string con el que `sw-registrar.tsx` registra el SW:
+// `/sw.js?v=<commit>`. Cambiar el scriptURL es lo que el browser mira para
+// decidir que hay un SW nuevo, así que la reinstalación queda atada al deploy
+// y no a la memoria de nadie. `?v=dev` en local, donde no hay commit.
+//
+// El precio, dicho de frente: cada deploy estrena cache y borra el anterior.
+// Los chunks se vuelven a bajar solos en el install —y los viejos, con hash en
+// el nombre, ya no servían para nada— pero las páginas de campaña que el
+// gondolero tenía guardadas vía PRECACHE_URLS se pierden hasta que vuelva a
+// abrir la lista con señal.
+const VERSION = new URL(self.location.href).searchParams.get('v') || 'dev'
+const CACHE_NAME = `gondolapp-${VERSION}`
+
+// ── Qué rutas pasan por el cache de navegación ───────────────────────────────
+// ─── INICIO RUTAS OFFLINE (scripts/probar-sw-rutas.mjs lee entre estas marcas) ───
+//
+// SOLO las del gondolero. Es para lo único que se escribió el stale-while-
+// revalidate y lo único que el precache contempla.
+//
+// ── POR QUÉ ES UNA ALLOWLIST Y NO UNA BLOCKLIST ─────────────────────────────
+// Hasta el 23/9/2026 `navegacionSWR` agarraba TODA navegación del mismo
+// origen, y el comentario que la justificaba decía —con razón— que era seguro
+// "porque esa página es un Client Component puro: el HTML que sirve el
+// servidor es idéntico sin importar los query params". Eso es cierto de
+// /gondolero/captura, para la que se escribió. No lo es de /marca/dashboard,
+// que es un Server Component cuyo HTML SON los números de una marca.
+//
+// El resultado era que el HTML de un panel privado quedaba en el disco del
+// dispositivo, sin sesión, indexado solo por pathname. Hay UNA entrada por
+// ruta: quien abriera ese navegador después —otra cuenta, otra persona— lo
+// recibía servido del cache antes de que la revalidación lo echara. Aplicaba a
+// /marca, /distribuidora, /repositora y /admin.
+//
+// Con una blocklist, cada ruta nueva nace cacheada y hay que acordarse de
+// excluirla. Con una allowlist nace yendo a red, que es el lado seguro: lo
+// peor que pasa es que algo del gondolero no ande offline hasta que se agregue
+// acá, y eso se nota. Lo otro no se nota.
+const RUTAS_OFFLINE = ['/gondolero', '/offline']
+
+/**
+ * `true` si esta ruta puede servirse desde el cache de navegación.
+ *
+ * Compara por SEGMENTO y no con un startsWith pelado: `/offline` no puede
+ * matchear `/offline-report`, ni `/gondolero` matchear `/gondoleros-admin`.
+ * Un prefijo ingenuo mete rutas ajenas al cache por parecerse en las letras,
+ * que es la forma más barata de reabrir el mismo agujero.
+ */
+function necesitaOffline(pathname) {
+  return RUTAS_OFFLINE.some(base => pathname === base || pathname.startsWith(base + '/'))
+}
+// ─── FIN RUTAS OFFLINE ───
 
 // ── Rutas a precachear en install ─────────────────────────────────────────────
 //
@@ -79,9 +129,9 @@ self.addEventListener('install', (event) => {
             }
           } catch { /* chunk individual sin red — continuar con los demás */ }
         }
-        console.log(`[SW v12] Precacheados ${cacheados}/${manifest.chunks.length} chunks de /sw-manifest.json`)
+        console.log(`[SW ${VERSION}] Precacheados ${cacheados}/${manifest.chunks.length} chunks de /sw-manifest.json`)
       } catch (err) {
-        console.warn('[SW v12] /sw-manifest.json no disponible — instalación continúa sin precache de chunks:', err.message)
+        console.warn(`[SW ${VERSION}] /sw-manifest.json no disponible — instalación continúa sin precache de chunks:`, err.message)
       }
 
     })
@@ -91,9 +141,10 @@ self.addEventListener('install', (event) => {
 
 // Activar y limpiar caches viejos
 //
-// Al cambiar CACHE_NAME (v8 → v9, etc.) este handler borra el cache anterior,
-// incluyendo cualquier cache envenenado con redirects. Con clients.claim() el
-// nuevo SW toma control de todas las pestañas abiertas sin esperar recarga.
+// Como CACHE_NAME sale del commit del deploy, cada deploy estrena cache y este
+// handler borra TODOS los anteriores, incluido cualquiera envenenado con
+// redirects o con HTML de un panel privado. Con clients.claim() el SW nuevo toma
+// control de todas las pestañas abiertas sin esperar recarga.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -156,7 +207,12 @@ self.addEventListener('fetch', (event) => {
   // /gondolero/captura. Seguro porque esa página es un Client Component puro:
   // el HTML que sirve el servidor es idéntico sin importar los query params.
   // Los datos de la campaña los carga el cliente desde IndexedDB o Supabase.
+  //
+  // Y solo las rutas del gondolero: ver RUTAS_OFFLINE. Una navegación que no
+  // está en la lista NO pasa por respondWith, así que sigue su curso normal a
+  // la red y nunca se escribe en cache.
   if (event.request.mode === 'navigate') {
+    if (!necesitaOffline(url.pathname)) return
     event.respondWith(navegacionSWR(event.request))
     return
   }
@@ -179,6 +235,12 @@ self.addEventListener('message', async (event) => {
   const cache = await caches.open(CACHE_NAME)
   for (const url of (event.data.urls ?? [])) {
     try {
+      // La misma regla que la navegación, y por el mismo motivo: hoy el único
+      // que manda este mensaje es campanas-sections con URLs del gondolero,
+      // pero la lista de rutas cacheables tiene que vivir en UN solo lugar. Si
+      // algún día una pantalla de empresa manda un postMessage, no alcanza con
+      // que nadie lo haya escrito todavía.
+      if (!necesitaOffline(new URL(url, self.location.origin).pathname)) continue
       const already = await cache.match(url)
       if (already) continue   // ya está en cache — no volver a bajar
       const response = await fetch(url)
