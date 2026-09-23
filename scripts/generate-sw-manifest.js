@@ -79,10 +79,54 @@ if (chunks.size === 0) {
   process.exit(1)
 }
 
+// ── Verificar que el BUILD_ID llegó al bundle ────────────────────────────────
+//
+// `sw-registrar.tsx` registra `/sw.js?v=${process.env.NEXT_PUBLIC_BUILD_ID}` y
+// el SW usa ese valor como nombre de su cache. Si no llega, cae a `'dev'`: un
+// nombre FIJO, con lo cual `activate` deja de purgar el cache anterior en cada
+// deploy y vuelve el bug que el valor vino a cerrar.
+//
+// Ya pasó, el 24/9/2026, y el modo de falla es lo que justifica este chequeo:
+// había DOS bloques `env` en next.config.js y el de arriba quedó descartado por
+// clave duplicada. No hubo warning, ni error de tipos, ni build rojo. La única
+// forma de detectarlo era mirar el artefacto, que es lo que se hace acá.
+//
+// Se busca en los chunks servidos, no en el config: que el config declare el
+// valor no prueba que Next lo haya inlineado.
+const BUILD_ID = require(path.join(process.cwd(), 'next.config.js')).env?.NEXT_PUBLIC_BUILD_ID
+
+if (!BUILD_ID) {
+  console.error('[generate-sw-manifest] ERROR: next.config.js no expone env.NEXT_PUBLIC_BUILD_ID.')
+  console.error('  Revisá que no haya dos bloques `env` en next.config.js: el segundo pisa al primero.')
+  process.exit(1)
+}
+
+const DIR_CHUNKS = path.join(process.cwd(), '.next', 'static', 'chunks')
+const archivosJs = []
+;(function recorrer(dir) {
+  for (const entrada of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entrada.name)
+    if (entrada.isDirectory()) recorrer(p)
+    else if (entrada.name.endsWith('.js')) archivosJs.push(p)
+  }
+})(DIR_CHUNKS)
+
+const inlineado = archivosJs.some(f => fs.readFileSync(f, 'utf8').includes(BUILD_ID))
+
+if (!inlineado) {
+  console.error(`[generate-sw-manifest] ERROR: el BUILD_ID "${BUILD_ID}" no aparece en ningún chunk del cliente.`)
+  console.error(`  Se revisaron ${archivosJs.length} archivos de .next/static/chunks/.`)
+  console.error('  El service worker va a cachear bajo un nombre fijo y los deploys')
+  console.error('  no van a purgar el cache anterior. Revisá el bloque `env` de next.config.js')
+  console.error('  y que sw-registrar.tsx lea process.env.NEXT_PUBLIC_BUILD_ID.')
+  process.exit(1)
+}
+
 // ── Escribir output ───────────────────────────────────────────────────────────
 
 fs.writeFileSync(OUTPUT_PATH, JSON.stringify({ chunks: Array.from(chunks) }, null, 2))
 
+console.log(`[generate-sw-manifest] BUILD_ID del service worker: ${BUILD_ID} (verificado en el bundle)`)
 console.log(`[generate-sw-manifest] OK — ${chunks.size} chunks escritos en public/sw-manifest.json`)
 for (const route of OFFLINE_ROUTES) {
   const count = (pages[route] || []).filter(f => typeof f === 'string' && f.endsWith('.js')).length

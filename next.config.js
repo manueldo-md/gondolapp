@@ -8,15 +8,45 @@
 // evalúa más de una vez por build (compilación de server y de cliente) y dos
 // `Date.now()` distintos darían dos versiones distintas en el mismo deploy; y
 // además el SHA es rastreable — la versión del cache dice de qué commit salió.
-// Fuera de Vercel queda 'dev', que es lo correcto en local.
-const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) || 'dev'
+//
+// ── DOS FUENTES, Y NINGUNA ES UN DEFAULT SILENCIOSO ─────────────────────────
+// `VERCEL_GIT_COMMIT_SHA` existe en el build de Vercel, pero solo si el
+// proyecto tiene activado "Automatically expose System Environment Variables".
+// Si está apagado, la variable simplemente no está — y caer a un nombre fijo
+// es volver al bug que este valor vino a cerrar, en silencio.
+//
+// Por eso hay un segundo origen: el SHA leído del repo, que en el build de
+// Vercel está clonado. Y si los dos fallan estando en Vercel, el build CORTA:
+// un deploy que no puede versionar su cache es exactamente el problema.
+// `generate-sw-manifest.js` verifica además que el valor haya llegado al
+// bundle, que es lo que acá no se puede comprobar.
+function calcularBuildId() {
+  const deVercel = process.env.VERCEL_GIT_COMMIT_SHA
+  if (deVercel) return deVercel.slice(0, 12)
+
+  try {
+    const sha = require('node:child_process')
+      .execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim()
+    if (/^[0-9a-f]{40}$/.test(sha)) return sha.slice(0, 12)
+  } catch { /* sin git: cae abajo */ }
+
+  if (process.env.VERCEL) {
+    throw new Error(
+      'No se pudo determinar el BUILD_ID del service worker.\n' +
+      '  Ni VERCEL_GIT_COMMIT_SHA ni `git rev-parse HEAD` dieron un SHA.\n' +
+      '  Activá "Automatically expose System Environment Variables" en el\n' +
+      '  proyecto de Vercel. Sin esto el cache del SW queda con nombre fijo y\n' +
+      '  los deploys dejan de purgarlo.'
+    )
+  }
+  return 'dev'
+}
+
+const BUILD_ID = calcularBuildId()
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  env: {
-    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
-  },
-
   // PWA — para que funcione offline en celulares de gondoleros
   // En V2 agregar next-pwa aquí
 
@@ -115,9 +145,17 @@ const nextConfig = {
   },
 
   // Variables de entorno públicas
+  // ── UN SOLO `env`, Y NO ES UN DETALLE DE ESTILO ────────────────────────────
+  // El 24/9/2026 se agregó un segundo bloque `env` arriba, con
+  // NEXT_PUBLIC_BUILD_ID adentro. Son dos claves iguales en el mismo objeto
+  // literal: gana la última, JS no avisa, el build pasa en verde y la variable
+  // nunca existió. El síntoma fue un cache llamado `gondolapp-dev` en
+  // producción, o sea el nombre fijo que este valor venía a eliminar.
+  // Si hace falta exponer algo nuevo, va ACÁ.
   env: {
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || 'GondolApp',
     NEXT_PUBLIC_GPS_RADIO_METROS: process.env.NEXT_PUBLIC_GPS_RADIO_METROS || '50',
+    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
   },
 }
 
