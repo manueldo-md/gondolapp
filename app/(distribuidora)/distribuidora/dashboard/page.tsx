@@ -13,6 +13,7 @@ import { getConfig } from '@/lib/config'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { nivelPorMisiones, inicioDelMes } from '@/lib/nivel-mensual'
 import { formatearInstante } from '@/lib/fecha-ar'
+import { contarCamposTipificados, estadoQuiebre, textoQuiebre } from '@/lib/alertas-distri'
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
@@ -77,7 +78,6 @@ export default async function DashboardPage() {
   // ── Fechas de referencia ──────────────────────────────────────────────────
   const ahora        = new Date()
   const mesInicio    = inicioDelMes(ahora)
-  const hace7d       = new Date(Date.now() -  7 * 86400_000)
   const hace14d      = new Date(Date.now() - 14 * 86400_000)
   const hace30d      = new Date(Date.now() - 30 * 86400_000)
   const hace56d      = new Date(Date.now() - 56 * 86400_000)  // 8 semanas
@@ -94,8 +94,7 @@ export default async function DashboardPage() {
     campanasActivasRes,
     comerciosPendientesRes,
     fotos14dRes,
-    quiebreStockRes,
-    alertasIgnoradasRes,
+    campanasDistriRes,
     config,
   ] = await Promise.all([
     // Perfiles de gondoleros
@@ -160,23 +159,10 @@ export default async function DashboardPage() {
       .in('gondolero_id', safeGond)
       .gte('created_at', hace14d.toISOString()),
 
-    // Quiebre de stock: fotos con producto no encontrado, últimos 7 días
-    admin.from('fotos')
-      .select('comercio_id, created_at, comercios(nombre)')
-      .in('gondolero_id', safeGond)
-      .eq('declaracion', 'producto_no_encontrado')
-      .eq('estado', 'aprobada')
-      .gte('created_at', hace7d.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(500),
-
-    // Alertas ignoradas tipo quiebre_stock para esta distri
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (admin as any).from('alertas_ignoradas')
-      .select('referencia_id')
-      .eq('distri_id', distriId)
-      .eq('tipo', 'quiebre_stock')
-      .gt('ignorada_hasta', new Date().toISOString()),
+    // TODAS las campañas de la distri, no solo las activas: la pregunta es si
+    // alguna vez se configuró la medición, y una campaña cerrada que la tenía
+    // igual cuenta como "esto se está midiendo".
+    admin.from('campanas').select('id').eq('distri_id', distriId),
 
     // Umbrales de nivel: la insignia se deriva de las misiones del mes, que esta
     // pantalla ya cuenta por gondolero.
@@ -202,10 +188,7 @@ export default async function DashboardPage() {
   const comerciosPendientes = (comerciosPendientesRes.data ?? []) as any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fotos14d           = (fotos14dRes.data ?? []) as any[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const quiebreStockFotos  = (quiebreStockRes.data  ?? []) as any[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ignoradasIds       = new Set((alertasIgnoradasRes.data ?? []).map((i: any) => i.referencia_id as string))
+  const campanaIdsDistri   = ((campanasDistriRes.data ?? []) as { id: string }[]).map(c => c.id)
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
 
@@ -324,26 +307,12 @@ export default async function DashboardPage() {
   )
   const pendientesValidacion = comerciosPendientes.length
 
-  // Quiebre de stock: agrupar por comercio, excluir ignoradas
-  type QuiebreStock = { comercioId: string; nombre: string; veces: number; ultimaVez: string }
-  const quiebreMap = new Map<string, QuiebreStock>()
-  for (const f of quiebreStockFotos) {
-    if (ignoradasIds.has(f.comercio_id)) continue
-    const entry = quiebreMap.get(f.comercio_id)
-    if (entry) {
-      entry.veces++
-    } else {
-      quiebreMap.set(f.comercio_id, {
-        comercioId: f.comercio_id,
-        nombre:     f.comercios?.nombre ?? 'Comercio',
-        veces:      1,
-        ultimaVez:  f.created_at,
-      })
-    }
-  }
-  const quiebresStock = Array.from(quiebreMap.values())
-    .sort((a, b) => b.veces - a.veces)
-    .slice(0, 5)
+  // Quiebre de stock: no se agrupa nada porque no se mide nada. La consulta
+  // que había leía `fotos.declaracion`, congelada desde abril de 2026, y el
+  // bloque mostraba "✅ Sin alertas de stock activas" — un tilde verde sobre
+  // una fuente que nadie escribe hace seis meses. Ver lib/alertas-distri.ts.
+  const quiebre = estadoQuiebre(
+    await contarCamposTipificados(campanaIdsDistri, 'quiebre_stock', admin))
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -403,49 +372,20 @@ export default async function DashboardPage() {
       <section>
         <SeccionHeader titulo="Alertas" />
 
-        {/* Quiebre de stock — siempre visible */}
+        {/* Quiebre de stock — hoy no se mide; el bloque lo dice */}
         <div className="mb-3">
           <div className="flex items-center gap-2 mb-2">
-            <PackageX size={13} className={quiebresStock.length > 0 ? 'text-red-500' : 'text-gray-300'} />
+            <PackageX size={13} className="text-gray-300" />
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
-              Quiebre de stock · últimos 7 días
+              Quiebre de stock
             </span>
-            {quiebresStock.length > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                {quiebresStock.length}
-              </span>
-            )}
           </div>
-          {quiebresStock.length === 0 ? (
-            <div className="bg-white rounded-xl border border-green-200 px-4 py-3">
-              <p className="text-sm text-green-600 font-medium">✅ Sin alertas de stock activas</p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-red-200 divide-y divide-gray-50">
-              {quiebresStock.map((q: QuiebreStock) => (
-                <Link
-                  key={q.comercioId}
-                  href={`/distribuidora/gondolas?comercio_id=${q.comercioId}&declaracion=producto_no_encontrado`}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-red-50/40 transition-colors"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{q.nombre}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      No encontrado {q.veces} {q.veces === 1 ? 'vez' : 'veces'} · última vez{' '}
-                      {formatearInstante(q.ultimaVez, { day: '2-digit', month: 'short' })}
-                    </p>
-                  </div>
-                  <ChevronRight size={14} className="text-gray-300 shrink-0 ml-3" />
-                </Link>
-              ))}
-              <Link
-                href="/distribuidora/alertas"
-                className="block px-4 py-2.5 text-center text-xs text-gondo-amber-400 font-medium hover:underline"
-              >
-                Ver todas las alertas →
-              </Link>
-            </div>
-          )}
+          {/* El "· últimos 7 días" del título también se fue: prometía una
+              ventana de medición que no existe. */}
+          <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+            <p className="text-sm font-medium text-gray-600">{textoQuiebre(quiebre).titulo}</p>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">{textoQuiebre(quiebre).detalle}</p>
+          </div>
         </div>
 
         {/* Otras alertas operativas */}

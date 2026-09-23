@@ -3,9 +3,10 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { PackageX, Store, Megaphone, UserX } from 'lucide-react'
-import { calcularPorcentaje, tiempoRelativo } from '@/lib/utils'
+import { calcularPorcentaje } from '@/lib/utils'
 import { etiquetaVigencia } from '@/lib/campana-vigencia'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
+import { contarCamposTipificados, estadoQuiebre, textoQuiebre } from '@/lib/alertas-distri'
 import { IgnorarAlertaBoton } from './ignorar-alerta-boton'
 import { AlertasEnPausa } from './alertas-en-pausa'
 import type { AlertaIgnoradaConNombre } from './alertas-en-pausa'
@@ -44,7 +45,6 @@ export default async function AlertasPage() {
   const safeCampanaIds = campanaIds.length > 0 ? campanaIds : [NULL_UUID]
 
   // Date helpers
-  const sieteAtras       = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000)
   const treintaAtras     = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
   const sesentaAtras     = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000)
   const catorceDiasAtras = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
@@ -103,38 +103,11 @@ export default async function AlertasPage() {
   }
 
   // ── TIPO 1: Quiebre de stock ───────────────────────────────────────────────
-  interface Quiebre { comercioId: string; nombre: string; veces: number; ultimaVez: string }
-  let quiebres: Quiebre[] = []
-
-  {
-    const { data: qRaw } = await admin
-      .from('fotos')
-      .select('comercio_id, created_at, comercios(nombre)')
-      .in('campana_id', safeCampanaIds)
-      .eq('declaracion', 'producto_no_encontrado')
-      .eq('estado', 'aprobada')
-      .gte('created_at', sieteAtras.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(500)
-
-    const qMap = new Map<string, Quiebre>()
-    for (const f of qRaw ?? []) {
-      const fo = f as unknown as { comercio_id: string; created_at: string; comercios: { nombre: string } | null }
-      if (esIgnorada('quiebre_stock', fo.comercio_id)) continue
-      const entry = qMap.get(fo.comercio_id)
-      if (entry) {
-        entry.veces++
-      } else {
-        qMap.set(fo.comercio_id, {
-          comercioId: fo.comercio_id,
-          nombre:     fo.comercios?.nombre ?? 'Comercio',
-          veces:      1,
-          ultimaVez:  fo.created_at,
-        })
-      }
-    }
-    quiebres = Array.from(qMap.values()).sort((a, b) => b.veces - a.veces)
-  }
+  // Ya no se cuenta nada: la consulta que había leía `fotos.declaracion`, que
+  // es una fuente que el catálogo NO declara para esta métrica y que además
+  // está congelada desde abril de 2026. Ver lib/alertas-distri.ts.
+  const quiebre = estadoQuiebre(
+    await contarCamposTipificados(campanaIds, 'quiebre_stock', admin))
 
   // ── TIPO 2: Comercios sin visita ──────────────────────────────────────────
   interface ComercioSinVisita { id: string; nombre: string; diasSinVisita: number }
@@ -254,7 +227,10 @@ export default async function AlertasPage() {
     }
   }
 
-  const totalAlertas = quiebres.length + sinVisita.length + campanasRiesgo.length + gondolerosInactivos.length
+  // Quiebre de stock no suma: no está midiendo, y un contador que incluyera
+  // un cero de algo que no se mide vuelve a mezclar "no pasa nada" con "no
+  // estamos mirando".
+  const totalAlertas = sinVisita.length + campanasRiesgo.length + gondolerosInactivos.length
 
   return (
     <div className="space-y-8 max-w-4xl">
@@ -271,34 +247,12 @@ export default async function AlertasPage() {
 
       {/* ── Tipo 1: Quiebre de stock ── */}
       <AlertSection
-        icon={<PackageX size={18} className="text-red-500" />}
+        icon={<PackageX size={18} className="text-gray-400" />}
         titulo="Quiebre de stock"
-        badge={quiebres.length}
+        badge={0}
         badgeColor="bg-red-500"
       >
-        {quiebres.length === 0 ? (
-          <TodoOrden />
-        ) : (
-          quiebres.map(q => (
-            <div key={q.comercioId} className="flex items-center justify-between px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{q.nombre}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Producto no encontrado {q.veces} {q.veces === 1 ? 'vez' : 'veces'} · última vez {tiempoRelativo(q.ultimaVez)}
-                </p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0 ml-3">
-                <Link
-                  href={`/distribuidora/gondolas?comercio_id=${q.comercioId}&declaracion=producto_no_encontrado`}
-                  className="text-xs font-semibold text-gondo-amber-400 hover:underline"
-                >
-                  Ver fotos
-                </Link>
-                <IgnorarAlertaBoton tipo="quiebre_stock" referenciaId={q.comercioId} />
-              </div>
-            </div>
-          ))
-        )}
+        <SinMedir {...textoQuiebre(quiebre)} />
       </AlertSection>
 
       {/* ── Tipo 2: Comercios sin visita ── */}
@@ -448,6 +402,24 @@ function AlertSection({
         {children}
       </div>
     </section>
+  )
+}
+
+/**
+ * El hueco, dicho de frente. Reemplaza al "✅ Todo en orden" en la única
+ * sección que no está midiendo nada: un tilde verde es una AFIRMACIÓN, y acá
+ * no hay nada que afirmar.
+ *
+ * Va en gris y no en rojo a propósito: no es una alerta encendida, es una
+ * alerta que no existe. Pintarla de rojo mandaría a la distribuidora a buscar
+ * un quiebre que nadie midió.
+ */
+function SinMedir({ titulo, detalle }: { titulo: string; detalle: string }) {
+  return (
+    <div className="px-4 py-4">
+      <p className="text-sm font-medium text-gray-600">{titulo}</p>
+      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{detalle}</p>
+    </div>
   )
 }
 

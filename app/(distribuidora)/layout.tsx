@@ -28,7 +28,6 @@ export default async function DistriLayout({
   }
 
   let empresa = 'Mi distribuidora'
-  let hayAlertas = false
   let solicitudesPendientesCount = 0
   let campanasPendientesCount = 0
   let comerciosPendientesCount = 0
@@ -100,24 +99,24 @@ export default async function DistriLayout({
       // ignorar si la columna aún no existe
     }
 
-    if (gondIds.length > 0) {
-      const sieteAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-      const { count } = await admin
-        .from('fotos')
-        .select('*', { count: 'exact', head: true })
-        .in('gondolero_id', gondIds)
-        .eq('declaracion', 'producto_no_encontrado')
-        .eq('estado', 'aprobada')
-        .gte('created_at', sieteAtras)
-      hayAlertas = (count ?? 0) > 0
-    }
+    // ── EL PUNTITO ROJO DE "ALERTAS" SE FUE, Y NO ES UN OLVIDO ──────────────
+    // Lo encendía una consulta a `fotos.declaracion = 'producto_no_encontrado'`
+    // en los últimos 7 días. Esa columna está congelada desde abril de 2026:
+    // las 22 filas con ese valor son del 11 y 12 de marzo, en dev y en prod.
+    // O sea que el punto no se encendió NUNCA desde que existe, y no podía.
+    //
+    // No se reemplaza por otra consulta acá: el layout corre en cada
+    // navegación del panel, y recalcular los cuatro tipos de alerta en cada
+    // una sería copiar las reglas de `/distribuidora/alertas` a un segundo
+    // lugar — que es como se separaron en este proyecto todas las reglas que
+    // después hubo que unificar. Cuando la alerta vuelva a estar viva, el
+    // contador sale de la misma función que usa la pantalla.
   }
 
   return (
     <DistriShell
       empresa={empresa}
       distriId={profile.distri_id}
-      hayAlertas={hayAlertas}
       solicitudesPendientes={solicitudesPendientesCount}
       campanasPendientes={campanasPendientesCount}
       comerciosPendientes={comerciosPendientesCount}
