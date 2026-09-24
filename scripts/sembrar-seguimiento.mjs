@@ -14,6 +14,22 @@
  * visita puesta el domingo a las 22:00 hora argentina — que en UTC ya es lunes.
  * Ésa es la que falla si alguien se olvida de la zona horaria.
  *
+ * ── OJO: "ATRASADO" NO APARECE DE LUNES A JUEVES ────────────────────────────
+ * El comercio `c2` de abajo está pensado como atrasado, y con frecuencia 2 no
+ * lo es casi nunca. `atrasado` exige `visitas < esperadas`, y
+ * `esperadas = floor(2 × días_completos / 7)` vale CERO hasta el viernes. Con
+ * cero esperadas nadie puede estar atrasado — es el prorrateo funcionando, no
+ * un error de este script.
+ *
+ * Medido el jueves 24/9/2026: este fixture da `al_dia 3 · va_bien 2 ·
+ * atrasado 0`. Para mirar los tres estados juntos —que es lo que el anillo
+ * tricolor del mapa necesita— está `scripts/sembrar-cobertura-mapa.mts`, que
+ * usa frecuencia diaria y deriva las cuentas del día en que se corre.
+ *
+ * Acá no se corrige subiendo la frecuencia a propósito: este fixture existe
+ * para probar el dashboard con una campaña REALISTA de dos visitas semanales,
+ * y cambiarla le sacaría el sentido.
+ *
  *   node scripts/sembrar-seguimiento.mjs --ref <project-ref>
  *   node scripts/sembrar-seguimiento.mjs --ref <project-ref> --limpiar
  *

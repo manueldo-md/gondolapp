@@ -5510,6 +5510,45 @@ entre la última visita y la anterior, y eso es más trabajo que la pantalla.
 
 Va después, con el caso real adelante y no antes.
 
+#### PENDIENTE — el techo de 1.000 filas de PostgREST sobre la cobertura
+
+**Ya existe hoy, no lo trae el mapa.** El dashboard de cobertura se calcula
+sobre TODAS las misiones de la campaña, que `lib/resultados.ts` trae con:
+
+```ts
+.from('misiones').select('…').eq('campana_id', campanaId)
+```
+
+Sin `.range()` ni `count`, así que PostgREST corta en **1.000 filas** y no lo
+dice. **Verificado contra dev el 24/9/2026**, no supuesto: una consulta sin
+`.limit()` sobre una tabla de 8.500 filas devuelve exactamente 1.000. Pasado ese punto la cobertura se calcularía sobre una muestra —siempre las
+mismas 1.000, sin orden declarado— y el número saldría más bajo sin que nada
+falle. **Es el corte silencioso de siempre**, en la pantalla por la que la
+distribuidora cobra.
+
+Al 24/9/2026 no muerde: la campaña más grande de las dos bases tiene **56
+misiones**. Pero la aritmética del caso que el tramo 7b vino a servir lo cruza
+sin esfuerzo: una campaña de seguimiento de seis meses con 200 sucursales y dos
+visitas semanales son **~10.000 misiones**, o sea diez veces el techo.
+
+Y el mapa pintando cobertura (tramo 7a) va a leer las mismas filas, así que
+hereda el techo: no lo agrega, lo hace más visible.
+
+**Lo que hay que decidir cuando se agarre**, y no es solo paginar:
+
+- Si se pagina, la cobertura pasa a necesitar todas las páginas igual —el
+  cálculo es sobre el total—, así que el arreglo real es **agregar en SQL** y no
+  traer las filas. Sería una función como `panel_pdv` pero por semana.
+- Y ahí aparece la tensión del tramo 7a: **la semana es una definición de
+  `lib/fecha-ar.ts`**, y moverla a SQL sería la segunda definición de "la
+  semana". Si se agrega en la base, la semana tiene que entrar como PARÁMETRO
+  calculado en TypeScript, no calcularse adentro con `date_trunc`.
+- Mientras tanto, lo barato y honesto es pedir el `count` exacto y **avisar en
+  pantalla** cuando la campaña pasa el techo, en vez de mostrar un porcentaje
+  sobre una muestra sin decirlo.
+
+Anotado el 24/9/2026, relevando el tramo 7a.
+
 #### PENDIENTE sin urgencia — la cadena como campo de comercios
 
 Anotado el 24/9/2026. **Una campaña de seguimiento sin fecha de fin ya funciona
