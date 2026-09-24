@@ -26,10 +26,13 @@ import { etiquetaTipo } from '@/lib/tipos-comercio'
 import { campanasDe, idsDe } from '@/lib/campanas-de'
 import {
   opcionesDeDistri, alcanceDesde, desvioDeScope, textoDesvio,
-  type OpcionAlcance,
 } from '@/lib/panel-distri'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
 import { SerieMensual } from '@/components/panel/serie-mensual'
+import {
+  SelectorAlcance, SinAlcanceElegido, SinCampanas,
+} from '@/components/panel/selector-alcance'
+import { hrefMapa } from '@/lib/mapa-pdv'
 
 const RUTA = '/distribuidora/panel'
 
@@ -70,40 +73,6 @@ function KpiCard({ label, valor, icon: Icon, color, sub }: {
           <Icon size={18} />
         </div>
       </div>
-    </div>
-  )
-}
-
-/**
- * El selector de alcance. Es un control OBLIGATORIO y sin default: mientras no
- * haya elección no se dibuja un solo número.
- *
- * Son links y no un `<select>` a propósito, igual que el resto de este panel:
- * la selección vive en la URL, la pantalla sigue siendo Server Component y el
- * link se puede mandar por mensaje.
- */
-function SelectorAlcance({ opciones, activo }: { opciones: OpcionAlcance[]; activo: string | null }) {
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest mr-1">
-        Qué mirás
-      </span>
-      {opciones.map(o => (
-        <a
-          key={o.clave}
-          href={`${RUTA}?alcance=${encodeURIComponent(o.clave)}`}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-            o.clave === activo
-              ? 'bg-gondo-amber-400 text-white border-gondo-amber-400'
-              : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-900'
-          }`}
-        >
-          {o.etiqueta}
-          <span className={`ml-2 text-xs ${o.clave === activo ? 'text-white/70' : 'text-gray-400'}`}>
-            {o.campanas}
-          </span>
-        </a>
-      ))}
     </div>
   )
 }
@@ -151,7 +120,9 @@ export default async function PanelDistriPage({
           Presencia, precios y cobertura de las campañas que ejecutás, mes a mes.
         </p>
       </div>
-      {opciones.length > 0 && <SelectorAlcance opciones={opciones} activo={alcance ? (searchParams.alcance ?? null) : null} />}
+      {opciones.length > 0 && (
+        <SelectorAlcance opciones={opciones} activo={alcance ? (searchParams.alcance ?? null) : null} ruta={RUTA} />
+      )}
       {avisoDesvio && (
         <div className="flex items-start gap-3 px-4 py-3 rounded-xl text-sm border bg-blue-50 border-blue-200 text-blue-900">
           <Info size={16} className="mt-0.5 shrink-0" />
@@ -166,13 +137,7 @@ export default async function PanelDistriPage({
     return (
       <div className="space-y-6 max-w-5xl">
         {encabezado}
-        <div className="bg-white rounded-xl border border-gray-200 px-5 py-8 text-center">
-          <p className="text-sm font-medium text-gray-600">Todavía no ejecutás ninguna campaña</p>
-          <p className="text-xs text-gray-500 mt-1">
-            Cuando crees una campaña propia o una marca te asigne la ejecución de la suya,
-            las métricas aparecen acá.
-          </p>
-        </div>
+        <SinCampanas />
       </div>
     )
   }
@@ -185,15 +150,7 @@ export default async function PanelDistriPage({
     return (
       <div className="space-y-6 max-w-5xl">
         {encabezado}
-        <div className="bg-white rounded-xl border border-gray-200 px-5 py-8 text-center">
-          <Layers size={20} className="mx-auto text-gray-300 mb-2" />
-          <p className="text-sm font-medium text-gray-600">Elegí qué querés mirar</p>
-          <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto leading-relaxed">
-            No hay una vista de “todas” a propósito: la presencia de una marca y la de
-            otra miden productos distintos, y el promedio de las dos no describe a
-            ninguna. Son paneles separados porque son decisiones separadas.
-          </p>
-        </div>
+        <SinAlcanceElegido />
       </div>
     )
   }
@@ -278,9 +235,9 @@ export default async function PanelDistriPage({
       <Cobertura
         ciudades={ciudades}
         tipos={tipos}
-        // El mapa de la distribuidora todavía no existe: un link a una pantalla
-        // que no está es peor que no ofrecerlo. Se enciende en su etapa.
-        rutaMapa={null}
+        // Con el alcance puesto: el mapa tiene el mismo control obligatorio, y
+        // mandarlo sin él haría que la distri tenga que volver a elegir.
+        rutaMapa={hrefMapa('/distribuidora/mapa', { alcance: searchParams.alcance })}
         presencia={presencia && {
           valor:      presencia.valor,
           verdaderos: presencia.verdaderos,

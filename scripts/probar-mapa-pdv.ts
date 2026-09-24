@@ -19,7 +19,7 @@
  */
 import {
   proyectar, agruparEnMapa, encuadrar, anilloGrupo, colorPunto, textoGrupo,
-  SEPARACION_PX, COLOR_PRESENCIA, decidirFallo, mensajeFallo, urlTile, MINIMO_FALLOS,
+  SEPARACION_PX, COLOR_PRESENCIA, decidirFallo, mensajeFallo, urlTile, MINIMO_FALLOS, hrefMapa,
   type PuntoMapa,
 } from '../lib/mapa-pdv'
 
@@ -241,6 +241,58 @@ console.log('\n▸ La URL del tile')
   caso('con dpr 1 no', urlTile(1372, 2401, 12, 'K', 1).includes('@2x'), false)
   caso('una key con caracteres raros se escapa',
     urlTile(1, 1, 1, 'a b&c').includes('a%20b%26c'), true)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▸ Los links de los controles conservan lo que la ruta ya trae')
+// El bug que esto previene ya pasó una vez, en `hrefPunto` de la serie: un `?`
+// fijo se comía el `?alcance=` del panel de la distribuidora y la pantalla
+// volvía al estado sin elegir. El mapa de la distri tiene la misma forma y
+// encima dos controles que se combinan, así que acá la superficie es mayor.
+{
+  caso('ruta pelada, un parámetro',
+    hrefMapa('/marca/mapa', { campana: 'c1' }), '/marca/mapa?campana=c1')
+  caso('ruta pelada, dos',
+    hrefMapa('/marca/mapa', { campana: 'c1', pintar: 'tipo' }),
+    '/marca/mapa?campana=c1&pintar=tipo')
+
+  // EL CONTROL QUE IMPORTA.
+  caso('la ruta con alcance NO lo pierde',
+    hrefMapa('/distribuidora/mapa?alcance=m1', { campana: 'c1' }),
+    '/distribuidora/mapa?alcance=m1&campana=c1')
+  caso('ni cambiando el otro control',
+    hrefMapa('/distribuidora/mapa?alcance=m1', { pintar: 'tipo' }),
+    '/distribuidora/mapa?alcance=m1&pintar=tipo')
+  caso('ni con los dos a la vez',
+    hrefMapa('/distribuidora/mapa?alcance=m1', { campana: 'c1', pintar: 'tipo' }),
+    '/distribuidora/mapa?alcance=m1&campana=c1&pintar=tipo')
+
+  console.log('\n▸ Y el valor por default BORRA el parámetro')
+  // "Todos mis PDV" y "Presencia" no son valores: son la ausencia del filtro.
+  // Dejarlos como `?campana=` haría que la URL diga que hay un filtro puesto.
+  caso('null borra',
+    hrefMapa('/distribuidora/mapa?alcance=m1&campana=c1', { campana: null }),
+    '/distribuidora/mapa?alcance=m1')
+  caso('cadena vacía también',
+    hrefMapa('/distribuidora/mapa?alcance=m1&campana=c1', { campana: '' }),
+    '/distribuidora/mapa?alcance=m1')
+  caso('undefined también',
+    hrefMapa('/marca/mapa?pintar=tipo', { pintar: undefined }), '/marca/mapa')
+  caso('borrar el último deja la ruta pelada, sin "?"',
+    hrefMapa('/marca/mapa?campana=c1', { campana: null }), '/marca/mapa')
+
+  console.log('\n▸ Reemplaza, no acumula')
+  caso('un parámetro que ya estaba se pisa',
+    hrefMapa('/marca/mapa?campana=vieja', { campana: 'nueva' }), '/marca/mapa?campana=nueva')
+  caso('y no queda repetido',
+    hrefMapa('/marca/mapa?campana=vieja', { campana: 'nueva' }).split('campana=').length - 1, 1)
+
+  console.log('\n▸ Escapado')
+  caso('un valor con caracteres raros se escapa',
+    hrefMapa('/marca/mapa', { campana: 'a b&c=d' }), '/marca/mapa?campana=a+b%26c%3Dd')
+  caso('y un alcance ya escapado en la base no se rompe',
+    hrefMapa('/distribuidora/mapa?alcance=a%2Bb', { pintar: 'tipo' }),
+    '/distribuidora/mapa?alcance=a%2Bb&pintar=tipo')
 }
 
 console.log(fallos ? `\n✗ ${fallos} mal\n` : '\n✓ Todo como se esperaba.\n')

@@ -310,3 +310,38 @@ export function decidirFallo(estado: {
   if (estado.cargados === 0 && estado.fallidos >= MINIMO_FALLOS) return 'tiles_no_cargan'
   return null
 }
+
+// ── Los links de los controles ───────────────────────────────────────────────
+
+/**
+ * El href de un control del mapa, conservando lo que la ruta base ya traiga.
+ *
+ * ── POR QUÉ NO SE ARMA A MANO EN LA PANTALLA ────────────────────────────────
+ * Porque ya nos mordió una vez. `hrefPunto` de la serie mensual pegaba un `?`
+ * fijo, y el panel de la distribuidora —que monta la serie con
+ * `?alcance=<marca>`— perdía el alcance al tocar un punto: la pantalla volvía
+ * al estado sin elegir y el desglose que se pedía no se dibujaba nunca.
+ *
+ * El mapa de la distri tiene exactamente la misma forma: su ruta base lleva el
+ * alcance, y encima tiene DOS controles que se combinan entre sí. Escribir esa
+ * mezcla a mano en cada pantalla es reproducir el bug con más superficie.
+ *
+ * Un valor `null` o vacío BORRA ese parámetro, que es lo que hace "Todos mis
+ * PDV" y "Presencia" —las opciones por default de cada control— sin dejar
+ * `?campana=` colgando.
+ */
+export function hrefMapa(
+  rutaBase: string,
+  params: Record<string, string | null | undefined>,
+): string {
+  const [ruta, queryBase = ''] = rutaBase.split('?')
+  const q = new URLSearchParams(queryBase)
+
+  for (const [k, v] of Object.entries(params)) {
+    if (v === null || v === undefined || v === '') q.delete(k)
+    else q.set(k, v)
+  }
+
+  const s = q.toString()
+  return s ? `${ruta}?${s}` : ruta
+}
