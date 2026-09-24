@@ -37,7 +37,9 @@
 import { createClient } from '@supabase/supabase-js'
 import pg from 'pg'
 import { credencialesDeRef, nombreDeRef } from './lib/entorno.mjs'
-import { cabeceraSiPertenece, filasDeLaLinea } from '../lib/visitas-comercio'
+import { cabeceraSiPertenece, filasDeLaLinea, alcancesDelComercio } from '../lib/visitas-comercio'
+import { opcionesDeDistri, alcanceDesde } from '../lib/panel-distri'
+import { campanasDe } from '../lib/campanas-de'
 import { armarLinea, parDeComparacion } from '../lib/linea-comercio'
 import { firmarFotosEnLote } from '../lib/storage-fotos'
 
@@ -63,6 +65,21 @@ function caso(nombre: string, real: unknown, esperado: unknown) {
   if (!ok) fallos++
   console.log(`   ${ok ? '✓' : '✗'}  ${nombre}`)
   if (!ok) console.log(`       esperaba ${JSON.stringify(esperado)} y dio ${JSON.stringify(real)}`)
+}
+
+/**
+ * Un caso que necesita el fixture sembrado, y que **en producción no puede
+ * existir**: `sembrar-linea-comercio.mjs` se niega a correr ahí a propósito.
+ *
+ * Sin esto, correr el script contra prod daba 4 en rojo por estructura y no por
+ * un bug. Un control que está rojo siempre es uno que se aprende a ignorar — el
+ * mismo defecto que este proyecto ya sacó del "se reintentará automáticamente"
+ * y del tilde verde de las alertas. Se reporta ⊘ NO VERIFICABLE, que dice
+ * exactamente lo que pasa: acá no hay con qué probarlo.
+ */
+function casoSiHay(hayFixture: boolean, nombre: string, real: unknown, esperado: unknown) {
+  if (!hayFixture) { console.log(`   ⊘  ${nombre} — no verificable sin el caso sembrado`); return }
+  caso(nombre, real, esperado)
 }
 
 /** Las campañas de un alcance, como las arma `campanasDe`. */
@@ -113,8 +130,19 @@ try {
 
     const deLaMarca = await campanasDeAlcance(
       `SELECT id FROM campanas WHERE distri_id = $1 AND marca_id = $2`, [x.distri_id, x.alcance_a])
-    const propias = await campanasDeAlcance(
-      `SELECT id FROM campanas WHERE distri_id = $1 AND marca_id IS NULL`, [x.distri_id])
+    // El OTRO alcance es el que trajo la consulta, que puede ser otra marca y
+    // no las propias. Asumir 'propias' daba un arreglo vacío en producción y
+    // ponía en rojo el CONTROL de que los dos alcances traen algo — el test
+    // estaba mal, no el filtro.
+    const otro = x.alcance_b === 'propias'
+      ? await campanasDeAlcance(`SELECT id FROM campanas WHERE distri_id = $1 AND marca_id IS NULL`, [x.distri_id])
+      : await campanasDeAlcance(`SELECT id FROM campanas WHERE distri_id = $1 AND marca_id = $2`, [x.distri_id, x.alcance_b])
+
+    // El sembrador se niega a correr contra producción, así que los casos que
+    // dependen de él no se pueden verificar ahí. Se detecta por su campaña.
+    const { rows: [{ n: sembradas }] } = await c.query(
+      "SELECT count(*)::int AS n FROM campanas WHERE nombre LIKE '[TEST]%línea de visitas%'")
+    const sembrado = sembradas > 0
 
     // ── 1. El permiso ─────────────────────────────────────────────────────
     console.log('\n▸ 1. El comercio pertenece al alcance, y la cabecera sale de ahí')
@@ -149,25 +177,25 @@ try {
     // ── 4. LO QUE IMPORTA: la evidencia no cruza de alcance ───────────────
     console.log('\n▸ 4. Las visitas son SOLO las del alcance con el que se entró')
     const conMarca = await filasDeLaLinea(x.comercio_id, deLaMarca, admin)
-    const conPropias = await filasDeLaLinea(x.comercio_id, propias, admin)
+    const conOtro = await filasDeLaLinea(x.comercio_id, otro, admin)
 
     const campanasDe = (f: { misiones: { campana_id: string | null }[] }) =>
       [...new Set(f.misiones.map(m => m.campana_id))]
 
     caso('todas las visitas son de campañas de la marca',
       campanasDe(conMarca).every(id => deLaMarca.includes(id as string)), true)
-    caso('y ninguna es de las propias',
-      campanasDe(conMarca).some(id => propias.includes(id as string)), false)
+    caso('y ninguna es del otro alcance',
+      campanasDe(conMarca).some(id => otro.includes(id as string)), false)
     caso('del otro lado, lo mismo',
-      campanasDe(conPropias).every(id => propias.includes(id as string)), true)
+      campanasDe(conOtro).every(id => otro.includes(id as string)), true)
 
     // EL CONTROL. Si los dos alcances dieran lo mismo, todo lo de arriba sería
     // decorativo: no habría filtro que probar.
     caso('CONTROL — los dos alcances traen visitas DISTINTAS',
-      conMarca.misiones.map(m => m.id).some(id => conPropias.misiones.map(n => n.id).includes(id)),
+      conMarca.misiones.map(m => m.id).some(id => conOtro.misiones.map(n => n.id).includes(id)),
       false)
     caso('CONTROL — y los dos traen algo',
-      conMarca.misiones.length > 0 && conPropias.misiones.length > 0, true)
+      conMarca.misiones.length > 0 && conOtro.misiones.length > 0, true)
 
     // Y que las fotos sigan a las misiones, no a otra cosa.
     const misionesDe = new Set(conMarca.misiones.map(m => m.id))
@@ -193,14 +221,15 @@ try {
       [x.comercio_id, deLaMarca])
 
     caso('hay tantas visitas como misiones vivas', l.total, conteo.vivas)
-    caso('y la base tiene alguna descartada, que no entró', conteo.descartadas > 0, true)
+    // Depende del fixture: en prod no hay ninguna descartada en ese comercio.
+    casoSiHay(sembrado, 'y la base tiene alguna descartada, que no entró', conteo.descartadas > 0, true)
     caso('el orden es cronológico',
       l.visitas.map(v => v.instante).join('|'),
       [...l.visitas.map(v => v.instante)].sort().join('|'))
 
     console.log('\n▸ 6. Los casos sembrados llegan enteros hasta acá')
-    caso('hay una visita con DOS fotos', l.visitas.some(v => v.fotos.length === 2), true)
-    caso('hay una visita en revisión sin foto mostrable',
+    casoSiHay(sembrado, 'hay una visita con DOS fotos', l.visitas.some(v => v.fotos.length === 2), true)
+    casoSiHay(sembrado, 'hay una visita en revisión sin foto mostrable',
       l.visitas.some(v => v.enRevision > 0 && v.fotos.length === 0), true)
     caso('las visitas traen respuestas con su pregunta',
       l.visitas.some(v => v.respuestas.length > 0 && v.respuestas[0].pregunta.length > 0), true)
@@ -233,7 +262,84 @@ try {
 
     const firmadas = Object.values(urls).filter(u => u.includes('/object/sign/')).length
     console.log(`   ${firmadas} por Storage · ${deLaLinea.length - firmadas} por el fallback a url`)
-    caso('y alguna sale firmada de Storage de verdad', firmadas > 0, true)
+    // En producción son CERO: las fotos de ese comercio son del seed viejo, sin
+    // objeto en Storage. Es el hueco que el tramo ya tiene documentado, no un bug.
+    casoSiHay(sembrado, 'y alguna sale firmada de Storage de verdad', firmadas > 0, true)
+  }
+
+  // ── 9. EL PADRÓN NO PUEDE PROMETER LO QUE LA PANTALLA NIEGA ──────────────
+  //
+  // `alcancesDelComercio` decide si el padrón ofrece el link y con qué alcance;
+  // `cabeceraSiPertenece` decide si la pantalla deja entrar. **Tienen que
+  // coincidir siempre**: si el padrón dijera que el comercio está en Georgalos y
+  // la pantalla lo negara, el click caería en un 404 — el problema de dos
+  // definiciones que `rutaEvidencia` vino a evitar. Comparten `filaPdv`, y esto
+  // es lo que verifica que sigan compartiéndola.
+  console.log('\n▸ 9. Los alcances que ofrece el padrón son los que la pantalla acepta')
+  {
+    const { rows: distris } = await c.query(
+      `SELECT id, razon_social FROM distribuidoras ORDER BY razon_social`)
+
+    // Una muestra de comercios de los tres casos: sin alcance, con uno, con
+    // varios. Sin los tres, el control no distinguiría nada.
+    const { rows: muestra } = await c.query(`
+      SELECT co.id, co.nombre FROM comercios co ORDER BY co.nombre LIMIT 12`)
+
+    let comparaciones = 0, desacuerdos = 0
+    for (const d of distris) {
+      const opciones = await opcionesDeDistri(d.id, admin)
+      for (const com of muestra) {
+        const ofrecidos = (await alcancesDelComercio(com.id, d.id, admin)).map(o => o.clave)
+        // La otra punta, comprobada una por una con la función de la pantalla.
+        const aceptados: string[] = []
+        for (const o of opciones) {
+          const alc = alcanceDesde(o.clave, d.id, opciones)
+          if (!alc) continue
+          const ids = (await campanasDe(alc, admin)).map(x => x.id)
+          if (await cabeceraSiPertenece(com.id, ids, admin)) aceptados.push(o.clave)
+        }
+        comparaciones++
+        if (JSON.stringify([...ofrecidos].sort()) !== JSON.stringify([...aceptados].sort())) {
+          desacuerdos++
+          console.log(`       ✗ ${d.razon_social} · ${com.nombre}: ofrece ${JSON.stringify(ofrecidos)} y acepta ${JSON.stringify(aceptados)}`)
+        }
+      }
+    }
+    caso(`las dos fuentes coinciden en las ${comparaciones} combinaciones`, desacuerdos, 0)
+  }
+
+  // ── 10. Las tres ramas, medidas con la fuente de verdad ──────────────────
+  // La medición que decidió el diseño se hizo sobre `misiones`, que se le parece
+  // pero no es lo que el código usa. Acá se rehace con `panel_pdv`, que es la
+  // que manda — una vez por alcance y no una por comercio, que sería lo mismo
+  // pero 300 veces más lento.
+  console.log('\n▸ 10. El reparto real del padrón, con panel_pdv')
+  {
+    const { rows: [{ n: padron }] } = await c.query(`SELECT count(*)::int AS n FROM comercios`)
+    const { rows: distris } = await c.query(
+      `SELECT id, razon_social FROM distribuidoras ORDER BY razon_social`)
+
+    for (const d of distris) {
+      const opciones = await opcionesDeDistri(d.id, admin)
+      const porComercio = new Map<string, number>()
+      for (const o of opciones) {
+        const alc = alcanceDesde(o.clave, d.id, opciones)
+        if (!alc) continue
+        const ids = (await campanasDe(alc, admin)).map(x => x.id)
+        if (ids.length === 0) continue
+        const { data } = await admin.rpc('panel_pdv', { _campanas: ids })
+        for (const f of (data ?? []) as { comercio_id: string }[]) {
+          porComercio.set(f.comercio_id, (porComercio.get(f.comercio_id) ?? 0) + 1)
+        }
+      }
+      const enUno = [...porComercio.values()].filter(n => n === 1).length
+      const enVarios = [...porComercio.values()].filter(n => n > 1).length
+      const sinAlcance = padron - porComercio.size
+      if (porComercio.size === 0) continue
+      console.log(`   ${String(d.razon_social).slice(0, 24).padEnd(24)} ` +
+        `padrón ${String(padron).padStart(3)} · sin alcance ${String(sinAlcance).padStart(3)} · ` +
+        `en uno ${String(enUno).padStart(3)} · en varios ${String(enVarios).padStart(3)}`)
+    }
   }
 
   // ── El tamaño del problema, medido ───────────────────────────────────────

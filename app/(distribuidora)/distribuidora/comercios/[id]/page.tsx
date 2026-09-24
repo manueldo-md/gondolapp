@@ -8,6 +8,8 @@ import { formatearInstanteHora } from '@/lib/fecha-ar'
 import type { TipoComercio } from '@/types'
 import { ReportesPanel, type ReporteRow } from './reportes-panel'
 import { firmarFachada } from '@/lib/storage-fotos'
+import { alcancesDelComercio } from '@/lib/visitas-comercio'
+import { entradaDesdeElPadron } from '@/lib/linea-comercio'
 
 /**
  * Detalle de un comercio.
@@ -109,6 +111,17 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
   // valor crudo falla en las filas con URL. Ver lib/storage-fotos.ts.
   const fachadaUrl = await firmarFachada(comercio.foto_fachada_url, admin)
 
+  // ── En qué alcances de ESTA distri está el comercio ───────────────────────
+  // Sale de `panel_pdv`, que es la misma definición que usa la pantalla de
+  // evidencia para dejar entrar. Con otra consulta el padrón podría prometer un
+  // alcance que después da 404.
+  const { data: perfil } = await db
+    .from('profiles').select('distri_id').eq('id', user.id).maybeSingle()
+  const alcances = perfil?.distri_id
+    ? await alcancesDelComercio(comercio.id, perfil.distri_id, admin)
+    : []
+  const entrada = entradaDesdeElPadron(comercio.id, alcances.map(a => a.clave))
+
   const tipo = (comercio.tipo ?? 'otro') as TipoComercio
   const sinCoordenadas = comercio.lat == null || comercio.lng == null
 
@@ -159,24 +172,38 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
             </span>
           </div>
 
-          {/* ── EL LINK A LA EVIDENCIA ──────────────────────────────────────
+          {/* ── LA ENTRADA A LA EVIDENCIA, EN TRES RAMAS ────────────────────
               Esta pantalla es EL PADRÓN: dónde está el comercio, si está
               validado, quién corrigió su ubicación. La otra —`comercio` en
               singular— es la EVIDENCIA: cómo viene su góndola en el tiempo.
-              Son dos preguntas distintas sobre el mismo sustantivo, y desde acá
-              es donde alguien va a querer saltar a la otra.
 
-              Va SIN `?alcance`: esta pantalla no lo tiene, porque el padrón no
-              está acotado a una marca. La de evidencia abre pidiendo que elijan,
-              que es un paso de más pero es la verdad — no hay forma de adivinar
-              desde cuál alcance se está mirando este comercio. */}
-          <Link
-            href={`/distribuidora/comercio/${comercio.id}`}
-            className="inline-flex items-center gap-1.5 mt-3 text-sm text-gondo-amber-400 hover:text-gondo-amber-600 font-medium"
-          >
-            <History size={14} />
-            Ver cómo viene la góndola
-          </Link>
+              La primera versión linkeaba siempre y sin alcance, y **para un
+              tercio del padrón era una promesa imposible**: 35 comercios en dev
+              y 37 en prod no están en ninguna campaña de Biomega, así que
+              eligieran el alcance que eligieran caían en el 404. Las tres ramas
+              y sus números están en `entradaDesdeElPadron`. */}
+          {entrada.estado === 'sin_alcance' ? (
+            // No se esconde el link sin más: el comercio EXISTE en el padrón y
+            // eso es justo lo que hay que decir. "Nadie fue" es accionable; un
+            // hueco donde antes había un link no dice nada.
+            <p className="mt-3 text-sm text-gray-400">
+              Todavía no lo relevaste en ninguna de tus campañas.
+            </p>
+          ) : (
+            <Link
+              href={entrada.href}
+              className="inline-flex items-center gap-1.5 mt-3 text-sm text-gondo-amber-400 hover:text-gondo-amber-600 font-medium"
+            >
+              <History size={14} />
+              Ver cómo viene la góndola
+              {/* Con varios alcances el link no puede llevar ninguno puesto, y
+                  la pantalla va a preguntar. Se avisa acá en vez de que el
+                  click caiga en un selector que nadie esperaba. */}
+              {entrada.estado === 'varios' && (
+                <span className="font-normal text-gray-400">· elegí para qué marca</span>
+              )}
+            </Link>
+          )}
         </div>
       </div>
 

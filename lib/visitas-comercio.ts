@@ -32,6 +32,8 @@
 import type {
   FilaMisionLinea, FilaFotoLinea, FilaRespuestaLinea,
 } from './linea-comercio'
+import { campanasDe } from './campanas-de'
+import { opcionesDeDistri, alcanceDesde, type OpcionAlcance } from './panel-distri'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = any
@@ -68,6 +70,74 @@ export type CabeceraComercio = {
   lng: number | null
 }
 
+type FilaPdv = {
+  comercio_id: string
+  comercio_nombre: string | null
+  comercio_tipo: string | null
+  localidad_nombre: string | null
+  lat: number | null
+  lng: number | null
+}
+
+/**
+ * La fila de `panel_pdv` de ese comercio dentro de ese scope, o `null`.
+ *
+ * **Es la única definición de "este comercio está en este alcance"**, y por eso
+ * está extraída: la usan la cabecera de la pantalla y `alcancesDelComercio`,
+ * que es la que decide si el padrón ofrece el link. Si el padrón dijera que un
+ * comercio está en Georgalos con un criterio y la pantalla lo negara con otro,
+ * el link llevaría puesto un alcance que después da 404 — que es exactamente el
+ * problema de dos definiciones que `rutaEvidencia` vino a evitar.
+ */
+async function filaPdv(
+  comercioId: string,
+  campanaIds: string[],
+  admin: Admin,
+): Promise<FilaPdv | null> {
+  if (!comercioId || campanaIds.length === 0) return null
+
+  const { data, error } = await admin.rpc('panel_pdv', { _campanas: campanaIds })
+  if (error) {
+    console.error('[visitas-comercio] panel_pdv:', error.message)
+    return null
+  }
+  return ((data ?? []) as FilaPdv[]).find(f => f.comercio_id === comercioId) ?? null
+}
+
+/**
+ * Los alcances de una distribuidora en los que ESE comercio tiene PDV.
+ *
+ * Lo usa el padrón, que es el único lugar que no sabe el alcance: con uno solo
+ * el link lo lleva puesto, con varios la pantalla pregunta, y con ninguno no
+ * hay link sino una explicación. Ver `entradaDesdeElPadron`.
+ *
+ * Pregunta una vez por alcance —son 3 en Biomega— y por el MISMO camino que la
+ * pantalla: `campanasDe` + `panel_pdv`. No hay una consulta paralela sobre
+ * `misiones` que pueda opinar distinto.
+ */
+export async function alcancesDelComercio(
+  comercioId: string,
+  distriId: string,
+  admin: Admin,
+): Promise<OpcionAlcance[]> {
+  if (!comercioId || !distriId) return []
+
+  const opciones = await opcionesDeDistri(distriId, admin)
+  if (opciones.length === 0) return []
+
+  const conElComercio = await Promise.all(
+    opciones.map(async o => {
+      const alcance = alcanceDesde(o.clave, distriId, opciones)
+      if (!alcance) return null
+      const campanas = await campanasDe(alcance, admin)
+      const pdv = await filaPdv(comercioId, campanas.map(c => c.id), admin)
+      return pdv ? o : null
+    }),
+  )
+
+  return conElComercio.filter((o): o is OpcionAlcance => o !== null)
+}
+
 /**
  * La cabecera del comercio **si el actor puede verlo**, o `null`.
  *
@@ -91,31 +161,15 @@ export async function cabeceraSiPertenece(
   campanaIds: string[],
   admin: Admin,
 ): Promise<CabeceraComercio | null> {
-  // ── OJO: ESTE GUARD ES REDUNDANTE HOY, Y EL TEST NO LO PRUEBA ─────────────
-  // Verificado sacándolo a propósito el 24/9/2026: `probar-visitas-comercio`
-  // siguió en verde. Con el arreglo vacío, `panel_pdv` evalúa
-  // `c.id = ANY('{}')` y devuelve cero filas, así que la base ya falla cerrada
-  // sola. Se deja porque dice la intención y ahorra el viaje, pero **del verde
-  // de ese control no se puede concluir que el scope vacío esté protegido acá**:
-  // lo está por el SQL. Mismo caso que el filtro por `motivo` de
+  // ── OJO: EL GUARD DE SCOPE VACÍO ES REDUNDANTE HOY, Y EL TEST NO LO PRUEBA ─
+  // Vive en `filaPdv`. Verificado sacándolo a propósito el 24/9/2026:
+  // `probar-visitas-comercio` siguió en verde. Con el arreglo vacío, `panel_pdv`
+  // evalúa `c.id = ANY('{}')` y devuelve cero filas, así que la base ya falla
+  // cerrada sola. Se deja porque dice la intención y ahorra el viaje, pero **del
+  // verde de ese control no se puede concluir que el guard esté protegiendo
+  // nada**: lo protege el SQL. Mismo caso que el filtro por `motivo` de
   // `probar-postulable.ts`.
-  if (!comercioId || campanaIds.length === 0) return null
-
-  const { data, error } = await admin.rpc('panel_pdv', { _campanas: campanaIds })
-  if (error) {
-    console.error('[visitas-comercio] panel_pdv:', error.message)
-    return null
-  }
-
-  type FilaPdv = {
-    comercio_id: string
-    comercio_nombre: string | null
-    comercio_tipo: string | null
-    localidad_nombre: string | null
-    lat: number | null
-    lng: number | null
-  }
-  const pdv = ((data ?? []) as FilaPdv[]).find(f => f.comercio_id === comercioId)
+  const pdv = await filaPdv(comercioId, campanaIds, admin)
   if (!pdv) return null
 
   const { data: extra, error: errDir } = await admin

@@ -18,7 +18,8 @@
  * rompiendo el código a propósito, y lo que se rompió está anotado al final.
  */
 import {
-  armarLinea, parDeComparacion, siguienteSeleccion, rutaEvidencia, instanteDeVisita, TOPE_VISITAS,
+  armarLinea, parDeComparacion, siguienteSeleccion, rutaEvidencia, entradaDesdeElPadron,
+  instanteDeVisita, TOPE_VISITAS,
   type FilaMisionLinea, type FilaFotoLinea, type FilaRespuestaLinea, type Visita,
 } from '../lib/linea-comercio'
 
@@ -376,6 +377,37 @@ console.log('\n▸ El link a la evidencia sale bien, o no sale')
   // que deja de ser un link sin que nada falle.
   caso("CONTROL — 'distribuidora' NO es un panel válido",
     rutaEvidencia({ panel: 'distribuidora', comercioId: 'c1', alcance: 'm7' }), null)
+}
+
+console.log('\n▸ Las tres ramas con que el padrón ofrece —o no— la evidencia')
+{
+  // Un tercio del padrón no está en ningún alcance: 35 de 104 en dev y 37 de 97
+  // en prod. Para ésos el link de antes era una promesa imposible.
+  const sin = entradaDesdeElPadron('c1', [])
+  caso('sin alcance no hay link', sin.href, null)
+  caso('y se declara el estado', sin.estado, 'sin_alcance')
+
+  // El camino principal: 50 de 69 en dev y 51 de 60 en prod.
+  const uno = entradaDesdeElPadron('c1', ['m7'])
+  caso('con uno solo, el link lo lleva puesto',
+    uno.href, '/distribuidora/comercio/c1?alcance=m7')
+  caso('y dice cuál es', uno.estado === 'uno' ? uno.alcance : null, 'm7')
+
+  // La excepción: 19 y 9. Acá el padrón GENUINAMENTE no sabe cuál, así que
+  // mandar sin alcance es lo correcto y no un olvido.
+  const varios = entradaDesdeElPadron('c1', ['m7', 'propias'])
+  caso('con varios, el link va sin alcance', varios.href, '/distribuidora/comercio/c1')
+  caso('y lo declara', varios.estado, 'varios')
+
+  // CONTROL: `rutaEvidencia` sigue negándose a armar el link sin alcance. Las
+  // dos reglas conviven porque son dos situaciones distintas, y si esta se
+  // relajara, cualquier link olvidadizo empezaría a pasar.
+  caso("CONTROL — rutaEvidencia sin alcance sigue dando null",
+    rutaEvidencia({ panel: 'distri', comercioId: 'c1' }), null)
+
+  caso('las propias solas también llevan el link puesto',
+    entradaDesdeElPadron('c1', ['propias']).href,
+    '/distribuidora/comercio/c1?alcance=propias')
 }
 
 console.log('\n▸ Con menos de dos visitas con foto no hay comparación')

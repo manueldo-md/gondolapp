@@ -383,6 +383,18 @@ export function siguienteSeleccion(
  * paneles, y la tabla de cobertura —que los cuatro montan— tiene que poder no
  * linkear en vez de llevar a un 404.
  */
+/**
+ * La ruta de la pantalla de evidencia por panel. **El único lugar que la sabe.**
+ *
+ * `'distri'` → `/distribuidora/`: el panel se llama de una forma y su ruta de
+ * otra. Con el nombre escrito en cada llamador, esa traducción estaría repetida
+ * y equivocarse no rompería nada visible.
+ */
+const RUTA_EVIDENCIA: Record<string, string> = {
+  marca:  '/marca/comercio',
+  distri: '/distribuidora/comercio',
+}
+
 export function rutaEvidencia(p: {
   /**
    * El `Panel` de `components/campanas/modulos/tema.ts`: `'marca'`, `'distri'`,
@@ -401,19 +413,67 @@ export function rutaEvidencia(p: {
   /** Para llegar con la campaña ya elegida, cuando se entra desde una. */
   campanaId?: string | null
 }): string | null {
-  if (!p.comercioId) return null
+  const base = RUTA_EVIDENCIA[p.panel]
+  if (!base || !p.comercioId) return null
 
   if (p.panel === 'marca') {
-    return hrefMapa(`/marca/comercio/${p.comercioId}`, { campana: p.campanaId })
+    return hrefMapa(`${base}/${p.comercioId}`, { campana: p.campanaId })
   }
-  if (p.panel === 'distri') {
-    // Sin alcance la pantalla no puede resolver el scope y muestra el selector.
-    // Mandar ahí desde un link que SÍ sabe cuál es sería hacer elegir dos veces.
-    if (!p.alcance) return null
-    return hrefMapa(`/distribuidora/comercio/${p.comercioId}`,
-      { alcance: p.alcance, campana: p.campanaId })
+  // Sin alcance la pantalla no puede resolver el scope y muestra el selector.
+  // Mandar ahí desde un link que SÍ sabe cuál es sería hacer elegir dos veces.
+  if (!p.alcance) return null
+  return hrefMapa(`${base}/${p.comercioId}`, { alcance: p.alcance, campana: p.campanaId })
+}
+
+/** Las tres ramas con que el padrón puede ofrecer —o no— la evidencia. */
+export type EntradaDesdeElPadron =
+  /** El comercio existe en el padrón y nadie fue nunca por esta distri. */
+  | { estado: 'sin_alcance'; href: null }
+  /** Está en uno solo: el link lo lleva puesto y no hay nada que elegir. */
+  | { estado: 'uno'; href: string; alcance: string }
+  /** Está en varios: la pantalla tiene que preguntar cuál. */
+  | { estado: 'varios'; href: string }
+
+/**
+ * Cómo se entra a la evidencia DESDE EL PADRÓN, que es el único lugar que no
+ * sabe el alcance.
+ *
+ * ── POR QUÉ NO ALCANZABA CON `rutaEvidencia` ────────────────────────────────
+ * Esa función devuelve `null` para distribuidora sin alcance, y hace bien: un
+ * link que sabe cuál es y no lo lleva hace elegir dos veces. Pero el padrón
+ * **genuinamente no sabe** —no está acotado a una marca— y ahí mandar sin
+ * alcance es lo correcto, no un olvido. Son dos reglas distintas para dos
+ * situaciones distintas, así que son dos funciones; la ruta la sigue sabiendo
+ * un solo lugar.
+ *
+ * ── LAS TRES RAMAS, Y POR QUÉ LA PRIMERA NO ES "ESCONDER EL LINK" ───────────
+ * Medido el 24/9/2026: de los 104 comercios del padrón en dev y 97 en prod,
+ * **35 y 37 no están en ningún alcance de Biomega**. Un tercio. Para ésos el
+ * link que había era una promesa imposible: eligieran lo que eligieran caían en
+ * el 404 de `cabeceraSiPertenece`.
+ *
+ * Y no se resuelve sacando el link en silencio. El comercio EXISTE en el padrón
+ * y eso es justamente lo que hay que decir: *"Todavía no lo relevaste en
+ * ninguna de tus campañas"* es accionable —el local está cargado, nadie fue— y
+ * un hueco donde antes había un link no dice nada.
+ *
+ * El reparto de los otros dos: **50 de 69 en dev y 51 de 60 en prod están en un
+ * solo alcance**, o sea el 72% y el 85%. Por eso la rama de uno es el camino
+ * principal y la de varios es la excepción.
+ */
+export function entradaDesdeElPadron(
+  comercioId: string,
+  /** Las claves de alcance donde ese comercio tiene PDV. Ver `alcancesDelComercio`. */
+  alcances: string[],
+): EntradaDesdeElPadron {
+  const base = RUTA_EVIDENCIA.distri
+
+  if (alcances.length === 0) return { estado: 'sin_alcance', href: null }
+  if (alcances.length === 1) {
+    const alcance = alcances[0]
+    return { estado: 'uno', alcance, href: rutaEvidencia({ panel: 'distri', comercioId, alcance })! }
   }
-  return null
+  return { estado: 'varios', href: `${base}/${comercioId}` }
 }
 
 function ordenar(x: Visita, y: Visita): [Visita, Visita] {
