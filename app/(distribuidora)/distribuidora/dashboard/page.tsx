@@ -80,7 +80,6 @@ export default async function DashboardPage() {
   const ahora        = new Date()
   const mesInicio    = inicioDelMes(ahora)
   const hace14d      = new Date(Date.now() - 14 * 86400_000)
-  const hace30d      = new Date(Date.now() - 30 * 86400_000)
   const hace56d      = new Date(Date.now() - 56 * 86400_000)  // 8 semanas
   const en7d         = new Date(Date.now() +  7 * 86400_000)
 
@@ -89,7 +88,7 @@ export default async function DashboardPage() {
     gondoleroProfilesRes,
     fotosEsteMesRes,
     misionesEsteMesRes,
-    misiones90dRes,
+    misiones56dRes,
     misiones8semRes,
     movPuntosRes,
     campanasActivasRes,
@@ -114,7 +113,9 @@ export default async function DashboardPage() {
       .in('gondolero_id', safeGond)
       .gte('created_at', mesInicio.toISOString()),
 
-    // Misiones aprobadas últimos 90 días (cobertura por localidad + tipo)
+    // Misiones aprobadas de las últimas 8 semanas. Alimenta el conteo de
+    // comercios del mes; la cobertura por localidad y por tipo se fueron al
+    // panel de métricas (ver el bloque de abajo).
     admin.from('misiones')
       .select(`
         id, gondolero_id, created_at,
@@ -124,9 +125,17 @@ export default async function DashboardPage() {
       .eq('estado', 'aprobada')
       .gte('created_at', hace56d.toISOString()),
 
-    // Misiones aprobadas últimas 8 semanas (gráfico de evolución)
+    // Misiones aprobadas de las últimas 8 semanas (gráfico de evolución).
+    // Se pide `capturada_at` además de `created_at`: el bucket semanal se
+    // arma con cuándo se hizo el trabajo, no con cuándo entró la fila. Una
+    // misión encolada sin señal entra dos días después, y la semana que la
+    // distri mira es justo la de la calle.
+    //
+    // El filtro sigue por `created_at` a propósito: es un límite de VOLUMEN,
+    // no la medida. Filtrar por `capturada_at` con el OR de PostgREST para
+    // ganar unas pocas filas de borde no vale el ruido acá.
     admin.from('misiones')
-      .select('id, created_at')
+      .select('id, capturada_at, created_at')
       .in('gondolero_id', safeGond)
       .eq('estado', 'aprobada')
       .gte('created_at', hace56d.toISOString()),
@@ -173,7 +182,7 @@ export default async function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const misionesEsteMes    = (misionesEsteMesRes.data ?? []) as any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const misiones90d        = (misiones90dRes.data   ?? []) as any[]
+  const misiones56d        = (misiones56dRes.data   ?? []) as any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const misiones8sem       = (misiones8semRes.data  ?? []) as any[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,7 +200,7 @@ export default async function DashboardPage() {
   const fotasMes           = fotosEsteMes.length
   const puntosMes          = movPuntos.reduce((sum: number, m: { monto: number }) => sum + (m.monto ?? 0), 0)
   const comerciosRelevadosMes = new Set(
-    misiones90d
+    misiones56d
       .filter((m: { created_at: string }) => new Date(m.created_at) >= mesInicio)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((m: any) => m.comercio?.id)
@@ -207,45 +216,6 @@ export default async function DashboardPage() {
   const gondolerosActivos14Set = await gondolerosConMision(
     gondoleroIds, campanaIdsDistri, hace14d, admin)
   const gondolerosInactivos14 = gondoleroIds.filter(id => !gondolerosActivos14Set.has(id)).length
-
-  // ── Bloque 2: Cobertura por localidad ────────────────────────────────────
-
-  type LocalidadStats = {
-    id: number | null
-    nombre: string
-    comerciosIds: Set<string>
-    misionesCount: number
-    ultimaActividad: Date
-  }
-
-  const localidadesMap = new Map<string, LocalidadStats>()
-
-  for (const m of misiones90d) {
-    const comercio = m.comercio
-    if (!comercio) continue
-    const localidad = comercio.localidades
-    const key = localidad?.id != null ? String(localidad.id) : 'sin_localidad'
-    const nombre = localidad?.nombre ?? 'Sin localidad asignada'
-
-    if (!localidadesMap.has(key)) {
-      localidadesMap.set(key, {
-        id:              localidad?.id ?? null,
-        nombre,
-        comerciosIds:    new Set(),
-        misionesCount:   0,
-        ultimaActividad: new Date(m.created_at),
-      })
-    }
-    const stats = localidadesMap.get(key)!
-    if (comercio.id) stats.comerciosIds.add(comercio.id)
-    stats.misionesCount++
-    const f = new Date(m.created_at)
-    if (f > stats.ultimaActividad) stats.ultimaActividad = f
-  }
-
-  const localidades = Array.from(localidadesMap.values())
-    .sort((a, b) => b.comerciosIds.size - a.comerciosIds.size)
-    .slice(0, 10)
 
   // ── Bloque 3: Actividad de gondoleros ────────────────────────────────────
 
@@ -272,17 +242,6 @@ export default async function DashboardPage() {
     })
     .sort((a, b) => b.misionesMes - a.misionesMes)
 
-  // ── Bloque 5: Tipo de comercio ────────────────────────────────────────────
-
-  const tipoCount: Record<string, number> = {}
-  for (const m of misiones90d) {
-    const tipo = m.comercio?.tipo ?? 'otro'
-    tipoCount[tipo] = (tipoCount[tipo] ?? 0) + 1
-  }
-  const tiposOrdenados = Object.entries(tipoCount)
-    .sort(([, a], [, b]) => b - a)
-  const maxTipo = tiposOrdenados[0]?.[1] ?? 1
-
   // ── Bloque 6: Evolución semanal (últimas 8 semanas) ───────────────────────
 
   const semanas = Array.from({ length: 8 }, (_, i) => {
@@ -291,7 +250,7 @@ export default async function DashboardPage() {
     return { inicio, fin, label: fmtSemana(inicio), count: 0 }
   })
   for (const m of misiones8sem) {
-    const fecha = new Date(m.created_at)
+    const fecha = new Date(m.capturada_at ?? m.created_at)
     const s = semanas.find(s => fecha >= s.inicio && fecha < s.fin)
     if (s) s.count++
   }
@@ -550,39 +509,40 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
-        {/* ── BLOQUE 2: Cobertura por localidad ──────────────────────── */}
+        {/* ── LA COBERTURA SE MUDÓ AL PANEL DE MÉTRICAS ──────────────────
+            Este dashboard tenía "Cobertura por localidad" y "por tipo de
+            comercio", y el panel tiene las dos. No eran el mismo número:
+            éste contaba las misiones de MIS GONDOLEROS en 56 días, el panel
+            cuenta los PDV de MIS CAMPAÑAS sin ventana. Para Biomega en
+            producción daban 34 comercios y 7 localidades contra 60 y 9.
+
+            Dos pantallas del mismo panel, las dos diciendo "cobertura", con
+            números que no coinciden y sin nada que explicara por qué. El
+            panel además distingue "sin medir" de 0%, que es la diferencia que
+            todo este tramo vino a hacer.
+
+            Se saca el bloque y se dice a dónde se fue: un bloque que
+            desaparece sin aviso se lee como algo que se rompió. */}
         <section>
-          <SeccionHeader titulo="Cobertura por localidad" sub="Últimas 8 semanas" />
-          {localidades.length === 0 ? (
-            <Vacio texto="Sin datos de localidades aún" />
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
-              {localidades.map((loc, i) => {
-                const activa = loc.ultimaActividad >= hace30d
-                return (
-                  <div key={i} className="px-4 py-3 flex items-center gap-3">
-                    <MapPin size={14} className={`shrink-0 ${activa ? 'text-gondo-verde-400' : 'text-gray-300'}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-800 truncate">{loc.nombre}</p>
-                        {!activa && (
-                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400 shrink-0">
-                            Inactiva 30d
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-gray-400">
-                        {loc.comerciosIds.size} comercio{loc.comerciosIds.size !== 1 ? 's' : ''} · {loc.misionesCount} misión{loc.misionesCount !== 1 ? 'es' : ''}
-                      </p>
-                    </div>
-                    <span className="text-[10px] text-gray-400 shrink-0">
-                      {formatearInstante(loc.ultimaActividad, { day: '2-digit', month: 'short' })}
-                    </span>
-                  </div>
-                )
-              })}
+          <SeccionHeader titulo="Cobertura" />
+          <Link
+            href="/distribuidora/panel"
+            className="block bg-white rounded-xl border border-gray-200 px-5 py-5 hover:border-gondo-amber-400 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <MapPin size={18} className="text-gondo-amber-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800">
+                  La cobertura por ciudad y por tipo está en Métricas
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                  Ahí se cuenta por campaña y distingue “sin medir” de 0%, que no es
+                  lo mismo. Este tablero cuenta la actividad de tus gondoleros.
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-gray-300 shrink-0 ml-auto" />
             </div>
-          )}
+          </Link>
         </section>
 
         {/* ── BLOQUE 8: Comercios pendientes de validación ────────────── */}
@@ -624,27 +584,11 @@ export default async function DashboardPage() {
 
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        {/* ── BLOQUE 5: Tipo de comercio ──────────────────────────────── */}
-        <section>
-          <SeccionHeader titulo="Cobertura por tipo de comercio" sub="Últimas 8 semanas" />
-          {tiposOrdenados.length === 0 ? (
-            <Vacio texto="Sin datos de cobertura aún" />
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-              {tiposOrdenados.map(([tipo, count]) => (
-                <BarraHorizontal
-                  key={tipo}
-                  label={TIPO_LABEL[tipo] ?? tipo}
-                  count={count}
-                  max={maxTipo}
-                  color="bg-gondo-amber-400"
-                />
-              ))}
-            </div>
-          )}
-        </section>
+      {/* "Cobertura por tipo de comercio" también se fue al panel, y ahí
+          además cuenta PDV en vez de MISIONES: acá el ranking de tipos salía
+          distinto por eso mismo —autoservicio primero contra almacén primero
+          en producción— con la misma etiqueta arriba. */}
+      <div>
 
         {/* ── BLOQUE 6: Evolución semanal ─────────────────────────────── */}
         <section>
