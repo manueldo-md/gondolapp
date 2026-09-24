@@ -5307,7 +5307,7 @@ lado **de dos que se eligen**, y la que más importa es **la última contra la
 anterior** —lo que se detecta es la caída reciente, no la diferencia contra hace
 tres meses—; pantalla nueva, no el mapa.
 
-##### La unidad de la línea es LA VISITA, no la foto
+##### La unidad de la línea es LA VISITA, no la foto — DECIDIDO
 
 Es lo que más cambia el diseño y sale de medir, no de suponer:
 
@@ -5321,7 +5321,10 @@ campaña con dos campos `foto` —`Relevamiento snacks`, `Prueba de dos fotos`,
 crudas, la misma fecha aparece dos veces y **"la última contra la anterior"
 compararía dos tomas de la misma visita**, que es justo lo que no se quiere ver.
 
-##### El máximo real — y por qué paginar no es para ahora
+**Cada punto de la línea es una VISITA con sus N fotos adentro, y la comparación
+es visita contra visita.**
+
+##### El tope es explícito y se dice; no se pagina — DECIDIDO
 
 ```
                                         DEV     PROD
@@ -5332,28 +5335,33 @@ visitas por (comercio, campaña), máximo   4        1
 comercios con al menos una foto          93       90
 ```
 
-Las ~50 del escenario de seis meses **no existen en ninguna base**. La
-recomendación es no paginar y poner un tope explícito, como el `TOPE_COMERCIOS`
-del mapa, que **se diga en pantalla el día que muerda**. Recortar en silencio en
-una pantalla de evidencia es la peor opción: un hueco se lee como una visita que
-no se hizo.
+Las ~50 del escenario de seis meses **no existen en ninguna base**. Va un tope
+explícito, como el `TOPE_COMERCIOS` del mapa, y **se dice en pantalla el día que
+muerda**. Recortar en silencio en una pantalla de evidencia es lo peor que se
+puede hacer: **un hueco silencioso se lee como una visita que no se hizo.**
 
-##### EL CASO QUE LA PANTALLA DICE RESOLVER NO EXISTE EN NINGUNA BASE
+##### EL CASO QUE LA PANTALLA RESUELVE NO EXISTE — SE SIEMBRA PRIMERO
 
 **Producción tiene CERO campañas de seguimiento.** Dev tiene cuatro, las cuatro
 de prueba y las cuatro propias de una distri; la más grande —`[TEST] Reposición
-semanal — cobertura`, 5 comercios y 10 misiones— tiene **cero fotos**.
+semanal — cobertura`, 5 comercios y 10 misiones— tiene **cero fotos**. El único
+fixture con una línea de verdad es `Dietetica LB` en `Seguimiento TEST 2V/Semana`:
+4 visitas y 4 fotos, **todas entre el 16 y el 17 de septiembre**.
 
-El único fixture con una línea de verdad es `Dietetica LB` en
-`Seguimiento TEST 2V/Semana`: 4 visitas y 4 fotos, **todas entre el 16 y el 17
-de septiembre**. O sea que no hay un solo dato con el que se pueda mirar una
-degradación en el tiempo, que es lo único que esta pantalla existe para mostrar.
+O sea que no hay un solo dato con el que se pueda mirar una degradación en el
+tiempo, que es lo único que esta pantalla existe para mostrar. Es la misma
+familia que los huecos del panel y del mapa: **cuando ningún dato real ejercita
+el camino, el test es la única cobertura que hay.**
 
-Quien la escriba tiene que sembrar el caso antes. Es la misma familia que los
-huecos del panel y del mapa: **cuando ningún dato real ejercita el camino, el
-test es la única cobertura que hay.**
+**`sembrar-seguimiento.mjs` no sirve tal cual y no hay que tocarlo.** Está
+afinado para el dashboard de cobertura —las visitas están repartidas para dar los
+tres estados y la frontera del domingo a las 22:00— y **no siembra ni una foto,
+ni una respuesta, ni un bloque**: cero `INSERT INTO fotos`. Agregarle semanas a
+un comercio le movería los estados al dashboard que vino a probar. Va un
+hermano, con el mismo criterio: nombre `[TEST]` propio, se niega contra
+producción, `--limpiar`, y guarda de "ya existe".
 
-##### El alcance alcanza; el agujero está en otro lado
+##### El alcance alcanza; el agujero está en la cabecera
 
 `campanasDe` + `idsDe` + `fotosCandidatas` cubren las fotos: la lista ES el
 permiso y una campaña ajena devuelve `[]`. **Las fotos están cubiertas.**
@@ -5368,17 +5376,21 @@ Suprante. Una pantalla por comercio que no se acote mostraría las dos juntas, q
 es la violación más directa del Walled Garden que puede haber. **La pertenencia
 se chequea contra `panel_pdv` del alcance, no contra `comercios`.**
 
-##### Dónde vive — y el choque de nombres que ya está puesto
+##### Dónde vive: `comercio` en singular — DECIDIDO
 
-`/distribuidora/comercios/[id]` **ya existe y es otra cosa**: el padrón —
-ubicación, validación, reportes de ubicación, historial de correcciones—. Dos
-pantallas de "un comercio" en el mismo panel, con el mismo sustantivo, es el
-problema de la etapa 6 otra vez. Hay que decidir antes de escribir: pestaña
-adentro de la que existe, o un nombre propio que diga qué muestra. **En marca no
-choca con nada**: el panel de marca no tiene ninguna ruta de comercios.
+```
+/distribuidora/comercios/[id]   plural    EL PADRÓN     ubicación, validación, reportes
+/distribuidora/comercio/[id]    singular  LA EVIDENCIA  la línea de visitas   ← nueva
+/marca/comercio/[id]            singular  LA EVIDENCIA                        ← nueva
+```
 
-Las dos entradas ya tienen dónde colgarse: la lista del grupo del mapa —cada PDV
-es una fila— y la tabla por comercio de `CoberturaSeguimiento`.
+El singular contra el plural es lo que separa las dos preguntas, y **desde el
+padrón va un link a la evidencia**, que es a donde alguien va a querer saltar
+estando ahí. En marca no hay nada que distinguir: el panel de marca no tiene
+ninguna ruta de comercios.
+
+Las otras dos entradas ya tienen dónde colgarse: la lista del grupo del mapa
+—cada PDV es una fila— y la tabla por comercio de `CoberturaSeguimiento`.
 
 ##### Lo que va al lado de la foto está todo
 
@@ -5388,21 +5400,22 @@ diferencia del ranking del gondolero—, y `mision_respuestas` con 1,6 por misi�
 de promedio y 4 como máximo, que se formatea con `lib/resultados-normalizar.ts`.
 Falta solo la etiqueta de cada pregunta, que sale de `bloque_campos`.
 
-`direccion` está en **58 de 104** comercios en dev y 57 de 97 en prod, y la
-localidad en 91 de los dos. Media cabecera va a quedar vacía: hay que decidir qué
-dice cuando falta, no dejar el renglón en blanco.
+**La dirección falta en casi la mitad** —58 de 104 comercios en dev, 57 de 97 en
+prod— y cuando falta **no se escribe nada**: ni un guión ni un "sin dirección".
+La cabecera ya tiene el nombre y la ciudad, que alcanzan para saber cuál es, y un
+renglón que dice que falta un dato es ruido en una pantalla que se mira por las
+fotos.
 
-##### Lo que ya sirve, y lo que hay que decidir igual
+##### Pendientes y rechazadas: la foto queda afuera, la VISITA no — DECIDIDO
 
-`fotosCandidatas` y `firmarFotosEnLote` sirven tal cual: traer todas y no solo la
-última es un parámetro. Los índices también — `idx_fotos_comercio` y
-`misiones_comercio_id_idx` están en las dos bases.
+`fotosCandidatas` filtra `estado = 'aprobada'` y así se queda: **una foto
+pendiente todavía no es evidencia, y ponerla en una línea de tiempo la
+convierte en una.** Son 13 pendientes y 12 rechazadas en dev, 1 y 3 en prod.
 
-Lo que hay que decidir: `fotosCandidatas` filtra `estado = 'aprobada'`, así que
-las pendientes y las rechazadas quedan afuera. Para el mapa está bien; **acá hay
-que elegirlo a propósito**, porque son 13 pendientes y 12 rechazadas en dev, y 1
-y 3 en prod, y un hueco sin explicación en una línea de tiempo se lee como una
-visita que no se hizo.
+Pero el filtro es sobre la FOTO, no sobre la visita: **si una visita tiene solo
+fotos pendientes, aparece igual** —con su fecha, su gondolero y sus respuestas— y
+dice que la foto está en revisión. Sacarla entera haría desaparecer de la línea
+una visita que se hizo, que es el mismo hueco silencioso del tope.
 
 ##### Agrupar por semana: no todavía
 
@@ -5410,11 +5423,75 @@ Con 4 visitas como máximo no hay nada que agrupar, y hacerlo **arrastra el mism
 pendiente de zona horaria** que la pieza 1. La línea va por visita, y el
 agrupamiento por semana entra con el resto de "medir la semana", no antes.
 
-##### La vista de lista con varias sucursales — otro tramo
+##### LAS ETAPAS
+
+| | Qué | Qué prueba, y cómo |
+|---|---|---|
+| 0 | El caso sembrado | `--limpiar` deja la base con los mismos conteos que antes |
+| 1 | `lib/linea-comercio.ts`, sin base | los controles se ponen rojos contra cada rotura |
+| 2 | La consulta y el permiso | un comercio de dos alcances trae solo el elegido |
+| 3 | La pantalla y las dos rutas | la línea se mira con el caso de la etapa 0 |
+| 4 | La comparación de a dos | el par elegido viaja en la URL |
+| 5 | Los tres links de entrada | se llega desde el mapa, la cobertura y el padrón |
+
+**Etapa 0 — el caso sembrado.** Hermano de `sembrar-seguimiento.mjs`, sin
+tocarlo. Un comercio con visitas repartidas en seis semanas, con foto de verdad
+**subida a Storage** y no una URL de picsum: hoy solo **2 de los 58 PDV** de
+Georgalos en prod ejercitan `createSignedUrls`, así que sembrar por el fallback
+dejaría el camino firmado sin probar otra vez. Van adentro los cuatro casos que
+las etapas siguientes necesitan: una visita con DOS fotos, una con **solo fotos
+pendientes**, una `descartada` que no tiene que aparecer, y respuestas por visita.
+
+**Etapa 1 — la lib, sin base.** El armado de visitas desde misiones y fotos, el
+orden por `capturada_at` con el `COALESCE` y el desempate estable, el tope que
+devuelve *cuántas recortó* en vez de recortar callado, la visita en revisión, y
+el par por default —última contra anterior—. Se verifica con roturas
+deliberadas, como todo el resto del tramo: el tope silencioso, la visita
+pendiente descartada, el orden por `created_at` y el default puesto en
+primera-contra-última.
+
+**Etapa 2 — la consulta y el permiso.** Las visitas de un comercio acotadas al
+alcance, con gondolero y respuestas, y la pertenencia contra `panel_pdv`. El
+control que la justifica ya tiene datos: **35 comercios en dev y 21 en prod**
+están en campañas de más de un alcance, así que se puede probar que pedir con el
+alcance de Georgalos no devuelve una sola visita de Suprante — **y el CONTROL de
+que sin el filtro sí las devolvería**, o el test no distingue un filtro que anda
+de uno que no existe.
+
+**Etapa 3 — la pantalla y las dos rutas.** `components/panel/linea-comercio.tsx`
+montado por las dos, como el mapa. Distri con el selector de alcance
+obligatorio; marca sin él. Las firmas van **en el render** y no en una server
+action: acá la pantalla ES las fotos, así que se van a ver todas, y el argumento
+del mapa —firmar 58 para que miren tres— no aplica.
+
+> **Lo único abierto de esta etapa:** sin campaña elegida la línea mezcla
+> campañas, y comparar la foto de una auditoría de precios con la de una
+> reposición es comparar dos cosas que se sacaron para fines distintos. La
+> propuesta es que **cada visita lleve el nombre de su campaña**, como la
+> etiqueta de fuente del desglose, y que la mezcla se vea en vez de prohibirse.
+
+**Etapa 4 — la comparación de a dos.** Default última contra anterior, con los
+dos elegibles, y el par en la URL: mismo criterio que el desglose de la serie y
+los dos controles del mapa. **La comparación que va a un informe se tiene que
+poder mandar por chat.**
+
+**Etapa 5 — los tres links.** Desde la lista del grupo del mapa, desde la tabla
+de `CoberturaSeguimiento` y desde el padrón. Van al final porque un link a una
+pantalla que no existe es un link roto.
+
+##### PENDIENTE — la vista de lista de varias sucursales
 
 Con 200 sucursales entrar de a una no sirve, y es cierto. Pero hoy el alcance más
-grande son **66 PDV en dev y 59 en prod**, y esa vista contesta otra pregunta
-—"¿cuál de mis sucursales se está cayendo?"— que obliga a definir qué la ordena.
+grande son **66 PDV en dev y 59 en prod**, y esa vista contesta otra pregunta:
+**"¿cuál de mis sucursales se está cayendo?"**
+
+**La pregunta abierta, que hay que contestar antes de escribirla: qué la
+ordena.** No es un detalle de presentación — es la vista entera. Ordenar por
+última visita responde "¿a quién no fuimos?", que es cobertura y ya está
+cubierta. Ordenar por caída responde la pregunta de arriba, pero **hoy no existe
+ninguna medida de "se cayó"**: haría falta derivarla de la métrica de la campaña
+entre la última visita y la anterior, y eso es más trabajo que la pantalla.
+
 Va después, con el caso real adelante y no antes.
 
 #### PENDIENTE sin urgencia — la cadena como campo de comercios
