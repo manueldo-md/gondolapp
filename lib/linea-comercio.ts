@@ -331,6 +331,37 @@ export function parDeComparacion(
   }
 }
 
+/**
+ * Qué par queda si se elige otra visita, estando comparando `par`.
+ *
+ * ── UNA SOLA REGLA: LA MÁS RECIENTE DE LAS DOS SE QUEDA ─────────────────────
+ * Elegir una tercera visita tiene que reemplazar a alguna, y cuál no es obvio.
+ * La respuesta es la vieja, porque la reciente es el ANCLA: lo que se está
+ * preguntando es "¿contra cuándo comparo cómo está hoy?". Con la regla al
+ * revés, cada click movería el punto de referencia y la pantalla nunca
+ * contestaría eso.
+ *
+ * Es una sola regla y se puede escribir en la pantalla en un renglón. Dos
+ * slots separados —"usar como antes" / "usar como después"— serían más
+ * flexibles y mentirían: `parDeComparacion` reordena cronológicamente, así que
+ * una visita elegida como "antes" puede terminar a la derecha.
+ *
+ * Devuelve `null` cuando no hay nada que hacer: sin par, o cuando la visita ya
+ * es uno de los dos lados. En ese caso la tarjeta no muestra el link, en vez de
+ * mostrar uno que no cambia nada.
+ *
+ * Toma el par EFECTIVO —el que se está viendo, venga de la URL o del default—
+ * y no lo que diga la query string. Lo que se modifica es lo que se ve.
+ */
+export function siguienteSeleccion(
+  par: ParComparado | null,
+  visitaId: string,
+): { a: string; b: string } | null {
+  if (!par) return null
+  if (visitaId === par.anterior.misionId || visitaId === par.ultima.misionId) return null
+  return { a: visitaId, b: par.ultima.misionId }
+}
+
 function ordenar(x: Visita, y: Visita): [Visita, Visita] {
   const xPrimero = x.instante.localeCompare(y.instante) || x.misionId.localeCompare(y.misionId)
   return xPrimero <= 0 ? [x, y] : [y, x]

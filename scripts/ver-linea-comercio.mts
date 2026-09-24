@@ -10,6 +10,7 @@
  *   … --prod
  *   … --comercio <uuid>     un comercio en particular
  *   … --tope 3              para ver el aviso de recorte, que no se dispara solo
+ *   … --a <id> --b <id>     un par elegido, en vez del default
  *
  * Las URLs de las fotos salen firmadas de verdad, así que el HTML muestra las
  * imágenes mientras el token viva (una hora). Pasado eso, se vuelve a correr.
@@ -75,6 +76,7 @@ const cuerpo = renderToStaticMarkup(
   React.createElement(PantallaLineaComercio, {
     comercio, linea, urls,
     volverA: '#', volverTexto: 'Volver al mapa',
+    rutaBase: '?', seleccion: { a: arg('--a'), b: arg('--b') },
   }),
 )
 

@@ -26,7 +26,7 @@ export default async function ComercioMarcaPage({
   params, searchParams,
 }: {
   params: { id: string }
-  searchParams: { campana?: string }
+  searchParams: { campana?: string; a?: string; b?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -73,6 +73,8 @@ export default async function ComercioMarcaPage({
       volverTexto="Volver al mapa"
       campanaFiltrada={campanaId ? campanas.find(c => c.id === campanaId)?.nombre ?? null : null}
       hrefSinFiltro={`/marca/comercio/${params.id}`}
+      rutaBase={hrefMapa(`/marca/comercio/${params.id}`, { campana: campanaId })}
+      seleccion={{ a: searchParams.a, b: searchParams.b }}
     />
   )
 }

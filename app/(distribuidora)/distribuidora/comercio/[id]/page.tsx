@@ -36,7 +36,7 @@ export default async function ComercioDistriPage({
   params, searchParams,
 }: {
   params: { id: string }
-  searchParams: { alcance?: string; campana?: string }
+  searchParams: { alcance?: string; campana?: string; a?: string; b?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -104,6 +104,8 @@ export default async function ComercioDistriPage({
         volverTexto="Volver al mapa"
         campanaFiltrada={campanaId ? campanas.find(c => c.id === campanaId)?.nombre ?? null : null}
         hrefSinFiltro={hrefMapa(RUTA, { alcance: searchParams.alcance })}
+        rutaBase={hrefMapa(RUTA, { alcance: searchParams.alcance, campana: campanaId })}
+        seleccion={{ a: searchParams.a, b: searchParams.b }}
       />
     </div>
   )

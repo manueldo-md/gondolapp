@@ -18,7 +18,7 @@
  * rompiendo el código a propósito, y lo que se rompió está anotado al final.
  */
 import {
-  armarLinea, parDeComparacion, instanteDeVisita, TOPE_VISITAS,
+  armarLinea, parDeComparacion, siguienteSeleccion, instanteDeVisita, TOPE_VISITAS,
   type FilaMisionLinea, type FilaFotoLinea, type FilaRespuestaLinea, type Visita,
 } from '../lib/linea-comercio'
 
@@ -311,6 +311,34 @@ console.log('\n▸ Una selección que no sirve cae al default, y lo dice')
     caso(`${nombre}: y lo declara`, p?.ajustado, true)
   }
   caso('sin selección no está ajustado', parDeComparacion(visitas)?.ajustado, false)
+}
+
+console.log('\n▸ Elegir otra visita: la MÁS RECIENTE de las dos se queda')
+{
+  const ms = ['2026-06-01', '2026-07-01', '2026-08-01', '2026-09-01'].map((d, i) =>
+    mision({ id: `v${i}`, capturada_at: `${d}T13:00:00Z` }))
+  const { visitas } = linea(ms, ms.map(m => foto({ id: `f-${m.id}`, mision_id: m.id })))
+  const par = parDeComparacion(visitas)!   // por default, v2 contra v3
+
+  // La reciente es el ANCLA: lo que se pregunta es contra cuándo comparar cómo
+  // está HOY. Si se reemplazara la reciente, cada click movería la referencia.
+  caso('elegir la más vieja la enfrenta a la reciente',
+    siguienteSeleccion(par, 'v0'), { a: 'v0', b: 'v3' })
+  // CONTROL: la regla al revés habría dejado la vieja puesta.
+  caso('CONTROL — no se queda la anteúltima',
+    siguienteSeleccion(par, 'v0')?.b === par.anterior.misionId, false)
+
+  // Y el par resultante se puede volver a mover, sin perder el ancla.
+  const par2 = parDeComparacion(visitas, siguienteSeleccion(par, 'v0')!)!
+  caso('el par nuevo es el elegido', [par2.anterior.misionId, par2.ultima.misionId], ['v0', 'v3'])
+  caso('y moverlo otra vez conserva la reciente',
+    siguienteSeleccion(par2, 'v1'), { a: 'v1', b: 'v3' })
+
+  // Sin link donde no hay nada que hacer: una tarjeta que ya está comparando no
+  // muestra un botón que no cambia nada.
+  caso('la que ya es el lado viejo no ofrece link', siguienteSeleccion(par, 'v2'), null)
+  caso('la que ya es el lado nuevo tampoco', siguienteSeleccion(par, 'v3'), null)
+  caso('sin par no hay link', siguienteSeleccion(null, 'v0'), null)
 }
 
 console.log('\n▸ Con menos de dos visitas con foto no hay comparación')
