@@ -5290,17 +5290,143 @@ Dos cosas a resolver antes de escribir:
   equivocada. Es lo mismo que la nota de "Etapa 5 de seguimiento — medir la
   semana" dice que hay que resolver antes de medir semanas.
 
-**2. La línea de tiempo de fotos por comercio.** Pantalla nueva, que hoy no
-existe. Un local con cinco visitas tiene cinco fotos, y lo que importa no es
-verlas sueltas sino **ordenadas**: muestran si la góndola se mantiene o se
-degrada. Eso es lo que la distri le vende al cliente.
+**2. La línea de tiempo de fotos por comercio — 7b, RELEVADO el 24/9/2026.**
 
-Fotos en línea horizontal con la fecha debajo, y la primera y la última lado a
-lado para comparar — **esa es la foto que va a un informe.**
+Pantalla nueva, que hoy no existe. Un local con varias visitas tiene varias
+fotos, y lo que importa no es verlas sueltas sino **ordenadas**: muestran si la
+góndola se mantiene o se degrada. Eso es lo que la distri le vende al cliente.
 
-Lo que ya está resuelto y sirve: `fotosCandidatas` trae las fotos de un comercio
-acotadas a un alcance, y `firmarFotosEnLote` las firma todas en una llamada. Lo
-que falta es traer **todas** y no solo la última, que es un parámetro.
+**El caso que la justifica:** una marca contrata una repositora para mantener sus
+góndolas en las sucursales de una cadena. La campaña es de seguimiento, sin fecha
+de fin — vive mientras dure el contrato. La repositora visita cada sucursal una o
+dos veces por semana, hace check-in por GPS, saca la foto de la góndola y
+contesta un par de preguntas.
+
+Lo definido: fotos en línea horizontal con la fecha debajo; comparación lado a
+lado **de dos que se eligen**, y la que más importa es **la última contra la
+anterior** —lo que se detecta es la caída reciente, no la diferencia contra hace
+tres meses—; pantalla nueva, no el mapa.
+
+##### La unidad de la línea es LA VISITA, no la foto
+
+Es lo que más cambia el diseño y sale de medir, no de suponer:
+
+```
+misiones con foto que dejan DOS fotos     DEV 70 de 172 (41%)   PROD 56 de 133 (42%)
+```
+
+"Cinco visitas, cinco fotos" es falso hoy en cuatro de cada diez misiones: una
+campaña con dos campos `foto` —`Relevamiento snacks`, `Prueba de dos fotos`,
+`Encuesta presencia Suprante`— deja dos por visita. Si la línea alinea fotos
+crudas, la misma fecha aparece dos veces y **"la última contra la anterior"
+compararía dos tomas de la misma visita**, que es justo lo que no se quiere ver.
+
+##### El máximo real — y por qué paginar no es para ahora
+
+```
+                                        DEV     PROD
+fotos por comercio, máximo               13        4
+  … promedio / mediana                  2,6/2    2,1/2
+fotos por (comercio, campaña), máximo     6        2
+visitas por (comercio, campaña), máximo   4        1
+comercios con al menos una foto          93       90
+```
+
+Las ~50 del escenario de seis meses **no existen en ninguna base**. La
+recomendación es no paginar y poner un tope explícito, como el `TOPE_COMERCIOS`
+del mapa, que **se diga en pantalla el día que muerda**. Recortar en silencio en
+una pantalla de evidencia es la peor opción: un hueco se lee como una visita que
+no se hizo.
+
+##### EL CASO QUE LA PANTALLA DICE RESOLVER NO EXISTE EN NINGUNA BASE
+
+**Producción tiene CERO campañas de seguimiento.** Dev tiene cuatro, las cuatro
+de prueba y las cuatro propias de una distri; la más grande —`[TEST] Reposición
+semanal — cobertura`, 5 comercios y 10 misiones— tiene **cero fotos**.
+
+El único fixture con una línea de verdad es `Dietetica LB` en
+`Seguimiento TEST 2V/Semana`: 4 visitas y 4 fotos, **todas entre el 16 y el 17
+de septiembre**. O sea que no hay un solo dato con el que se pueda mirar una
+degradación en el tiempo, que es lo único que esta pantalla existe para mostrar.
+
+Quien la escriba tiene que sembrar el caso antes. Es la misma familia que los
+huecos del panel y del mapa: **cuando ningún dato real ejercita el camino, el
+test es la única cobertura que hay.**
+
+##### El alcance alcanza; el agujero está en otro lado
+
+`campanasDe` + `idsDe` + `fotosCandidatas` cubren las fotos: la lista ES el
+permiso y una campaña ajena devuelve `[]`. **Las fotos están cubiertas.**
+
+Lo que no: **la cabecera del comercio**. `panel_pdv` devuelve nombre, tipo,
+lat/lng y localidad, **no `direccion`**, y la pantalla que hoy existe lee
+`comercios` por id con service role y **sin un solo filtro**.
+
+Y la mezcla es real, no teórica: **35 comercios en dev y 21 en prod aparecen en
+campañas de más de un alcance.** El mismo local tiene evidencia de Georgalos y de
+Suprante. Una pantalla por comercio que no se acote mostraría las dos juntas, que
+es la violación más directa del Walled Garden que puede haber. **La pertenencia
+se chequea contra `panel_pdv` del alcance, no contra `comercios`.**
+
+##### Dónde vive — y el choque de nombres que ya está puesto
+
+`/distribuidora/comercios/[id]` **ya existe y es otra cosa**: el padrón —
+ubicación, validación, reportes de ubicación, historial de correcciones—. Dos
+pantallas de "un comercio" en el mismo panel, con el mismo sustantivo, es el
+problema de la etapa 6 otra vez. Hay que decidir antes de escribir: pestaña
+adentro de la que existe, o un nombre propio que diga qué muestra. **En marca no
+choca con nada**: el panel de marca no tiene ninguna ruta de comercios.
+
+Las dos entradas ya tienen dónde colgarse: la lista del grupo del mapa —cada PDV
+es una fila— y la tabla por comercio de `CoberturaSeguimiento`.
+
+##### Lo que va al lado de la foto está todo
+
+`misiones.capturada_at` sin un solo nulo (227 en dev, 140 en prod), el gondolero
+con `nombre` y `alias` en el 100% —los paneles de empresa ya muestran los dos, a
+diferencia del ranking del gondolero—, y `mision_respuestas` con 1,6 por misión
+de promedio y 4 como máximo, que se formatea con `lib/resultados-normalizar.ts`.
+Falta solo la etiqueta de cada pregunta, que sale de `bloque_campos`.
+
+`direccion` está en **58 de 104** comercios en dev y 57 de 97 en prod, y la
+localidad en 91 de los dos. Media cabecera va a quedar vacía: hay que decidir qué
+dice cuando falta, no dejar el renglón en blanco.
+
+##### Lo que ya sirve, y lo que hay que decidir igual
+
+`fotosCandidatas` y `firmarFotosEnLote` sirven tal cual: traer todas y no solo la
+última es un parámetro. Los índices también — `idx_fotos_comercio` y
+`misiones_comercio_id_idx` están en las dos bases.
+
+Lo que hay que decidir: `fotosCandidatas` filtra `estado = 'aprobada'`, así que
+las pendientes y las rechazadas quedan afuera. Para el mapa está bien; **acá hay
+que elegirlo a propósito**, porque son 13 pendientes y 12 rechazadas en dev, y 1
+y 3 en prod, y un hueco sin explicación en una línea de tiempo se lee como una
+visita que no se hizo.
+
+##### Agrupar por semana: no todavía
+
+Con 4 visitas como máximo no hay nada que agrupar, y hacerlo **arrastra el mismo
+pendiente de zona horaria** que la pieza 1. La línea va por visita, y el
+agrupamiento por semana entra con el resto de "medir la semana", no antes.
+
+##### La vista de lista con varias sucursales — otro tramo
+
+Con 200 sucursales entrar de a una no sirve, y es cierto. Pero hoy el alcance más
+grande son **66 PDV en dev y 59 en prod**, y esa vista contesta otra pregunta
+—"¿cuál de mis sucursales se está cayendo?"— que obliga a definir qué la ordena.
+Va después, con el caso real adelante y no antes.
+
+#### PENDIENTE sin urgencia — la cadena como campo de comercios
+
+Anotado el 24/9/2026. **Una campaña de seguimiento sin fecha de fin ya funciona
+como pivot de una cadena:** "Reposición Carrefour" vive mientras dure el contrato
+y agrupa todas sus sucursales, así que el campo no hace falta para el caso
+principal.
+
+El único que no cubre es una sucursal que además entre en una campaña puntual de
+precios, cuya medición no se agrupa con la de reposición. Probablemente esté bien
+que no se mezclen.
 
 
 ---
