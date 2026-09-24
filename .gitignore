@@ -56,3 +56,6 @@ serie-mensual-*.html
 spike-mapa.html
 sonda-tiles.html
 prueba-tile-roto.html
+
+# Render estatico de la linea de visitas (ver-linea-comercio.mts)
+linea-comercio-*.html

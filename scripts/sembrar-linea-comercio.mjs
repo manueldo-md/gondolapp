@@ -174,7 +174,14 @@ function aPng(ancho, alto, px) {
   ])
 }
 
-const ANCHO = 480, ALTO = 320, CAPACIDAD = 24
+// ── VERTICALES, COMO SALEN DE UN CELULAR ─────────────────────────────────────
+// La primera versión las generaba en 480×320, o sea apaisadas, y al rendir la
+// pantalla con `ver-linea-comercio.mts` se vio el problema: el recuadro de la
+// tarjeta es 3:4 —vertical, porque una foto de góndola se saca con el teléfono
+// parado— y `object-cover` recortaba media góndola. El componente estaba bien;
+// el fixture no representaba lo que va a haber. Un caso sembrado que no se
+// parece al real hace mirar la pantalla equivocada.
+const ANCHO = 360, ALTO = 480, CAPACIDAD = 24
 
 /** La góndola con `frentes` productos de los 24 lugares que tiene. */
 function fotoGondola(frentes, variante = 0) {
@@ -183,23 +190,23 @@ function fotoGondola(frentes, variante = 0) {
   // La barra de estado: verde llena, roja vacía. Se lee de lejos.
   const proporcion = frentes / CAPACIDAD
   const color = proporcion > 0.6 ? [29, 158, 117] : proporcion > 0.3 ? [217, 145, 32] : [190, 40, 50]
-  l.rect(0, 0, Math.round(ANCHO * proporcion), 14, color)
+  l.rect(0, 0, Math.round(ANCHO * proporcion), 16, color)
 
   // La variante es la SEGUNDA foto de la misma visita: otro ángulo del mismo
   // estado. Tiene que verse distinta o no se distinguiría de un duplicado.
-  const dx = variante ? 12 : 0
+  const dx = variante ? 10 : 0
 
   let puestos = 0
-  for (let estante = 0; estante < 3; estante++) {
-    const y = 84 + estante * 78
-    l.rect(24, y + 62, ANCHO - 48, 9, [139, 111, 71])        // la tabla
-    for (let hueco = 0; hueco < 8; hueco++) {
-      const x = 30 + dx + hueco * 54
+  for (let estante = 0; estante < 4; estante++) {
+    const y = 60 + estante * 102
+    l.rect(16, y + 78, ANCHO - 32, 10, [139, 111, 71])       // la tabla
+    for (let hueco = 0; hueco < 6; hueco++) {
+      const x = 20 + dx + hueco * 56
       if (puestos < frentes) {
-        l.rect(x, y, 46, 62, [29, 158, 117])                  // producto
-        l.rect(x + 8, y + 12, 30, 12, [245, 245, 245])        // la etiqueta
+        l.rect(x, y, 48, 78, [29, 158, 117])                  // producto
+        l.rect(x + 9, y + 16, 30, 14, [245, 245, 245])        // la etiqueta
       } else {
-        l.rect(x, y + 44, 46, 18, [225, 221, 214])            // hueco vacío
+        l.rect(x, y + 56, 48, 22, [225, 221, 214])            // hueco vacío
       }
       puestos++
     }
@@ -210,10 +217,10 @@ function fotoGondola(frentes, variante = 0) {
 /** La foto de la auditoría: un cartel de precio, que no es una góndola. */
 function fotoPrecio() {
   const l = lienzo(ANCHO, ALTO, [239, 236, 230])
-  l.rect(0, 0, ANCHO, 14, [79, 70, 229])
-  l.rect(90, 70, 300, 180, [252, 252, 252])
-  l.rect(90, 70, 300, 46, [217, 145, 32])
-  for (let i = 0; i < 5; i++) l.rect(120, 140 + i * 22, 240 - i * 28, 12, [60, 60, 60])
+  l.rect(0, 0, ANCHO, 16, [79, 70, 229])
+  l.rect(50, 120, 260, 240, [252, 252, 252])
+  l.rect(50, 120, 260, 56, [217, 145, 32])
+  for (let i = 0; i < 5; i++) l.rect(78, 208 + i * 28, 200 - i * 26, 14, [60, 60, 60])
   return l.png()
 }
 
