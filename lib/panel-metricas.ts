@@ -13,7 +13,7 @@
  * importan nada: lo pueden usar Server Components, Server Actions y el cliente.
  *
  * ── EL PROMEDIO SE HACE ACÁ, DIVIDIENDO ─────────────────────────────────────
- * `panel_marca_series` devuelve SUMA y CONTEO, nunca AVG. Si dos campañas del
+ * `panel_series` devuelve SUMA y CONTEO, nunca AVG. Si dos campañas del
  * mismo mes midieron precio sobre 23 y sobre 2 PDV, el promedio del mes no es
  * el promedio de los dos promedios: es la suma dividida por 25. Promediar
  * promedios le da a la campaña de 2 PDV el mismo peso que a la de 23, y el
@@ -49,7 +49,7 @@ import { formatearDia } from './fecha-ar'
 
 // ── Lo que devuelve el RPC ───────────────────────────────────────────────────
 
-/** Una fila de `panel_marca_series`. `campana_id` NULL = fila de TOTAL del mes. */
+/** Una fila de `panel_series`. `campana_id` NULL = fila de TOTAL del mes. */
 export interface FilaSerie {
   mes: string
   metrica_slug: string
@@ -66,14 +66,14 @@ export interface FilaSerie {
   verdaderos: number | string
 }
 
-/** Una fila de `panel_marca_visitas`. */
+/** Una fila de `panel_visitas`. */
 export interface FilaVisitas {
   mes: string
   pdv_visitados: number | string
   misiones: number | string
 }
 
-/** Una fila de `panel_marca_pdv`: un comercio, con su presencia y su geografía. */
+/** Una fila de `panel_pdv`: un comercio, con su presencia y su geografía. */
 export interface FilaPdv {
   comercio_id: string
   comercio_nombre: string | null
@@ -146,7 +146,7 @@ export interface PuntoSerie {
   verdaderos: number
   /** PDV que midieron ESTA métrica ese mes. Es el denominador real. */
   basePdv: number
-  /** PDV visitados ese mes, de `panel_marca_visitas`. `null` si no se pasó. */
+  /** PDV visitados ese mes, de `panel_visitas`. `null` si no se pasó. */
   pdvVisitados: number | null
   /** Las campañas que componen el punto. Vacío no debería pasar, pero no rompe. */
   desglose: DesglosePunto[]

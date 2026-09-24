@@ -47,6 +47,26 @@ console.log(`\n▸ Base: ${nombreDeRef(ref)} (${cred.archivo})`)
 const c = new pg.Client({ connectionString: cred.vars.PGURL, ssl: { rejectUnauthorized: false } })
 await c.connect()
 
+// ── ESTE DRY-RUN QUEDÓ ATRÁS ────────────────────────────────────────────────
+// Verifica que las funciones nuevas den lo mismo que `panel_marca_*`, que `20260929100000` borró. La migración que este
+// script aplica no las recrea, así que contra una base al día fallaría con un
+// error de SQL que no explica nada. Se omite, y se dice por qué.
+//
+// No se borra el archivo: documenta cómo se verificó esa migración, y el día
+// que haya que reconstruir un ambiente desde cero —donde las funciones existen
+// hasta que corre el DROP— vuelve a servir.
+{
+  const { rows } = await c.query(`
+    SELECT count(*)::int AS n FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+     WHERE ns.nspname = 'public' AND p.proname LIKE 'panel\\_marca\\_%'`)
+  if (rows[0].n === 0) {
+    console.log(`\n⊘ OMITIDO — las funciones panel_marca_* ya no existen (20260929100000).\n` +
+      `  Este dry-run verifica una migración que quedó superada; no hay nada que probar.\n`)
+    await c.end()
+    process.exit(0)
+  }
+}
+
 let fallos = 0
 function caso(nombre, real, esperado) {
   const ok = JSON.stringify(real) === JSON.stringify(esperado)

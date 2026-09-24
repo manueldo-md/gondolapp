@@ -41,6 +41,37 @@ console.log(`\n▸ Base: ${nombreDeRef(ref)} (${cred.archivo})`)
 const c = new pg.Client({ connectionString: cred.vars.PGURL, ssl: { rejectUnauthorized: false } })
 await c.connect()
 
+// ── ESTE DRY-RUN QUEDÓ ATRÁS, Y POR DOS MOTIVOS ─────────────────────────────
+// 1. Verifica la relación entre `panel_marca_pdv` y `panel_marca_series`, que
+//    `20260929100000` borró.
+// 2. **Ya estaba roto desde el 23/9**, antes del DROP: este script aplica
+//    `20260926100000`, que crea `panel_marca_pdv(uuid)`, sobre una base que
+//    desde `20260927100000` tiene `panel_marca_pdv(uuid, uuid DEFAULT NULL)`.
+//    Las dos firmas conviven y la llamada de un argumento pasa a ser ambigua:
+//    `42725 — function public.panel_marca_pdv(uuid) is not unique`. Es
+//    exactamente la trampa que 20260927100000 documenta en su encabezado, esta
+//    vez del lado del dry-run.
+//
+//    Nadie se enteró porque nadie volvió a correrlo. Vale como recordatorio de
+//    que un script de verificación que no se corre no verifica nada.
+//
+// La guarda de abajo lo hace salir con un mensaje en vez de con ese 42725.
+//
+// No se borra el archivo: documenta cómo se verificó esa migración, y el día
+// que haya que reconstruir un ambiente desde cero —donde las funciones existen
+// hasta que corre el DROP— vuelve a servir.
+{
+  const { rows } = await c.query(`
+    SELECT count(*)::int AS n FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+     WHERE ns.nspname = 'public' AND p.proname LIKE 'panel\\_marca\\_%'`)
+  if (rows[0].n === 0) {
+    console.log(`\n⊘ OMITIDO — las funciones panel_marca_* ya no existen (20260929100000).\n` +
+      `  Este dry-run verifica una migración que quedó superada; no hay nada que probar.\n`)
+    await c.end()
+    process.exit(0)
+  }
+}
+
 let fallos = 0
 function caso(nombre, real, esperado) {
   const ok = JSON.stringify(real) === JSON.stringify(esperado)

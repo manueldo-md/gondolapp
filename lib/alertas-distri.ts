@@ -34,7 +34,7 @@
  * NO hace: reconstruir la alerta sobre `mision_respuestas`. Eso necesita el
  * scope por campaña que viene en la etapa siguiente, y hacerlo antes sería
  * escribir a mano, en TypeScript, las reglas que ya viven en el SQL de
- * `panel_marca_pdv` —las dos fuentes, el grano por (misión, fuente), los
+ * `panel_pdv` —las dos fuentes, el grano por (misión, fuente), los
  * estados de misión excluidos—. Duplicar esas reglas es duplicar lo que más
  * costó del tramo del panel.
  */

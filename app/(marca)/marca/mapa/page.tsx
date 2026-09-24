@@ -11,7 +11,7 @@
  * se puede mandar por chat.
  *
  * ── EL ESTADO ES EL ÚLTIMO CONOCIDO, NO EL DE UN MES ────────────────────────
- * `panel_marca_pdv` agrega todas las visitas de cada comercio: un PDV está "con
+ * `panel_pdv` agrega todas las visitas de cada comercio: un PDV está "con
  * presencia" si alguna vez se midió afirmativo. Un mapa responde "cómo está
  * hoy"; la evolución ya la cubre la serie mensual del dashboard.
  *
