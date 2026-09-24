@@ -16,6 +16,34 @@ import {
   type VisitaMision,
 } from '../lib/cobertura-seguimiento'
 
+// ── SE FUERZA UTC, COMO EN probar-vigencia-ar Y probar-formato-ar ────────────
+// Vercel corre en UTC y esta máquina en hora argentina, y esa diferencia es la
+// que decide si el test sirve. Medido el 24/9/2026 rompiendo `diaDeLaVisita` a
+// propósito, para que arme el día con la hora LOCAL del proceso:
+//
+//     America/Argentina/Buenos_Aires   TODO OK     ← el bug pasa en verde
+//     UTC                              1 FALLOS
+//     Pacific/Kiritimati               2 FALLOS
+//
+// O sea que sin esta línea el test daba permiso para no mirar, que es peor que
+// no tenerlo. Va acá y no en el comando porque en Windows `TZ=UTC npm run …` no
+// funciona, y una prueba que hay que acordarse de invocar de una forma especial
+// es una prueba que algún día corre mal.
+//
+// Los imports de arriba solo definen funciones —ninguna evalúa una fecha al
+// cargarse— así que esto llega a tiempo.
+process.env.TZ = 'UTC'
+
+const zona = Intl.DateTimeFormat().resolvedOptions().timeZone
+if (zona !== 'UTC') {
+  console.error(
+    `\n✗ No se pudo poner el proceso en UTC (quedó en "${zona}").\n` +
+    `  Sin eso esta prueba da un FALSO VERDE: en una máquina argentina un\n` +
+    `  cálculo hecho en hora local devuelve el día argentino por casualidad.\n` +
+    `  Correla con: TZ=UTC npx tsx scripts/probar-cobertura.ts\n`)
+  process.exit(1)
+}
+
 let fallos = 0
 function ok(titulo: string, real: unknown, esperado: unknown) {
   const bien = JSON.stringify(real) === JSON.stringify(esperado)
