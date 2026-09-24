@@ -27,6 +27,7 @@ import {
   SelectorAlcance, SinAlcanceElegido, SinCampanas,
 } from '@/components/panel/selector-alcance'
 import { campanasDe, idsDe } from '@/lib/campanas-de'
+import { coberturaDeCampana } from '@/lib/cobertura-mapa'
 import { opcionesDeDistri, alcanceDesde } from '@/lib/panel-distri'
 import { hrefMapa } from '@/lib/mapa-pdv'
 
@@ -83,6 +84,15 @@ export default async function MapaDistriPage({
 
   const campanas = await campanasDe(alcance, admin)
   const pdvRes = await admin.rpc('panel_pdv', { _campanas: idsDe(campanas, campanaId) })
+
+  // ── La cobertura de la semana, solo si la campaña elegida la mide ────────
+  // Es una consulta a `misiones` y el mismo `calcularCobertura` del dashboard.
+  // No se amplió `panel_pdv` a propósito: la semana argentina vive en
+  // `lib/fecha-ar.ts`, y calcularla en SQL sería una segunda definición de la
+  // semana — la trampa que este proyecto ya pagó tres veces.
+  const laElegida = campanaId ? campanas.find(c => c.id === campanaId) : null
+  const cobertura = await coberturaDeCampana(laElegida, admin)
+
   if (pdvRes.error) console.error('[mapa distri] panel_pdv:', pdvRes.error.message)
 
   return (
@@ -98,6 +108,8 @@ export default async function MapaDistriPage({
         // que se comió el alcance en la serie mensual del panel.
         rutaBase={hrefMapa(RUTA, { alcance: searchParams.alcance })}
         alcanceClave={searchParams.alcance}
+        cobertura={cobertura}
+        visitasPorSemana={laElegida?.visitas_por_semana ?? null}
         panel="distri"
         apiKey={process.env.NEXT_PUBLIC_GEOAPIFY_KEY ?? ''}
       />

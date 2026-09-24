@@ -32,6 +32,7 @@
 import { MapIcon, AlertTriangle } from 'lucide-react'
 import { MapaCliente } from '@/components/panel/mapa'
 import { hrefMapa, repartoDe, tieneAnillo, type PuntoMapa, type ModoPintado } from '@/lib/mapa-pdv'
+import type { CoberturaDePdv } from '@/lib/cobertura-mapa'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 
 /** Una fila de `panel_pdv`. */
@@ -80,10 +81,18 @@ function Control({ titulo, opciones, activo, href }: {
 
 export function PantallaMapa({
   filas, campanas, campanaId, pintar, rutaBase, apiKey, alcanceClave, panel,
+  cobertura, visitasPorSemana,
 }: {
   filas: FilaPdvMapa[]
   /** Las campañas del alcance, para el control "qué se muestra". */
   campanas: { id: string; nombre: string }[]
+  /**
+   * El estado de cobertura por comercio, solo cuando la campaña elegida es de
+   * seguimiento. Vacío en cualquier otro caso, y eso es lo que apaga la opción.
+   */
+  cobertura?: Map<string, CoberturaDePdv>
+  /** La frecuencia de la campaña elegida, para el "2 de 7" de la lista. */
+  visitasPorSemana?: number | null
   campanaId: string | null
   pintar: ModoPintado
   /**
@@ -120,13 +129,23 @@ export function PantallaMapa({
       // El último estado conocido: afirmativo alguna vez = con presencia.
       presente: Number(f.con_valor) === 0 ? null : Number(f.verdaderos) > 0,
       tipo: f.comercio_tipo,
+      cobertura: cobertura?.get(f.comercio_id)?.estado ?? null,
+      visitasSemana: cobertura?.get(f.comercio_id)?.visitas ?? null,
     })
   }
+
+  // ── El modo EFECTIVO ──────────────────────────────────────────────────────
+  // `?pintar=cobertura` puede llegar de un link viejo, de una campaña que
+  // cambió de modalidad o escrito a mano. Sin datos de cobertura el mapa
+  // pintaría los 58 PDV de gris "sin dato", que se lee como que el sistema
+  // perdió la medición. Cae a presencia, que es lo que el mapa siempre sabe.
+  const ofreceCobertura = (cobertura?.size ?? 0) > 0
+  const modo: ModoPintado = pintar === 'cobertura' && !ofreceCobertura ? 'presencia' : pintar
 
   // La referencia sale del MISMO reparto que pinta los círculos, así que no
   // puede decir una cosa distinta de lo que se ve. Antes eran tres contadores
   // de presencia escritos a mano más una lista de tipos aparte.
-  const reparto = repartoDe(puntos, pintar)
+  const reparto = repartoDe(puntos, modo)
 
   return (
     <div className="space-y-5">
@@ -138,7 +157,9 @@ export function PantallaMapa({
             Mapa de puntos de venta
           </h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {puntos.length} PDV · el último estado conocido de cada uno
+            {puntos.length} PDV · {modo === 'cobertura'
+              ? 'cómo viene la frecuencia de esta semana'
+              : 'el último estado conocido de cada uno'}
           </p>
         </div>
       </div>
@@ -156,11 +177,16 @@ export function PantallaMapa({
         />
         <Control
           titulo="Cómo se pinta"
-          activo={pintar}
-          href={v => hrefMapa(rutaBase, { pintar: v === 'tipo' ? 'tipo' : null })}
+          activo={modo}
+          href={v => hrefMapa(rutaBase, { pintar: v === 'presencia' ? null : v })}
           opciones={[
             { valor: 'presencia', label: 'Presencia' },
             { valor: 'tipo',      label: 'Tipo de comercio' },
+            // La tercera aparece SOLO con una campaña de seguimiento elegida.
+            // La frecuencia es de la campaña: sin una elegida —o con una
+            // puntual— no hay contra qué medir, y ofrecer un modo que no puede
+            // pintar nada es peor que no ofrecerlo.
+            ...(ofreceCobertura ? [{ valor: 'cobertura', label: 'Cobertura semanal' }] : []),
           ]}
         />
       </div>
@@ -185,11 +211,12 @@ export function PantallaMapa({
       ) : (
         <MapaCliente
           puntos={puntos}
-          pintar={pintar}
+          pintar={modo}
           apiKey={apiKey}
           alcanceClave={alcanceClave}
           campanaId={campanaId}
           panel={panel}
+          visitasPorSemana={modo === 'cobertura' ? visitasPorSemana : null}
         />
       )}
 
@@ -206,7 +233,7 @@ export function PantallaMapa({
 
         <p className="text-xs text-gray-400 mt-3">
           Un círculo con un número son varios PDV que a este zoom se tapan entre sí.
-          {tieneAnillo(pintar) && ' El anillo muestra de qué está hecho el grupo.'}
+          {tieneAnillo(modo) && ' El anillo muestra de qué está hecho el grupo.'}
           {' '}Acercá el mapa o tocalo para abrirlo.
         </p>
 

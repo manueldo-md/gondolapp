@@ -55,9 +55,13 @@ export type CampanaDelPanel = {
   estado: string | null
   fecha_inicio: string | null
   fecha_fin: string | null
+  /** 'puntual' o 'seguimiento'. El mapa ofrece pintar cobertura solo en la segunda. */
+  modalidad: string | null
+  /** La frecuencia declarada. Sin ella no hay cobertura que medir. */
+  visitas_por_semana: number | null
 }
 
-const SELECT = 'id, nombre, estado, fecha_inicio, fecha_fin'
+const SELECT = 'id, nombre, estado, fecha_inicio, fecha_fin, modalidad, visitas_por_semana'
 
 /**
  * Las campañas del actor, con lo que las pantallas del panel necesitan.

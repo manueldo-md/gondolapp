@@ -44,6 +44,11 @@ export interface PuntoMapa {
    * Lo calcula `calcularCobertura` y lo trae la pantalla; el mapa no lo deriva.
    */
   cobertura?: 'al_dia' | 'va_bien' | 'atrasado' | null
+  /**
+   * Visitas de esta semana. NO decide el color —eso lo hace `cobertura`— sino
+   * lo que dice la lista del grupo cuando el modo está activo.
+   */
+  visitasSemana?: number | null
 }
 
 export interface GrupoMapa {

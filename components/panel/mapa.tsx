@@ -41,10 +41,10 @@ import { fotosDeLaLista, type FotoDeLista } from './acciones-mapa'
 
 const ALTO = 560
 
-/** Un color por tipo de comercio. El sexto valor del CHECK cae en el default. */
 
-
-export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId, panel }: {
+export function MapaCliente({
+  puntos, pintar, apiKey, alcanceClave, campanaId, panel, visitasPorSemana,
+}: {
   puntos: PuntoMapa[]
   pintar: ModoPintado
   apiKey: string
@@ -60,6 +60,11 @@ export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId, p
    * Es el `Panel` de `modulos/tema.ts`: `'marca'` o `'distri'`.
    */
   panel?: string
+  /**
+   * La frecuencia de la campaña elegida. Llega solo con el modo cobertura
+   * activo, y es lo que convierte un "2" en un "2 de 7".
+   */
+  visitasPorSemana?: number | null
 }) {
   const hrefEvidencia = (comercioId: string) =>
     rutaEvidencia({ panel: panel ?? '', comercioId, alcance: alcanceClave, campanaId })
@@ -346,10 +351,20 @@ export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId, p
                     <span className="text-gray-400">{etiquetaTipo(p.tipo)}</span>
                     <span
                       className="inline-block w-2.5 h-2.5 rounded-full"
-                      style={{ background: colorPunto(p) }}
+                      style={{ background: colorPunto(p, pintar) }}
                     />
-                    <span className="text-gray-500 w-20 text-right">
-                      {p.presente === null ? 'sin medir' : p.presente ? 'con presencia' : 'sin presencia'}
+                    {/* Con cobertura la lista dice las VISITAS DE LA SEMANA, no
+                        el estado de presencia: es el número por el que se entró
+                        a este modo, y el color de al lado ya dice el veredicto.
+                        Sale de la misma consulta que pintó el punto — no hay
+                        una segunda. */}
+                    <span className="text-gray-500 w-24 text-right">
+                      {pintar === 'cobertura'
+                        ? (p.visitasSemana == null
+                            ? 'sin dato'
+                            : `${p.visitasSemana} de ${visitasPorSemana ?? '?'}`)
+                        : p.presente === null ? 'sin medir'
+                        : p.presente ? 'con presencia' : 'sin presencia'}
                     </span>
                   </span>
                 </li>

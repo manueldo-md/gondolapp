@@ -43,6 +43,7 @@ import { createRequire } from 'node:module'
 import { credencialesDeRef, nombreDeRef } from './lib/entorno.mjs'
 import { visitasEsperadas, semanaDe, sumarDias, diaDeLaSemanaAR } from '../lib/fecha-ar'
 import { calcularCobertura, type VisitaMision } from '../lib/cobertura-seguimiento'
+import { agruparEnMapa, repartoDe, type PuntoMapa } from '../lib/mapa-pdv'
 
 const { Client } = createRequire(import.meta.url)('pg')
 
@@ -109,12 +110,38 @@ const { rows: gonds } = await c.query(`
   WHERE p.tipo_actor = 'gondolero' AND s.distri_id = $1 ORDER BY p.alias LIMIT 2`, [distri.id])
 if (gonds.length < 2) throw new Error('Hacen falta al menos 2 gondoleros vinculados a Biomega.')
 
-// CON coordenadas: un comercio sin lat/lng no se dibuja, y este fixture existe
-// para mirar el mapa.
-const { rows: comercios } = await c.query(`
+// ── LOS COMERCIOS TIENEN QUE ESTAR JUNTOS ────────────────────────────────────
+// La primera versión los tomaba por nombre y los tres estados quedaban
+// repartidos en DOS racimos geográficos distintos. Resultado, verificado con
+// `ver-mapa-cobertura.mts`: los tres estados salían en la referencia y **ningún
+// grupo era tricolor a ningún zoom**, o sea que el anillo partido en tres
+// —la pieza entera de este fixture— seguía sin poder mirarse.
+//
+// Se elige el racimo más denso: comercios a menos de ~100 m, que se agrupan en
+// el mapa hasta el zoom máximo. Ahí adentro van los tres estados.
+const { rows: [racimo] } = await c.query(`
+  SELECT array_agg(id ORDER BY nombre) AS ids, count(*)::int AS n
+    FROM comercios
+   WHERE lat IS NOT NULL AND lng IS NOT NULL AND estado IS DISTINCT FROM 'rechazado'
+   GROUP BY round(lat::numeric, 3), round(lng::numeric, 3)
+  HAVING count(*) >= 4
+   ORDER BY count(*) DESC LIMIT 1`)
+if (!racimo) throw new Error('No hay ningún racimo de 4 comercios cercanos con coordenadas.')
+
+// Y uno más lejos, para que el mapa no sea un solo pin: así se ve un grupo con
+// anillo Y un punto suelto de color liso.
+// Dos consultas y no un UNION: en Postgres el `LIMIT` de un UNION se aplica al
+// resultado ENTERO, así que la primera versión traía una sola fila en total.
+const delRacimo = racimo.ids.slice(0, 4) as string[]
+const { rows: enRacimo } = await c.query(
+  `SELECT id, nombre FROM comercios WHERE id = ANY($1) ORDER BY nombre`, [delRacimo])
+const { rows: [lejano] } = await c.query(`
   SELECT id, nombre FROM comercios
    WHERE lat IS NOT NULL AND lng IS NOT NULL AND estado IS DISTINCT FROM 'rechazado'
-   ORDER BY nombre LIMIT 5`)
+     AND NOT (id = ANY($1))
+   ORDER BY nombre LIMIT 1`, [delRacimo])
+
+const comercios = [...enRacimo, ...(lejano ? [lejano] : [])]
 if (comercios.length < 5) throw new Error('Hacen falta 5 comercios con coordenadas.')
 
 // ── Cuántas visitas necesita cada estado HOY ─────────────────────────────────
@@ -127,13 +154,19 @@ const completos = diaDeLaSemanaAR(ahora) - 1
 // sirva: el lunes el estado no existe, para ninguna frecuencia.
 const hayAtrasado = esperadas >= 1
 
-/** comercio → cuántas visitas de ESTA semana se le siembran. */
+/**
+ * Cuántas visitas de ESTA semana se le siembran a cada comercio.
+ *
+ * Los CUATRO PRIMEROS son el racimo, y ahí adentro van los tres estados: es lo
+ * que hace que exista un grupo tricolor. El quinto está lejos y queda de punto
+ * suelto, para que también se vea un color liso.
+ */
 const plan: [typeof comercios[number], number, string][] = [
   [comercios[0], FRECUENCIA,                 'al_dia'],
-  [comercios[1], FRECUENCIA,                 'al_dia'],
-  [comercios[2], esperadas,                  esperadas >= FRECUENCIA ? 'al_dia' : 'va_bien'],
-  [comercios[3], Math.max(0, esperadas - 1), hayAtrasado ? 'atrasado' : 'va_bien'],
-  [comercios[4], 0,                          hayAtrasado ? 'atrasado' : 'va_bien'],
+  [comercios[1], esperadas,                  esperadas >= FRECUENCIA ? 'al_dia' : 'va_bien'],
+  [comercios[2], Math.max(0, esperadas - 1), hayAtrasado ? 'atrasado' : 'va_bien'],
+  [comercios[3], 0,                          hayAtrasado ? 'atrasado' : 'va_bien'],
+  [comercios[4], FRECUENCIA,                 'al_dia'],
 ]
 
 // ── La campaña ───────────────────────────────────────────────────────────────
@@ -189,6 +222,12 @@ for (const [com, visitas] of plan) {
 // ── VERIFICAR, no afirmar ────────────────────────────────────────────────────
 // Con la misma función que va a usar el mapa. Un sembrador que dice "tres
 // estados" sin comprobarlo es exactamente la promesa que este vino a reemplazar.
+// Las coordenadas, para poder agrupar acá lo mismo que agrupa el mapa.
+const { rows: coords } = await c.query(
+  `SELECT id, lat, lng FROM comercios WHERE id = ANY($1)`, [comercios.map(x => x.id)])
+const porId = new Map<string, { lat: number; lng: number }>(
+  coords.map((x: { id: string; lat: number; lng: number }) => [x.id, { lat: x.lat, lng: x.lng }]))
+
 const { rows: mis } = await c.query(
   `SELECT comercio_id, gondolero_id, estado, capturada_at, created_at
      FROM misiones WHERE campana_id = $1`, [campana.id])
@@ -225,7 +264,32 @@ if (!hayAtrasado) {
      prorrateo, que existe para no marcar en rojo al que todavía tiene la semana
      por delante. El anillo tricolor no se puede mirar hoy; volvé mañana.`)
 } else if (cuenta.al_dia > 0 && cuenta.va_bien > 0 && cuenta.atrasado > 0) {
-  console.log('\n   ✓ Los tres conviven: el anillo tricolor se puede mirar agrupando el mapa.')
+  // ── Y QUE ADEMÁS CAIGAN EN EL MISMO GRUPO ─────────────────────────────────
+  // Que los tres estados existan no alcanza: el anillo es de un GRUPO, y si
+  // quedan repartidos en racimos distintos cada marker sale de un color liso.
+  // Fue exactamente lo que pasó con la primera versión de este fixture, y solo
+  // se vio corriendo `ver-mapa-cobertura.mts` — ni el typecheck ni los conteos
+  // de arriba lo delataban.
+  const puntos: PuntoMapa[] = cob.comercios.map(x => ({
+    id: x.comercioId,
+    nombre: x.nombre,
+    lat: Number(porId.get(x.comercioId)?.lat),
+    lng: Number(porId.get(x.comercioId)?.lng),
+    presente: null,
+    tipo: null,
+    cobertura: x.estado,
+  }))
+  const zoomsConAnillo = [8, 11, 14, 17, 19]
+    .filter(z => agruparEnMapa(puntos, z).some(g => repartoDe(g.puntos, 'cobertura').length >= 3))
+
+  if (zoomsConAnillo.length === 0) {
+    console.log('\n   ✗ Los tres estados existen pero NINGÚN grupo es tricolor: quedaron en')
+    console.log('     racimos distintos y cada marker va de un color liso. El anillo sigue')
+    console.log('     sin poder mirarse. Revisá la elección de comercios.')
+    process.exitCode = 1
+  } else {
+    console.log(`\n   ✓ Los tres conviven, y hay un grupo TRICOLOR en los zooms ${zoomsConAnillo.join(', ')}.`)
+  }
 } else {
   console.log('\n   ✗ NO quedaron los tres estados. Revisalo antes de usar este fixture.')
   process.exitCode = 1
