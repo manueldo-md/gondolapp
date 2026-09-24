@@ -98,6 +98,7 @@ export default async function MapaDistriPage({
         // que se comió el alcance en la serie mensual del panel.
         rutaBase={hrefMapa(RUTA, { alcance: searchParams.alcance })}
         alcanceClave={searchParams.alcance}
+        panel="distri"
         apiKey={process.env.NEXT_PUBLIC_GEOAPIFY_KEY ?? ''}
       />
     </div>

@@ -35,6 +35,8 @@
  * Mismo motivo que en `lib/comercios-relevados.ts`.
  */
 
+import { hrefMapa } from './mapa-pdv'
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LO QUE ENTRA
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,6 +362,58 @@ export function siguienteSeleccion(
   if (!par) return null
   if (visitaId === par.anterior.misionId || visitaId === par.ultima.misionId) return null
   return { a: visitaId, b: par.ultima.misionId }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CÓMO SE LLEGA
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * El link a la evidencia de un comercio, o `null` si ese panel no la tiene.
+ *
+ * ── POR QUÉ UNA FUNCIÓN Y NO UN STRING EN CADA PANTALLA ─────────────────────
+ * Se entra desde tres lugares —la lista del grupo del mapa, la tabla de
+ * cobertura de una campaña de seguimiento, y el padrón— y cada uno tendría que
+ * acordarse de dos cosas: la ruta en SINGULAR, y que en distribuidora el
+ * alcance es obligatorio. Un link sin `alcance` no rompe: **abre la pantalla
+ * pidiendo que elijan**, que es un paso de más y se lee como un bug. Tres
+ * copias de esa regla son tres oportunidades de olvidarse de la segunda.
+ *
+ * `admin` y `repositora` devuelven `null`: esas pantallas no existen para esos
+ * paneles, y la tabla de cobertura —que los cuatro montan— tiene que poder no
+ * linkear en vez de llevar a un 404.
+ */
+export function rutaEvidencia(p: {
+  /**
+   * El `Panel` de `components/campanas/modulos/tema.ts`: `'marca'`, `'distri'`,
+   * `'admin'` o `'repositora'`.
+   *
+   * **Ojo con `'distri'` contra `/distribuidora/`**: el panel se llama de una
+   * forma y su ruta de otra, y esa traducción vive acá y en ningún otro lado.
+   * Escribir `'distribuidora'` en el llamador compila igual —es un `string`— y
+   * devuelve `null` en silencio, o sea un nombre de comercio que deja de ser un
+   * link sin que nada falle.
+   */
+  panel: string
+  comercioId: string
+  /** La clave del selector de alcance. Obligatoria en distribuidora. */
+  alcance?: string | null
+  /** Para llegar con la campaña ya elegida, cuando se entra desde una. */
+  campanaId?: string | null
+}): string | null {
+  if (!p.comercioId) return null
+
+  if (p.panel === 'marca') {
+    return hrefMapa(`/marca/comercio/${p.comercioId}`, { campana: p.campanaId })
+  }
+  if (p.panel === 'distri') {
+    // Sin alcance la pantalla no puede resolver el scope y muestra el selector.
+    // Mandar ahí desde un link que SÍ sabe cuál es sería hacer elegir dos veces.
+    if (!p.alcance) return null
+    return hrefMapa(`/distribuidora/comercio/${p.comercioId}`,
+      { alcance: p.alcance, campana: p.campanaId })
+  }
+  return null
 }
 
 function ordenar(x: Visita, y: Visita): [Visita, Visita] {

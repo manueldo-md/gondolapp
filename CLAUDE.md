@@ -5479,6 +5479,22 @@ poder mandar por chat.**
 de `CoberturaSeguimiento` y desde el padrón. Van al final porque un link a una
 pantalla que no existe es un link roto.
 
+##### PENDIENTE — el delta entre las dos visitas comparadas
+
+El comparador muestra las respuestas de cada lado, así que los dos números
+quedan uno al lado del otro —22 frentes contra 5— pero **nadie los resta**.
+
+Decidido el 24/9/2026 que no va por ahora, y el argumento es el que lo va a
+seguir frenando: con dos números al lado **la resta la hace el ojo**, y
+calcularla obliga a decidir qué se resta contra qué. La línea mezcla campañas a
+propósito, así que el par comparado puede tener a un lado el precio de una
+auditoría y al otro los frentes de una reposición: restar eso da un número que
+no describe nada, igual que el promedio entre campañas que la etapa 3 del tramo
+del panel tuvo que sacar.
+
+Si algún día se hace, el matcheo es por pregunta y **dentro de la misma
+campaña**, nunca entre dos.
+
 ##### PENDIENTE — la vista de lista de varias sucursales
 
 Con 200 sucursales entrar de a una no sirve, y es cierto. Pero hoy el alcance más

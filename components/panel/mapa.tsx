@@ -34,6 +34,7 @@ import {
   mensajeFallo, decidirFallo, type PuntoMapa, type GrupoMapa,
 } from '@/lib/mapa-pdv'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
+import { rutaEvidencia } from '@/lib/linea-comercio'
 import { formatearInstante } from '@/lib/fecha-ar'
 import { AlertTriangle, X } from 'lucide-react'
 import { fotosDeLaLista, type FotoDeLista } from './acciones-mapa'
@@ -53,7 +54,7 @@ const COLOR_TIPO_DEFAULT = '#94a3b8'
 
 export type Pintado = 'presencia' | 'tipo'
 
-export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId }: {
+export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId, panel }: {
   puntos: PuntoMapa[]
   pintar: Pintado
   apiKey: string
@@ -64,7 +65,15 @@ export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId }:
    */
   alcanceClave?: string | null
   campanaId?: string | null
+  /**
+   * Qué panel lo monta, para armar el link a la evidencia de cada comercio.
+   * Es el `Panel` de `modulos/tema.ts`: `'marca'` o `'distri'`.
+   */
+  panel?: string
 }) {
+  const hrefEvidencia = (comercioId: string) =>
+    rutaEvidencia({ panel: panel ?? '', comercioId, alcance: alcanceClave, campanaId })
+
   const inicial = useMemo(() => encuadrar(puntos, 900, ALTO), [puntos])
   const [zoom, setZoom] = useState(inicial.zoom)
   const [abierto, setAbierto] = useState<GrupoMapa | null>(null)
@@ -336,7 +345,22 @@ export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId }:
                     </div>
                   )}
 
-                  <span className="text-sm text-gray-800 truncate flex-1 min-w-0">{p.nombre}</span>
+                  {/* El nombre lleva a la evidencia de ese comercio: cómo viene su
+                      góndola en el tiempo. El mapa dice DÓNDE y pinta el último
+                      estado; la línea dice CÓMO VENÍA, que es la pregunta
+                      siguiente y hasta ahora no tenía por dónde entrarse.
+                      `rutaEvidencia` devuelve null donde esa pantalla no existe. */}
+                  {hrefEvidencia(p.id)
+                    ? (
+                      <a
+                        href={hrefEvidencia(p.id) as string}
+                        className="text-sm text-gray-800 truncate flex-1 min-w-0 hover:text-gondo-amber-600 hover:underline"
+                        title={`Ver la evolución de ${p.nombre}`}
+                      >
+                        {p.nombre}
+                      </a>
+                    )
+                    : <span className="text-sm text-gray-800 truncate flex-1 min-w-0">{p.nombre}</span>}
 
                   <span className="text-xs shrink-0 flex items-center gap-2">
                     <span className="text-gray-400">{etiquetaTipo(p.tipo)}</span>

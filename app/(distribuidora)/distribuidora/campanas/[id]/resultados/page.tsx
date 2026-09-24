@@ -32,7 +32,7 @@ export default async function DistriCampanaResultadosPage({
 
   const { data: campana, error } = await admin
     .from('campanas')
-    .select('id, nombre, tipo, estado, fecha_fin, fecha_inicio, modalidad, visitas_por_semana, minimo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, distri_id')
+    .select('id, nombre, tipo, estado, fecha_fin, fecha_inicio, modalidad, visitas_por_semana, minimo_comercios, tope_total_comercios, comercios_relevados, puntos_por_foto, distri_id, marca_id')
     .eq('id', params.id)
     .single()
 
@@ -68,6 +68,8 @@ export default async function DistriCampanaResultadosPage({
           modalidad:            c.modalidad ?? null,
           visitas_por_semana:   c.visitas_por_semana ?? null,
           fecha_inicio:         c.fecha_inicio ?? null,
+          // Para el link a la evidencia: en distri el alcance sale de acá.
+          marca_id:             (c as { marca_id?: string | null }).marca_id ?? null,
         }}
         tab={tab}
         panel="distri"

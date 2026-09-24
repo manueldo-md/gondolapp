@@ -23,6 +23,7 @@ import {
   calcularCobertura, calcularHistorico, etiquetaUltimaVisita,
   type EstadoCobertura, type VisitaMision,
 } from '@/lib/cobertura-seguimiento'
+import { rutaEvidencia } from '@/lib/linea-comercio'
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
                'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
@@ -52,16 +53,31 @@ export interface CoberturaSeguimientoProps {
   verAgente: boolean
   /** Clases de la barra, para que combine con el panel. */
   colorBarra: string
+  /**
+   * Con qué armar el link a la evidencia de cada comercio, o nada.
+   *
+   * Los CUATRO paneles montan esta tabla y solo dos tienen la pantalla de
+   * evidencia, así que `rutaEvidencia` devuelve null en admin y repositora y
+   * el nombre queda como texto. Un link que lleva a un 404 es peor que ninguno.
+   */
+  evidencia?: { panel: string; alcance?: string | null; campanaId?: string | null } | null
 }
 
 export function CoberturaSeguimiento({
   misiones, nombresComercio, aliasGondolero,
-  visitasPorSemana, fechaInicio, verAgente, colorBarra,
+  visitasPorSemana, fechaInicio, verAgente, colorBarra, evidencia,
 }: CoberturaSeguimientoProps) {
   if (!visitasPorSemana || visitasPorSemana <= 0) return null
 
   const c = calcularCobertura({ misiones, nombresComercio, visitasPorSemana, fechaInicio })
   if (c.comercios.length === 0) return null
+
+  // `rutaEvidencia` devuelve null en admin y repositora, así que ahí el nombre
+  // queda como texto: esas pantallas no existen para esos paneles.
+  const hrefDe = (comercioId: string) =>
+    evidencia
+      ? rutaEvidencia({ ...evidencia, comercioId })
+      : null
 
   const historico = new Map(
     calcularHistorico({ misiones, nombresComercio, visitasPorSemana, fechaInicio, semanas: 8 })
@@ -140,7 +156,21 @@ export function CoberturaSeguimiento({
               return (
                 <tr key={x.comercioId} className="border-b border-gray-50 last:border-0 align-top">
                   <td className="py-2.5 pr-2">
-                    <p className="text-gray-800 leading-tight">{x.nombre}</p>
+                    {/* El nombre lleva a la evidencia de ese comercio. Esta
+                        tabla dice CUÁNTAS veces se fue y la otra pantalla dice
+                        CÓMO quedó la góndola: es la pregunta que sigue después
+                        de ver un comercio en rojo. */}
+                    {hrefDe(x.comercioId)
+                      ? (
+                        <a
+                          href={hrefDe(x.comercioId) as string}
+                          className="text-gray-800 leading-tight hover:text-gondo-amber-600 hover:underline"
+                          title={`Ver la evolución de ${x.nombre}`}
+                        >
+                          {x.nombre}
+                        </a>
+                      )
+                      : <p className="text-gray-800 leading-tight">{x.nombre}</p>}
                     {/* El gondolero va acá, en el detalle de la fila, y no como
                         columna: un comercio puede tener dos personas distintas
                         en la misma semana, así que "el gondolero del comercio"

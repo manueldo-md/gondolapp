@@ -158,6 +158,25 @@ export default async function ComercioDetallePage({ params }: { params: { id: st
               {ultimaVisita ? `Última visita ${tiempoRelativo(ultimaVisita)}` : 'Sin visitas'}
             </span>
           </div>
+
+          {/* ── EL LINK A LA EVIDENCIA ──────────────────────────────────────
+              Esta pantalla es EL PADRÓN: dónde está el comercio, si está
+              validado, quién corrigió su ubicación. La otra —`comercio` en
+              singular— es la EVIDENCIA: cómo viene su góndola en el tiempo.
+              Son dos preguntas distintas sobre el mismo sustantivo, y desde acá
+              es donde alguien va a querer saltar a la otra.
+
+              Va SIN `?alcance`: esta pantalla no lo tiene, porque el padrón no
+              está acotado a una marca. La de evidencia abre pidiendo que elijan,
+              que es un paso de más pero es la verdad — no hay forma de adivinar
+              desde cuál alcance se está mirando este comercio. */}
+          <Link
+            href={`/distribuidora/comercio/${comercio.id}`}
+            className="inline-flex items-center gap-1.5 mt-3 text-sm text-gondo-amber-400 hover:text-gondo-amber-600 font-medium"
+          >
+            <History size={14} />
+            Ver cómo viene la góndola
+          </Link>
         </div>
       </div>
 

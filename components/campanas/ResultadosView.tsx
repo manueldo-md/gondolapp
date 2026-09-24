@@ -35,6 +35,7 @@ import { ModuloDispatcher } from './modulos/ModuloDispatcher'
 import { BadgeAvance } from './BadgeAvance'
 import { derivarAvance } from '@/lib/campana-avance'
 import { CoberturaSeguimiento } from './CoberturaSeguimiento'
+import { CLAVE_PROPIAS } from '@/lib/panel-distri'
 import { diaAR } from '@/lib/fecha-ar'
 
 export interface ResultadosViewCampana {
@@ -54,6 +55,11 @@ export interface ResultadosViewCampana {
   minimo_comercios: number | null
   /** Techo que cierra la campaña sola. Es el denominador de la barra. */
   tope_total_comercios: number | null
+  /**
+   * Para armar el alcance del link a la evidencia desde el panel de distri.
+   * Opcional: los paneles que no lo mandan simplemente no linkean.
+   */
+  marca_id?: string | null
 }
 
 /**
@@ -452,6 +458,15 @@ export function ResultadosView({
           fechaInicio={campana.fecha_inicio ?? null}
           verAgente={tema.verAgente}
           colorBarra={tema.barraAvance}
+          // El alcance de la distri sale de la campaña que se está mirando:
+          // `marca_id` si la ejecuta para una marca, y si no, sus propias.
+          // Sin esto el link abriría la pantalla pidiendo elegir un alcance que
+          // acá ya se sabe cuál es.
+          evidencia={{
+            panel,
+            alcance: campana.marca_id ?? (panel === 'distri' ? CLAVE_PROPIAS : null),
+            campanaId: campana.id,
+          }}
         />
       )}
 

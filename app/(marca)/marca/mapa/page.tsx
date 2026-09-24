@@ -54,6 +54,7 @@ export default async function MapaPage({
       campanaId={campanaId}
       pintar={pintar}
       rutaBase={RUTA}
+      panel="marca"
       apiKey={process.env.NEXT_PUBLIC_GEOAPIFY_KEY ?? ''}
     />
   )

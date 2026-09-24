@@ -84,7 +84,7 @@ function Control({ titulo, opciones, activo, href }: {
 }
 
 export function PantallaMapa({
-  filas, campanas, campanaId, pintar, rutaBase, apiKey, alcanceClave,
+  filas, campanas, campanaId, pintar, rutaBase, apiKey, alcanceClave, panel,
 }: {
   filas: FilaPdvMapa[]
   /** Las campañas del alcance, para el control "qué se muestra". */
@@ -104,6 +104,12 @@ export function PantallaMapa({
    * Viajan como datos: la accion los vuelve a validar contra la sesion.
    */
   alcanceClave?: string | null
+  /**
+   * Qué panel lo monta. Solo sirve para armar el link a la evidencia de cada
+   * comercio desde la lista del grupo: la ruta es distinta en marca y en
+   * distribuidora, y `rutaEvidencia` la resuelve.
+   */
+  panel?: string
 }) {
   const puntos: PuntoMapa[] = []
   let sinCoordenadas = 0
@@ -188,6 +194,7 @@ export function PantallaMapa({
           apiKey={apiKey}
           alcanceClave={alcanceClave}
           campanaId={campanaId}
+          panel={panel}
         />
       )}
 

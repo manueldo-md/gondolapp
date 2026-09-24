@@ -18,7 +18,7 @@
  * rompiendo el código a propósito, y lo que se rompió está anotado al final.
  */
 import {
-  armarLinea, parDeComparacion, siguienteSeleccion, instanteDeVisita, TOPE_VISITAS,
+  armarLinea, parDeComparacion, siguienteSeleccion, rutaEvidencia, instanteDeVisita, TOPE_VISITAS,
   type FilaMisionLinea, type FilaFotoLinea, type FilaRespuestaLinea, type Visita,
 } from '../lib/linea-comercio'
 
@@ -339,6 +339,43 @@ console.log('\n▸ Elegir otra visita: la MÁS RECIENTE de las dos se queda')
   caso('la que ya es el lado viejo no ofrece link', siguienteSeleccion(par, 'v2'), null)
   caso('la que ya es el lado nuevo tampoco', siguienteSeleccion(par, 'v3'), null)
   caso('sin par no hay link', siguienteSeleccion(null, 'v0'), null)
+}
+
+console.log('\n▸ El link a la evidencia sale bien, o no sale')
+{
+  caso('marca, sin campaña',
+    rutaEvidencia({ panel: 'marca', comercioId: 'c1' }), '/marca/comercio/c1')
+  caso('marca, con campaña',
+    rutaEvidencia({ panel: 'marca', comercioId: 'c1', campanaId: 'k9' }),
+    '/marca/comercio/c1?campana=k9')
+
+  caso('distri, con alcance',
+    rutaEvidencia({ panel: 'distri', comercioId: 'c1', alcance: 'm7' }),
+    '/distribuidora/comercio/c1?alcance=m7')
+  caso('distri, con alcance y campaña',
+    rutaEvidencia({ panel: 'distri', comercioId: 'c1', alcance: 'm7', campanaId: 'k9' }),
+    '/distribuidora/comercio/c1?alcance=m7&campana=k9')
+  caso('distri, con las campañas propias',
+    rutaEvidencia({ panel: 'distri', comercioId: 'c1', alcance: 'propias' }),
+    '/distribuidora/comercio/c1?alcance=propias')
+
+  // Sin alcance la pantalla abriría pidiendo que elijan, y mandar ahí desde un
+  // link que debería saber cuál es sería hacer elegir dos veces.
+  caso('distri sin alcance no linkea',
+    rutaEvidencia({ panel: 'distri', comercioId: 'c1' }), null)
+
+  // La tabla de cobertura la montan los cuatro paneles y solo dos tienen la
+  // pantalla. Un link a un 404 es peor que ninguno.
+  caso('admin no linkea', rutaEvidencia({ panel: 'admin', comercioId: 'c1' }), null)
+  caso('repositora tampoco', rutaEvidencia({ panel: 'repositora', comercioId: 'c1' }), null)
+  caso('sin comercio tampoco', rutaEvidencia({ panel: 'marca', comercioId: '' }), null)
+
+  // EL CASO QUE YA MORDIÓ, y por eso está acá: el panel se llama 'distri' y su
+  // ruta es '/distribuidora/'. Escribir el nombre de la ruta como panel compila
+  // igual —es un `string`— y devuelve null en silencio: un nombre de comercio
+  // que deja de ser un link sin que nada falle.
+  caso("CONTROL — 'distribuidora' NO es un panel válido",
+    rutaEvidencia({ panel: 'distribuidora', comercioId: 'c1', alcance: 'm7' }), null)
 }
 
 console.log('\n▸ Con menos de dos visitas con foto no hay comparación')

@@ -68,6 +68,8 @@ export default async function MarcaCampanaResultadosPage({
           modalidad:            c.modalidad ?? null,
           visitas_por_semana:   c.visitas_por_semana ?? null,
           fecha_inicio:         c.fecha_inicio ?? null,
+          // Para el link a la evidencia: en distri el alcance sale de acá.
+          marca_id:             (c as { marca_id?: string | null }).marca_id ?? null,
         }}
         tab={tab}
         panel="marca"
