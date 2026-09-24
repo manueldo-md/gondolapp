@@ -27,7 +27,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { campanasDe, idsDe, type Alcance } from '@/lib/campanas-de'
 import { opcionesDeDistri, alcanceDesde } from '@/lib/panel-distri'
 import { firmarFotosEnLote } from '@/lib/storage-fotos'
-import { ultimaFotoPorComercio, type FilaFotoMapa } from '@/lib/fotos-mapa'
+import { ultimaFotoPorComercio, fotosCandidatas, type FilaFotoMapa } from '@/lib/fotos-mapa'
 
 export type FotoDeLista = {
   comercioId: string
@@ -35,9 +35,6 @@ export type FotoDeLista = {
   /** Cuándo se sacó. La lista la muestra para que el thumb no parezca de hoy. */
   instante: string
 }
-
-/** Cuántos comercios puede pedir una sola apertura. Un grupo real son 1–10. */
-const TOPE_COMERCIOS = 60
 
 export async function fotosDeLaLista(params: {
   comercioIds: string[]
@@ -79,25 +76,10 @@ export async function fotosDeLaLista(params: {
   const campanaIds = idsDe(campanas, campanaId)
   if (campanaIds.length === 0) return []
 
-  const { data, error } = await admin
-    .from('fotos')
-    .select('id, comercio_id, storage_path, url, created_at, misiones(capturada_at)')
-    .in('comercio_id', comercioIds.slice(0, TOPE_COMERCIOS))
-    .in('campana_id', campanaIds)
-    // Solo aprobadas: una foto pendiente todavía no es evidencia, y mostrarla
-    // al lado de un número la convierte en una.
-    .eq('estado', 'aprobada')
-    // Con misión: descarta la foto de FACHADA del alta de comercio, que va sin
-    // `mision_id`. Es evidencia de que el comercio existe, no de cómo está la
-    // góndola, que es lo que este mapa está contando.
-    .not('mision_id', 'is', null)
-
-  if (error) {
-    console.error('[mapa] fotos de la lista:', error.message)
-    return []
-  }
-
-  const filas = (data ?? []) as FilaFotoMapa[]
+  // La consulta vive en lib/fotos-mapa.ts y no acá: es donde está la regla de
+  // "la foto es DE ESA CAMPAÑA", y adentro de una server action no se podía
+  // probar sin replicarla. Ver el encabezado de esa función.
+  const filas: FilaFotoMapa[] = await fotosCandidatas(comercioIds, campanaIds, admin)
   const elegidas = ultimaFotoPorComercio(filas)
   if (elegidas.size === 0) return []
 

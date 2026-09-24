@@ -72,3 +72,66 @@ export function ultimaFotoPorComercio(filas: FilaFotoMapa[]): Map<string, FotoDe
 
   return mejor
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LA CONSULTA — acá y no en la server action, a propósito
+//
+// La regla "con una campaña elegida, la foto es DE ESA CAMPAÑA" no vive en
+// `ultimaFotoPorComercio`: esa función elige la más reciente de las filas que
+// le dan, y hace bien. **Vive en los filtros de esta consulta.**
+//
+// Mientras estuvo adentro de la server action no había forma de probarla: una
+// action `'use server'` necesita sesión y no se puede llamar desde un script.
+// El primer control que escribí REPLICABA el SQL, y un control que replica lo
+// que dice verificar se queda verde el día que los dos se separan — que es
+// exactamente el modo de falla que este proyecto ya documentó tres veces.
+//
+// Acá la llaman las dos: la action (con el permiso ya resuelto) y
+// `scripts/probar-fotos-por-campana.mjs` (con service role y datos reales).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Admin = any
+
+/** Cuántos comercios puede pedir una sola apertura. Un grupo real son 1–10. */
+export const TOPE_COMERCIOS = 60
+
+/**
+ * Las fotos candidatas de esos comercios, ACOTADAS a esas campañas.
+ *
+ * `campanaIds` ya viene resuelto por `idsDe(campanas, campanaId)`:
+ *
+ *   · con una campaña elegida → un arreglo de UN elemento, y el thumb sale solo
+ *     de ahí. Entrar a una campaña de hace seis meses y ver una foto de hace 30
+ *     días de otra campaña es mostrar evidencia equivocada, y la foto no lleva
+ *     la fecha escrita: nadie lo notaría.
+ *   · sin campaña elegida → todas las del alcance, y la más reciente gana. Ahí
+ *     corresponde, porque el punto pinta el último estado conocido.
+ *   · vacío → no se consulta nada. El scope falla cerrado.
+ */
+export async function fotosCandidatas(
+  comercioIds: string[],
+  campanaIds: string[],
+  admin: Admin,
+): Promise<FilaFotoMapa[]> {
+  if (comercioIds.length === 0 || campanaIds.length === 0) return []
+
+  const { data, error } = await admin
+    .from('fotos')
+    .select('id, comercio_id, storage_path, url, created_at, misiones(capturada_at)')
+    .in('comercio_id', comercioIds.slice(0, TOPE_COMERCIOS))
+    .in('campana_id', campanaIds)
+    // Solo aprobadas: una foto pendiente todavía no es evidencia, y mostrarla
+    // al lado de un número la convierte en una.
+    .eq('estado', 'aprobada')
+    // Con misión: descarta la foto de FACHADA del alta de comercio, que va sin
+    // `mision_id`. Es evidencia de que el comercio existe, no de cómo está la
+    // góndola, que es lo que este mapa está contando.
+    .not('mision_id', 'is', null)
+
+  if (error) {
+    console.error('[mapa] fotos de la lista:', error.message)
+    return []
+  }
+  return (data ?? []) as FilaFotoMapa[]
+}
