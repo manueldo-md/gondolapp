@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { PantallaMapa, type FilaPdvMapa } from '@/components/panel/pantalla-mapa'
-import type { Pintado } from '@/components/panel/mapa'
+import type { ModoPintado } from '@/lib/mapa-pdv'
 import {
   SelectorAlcance, SinAlcanceElegido, SinCampanas,
 } from '@/components/panel/selector-alcance'
@@ -79,7 +79,7 @@ export default async function MapaDistriPage({
   }
 
   const campanaId = searchParams.campana || null
-  const pintar: Pintado = searchParams.pintar === 'tipo' ? 'tipo' : 'presencia'
+  const pintar: ModoPintado = searchParams.pintar === 'tipo' ? 'tipo' : 'presencia'
 
   const campanas = await campanasDe(alcance, admin)
   const pdvRes = await admin.rpc('panel_pdv', { _campanas: idsDe(campanas, campanaId) })

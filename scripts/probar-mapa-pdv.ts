@@ -21,6 +21,7 @@ import {
   proyectar, agruparEnMapa, encuadrar, anilloGrupo, colorPunto, textoGrupo,
   SEPARACION_PX, COLOR_PRESENCIA, decidirFallo, mensajeFallo, urlTile, MINIMO_FALLOS, hrefMapa,
   type PuntoMapa,
+  repartoDe, COLOR_COBERTURA, COLOR_TIPO, COLOR_NEUTRO, type ModoPintado,
 } from '../lib/mapa-pdv'
 
 let fallos = 0
@@ -64,8 +65,13 @@ console.log('\n▸ NINGÚN PDV SE PIERDE — el invariante que sostiene todo')
   }
   caso('del zoom 1 al 18, siempre salen los 8 puntos, sin repetir', mal, 0)
 
-  caso('y los conteos de cada grupo suman sus puntos',
-    agruparEnMapa(REALES, 10).every(g => g.presentes + g.ausentes + g.sinMedir === g.puntos.length),
+  // El invariante pasó a ser MÁS fuerte al generalizar: antes valía solo para
+  // presencia —eran los tres campos que `agruparEnMapa` guardaba— y ahora se
+  // comprueba en los tres modos. Cada punto cae en exactamente una categoría.
+  caso('y el reparto de cada grupo suma sus puntos, en los tres modos',
+    (['presencia', 'tipo', 'cobertura'] as ModoPintado[]).every(modo =>
+      agruparEnMapa(REALES, 10).every(g =>
+        repartoDe(g.puntos, modo).reduce((n, x) => n + x.n, 0) === g.puntos.length)),
     true)
 }
 
@@ -99,7 +105,8 @@ console.log('\n▸ LA MINORÍA NO SE ESCONDE')
 {
   const mixto = agruparEnMapa(REALES, 14).find(g => g.puntos.length === 6)!
   caso('el grupo de 6: 4 presentes, 1 ausente, 1 sin medir',
-    { p: mixto.presentes, a: mixto.ausentes, s: mixto.sinMedir }, { p: 4, a: 1, s: 1 })
+    repartoDe(mixto.puntos, 'presencia').map(x => [x.cat.clave, x.n]),
+    [['presente', 4], ['ausente', 1], ['sinMedir', 1]])
 
   const anillo = anilloGrupo(mixto)
   caso('el anillo tiene los TRES colores', [
@@ -113,9 +120,87 @@ console.log('\n▸ LA MINORÍA NO SE ESCONDE')
     textoGrupo(mixto), '6 PDV · 4 con presencia · 1 sin presencia · 1 sin medir')
 
   // El control que importa: un grupo de un solo color NO puede salir tricolor.
+  // Con una sola categoría ya no se arma un `conic-gradient` de un tramo: sale
+  // el color liso, que es lo mismo en pantalla y más barato de leer.
   const puros = agruparEnMapa([pdv('a', -32, -58), pdv('b', -32.00001, -58.00001)], 12)[0]
-  caso('CONTROL — un grupo todo presente es de un solo color',
-    (anilloGrupo(puros).match(/deg/g) ?? []).length, 2)
+  caso('CONTROL — un grupo todo presente tiene UNA categoría',
+    repartoDe(puros.puntos, 'presencia').length, 1)
+  caso('y sale de un color liso, sin gradiente',
+    anilloGrupo(puros, 'presencia'), COLOR_PRESENCIA.presente)
+}
+
+console.log('\n▸ COBERTURA: el mismo anillo, otra condición')
+// El tercer modo. Los tres estados son proporciones de una misma condición
+// —igual que presencia y a diferencia del tipo de comercio— así que el anillo
+// aplica y la minoría tampoco se esconde: un grupo de 8 con 1 atrasado tiene
+// que dejar ver ese atrasado, que es justo el que hay que ir a buscar.
+{
+  const cob = (id: string, lat: number, lng: number, c: 'al_dia' | 'va_bien' | 'atrasado' | null) =>
+    ({ ...pdv(id, lat, lng, null), cobertura: c })
+
+  const g = agruparEnMapa([
+    cob('a', -32, -58, 'al_dia'),
+    cob('b', -32.00001, -58.00001, 'al_dia'),
+    cob('c', -32.00002, -58.00002, 'va_bien'),
+    cob('d', -32.00003, -58.00003, 'atrasado'),
+  ], 12)[0]
+
+  caso('los cuatro en un grupo', g.puntos.length, 4)
+  caso('el reparto, en el orden de la referencia',
+    repartoDe(g.puntos, 'cobertura').map(x => [x.cat.clave, x.n]),
+    [['al_dia', 2], ['va_bien', 1], ['atrasado', 1]])
+
+  const anillo = anilloGrupo(g, 'cobertura')
+  caso('el anillo tiene los TRES colores', [
+    anillo.includes(COLOR_COBERTURA.al_dia),
+    anillo.includes(COLOR_COBERTURA.va_bien),
+    anillo.includes(COLOR_COBERTURA.atrasado),
+  ], [true, true, true])
+  caso('y cierra los 360 grados exactos',
+    Number(anillo.match(/([\d.]+)deg\)$/)![1]), 360)
+  caso('el texto los nombra a los tres',
+    textoGrupo(g, 'cobertura'), '4 PDV · 2 al día · 1 va bien · 1 atrasado')
+
+  // CONTROL: el mismo grupo pintado por presencia NO dice nada de cobertura.
+  // Si el modo no se propagara, el anillo saldría igual en los dos.
+  caso('CONTROL — el mismo grupo por presencia es otra cosa',
+    // 'sin medir' a secas y no 'presencia sin medir': la `frase` larga es solo
+    // para el punto SUELTO, donde no hay lista que dé contexto.
+    textoGrupo(g, 'presencia'), '4 PDV · 4 sin medir')
+
+  // Un PDV del mapa sin estado de cobertura no debería existir —los dos
+  // universos salen de las mismas misiones— pero si aparece se pinta gris
+  // claro en vez de desaparecer o mentir un estado.
+  const conHueco = agruparEnMapa([cob('a', -32, -58, 'al_dia'), cob('e', -32.00001, -58.00001, null)], 12)[0]
+  caso('el que no tiene estado cae en "sin dato"',
+    repartoDe(conHueco.puntos, 'cobertura').map(x => x.cat.clave), ['al_dia', 'sinDato'])
+  caso('y el punto suelto se pinta gris claro',
+    colorPunto(cob('e', -32, -58, null), 'cobertura'), COLOR_COBERTURA.sinDato)
+}
+
+console.log('\n▸ TIPO no lleva anillo: son categorías, no proporciones')
+{
+  const mezcla = agruparEnMapa([
+    { ...pdv('a', -32, -58, true), tipo: 'kiosco' },
+    { ...pdv('b', -32.00001, -58.00001, true), tipo: 'almacen' },
+  ], 12)[0]
+  caso('un grupo de tipos mezclados va neutro', anilloGrupo(mezcla, 'tipo'), COLOR_NEUTRO)
+  caso('y no arma ningún gradiente', anilloGrupo(mezcla, 'tipo').includes('conic-gradient'), false)
+
+  const iguales = agruparEnMapa([
+    { ...pdv('a', -32, -58, true), tipo: 'kiosco' },
+    { ...pdv('b', -32.00001, -58.00001, false), tipo: 'kiosco' },
+  ], 12)[0]
+  caso('y si todos son del mismo tipo, va de ese color',
+    anilloGrupo(iguales, 'tipo'), COLOR_TIPO.kiosco)
+  // CONTROL: ese mismo grupo SÍ lleva anillo por presencia — uno presente y
+  // uno ausente. La diferencia es del modo, no del grupo.
+  caso('CONTROL — el mismo grupo por presencia sí parte el anillo',
+    anilloGrupo(iguales, 'presencia').includes('conic-gradient'), true)
+
+  const desconocido = { ...pdv('x', -32, -58, true), tipo: 'lo-que-sea' }
+  caso('un tipo que no está en la tabla cae en "otro"',
+    colorPunto(desconocido, 'tipo'), COLOR_TIPO.otro)
 }
 
 console.log('\n▸ Un PDV solo no es un grupo disfrazado')

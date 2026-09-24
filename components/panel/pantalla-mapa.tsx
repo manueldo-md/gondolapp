@@ -30,8 +30,8 @@
  * dejen de ser cero, no para hoy. Ese camino no lo ejercita ningún dato real.
  */
 import { MapIcon, AlertTriangle } from 'lucide-react'
-import { MapaCliente, type Pintado } from '@/components/panel/mapa'
-import { COLOR_PRESENCIA, hrefMapa, type PuntoMapa } from '@/lib/mapa-pdv'
+import { MapaCliente } from '@/components/panel/mapa'
+import { hrefMapa, repartoDe, tieneAnillo, type PuntoMapa, type ModoPintado } from '@/lib/mapa-pdv'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 
 /** Una fila de `panel_pdv`. */
@@ -47,11 +47,6 @@ export type FilaPdvMapa = {
   con_valor: number
   verdaderos: number
   ultima_medicion: string | null
-}
-
-const COLOR_TIPO: Record<string, string> = {
-  almacen: '#b45309', kiosco: '#7c3aed', autoservicio: '#0891b2',
-  dietetica: '#16a34a', mayorista: '#be123c', otro: '#64748b',
 }
 
 /** Un control: links, no botones. Cero JS y la selección viaja en la URL. */
@@ -90,7 +85,7 @@ export function PantallaMapa({
   /** Las campañas del alcance, para el control "qué se muestra". */
   campanas: { id: string; nombre: string }[]
   campanaId: string | null
-  pintar: Pintado
+  pintar: ModoPintado
   /**
    * La ruta de ESTA pantalla, que puede traer su propia query — el mapa de la
    * distribuidora lleva `?alcance=<marca>`. Los links de los controles se
@@ -128,10 +123,10 @@ export function PantallaMapa({
     })
   }
 
-  const conPresencia = puntos.filter(p => p.presente === true).length
-  const sinPresencia = puntos.filter(p => p.presente === false).length
-  const sinMedir     = puntos.filter(p => p.presente === null).length
-  const tiposPresentes = [...new Set(puntos.map(p => p.tipo ?? 'otro'))].sort()
+  // La referencia sale del MISMO reparto que pinta los círculos, así que no
+  // puede decir una cosa distinta de lo que se ve. Antes eran tres contadores
+  // de presencia escritos a mano más una lista de tipos aparte.
+  const reparto = repartoDe(puntos, pintar)
 
   return (
     <div className="space-y-5">
@@ -200,37 +195,18 @@ export function PantallaMapa({
 
       {/* ── Referencias ───────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
-        {pintar === 'presencia' ? (
-          <div className="flex gap-5 flex-wrap text-sm">
-            {([
-              ['Con presencia', COLOR_PRESENCIA.presente, conPresencia],
-              ['Sin presencia', COLOR_PRESENCIA.ausente,  sinPresencia],
-              ['Sin medir',     COLOR_PRESENCIA.sinMedir, sinMedir],
-            ] as const).map(([label, color, n]) => (
-              <span key={label} className="flex items-center gap-2 text-gray-600">
-                <span className="w-3 h-3 rounded-full" style={{ background: color }} />
-                {label} <strong className="text-gray-900">{n}</strong>
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div className="flex gap-5 flex-wrap text-sm">
-            {tiposPresentes.map(t => (
-              <span key={t} className="flex items-center gap-2 text-gray-600">
-                <span className="w-3 h-3 rounded-full"
-                  style={{ background: COLOR_TIPO[t] ?? '#94a3b8' }} />
-                {etiquetaTipo(t)}{' '}
-                <strong className="text-gray-900">
-                  {puntos.filter(p => (p.tipo ?? 'otro') === t).length}
-                </strong>
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex gap-5 flex-wrap text-sm">
+          {reparto.map(({ cat, n }) => (
+            <span key={cat.clave} className="flex items-center gap-2 text-gray-600">
+              <span className="w-3 h-3 rounded-full" style={{ background: cat.color }} />
+              {cat.etiqueta} <strong className="text-gray-900">{n}</strong>
+            </span>
+          ))}
+        </div>
 
         <p className="text-xs text-gray-400 mt-3">
           Un círculo con un número son varios PDV que a este zoom se tapan entre sí.
-          {pintar === 'presencia' && ' El anillo muestra de qué está hecho el grupo.'}
+          {tieneAnillo(pintar) && ' El anillo muestra de qué está hecho el grupo.'}
           {' '}Acercá el mapa o tocalo para abrirlo.
         </p>
 

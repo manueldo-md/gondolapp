@@ -31,7 +31,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Map, Overlay } from 'pigeon-maps'
 import {
   agruparEnMapa, encuadrar, anilloGrupo, colorPunto, textoGrupo, urlTile,
-  mensajeFallo, decidirFallo, type PuntoMapa, type GrupoMapa,
+  mensajeFallo, decidirFallo, type PuntoMapa, type GrupoMapa, type ModoPintado,
 } from '@/lib/mapa-pdv'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 import { rutaEvidencia } from '@/lib/linea-comercio'
@@ -42,21 +42,11 @@ import { fotosDeLaLista, type FotoDeLista } from './acciones-mapa'
 const ALTO = 560
 
 /** Un color por tipo de comercio. El sexto valor del CHECK cae en el default. */
-const COLOR_TIPO: Record<string, string> = {
-  almacen:      '#b45309',
-  kiosco:       '#7c3aed',
-  autoservicio: '#0891b2',
-  dietetica:    '#16a34a',
-  mayorista:    '#be123c',
-  otro:         '#64748b',
-}
-const COLOR_TIPO_DEFAULT = '#94a3b8'
 
-export type Pintado = 'presencia' | 'tipo'
 
 export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId, panel }: {
   puntos: PuntoMapa[]
-  pintar: Pintado
+  pintar: ModoPintado
   apiKey: string
   /**
    * Los dos parámetros que la server action necesita para reconstruir el
@@ -194,18 +184,6 @@ export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId, p
 
   const grupos = useMemo(() => agruparEnMapa(puntos, Math.round(zoom)), [puntos, zoom])
 
-  const colorDe = (g: GrupoMapa): string => {
-    if (pintar === 'tipo') {
-      const tipos = new Set(g.puntos.map(p => p.tipo ?? 'otro'))
-      // Un grupo de tipos mezclados no se pinta del primero: se pinta neutro y
-      // el número dice que hay varios. Mismo criterio que la minoría.
-      return tipos.size === 1
-        ? (COLOR_TIPO[[...tipos][0]] ?? COLOR_TIPO_DEFAULT)
-        : COLOR_TIPO_DEFAULT
-    }
-    return g.puntos.length === 1 ? colorPunto(g.puntos[0]) : ''
-  }
-
   return (
     <div className="space-y-3">
       {fallo && (
@@ -240,25 +218,27 @@ export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId, p
               <Overlay key={g.clave} anchor={[g.lat, g.lng]} offset={[12, 12]}>
                 <button
                   onClick={() => setAbierto(g)}
-                  title={textoGrupo(g)}
-                  aria-label={textoGrupo(g)}
+                  title={textoGrupo(g, pintar)}
+                  aria-label={textoGrupo(g, pintar)}
                   className="w-6 h-6 rounded-full ring-2 ring-white shadow cursor-pointer
                     hover:scale-125 transition-transform"
-                  style={{ background: colorDe(g) }}
+                  style={{ background: colorPunto(g.puntos[0], pintar) }}
                 />
               </Overlay>
             ) : (
               <Overlay key={g.clave} anchor={[g.lat, g.lng]} offset={[17, 17]}>
                 <button
                   onClick={() => setAbierto(g)}
-                  title={textoGrupo(g)}
+                  title={textoGrupo(g, pintar)}
                   className="w-[34px] h-[34px] rounded-full flex items-center justify-center
                     text-[11px] font-bold text-gray-900 shadow ring-1 ring-black/10
                     hover:scale-110 transition-transform cursor-pointer"
                   style={{
-                    // El anillo partido: nada esconde a la minoría. Con el
-                    // pintado por tipo el grupo va de un color liso.
-                    background: pintar === 'presencia' ? anilloGrupo(g) : colorDe(g),
+                    // El anillo partido: nada esconde a la minoría. `anilloGrupo`
+                    // decide solo si el modo lleva proporciones —presencia y
+                    // cobertura sí, tipo de comercio no— así que acá no hay
+                    // ninguna rama por modo.
+                    background: anilloGrupo(g, pintar),
                   }}
                 >
                   <span className="w-[22px] h-[22px] rounded-full bg-white/95 flex items-center justify-center">

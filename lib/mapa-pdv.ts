@@ -39,6 +39,11 @@ export interface PuntoMapa {
   lng: number
   presente: boolean | null
   tipo: string | null
+  /**
+   * El estado de cobertura de ESTA semana, solo en campañas de seguimiento.
+   * Lo calcula `calcularCobertura` y lo trae la pantalla; el mapa no lo deriva.
+   */
+  cobertura?: 'al_dia' | 'va_bien' | 'atrasado' | null
 }
 
 export interface GrupoMapa {
@@ -47,9 +52,6 @@ export interface GrupoMapa {
   lat: number
   lng: number
   puntos: PuntoMapa[]
-  presentes: number
-  ausentes: number
-  sinMedir: number
 }
 
 /** Tamaño del marker en píxeles. Dos PDV más cerca que esto se tapan. */
@@ -106,10 +108,11 @@ export function agruparEnMapa(
       clave,
       lat: pts.reduce((s, p) => s + p.lat, 0) / pts.length,
       lng: pts.reduce((s, p) => s + p.lng, 0) / pts.length,
+      // Los conteos por categoría NO se guardan acá: dependen del modo de
+      // pintado, que es del que mira y no del agrupamiento. Se derivan con
+      // `repartoDe`. Guardarlos obligaría a reagrupar al cambiar de modo, o a
+      // tener tres juegos de contadores en la misma estructura.
       puntos: pts,
-      presentes: pts.filter(p => p.presente === true).length,
-      ausentes:  pts.filter(p => p.presente === false).length,
-      sinMedir:  pts.filter(p => p.presente === null).length,
     }))
     .sort((a, b) => b.puntos.length - a.puntos.length || a.clave.localeCompare(b.clave))
 }
@@ -148,6 +151,32 @@ export function encuadrar(
 }
 
 // ── Cómo se pinta un grupo ───────────────────────────────────────────────────
+//
+// Los tres modos se describen con la misma forma —una lista ordenada de
+// categorías con su color— y el resto del archivo no sabe cuál está activo.
+//
+// Antes esto estaba clavado en presencia: `GrupoMapa` traía `presentes`,
+// `ausentes` y `sinMedir` calculados adentro de `agruparEnMapa`, y `anilloGrupo`
+// armaba el gradiente con esos tres. Agregar cobertura por ese camino habría
+// sido una segunda copia de la misma maquinaria.
+
+/** Qué decide el color de cada punto. */
+export type ModoPintado = 'presencia' | 'tipo' | 'cobertura'
+
+export interface Categoria {
+  clave: string
+  etiqueta: string
+  color: string
+  /**
+   * Cómo se dice de UN punto suelto, cuando la etiqueta sola no alcanza.
+   *
+   * "Sin medir" es una columna clara en la referencia y un renglón vago al lado
+   * de un nombre: *"Kiosco El Cid — sin medir"* no dice sin medir QUÉ. Las
+   * demás se leen bien solas —"al día", "atrasado", "almacén"— y por eso esto
+   * es la excepción y no un campo obligatorio.
+   */
+  frase?: string
+}
 
 export const COLOR_PRESENCIA = {
   presente: '#16a34a',
@@ -156,55 +185,170 @@ export const COLOR_PRESENCIA = {
 } as const
 
 /**
+ * Los colores de la cobertura son **los del dashboard**, no un semáforo.
+ *
+ * Verde / gris / rojo y no verde / ámbar / rojo: el dashboard pinta `va bien`
+ * en gris a propósito, porque *"existe para mostrar lo que falta, no para
+ * felicitar"*. Con ámbar, una campaña sana se vería medio alarmada y el
+ * atrasado dejaría de saltar.
+ *
+ * El gris choca con el `sinMedir` de presencia, y se aceptó: **son dos modos
+ * que nunca están en pantalla al mismo tiempo**, y la referencia de abajo del
+ * mapa nombra las tres categorías del modo activo. La alternativa —inventar un
+ * cuarto color para no repetir— haría que el mismo estado se vea distinto en
+ * dos pantallas que la distri lee seguidas.
+ */
+export const COLOR_COBERTURA = {
+  al_dia:   '#15803d',
+  va_bien:  '#6b7280',
+  atrasado: '#e11d48',
+  sinDato:  '#d1d5db',
+} as const
+
+/**
+ * Los colores por tipo de comercio.
+ *
+ * Estaban escritos DOS veces —en `mapa.tsx` y en `pantalla-mapa.tsx`— con el
+ * mismo contenido y dos defaults distintos. Es el caso de siempre: dos copias
+ * de la misma tabla, y una se queda vieja el día que alguien agregue un tipo.
+ */
+export const COLOR_TIPO: Record<string, string> = {
+  almacen:      '#b45309',
+  kiosco:       '#7c3aed',
+  autoservicio: '#0891b2',
+  dietetica:    '#16a34a',
+  mayorista:    '#be123c',
+  otro:         '#64748b',
+}
+
+export const COLOR_NEUTRO = '#94a3b8'
+
+const CATEGORIAS: Record<ModoPintado, Categoria[]> = {
+  presencia: [
+    { clave: 'presente', etiqueta: 'Con presencia', color: COLOR_PRESENCIA.presente },
+    { clave: 'ausente',  etiqueta: 'Sin presencia', color: COLOR_PRESENCIA.ausente },
+    { clave: 'sinMedir', etiqueta: 'Sin medir',     color: COLOR_PRESENCIA.sinMedir,
+      frase: 'presencia sin medir' },
+  ],
+  cobertura: [
+    { clave: 'al_dia',   etiqueta: 'Al día',    color: COLOR_COBERTURA.al_dia },
+    { clave: 'va_bien',  etiqueta: 'Va bien',   color: COLOR_COBERTURA.va_bien },
+    { clave: 'atrasado', etiqueta: 'Atrasado',  color: COLOR_COBERTURA.atrasado },
+    // Un PDV del mapa sin estado de cobertura no debería existir: los dos
+    // universos salen de las mismas misiones. La costura es el estado
+    // 'rechazada', que `panel_pdv` excluye y la cobertura no — y que hoy tiene
+    // CERO filas. Si algún día las tiene, el punto se pinta gris claro en vez
+    // de desaparecer o mentir un estado.
+    { clave: 'sinDato',  etiqueta: 'Sin dato',  color: COLOR_COBERTURA.sinDato },
+  ],
+  tipo: [
+    { clave: 'almacen',      etiqueta: 'Almacén',      color: COLOR_TIPO.almacen },
+    { clave: 'autoservicio', etiqueta: 'Autoservicio', color: COLOR_TIPO.autoservicio },
+    { clave: 'kiosco',       etiqueta: 'Kiosco',       color: COLOR_TIPO.kiosco },
+    { clave: 'dietetica',    etiqueta: 'Dietética',    color: COLOR_TIPO.dietetica },
+    { clave: 'mayorista',    etiqueta: 'Mayorista',    color: COLOR_TIPO.mayorista },
+    { clave: 'otro',         etiqueta: 'Otro',         color: COLOR_TIPO.otro },
+  ],
+}
+
+/**
+ * Si el grupo mixto muestra PROPORCIONES o va de un color liso.
+ *
+ * Presencia y cobertura sí: son grados de una misma condición, y esconder la
+ * minoría es justo lo que el anillo vino a impedir — un grupo de 8 con 1
+ * atrasado tiene que dejar ver ese atrasado, que es el que hay que ir a buscar.
+ *
+ * Tipo de comercio NO: son categorías sin orden, y un gradiente de seis colores
+ * no dice "hay proporciones", dice "hay varios". Para eso ya está el número.
+ */
+export function tieneAnillo(modo: ModoPintado): boolean {
+  return modo !== 'tipo'
+}
+
+/** Las categorías de un modo, en el orden en que se leen. */
+export function categoriasDe(modo: ModoPintado): Categoria[] {
+  return CATEGORIAS[modo]
+}
+
+/** En qué categoría de ese modo cae el punto. */
+export function categoriaDe(p: PuntoMapa, modo: ModoPintado): string {
+  if (modo === 'tipo') {
+    const t = p.tipo ?? 'otro'
+    return COLOR_TIPO[t] ? t : 'otro'
+  }
+  if (modo === 'cobertura') {
+    return p.cobertura ?? 'sinDato'
+  }
+  return p.presente === null ? 'sinMedir' : p.presente ? 'presente' : 'ausente'
+}
+
+/**
+ * Cuántos puntos caen en cada categoría, **sin las vacías y en orden**.
+ *
+ * La suma de `n` es siempre `puntos.length`: cada punto cae en exactamente una
+ * categoría y ninguna se descarta. Un mapa que se come un PDV al contar miente
+ * igual que uno que lo tapa.
+ */
+export function repartoDe(puntos: PuntoMapa[], modo: ModoPintado): { cat: Categoria; n: number }[] {
+  const cuenta = new Map<string, number>()
+  for (const p of puntos) {
+    const clave = categoriaDe(p, modo)
+    cuenta.set(clave, (cuenta.get(clave) ?? 0) + 1)
+  }
+  return categoriasDe(modo)
+    .map(cat => ({ cat, n: cuenta.get(cat.clave) ?? 0 }))
+    .filter(x => x.n > 0)
+}
+
+/**
  * El anillo de un grupo, como `conic-gradient`.
  *
  * ── NADA ESCONDE A LA MINORÍA ───────────────────────────────────────────────
  * Pintar el grupo del color de la mayoría es la salida fácil y es exactamente
  * lo que este panel viene evitando: un grupo de 6 con 4 presentes y 2 ausentes
- * pintado de verde dice que ahí está todo bien. El anillo partido en tres
- * muestra las proporciones reales, y el número adentro dice cuántos son.
+ * pintado de verde dice que ahí está todo bien. El anillo partido muestra las
+ * proporciones reales, y el número adentro dice cuántos son.
  *
  * Es la misma técnica que `PresenciaDonut` ya usa en el dashboard: CSS puro,
  * sin librería y sin un solo byte de JavaScript extra.
+ *
+ * En un modo sin proporciones —tipo de comercio— devuelve un color liso: el del
+ * tipo si todos coinciden, y el neutro si están mezclados.
  */
-export function anilloGrupo(g: GrupoMapa): string {
-  const total = g.puntos.length
-  if (total === 0) return COLOR_PRESENCIA.sinMedir
+export function anilloGrupo(g: GrupoMapa, modo: ModoPintado = 'presencia'): string {
+  const reparto = repartoDe(g.puntos, modo)
+  if (reparto.length === 0) return COLOR_NEUTRO
+  if (!tieneAnillo(modo)) {
+    return reparto.length === 1 ? reparto[0].cat.color : COLOR_NEUTRO
+  }
+  if (reparto.length === 1) return reparto[0].cat.color
 
+  const total = g.puntos.length
   const tramos: string[] = []
   let desde = 0
-  for (const [n, color] of [
-    [g.presentes, COLOR_PRESENCIA.presente],
-    [g.ausentes,  COLOR_PRESENCIA.ausente],
-    [g.sinMedir,  COLOR_PRESENCIA.sinMedir],
-  ] as const) {
-    if (n === 0) continue
+  for (const { cat, n } of reparto) {
     const hasta = desde + (n / total) * 360
-    tramos.push(`${color} ${desde.toFixed(2)}deg ${hasta.toFixed(2)}deg`)
+    tramos.push(`${cat.color} ${desde.toFixed(2)}deg ${hasta.toFixed(2)}deg`)
     desde = hasta
   }
   return `conic-gradient(${tramos.join(', ')})`
 }
 
 /** El color de un PDV suelto. */
-export function colorPunto(p: PuntoMapa): string {
-  return p.presente === null ? COLOR_PRESENCIA.sinMedir
-       : p.presente          ? COLOR_PRESENCIA.presente
-       :                       COLOR_PRESENCIA.ausente
+export function colorPunto(p: PuntoMapa, modo: ModoPintado = 'presencia'): string {
+  const clave = categoriaDe(p, modo)
+  return categoriasDe(modo).find(c => c.clave === clave)?.color ?? COLOR_NEUTRO
 }
 
 /** El texto de un grupo: lo que se lee al tocarlo, sin esconder ninguna parte. */
-export function textoGrupo(g: GrupoMapa): string {
+export function textoGrupo(g: GrupoMapa, modo: ModoPintado = 'presencia'): string {
+  const reparto = repartoDe(g.puntos, modo)
   if (g.puntos.length === 1) {
-    const p = g.puntos[0]
-    return p.presente === null ? `${p.nombre} — presencia sin medir`
-         : p.presente          ? `${p.nombre} — con presencia`
-         :                       `${p.nombre} — sin presencia`
+    const cat = reparto[0]?.cat
+    const etiqueta = cat?.frase ?? cat?.etiqueta.toLowerCase() ?? 'sin dato'
+    return `${g.puntos[0].nombre} — ${etiqueta}`
   }
-  const partes: string[] = []
-  if (g.presentes) partes.push(`${g.presentes} con presencia`)
-  if (g.ausentes)  partes.push(`${g.ausentes} sin presencia`)
-  if (g.sinMedir)  partes.push(`${g.sinMedir} sin medir`)
+  const partes = reparto.map(({ cat, n }) => `${n} ${cat.etiqueta.toLowerCase()}`)
   return `${g.puntos.length} PDV · ${partes.join(' · ')}`
 }
 
