@@ -4814,7 +4814,7 @@ apuntando la key a basura. Ningún deploy los va a ejercitar.
 
 ---
 
-### 5. El renombre y las alertas muertas de la distri (23/9/2026)
+### 5. El panel y el mapa para la DISTRIBUIDORA — ✅ HECHO el 23 y 24/9/2026
 
 Las dos primeras etapas del tramo que comparte el panel entre marca y
 distribuidora. **El caso que lo justifica**, para no perderlo: una distri arma
@@ -4911,30 +4911,351 @@ ponen rojos** poniendo el cartel viejo a propósito. Los controles son sobre el
 TEXTO y no sobre el booleano, porque el daño estaba en la frase: un test que
 solo mirara `midiendo` habría pasado con el cartel de ayer.
 
-#### PENDIENTE — las otras dos alertas que miden fotos en vez de misiones
+#### Etapa 2 — el scope pasa a ser una LISTA DE CAMPAÑAS
 
-Va **después** de la etapa del scope, y no junto con ella: las dos necesitan
-saber cuáles son las campañas de la distri, y hoy eso está escrito inline en
-**tres** lugares (la pantalla de alertas, el dashboard y el layout). La etapa
-del scope crea el único lugar que contesta esa pregunta. Hacerlas antes es
-escribir una cuarta copia y después tener que sacarla.
+Migración `20260928100000`. Las tres funciones del panel dejaron de filtrar por
+dueño:
 
-**Gondoleros inactivos.** Mide `fotos.created_at` en 14 días. Una campaña de
-solo preguntas no produce fotos, así que **un gondolero que trabajó ayer aparece
-acusado de inactivo, con nombre y apellido**, en el dashboard de la distri. En
-dev el bloque dice *"11 de 13 sin actividad"* y **2 de esos 11 habían trabajado**
-en la ventana. Es el peor de los tres: no es un número que falta, es una
-acusación falsa sobre una persona.
+```
+panel_marca_series(uuid)       →  panel_series(uuid[])
+panel_marca_visitas(uuid)      →  panel_visitas(uuid[])
+panel_marca_pdv(uuid, uuid)    →  panel_pdv(uuid[])
+```
 
-Pasa a medir `misiones.capturada_at`. **El ancla importa y ya nos mintió una
-vez**: `created_at` es cuándo entró la fila, no cuándo se hizo el trabajo.
+**El cuerpo del SQL es idéntico salvo una línea**: `c.marca_id = _marca_id` pasa
+a `c.id = ANY (_campanas)`. Todo lo demás —las dos fuentes, el grano por
+(misión, fuente), el ancla en `capturada_at`, los estados excluidos, el
+`GROUPING SETS`— es el mismo texto.
 
-**Comercios sin visita.** Mismo cambio de fuente, más un corte. La consulta
-fuente está acotada a 60 días y el filtro pide "más de 30", así que la banda
-visible es 30–60 días: **23 comercios en cada base, cuyo último dato es de hace
-más de 60 días, son invisibles**. Los más abandonados desaparecen justo por
-estar más abandonados. El universo pasa a ser *los comercios con alguna misión
-en campañas de la distri*, y esos 23 entran.
+La alternativa era agregar un `_distri_id` y un OR. Se descartó: duplicar ese
+cuerpo es duplicar las reglas que más costaron, y garantizar que el día que
+alguien corrija una, la otra quede vieja en silencio.
+
+**El invariante, dentro de la transacción:** para cada marca, las tres nuevas
+devuelven exactamente las mismas filas que las tres viejas. Se compara con
+`EXCEPT ALL` en las dos direcciones, que además del contenido detecta
+diferencias de **multiplicidad** — dos filas idénticas donde antes había una es
+un bug de agregación que un `EXCEPT` a secas no vería. Si difiere una sola fila,
+no commitea.
+
+Verificado que el bloque muerde, rompiéndolo a propósito de dos maneras: un
+scope que falla ABIERTO con la lista vacía, y una diferencia sutil en el cuerpo.
+Las dos las agarra el `DO`.
+
+##### LA LISTA ES EL PERMISO
+
+Lo que más importa de esta etapa, y no es el SQL.
+
+`panel_marca_pdv(_marca_id, _campana_id)` filtraba por marca **y** por campaña,
+así que un `campana_id` ajeno llegado por la URL simplemente no devolvía nada:
+**el dueño era la red de seguridad, y nadie tenía que acordarse de validar.**
+
+`panel_pdv(_campanas)` no tiene dueño contra el cual contrastar. Por eso
+`lib/campanas-de.ts` es el único lugar que contesta "cuáles son las campañas de
+X", y su `idsDe()` intersecta lo pedido contra lo que el actor puede ver: una
+campaña ajena devuelve `[]`, **no la lista entera**. Esa diferencia es la que
+separa "no tenés datos de esa campaña" de "te muestro todo porque no entendí lo
+que pediste".
+
+`campanasDe` devuelve las FILAS y no solo los ids a propósito: el panel usa
+estado y fechas, el mapa usa el nombre. Si devolviera ids, cada pantalla
+volvería a consultar `campanas` con su propio `.eq('marca_id', …)` — el
+predicado escrito de nuevo, que es justo lo que el archivo viene a impedir.
+
+**Costo asumido:** el dashboard perdió paralelismo. Las campañas van primero y
+solas, porque los tres RPC dependen de esa lista.
+
+#### El DROP de las tres viejas — migración `20260929100000`
+
+Corrió **un día después** del deploy, con el orden de siempre: código que deja
+de usarlas → deploy → verificar en producción → DROP. Al revés, el deploy
+anterior se queda llamando funciones que no existen, y PostgREST no devuelve la
+fila sin esa función: **no devuelve nada**.
+
+El grep de después, sobre el repo entero y clasificado —porque el crudo devuelve
+80 líneas y casi todas son prosa—:
+
+```
+rpc('panel_marca…  en todo el repo       CERO
+app/ lib/ components/ types/             8 comentarios, ninguna llamada
+supabase/migrations/                     histórico
+scripts/ (3 dry-runs)                    SQL real
+```
+
+La migración verifica **las dos direcciones** —que se hayan ido las tres y que
+sigan las tres nuevas— y además las ejercita, porque que el nombre exista no
+prueba que devuelva filas. Cuenta **por nombre, no por firma**: `panel_marca_pdv`
+era `(uuid, uuid)` desde `20260927100000`, y un `DROP IF EXISTS` con la firma
+equivocada no falla, simplemente no borra.
+
+Tiene una **precondición**: si las funciones nuevas no están, se niega a borrar.
+El dry-run la prueba de verdad —dropea las nuevas en una transacción aparte y
+espera que la migración explote— porque una precondición que nadie ejercitó
+puede estar mal escrita sin que se note.
+
+> **Un hallazgo que no era de este tramo:** `probar-migracion-pdv.mjs` está roto
+> desde el 23/9 y nadie se enteró. Aplica `20260926100000`, que crea
+> `panel_marca_pdv(uuid)`, sobre una base que desde `20260927100000` tiene
+> `panel_marca_pdv(uuid, uuid DEFAULT NULL)`: las dos firmas conviven y la
+> llamada de un argumento da **42725 — is not unique**. Es la misma trampa que
+> `20260927100000` documenta en su encabezado, esta vez del lado del dry-run.
+> **Un script de verificación que no se corre no verifica nada.**
+
+#### Etapa 2b — las dos alertas que medían fotos
+
+`fotos` es una fuente equivocada para "¿hubo actividad?" desde que existen las
+campañas de solo preguntas: no producen una sola foto.
+
+**Gondoleros inactivos.** El dashboard de Biomega decía *"11 de 13 sin actividad
+en 14 días"*, con nombre propio. No es un número que falta: **es una acusación
+falsa sobre una persona.** Ahora mide `misiones.capturada_at`, y en dev pasa de
+11 a 10.
+
+Dos decisiones que no son obvias:
+
+- **El scope son las campañas de la distri, no todas.** Un gondolero puede estar
+  vinculado a varias a la vez, así que "trabajó" y "trabajó PARA VOS" son
+  preguntas distintas. Medido: para Biomega la global da 9 y la de la distri 10;
+  para Distribuidora Del Valle la global da 1 y la de la distri **2** — alguien
+  activo para otro que no produce nada acá. Eso obliga a cambiar el texto: la
+  pantalla ya no dice "sin actividad" —una afirmación sobre la persona, que
+  sería falsa— sino **"sin misiones en tus campañas"**.
+- **Las misiones descartadas y rechazadas SÍ cuentan como actividad.** Todo el
+  resto del tramo las excluye; acá sería un error, porque la pregunta no es "¿este
+  trabajo cuenta?" sino "¿esta persona trabajó?". Excluirlas acusaría a alguien
+  cuya única misión de la quincena se rechazó.
+
+Y la consulta **falla cerrada**: si no se puede leer, no se acusa a nadie.
+
+**Comercios sin visita.** Partía de las fotos de los últimos 60 días y después
+filtraba "hace más de 30": la banda visible era 30–60, y **todo comercio con más
+de 60 sin visita desaparecía de la alerta**. Los más abandonados se escondían
+justo por estar más abandonados — 23 en cada base.
+
+El universo pasa a ser `panel_pdv`, que ya devuelve un comercio por fila con su
+última visita, así que no hace falta otra consulta ni reescribir la regla. Sin
+techo. Biomega pasa de mostrar 0 a **51 en dev y 56 en prod**.
+
+> Ese salto no es que aparecieran comercios abandonados: es que el techo los
+> escondía a todos. Los datos del piloto son de marzo y el peor caso es *Allais,
+> 196 días*. Con seis meses sin relevar, la respuesta honesta es que casi todo el
+> padrón está sin visitar.
+
+**El badge cuenta el TOTAL, no lo que entra en pantalla.** La lista se recorta en
+50 para que se pueda leer, y un badge que contara la lista diría 50 habiendo 56.
+Los más viejos primero, para que el recorte se lleve los menos urgentes.
+
+Las dos pasan por `lib/campanas-de.ts`, que es para lo que se hizo. Y por eso
+esta etapa fue **después** del scope: hacerlas antes era escribir una cuarta
+copia de "cuáles son las campañas de X" —ya estaba inline en la pantalla de
+alertas, el dashboard y el layout— y después tener que sacarla.
+
+#### Etapa 3 — el panel de la distribuidora
+
+`/distribuidora/panel` es el MISMO panel que el de marca: las mismas funciones,
+el mismo rollup y los mismos componentes. Lo único propio es el alcance.
+
+##### El tercer control, obligatorio y SIN DEFAULT
+
+En producción Biomega ve:
+
+```
+Georgalos S.A. (2)   ·   Suprante SRL (1)   ·   Mis campañas propias (1)
+```
+
+Las opciones salen de los datos: si deja de ejecutar campañas de una marca, esa
+opción desaparece sola.
+
+**No hay "todas" y no hay default.** El 80% de Georgalos y el 64% de Suprante
+darían un 74% que no describe a ninguna de las dos — el mismo error que
+promediar promedios con distinto N. Y un default escondido —"si no eligió, la
+primera"— **es peor que una pantalla vacía**, porque la distri leería el número
+de una marca creyendo que es de otra. Mientras no elija, la pantalla lo explica
+y no dibuja un solo número.
+
+`alcanceDesde` además valida la clave contra las opciones de ESA distri: un
+`marca_id` puesto a mano en la URL no se convierte en alcance y no produce
+ninguna consulta.
+
+##### El aviso de las 8 misiones, que se apaga solo
+
+El tablero viejo cuenta la actividad de SUS GONDOLEROS vayan donde vayan; el
+panel cuenta las misiones de SUS CAMPAÑAS las haga quien las haga. Los dos son
+defendibles y en producción no dan lo mismo:
+
+```
+Biomega (prod)   100 por gondolero  →   92 por campaña      delta 8
+Biomega (dev)    143                →  138                  20 salen, 15 entran
+Distri Norte      12                →   12                  apagado
+```
+
+Un número que baja de 100 a 92 sin explicación se lee como un error del sistema,
+y a partir de ahí no se le cree a ninguno de los dos. El aviso sale de **medir**
+la diferencia en las dos direcciones, así que **se apaga solo** el día que los
+criterios coincidan — ya está apagado para Distri Norte, con datos reales. No
+hay bandera que bajar.
+
+##### Los tres arreglos que salieron de probarlo
+
+**1. El desglose se comía el alcance.** `hrefPunto` pegaba un `?` fijo, y el
+panel monta la serie con `/distribuidora/panel?alcance=<marca>`: tocar un punto
+perdía el alcance y la pantalla volvía al estado sin elegir. El desglose que se
+pedía **no llegaba a dibujarse nunca**.
+
+**2. LAS MÉTRICAS NUMÉRICAS NO SE AGREGAN ENTRE CAMPAÑAS.** Decisión de producto,
+y la que más cambia el panel — también el de marca.
+
+Precio y Frentes solo significan algo dentro de una campaña, porque cada campaña
+mide un producto distinto: promediar el precio del aceite de coco con el de la
+pasta de maní da un número que no describe nada, y cinco frentes de un producto
+con dos de otro no son 3,5. Presencia, quiebre y exhibición **sí** agregan: son
+el porcentaje de una condición que significa lo mismo en cualquier campaña.
+
+**No cambió el SQL.** El `GROUPING SETS` ya emite los dos granos, así que las
+agregables salen de las filas de TOTAL y las que no, de las de DESGLOSE.
+
+La regla es `esAgregableEntreCampanas` y **se deriva de `tipo_respuesta`**. Eso
+tiene un límite anotado: el día que exista una numérica comparable entre campañas
+—metros de góndola, bocas— esa derivación la parte mal, y ahí sí hace falta una
+columna `agregable` en `metricas`. Es el único caso que la justifica.
+
+Tres consecuencias que no son obvias:
+
+- `SerieMetrica` gana `clave` (`slug`, o `slug::campanaId`). Sin eso dos tarjetas
+  de Precio comparten el `?metrica=precio` y el desglose abre en las dos.
+- Una serie por campaña **no arrastra `pdvVisitados`**: ese denominador es de
+  todas las campañas del alcance, y mostraría "4 de 69 PDV" para una que cubrió 13.
+- El KPI "Precio promedio" del panel de distri **se fue**. Era exactamente el
+  promedio entre campañas que esto vino a sacar.
+
+Un total numérico sin desglose **no se dibuja y queda en el log**. No se cae al
+total como respaldo a propósito: ese número es el promedio prohibido.
+
+**3. Un solo punto no necesita gráfico.** Con una sola medición el eje se
+estiraba —0 a 15.008 para un valor de 13.050— y la tipografía del SVG crecía con
+él. Un gráfico dibuja una tendencia y con un punto no hay ninguna. Ahora va el
+número, su mes y su base de cálculo. Se cuentan los puntos **con valor**: un mes
+con observaciones y sin valor usable no se dibuja, así que tampoco cuenta.
+
+Ya se dispara con datos de producción: la Presencia de Georgalos tiene un solo
+mes medido.
+
+> Los 109 controles pasaron a 122, y **se tocaron aserciones**. El cambio de
+> producto invalidó lo que afirmaban. El control del promedio ponderado —"$2.140
+> contra $3.516"— **se mudó a una binaria**, que es donde esa cuenta sigue viva,
+> y en su lugar quedó el que importa ahora: **el promedio entre campañas no
+> aparece en ninguna serie**. El resto fueron fixtures: el helper creaba filas
+> `numero` por default y sin desglose, así que dejaban de producir serie.
+
+#### Etapa 4 — el mapa de la distribuidora
+
+`/distribuidora/mapa`, con el mismo alcance obligatorio. Sin migración: usa
+`panel_pdv`.
+
+**No se duplicó la pantalla.** El cuerpo del mapa de marca eran 200 líneas de
+controles, referencias y avisos sin nada específico de un actor: se extrajo a
+`components/panel/pantalla-mapa.tsx` y las dos páginas quedaron en ~60 líneas.
+El selector de alcance también salió a `components/panel/selector-alcance.tsx` —
+**dos copias de un control obligatorio son dos oportunidades de que una se dé un
+default a sí misma.**
+
+**Y los links de los controles ya no se arman a mano.** `hrefMapa()` en
+`lib/mapa-pdv.ts` hace merge sobre la query que la ruta ya trae. Es el mismo bug
+que `hrefPunto` tuvo dos etapas antes, pero acá la superficie es mayor: son DOS
+controles que se combinan entre sí sobre una base que lleva el alcance. El
+control menos obvio de los 14 es que **el valor por default BORRE el parámetro**:
+"Todos los PDV" no es un valor, es la ausencia del filtro, y dejarlo como
+`?campana=` haría que la URL diga que hay un filtro puesto.
+
+Cambiar de alcance **resetea los otros dos filtros** a propósito: una campaña de
+Georgalos no existe dentro de Suprante.
+
+Medido en producción:
+
+```
+Biomega → Georgalos   58 PDV · 45 con · 11 sin · 2 sin medir
+  ↳ Auditoría precios Mantecol   25 PDV, los 25 "sin medir"
+Biomega → Suprante    11 PDV · 7 con · 4 sin
+```
+
+El caso del medio es el que vale: esa campaña mide precio, no presencia, y el
+mapa dice **"no preguntamos"** en vez de pintar 25 puntos como ausentes.
+
+#### Etapa 5 — la miniatura de foto en la lista del mapa
+
+El mapa dice DÓNDE y la foto dice POR QUÉ. Un punto rojo con la foto al lado es
+la diferencia entre "no está" y "no está porque la góndola está vacía".
+
+**Las firmas al abrir obligan a una server action.** Los buckets son privados:
+firmar necesita service role. La lista vive en `MapaCliente`, que es cliente
+porque el mapa tiene zoom. Firmar en el render serían 58 tokens de una hora
+emitidos para que alguien mire tres.
+
+**Y la acción no le cree al cliente:** recibe ids de comercio y la selección de
+la URL, pero vuelve a resolver el permiso desde la sesión. Una acción que
+aceptara los ids de campaña del cliente sería la puerta de atrás de todo el
+tramo.
+
+**"Última" es por `capturada_at`.** El punto pinta el último estado conocido, así
+que la foto tiene que ser de esa visita. El control que lo prueba es una foto de
+campo de marzo que entró a la base DESPUÉS que la de septiembre: por `created_at`
+ganaría la equivocada, y **nadie lo notaría** — una foto de góndola no lleva la
+fecha escrita. Por eso el visor la muestra fechada.
+
+Dos filtros definen qué es evidencia: solo **aprobadas** —una pendiente todavía
+no lo es, y ponerla al lado de un número la convierte en una— y solo con
+`mision_id`, que descarta la foto de fachada del alta de comercio.
+
+`firmarFotosEnLote` usa `createSignedUrls` en plural: **58 firmas en 100 ms**.
+`firmarFotos` queda como está —cinco fachadas no justifican tocarlo— y el helper
+nuevo documenta cuándo usar cuál.
+
+Tap o click, **no hover**: en un celular el hover no existe.
+
+##### La foto es de LA CAMPAÑA ELEGIDA, y eso hubo que probarlo
+
+Con una campaña elegida, el thumb sale solo de esa campaña; sin campaña, la
+última de cualquiera del alcance. El filtro es `idsDe(campanas, campanaId)` →
+`.in('campana_id', …)`.
+
+El caso que rompe es real: **25 PDV en dev y 23 en prod** tienen fotos de dos
+campañas de la misma marca donde la de la OTRA es más nueva. Entrar a la campaña
+de marzo y tocar San Martín traería la foto del 5 de abril.
+
+**La primera versión del control replicaba el SQL, y por eso no servía.** Daba
+verde, pero un control que REPLICA lo que dice verificar se queda verde el día
+que los dos se separan — el mismo defecto que la sonda del mapa, que medía una
+URL escrita a mano en vez de la del componente. La consulta se sacó de la server
+action a `fotosCandidatas()` en `lib/fotos-mapa.ts`, y el control llama a las
+mismas funciones que corren en producción.
+
+Y si no hubiera datos para el caso, el script se reporta **NO VERIFICABLE** en
+vez de verde: uno que no distingue un filtro que anda de uno que no existe no es
+un control.
+
+---
+
+#### LOS HUECOS DE ESTE TRAMO QUE NINGÚN DATO EJERCITA
+
+- **El camino firmado del thumb.** De los 58 PDV de Georgalos en prod, solo **2**
+  salen firmados de Storage; los otros 56 van por el fallback a `url` (Drive y
+  picsum del seed). O sea que `createSignedUrls` se ejercita sobre dos filas y el
+  resto del tiempo el thumb llega por una rama que no toca Storage. Se estrena de
+  verdad cuando suban fotos reales.
+- **La rama "Todavía sin leer" de la alerta de quiebre.** Existe solo en dev
+  (Biomega tiene 1 pregunta tipificada); en prod todas las distris dan 0.
+- **Una numérica con DOS fuentes en el mismo mes y campaña.** El código las suma
+  y recalcula el valor sobre la suma; hoy `declaracion_foto` solo alimenta
+  Presencia, que es binaria, así que ese `if` no corre nunca.
+- **Un total numérico sin desglose.** El `console.error` que lo declara no se
+  disparó una sola vez con datos reales, y no debería: el `GROUPING SETS` lo
+  garantiza. Está para el día que deje de garantizarlo.
+
+---
+
+#### PENDIENTE — el dashboard viejo de la distri
+
+Qué sobrevive. Es la etapa 6 y lo único que queda del tramo.
 
 #### PENDIENTE — "comercios que nadie tocó nunca", atado a la asignación
 
@@ -4945,6 +5266,42 @@ interesan, y sin eso "nadie lo tocó nunca" no se distingue de "no es suyo".
 
 No empezar sin que exista la asignación. Cuando exista, el universo es la lista
 asignada y la alerta es la resta contra las misiones.
+
+#### PENDIENTE — tramo propio: seguimiento visual por comercio
+
+Va **después** de la etapa 6. Dos piezas, y ninguna es el panel de métricas.
+
+**1. El mapa en campañas de seguimiento.** El punto deja de pintar presencia y
+pinta **cobertura**: al día / va bien / atrasado, los mismos tres estados que ya
+calcula el dashboard de cobertura. Y el número adentro del círculo son **las
+visitas de la semana**, no la cantidad de comercios del grupo.
+
+O sea que "cómo se pinta" gana una tercera opción **cuando la campaña es de
+seguimiento**, sin sacar las otras dos.
+
+Dos cosas a resolver antes de escribir:
+
+- **El número del círculo cambia de significado.** Hoy un "3" quiere decir "tres
+  PDV acá". Si pasa a ser visitas, la referencia de abajo tiene que decir cuál de
+  las dos cosas está contando, o el mismo símbolo dice dos cosas distintas según
+  una opción que está arriba.
+- **"La semana" arrastra el pendiente de zona horaria.** El lunes empezaría a las
+  21:00 del domingo y las visitas de esas tres horas contarían para la semana
+  equivocada. Es lo mismo que la nota de "Etapa 5 de seguimiento — medir la
+  semana" dice que hay que resolver antes de medir semanas.
+
+**2. La línea de tiempo de fotos por comercio.** Pantalla nueva, que hoy no
+existe. Un local con cinco visitas tiene cinco fotos, y lo que importa no es
+verlas sueltas sino **ordenadas**: muestran si la góndola se mantiene o se
+degrada. Eso es lo que la distri le vende al cliente.
+
+Fotos en línea horizontal con la fecha debajo, y la primera y la última lado a
+lado para comparar — **esa es la foto que va a un informe.**
+
+Lo que ya está resuelto y sirve: `fotosCandidatas` trae las fotos de un comercio
+acotadas a un alcance, y `firmarFotosEnLote` las firma todas en una llamada. Lo
+que falta es traer **todas** y no solo la última, que es un parámetro.
+
 
 ---
 
