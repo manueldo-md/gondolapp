@@ -84,7 +84,7 @@ function Control({ titulo, opciones, activo, href }: {
 }
 
 export function PantallaMapa({
-  filas, campanas, campanaId, pintar, rutaBase, apiKey,
+  filas, campanas, campanaId, pintar, rutaBase, apiKey, alcanceClave,
 }: {
   filas: FilaPdvMapa[]
   /** Las campañas del alcance, para el control "qué se muestra". */
@@ -99,6 +99,11 @@ export function PantallaMapa({
    */
   rutaBase: string
   apiKey: string
+  /**
+   * Lo que la server action de las fotos necesita para reconstruir el alcance.
+   * Viajan como datos: la accion los vuelve a validar contra la sesion.
+   */
+  alcanceClave?: string | null
 }) {
   const puntos: PuntoMapa[] = []
   let sinCoordenadas = 0
@@ -177,7 +182,13 @@ export function PantallaMapa({
           </p>
         </div>
       ) : (
-        <MapaCliente puntos={puntos} pintar={pintar} apiKey={apiKey} />
+        <MapaCliente
+          puntos={puntos}
+          pintar={pintar}
+          apiKey={apiKey}
+          alcanceClave={alcanceClave}
+          campanaId={campanaId}
+        />
       )}
 
       {/* ── Referencias ───────────────────────────────────────────────────── */}

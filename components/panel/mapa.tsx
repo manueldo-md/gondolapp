@@ -34,7 +34,9 @@ import {
   mensajeFallo, decidirFallo, type PuntoMapa, type GrupoMapa,
 } from '@/lib/mapa-pdv'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
-import { AlertTriangle } from 'lucide-react'
+import { formatearInstante } from '@/lib/fecha-ar'
+import { AlertTriangle, X } from 'lucide-react'
+import { fotosDeLaLista, type FotoDeLista } from './acciones-mapa'
 
 const ALTO = 560
 
@@ -51,14 +53,81 @@ const COLOR_TIPO_DEFAULT = '#94a3b8'
 
 export type Pintado = 'presencia' | 'tipo'
 
-export function MapaCliente({ puntos, pintar, apiKey }: {
+export function MapaCliente({ puntos, pintar, apiKey, alcanceClave, campanaId }: {
   puntos: PuntoMapa[]
   pintar: Pintado
   apiKey: string
+  /**
+   * Los dos parámetros que la server action necesita para reconstruir el
+   * alcance. Viajan como datos, no como permiso: la acción los vuelve a
+   * validar contra la sesión. Ver components/panel/acciones-mapa.ts.
+   */
+  alcanceClave?: string | null
+  campanaId?: string | null
 }) {
   const inicial = useMemo(() => encuadrar(puntos, 900, ALTO), [puntos])
   const [zoom, setZoom] = useState(inicial.zoom)
   const [abierto, setAbierto] = useState<GrupoMapa | null>(null)
+
+  // ── Las fotos de la lista ─────────────────────────────────────────────────
+  // Se piden AL ABRIR un grupo, no antes: firmar en el render de la página
+  // serían 58 tokens de una hora emitidos para que alguien mire tres.
+  const [fotos, setFotos] = useState<Record<string, FotoDeLista>>({})
+  const [cargandoFotos, setCargandoFotos] = useState(false)
+  const [ampliada, setAmpliada] = useState<{ url: string; nombre: string; instante: string } | null>(null)
+
+  /**
+   * Los comercios que YA se preguntaron, con foto o sin ella.
+   *
+   * Va en un ref y no en el estado por dos razones. Una: los grupos se solapan
+   * al hacer zoom, así que sin memoria cada movimiento del mapa volvería a
+   * pedir lo mismo. Y dos: si esto viviera en `fotos`, el efecto tendría que
+   * depender de `fotos` y además escribirlo, o sea correr de nuevo cada vez que
+   * él mismo lo cambia. Un ref no dispara render y no entra en las deps.
+   *
+   * Es importante marcar también los que NO tienen foto: sin eso, un comercio
+   * sin foto se vuelve a consultar en cada apertura, para siempre.
+   */
+  const preguntados = useRef<Set<string>>(new Set())
+
+  // El alcance cambió: lo cacheado es de otro conjunto de campañas y hay que
+  // olvidarlo. Sin esto, cambiar de marca dejaría los thumbs de la anterior.
+  useEffect(() => {
+    preguntados.current = new Set()
+    setFotos({})
+  }, [alcanceClave, campanaId])
+
+  useEffect(() => {
+    if (!abierto) return
+    const faltan = abierto.puntos.map(p => p.id).filter(id => !preguntados.current.has(id))
+    if (faltan.length === 0) return
+
+    // Se marcan ANTES de pedir: si el usuario abre y cierra rápido, no se
+    // dispara la misma consulta dos veces.
+    for (const id of faltan) preguntados.current.add(id)
+
+    let vivo = true
+    setCargandoFotos(true)
+    fotosDeLaLista({ comercioIds: faltan, alcanceClave, campanaId })
+      .then(lista => {
+        if (!vivo) return
+        setFotos(prev => {
+          const sig = { ...prev }
+          for (const f of lista) sig[f.comercioId] = f
+          return sig
+        })
+      })
+      .catch(e => {
+        // Si falló, se desmarcan: la próxima apertura vuelve a intentar. Si no,
+        // un corte de red momentáneo dejaría esos comercios sin foto para
+        // siempre, sin nada que lo explique.
+        for (const id of faltan) preguntados.current.delete(id)
+        console.error('[mapa] no se pudieron traer las fotos:', e)
+      })
+      .finally(() => { if (vivo) setCargandoFotos(false) })
+
+    return () => { vivo = false }
+  }, [abierto, alcanceClave, campanaId])
 
   // ── Los tiles de verdad ───────────────────────────────────────────────────
   // Se cuentan los que cargan y los que fallan, escuchando en fase de captura
@@ -193,6 +262,39 @@ export function MapaCliente({ puntos, pintar, apiKey }: {
         </Map>
       </div>
 
+      {/* La foto ampliada. Es un overlay y no una pantalla nueva: el que la
+          abre está comparando puntos, y sacarlo del mapa le hace perder el
+          contexto que vino a mirar. */}
+      {ampliada && (
+        <div
+          onClick={() => setAmpliada(null)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"
+        >
+          <div className="max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-baseline justify-between gap-3 mb-2 text-white">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold truncate">{ampliada.nombre}</p>
+                {/* La fecha no es decorativa: sin ella, una foto de marzo al
+                    lado de un número de hoy se lee como si fuera de hoy. */}
+                <p className="text-xs text-white/60">
+                  {formatearInstante(ampliada.instante, { day: '2-digit', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+              <button
+                onClick={() => setAmpliada(null)}
+                aria-label="Cerrar"
+                className="text-white/70 hover:text-white shrink-0"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={ampliada.url} alt={`Góndola de ${ampliada.nombre}`}
+              className="w-full max-h-[80vh] object-contain rounded-xl bg-black/40" />
+          </div>
+        </div>
+      )}
+
       {/* Lo que hay adentro del punto o del grupo que se tocó. */}
       {abierto && (
         <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
@@ -206,21 +308,49 @@ export function MapaCliente({ puntos, pintar, apiKey }: {
             </button>
           </div>
           <ul className="divide-y divide-gray-50">
-            {abierto.puntos.map(p => (
-              <li key={p.id} className="flex items-center justify-between gap-3 py-1.5">
-                <span className="text-sm text-gray-800 truncate">{p.nombre}</span>
-                <span className="text-xs shrink-0 flex items-center gap-2">
-                  <span className="text-gray-400">{etiquetaTipo(p.tipo)}</span>
-                  <span
-                    className="inline-block w-2.5 h-2.5 rounded-full"
-                    style={{ background: colorPunto(p) }}
-                  />
-                  <span className="text-gray-500 w-20 text-right">
-                    {p.presente === null ? 'sin medir' : p.presente ? 'con presencia' : 'sin presencia'}
+            {abierto.puntos.map(p => {
+              const foto = fotos[p.id]
+              return (
+                <li key={p.id} className="flex items-center gap-3 py-2">
+                  {/* El thumb es un BOTÓN y se abre con tap o click, no con
+                      hover: en un celular el hover no existe, y este panel
+                      también se mira desde un celular. */}
+                  {foto ? (
+                    <button
+                      onClick={() => setAmpliada({ url: foto.url, nombre: p.nombre, instante: foto.instante })}
+                      title={`Ver la foto de ${p.nombre}`}
+                      aria-label={`Ampliar la foto de ${p.nombre}`}
+                      className="w-11 h-11 rounded-lg overflow-hidden bg-gray-100 shrink-0
+                        ring-1 ring-gray-200 hover:ring-gray-400 transition-shadow cursor-pointer"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={foto.url} alt="" className="w-full h-full object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden' }} />
+                    </button>
+                  ) : (
+                    <div className="w-11 h-11 rounded-lg shrink-0 bg-gray-50 ring-1 ring-gray-100
+                      flex items-center justify-center">
+                      <span className="text-[9px] text-gray-300 text-center leading-tight px-1">
+                        {cargandoFotos && !preguntados.current.has(p.id) ? '···' : 'sin foto'}
+                      </span>
+                    </div>
+                  )}
+
+                  <span className="text-sm text-gray-800 truncate flex-1 min-w-0">{p.nombre}</span>
+
+                  <span className="text-xs shrink-0 flex items-center gap-2">
+                    <span className="text-gray-400">{etiquetaTipo(p.tipo)}</span>
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-full"
+                      style={{ background: colorPunto(p) }}
+                    />
+                    <span className="text-gray-500 w-20 text-right">
+                      {p.presente === null ? 'sin medir' : p.presente ? 'con presencia' : 'sin presencia'}
+                    </span>
                   </span>
-                </span>
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

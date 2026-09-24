@@ -97,6 +97,7 @@ export default async function MapaDistriPage({
         // se arman con `hrefMapa`, que lo conserva. Armarlos a mano fue el bug
         // que se comió el alcance en la serie mensual del panel.
         rutaBase={hrefMapa(RUTA, { alcance: searchParams.alcance })}
+        alcanceClave={searchParams.alcance}
         apiKey={process.env.NEXT_PUBLIC_GEOAPIFY_KEY ?? ''}
       />
     </div>

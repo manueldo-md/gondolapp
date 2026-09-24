@@ -160,3 +160,66 @@ export async function firmarFotos(
 
   return Object.fromEntries(pares.filter((p): p is readonly [string, string] => p[1] !== null))
 }
+
+/**
+ * Igual que `firmarFotos`, pero firmando TODO EN UNA SOLA LLAMADA.
+ *
+ * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────
+ * `firmarFotos` hace un `createSignedUrl` por foto dentro de un `Promise.all`:
+ * son N viajes a Storage. Para las pantallas que lo usan —cinco fachadas, una
+ * galería— eso no se nota y no vale la pena tocarlo.
+ *
+ * Donde sí se nota es en la lista del mapa, que firma al ABRIR un grupo: ahí el
+ * usuario está esperando, y N viajes secuenciados por el pool de conexiones
+ * son N veces la latencia. `createSignedUrls` —en plural— manda todos los paths
+ * juntos y vuelve con todos los tokens.
+ *
+ * ── LO QUE NO CAMBIA ────────────────────────────────────────────────────────
+ * El orden es el mismo que en `firmarFotos`: **se firma primero y se cae a
+ * `url` después**. Las filas del seed —112 de Drive y 73 de picsum— no tienen
+ * objeto en Storage, así que para ésas el fallback es lo único que hay.
+ *
+ * Nunca tira. Una foto que no se puede firmar queda fuera del mapa y la lista
+ * la muestra sin thumb, que es lo que corresponde.
+ */
+export async function firmarFotosEnLote(
+  fotos: { id: string; storage_path?: string | null; url?: string | null }[],
+  admin: Admin,
+  segundos = 3600,
+): Promise<Record<string, string>> {
+  if (fotos.length === 0) return {}
+
+  const conPath = fotos.filter(f => f.storage_path)
+  const firmadoPorPath = new Map<string, string>()
+
+  if (conPath.length > 0) {
+    const paths = conPath.map(f => f.storage_path as string)
+    try {
+      const { data, error } = await admin.storage
+        .from(BUCKET_FOTOS)
+        .createSignedUrls(paths, segundos)
+
+      if (error) {
+        console.error('[storage] createSignedUrls:', error.message)
+      } else {
+        // Se indexa por `path` y no por posición: la API lo devuelve, y
+        // depender del orden sería una suposición que nadie verificaría.
+        // Cuando una entrada falla, `path` puede venir en null; ahí se usa la
+        // posición, que es lo único que queda.
+        ;(data ?? []).forEach((r: { path: string | null; signedUrl: string; error: string | null }, i: number) => {
+          if (r.error || !r.signedUrl) return
+          firmadoPorPath.set(r.path ?? paths[i], r.signedUrl)
+        })
+      }
+    } catch (e) {
+      console.error('[storage] createSignedUrls tiró:', (e as Error).message)
+    }
+  }
+
+  const pares = fotos.map(f => {
+    const firmada = f.storage_path ? firmadoPorPath.get(f.storage_path) : undefined
+    return [f.id, firmada ?? f.url ?? null] as const
+  })
+
+  return Object.fromEntries(pares.filter((p): p is readonly [string, string] => p[1] !== null))
+}
