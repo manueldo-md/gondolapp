@@ -5,15 +5,14 @@
  *
  * Los otros tres ya lo tenían (marca, distri y admin) desde que se sacó el
  * auto-marcado al entrar. Acá faltaba, y su ausencia había dejado algo peor:
- * `marcarNotificacionesLeidas` quedó **sin un solo llamador** cuando esta
- * pantalla pasó a marcar por clic, y `gondolero/perfil/marcar-leidas.tsx`
- * —el componente que la invocaba— quedó huérfano.
+ * cuando esta pantalla pasó a marcar por clic, `marcarNotificacionesLeidas`
+ * quedó **sin un solo llamador**, y con ella el componente que la invocaba
+ * —un `useEffect` con `setTimeout`, borrado el 25/9/2026—.
  *
  * Una acción muerta con la lógica adentro es la que alguien va a "arreglar"
  * algún día creyendo que es la que corre: ya pasó con `cambiar-rol-btn.tsx`,
  * con `unirseACampana` y con los dos formateadores sin zona de `lib/utils.ts`.
- * Darle el botón que los otros tres tienen la devuelve a la vida y de paso
- * empareja los cuatro paneles.
+ * Este botón la devuelve a la vida y de paso empareja los cuatro paneles.
  */
 
 import { useTransition } from 'react'
