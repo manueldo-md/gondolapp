@@ -6443,7 +6443,7 @@ muestra el nombre y no el selector. Se estrena con la próxima alta.
 | 6 | ✅ **HECHA** — `reparar-localidades.mts`, mismo mecanismo que el alta. `--aplicar` exige `--confirmo=N`, y N solo se sabe leyendo la propuesta | corrido en dev: **13 de 13 exacto, 0 fallidos, 0 sin localidad**. Verificado que la confirmación muerde sin el número y con uno equivocado |
 | 7 | ✅ **HECHA** — los dos caminos dejan de escribir `zona_id`. NO dropea: eso va después de verificar el deploy en prod | **grep DESPUÉS** de escribir el código: sobre `comercios` no queda ni una lectura ni una escritura. Lo que aparece es de `campana_zonas` y `gondolero_zonas`, más el tipo generado (la columna sigue) |
 | 8 | ✅ **HECHA** — `20261002100000`: la zona se guarda por NIVEL y se expande al leer. Incluye "toda la provincia" en el selector | `probar-migracion-zonas-nivel.mjs` (dev y prod) + `probar-zonas-gondolero.mts` (16 controles). El dry-run encontró que la migración NO era idempotente |
-| 9 | ✅ **ESCRITA** — `20261005100000`: el `DROP COLUMN` de `comercios.zona_id`, con el seed y el tipo de `Comercio` en el mismo commit. **Falta correrla** | `probar-migracion-drop-zona-id.mjs`, verde en dev y prod. Las dos precondiciones se ejercitan CREANDO el estado que rechazan: un comercio con zona y sin localidad, y una vista colgada de la columna |
+| 9 | ✅ **HECHA** — `20261005100000`: el `DROP COLUMN` de `comercios.zona_id`, con el seed y el tipo de `Comercio` en el mismo commit. Corrida en dev y prod el 25/9/2026 | `probar-migracion-drop-zona-id.mjs`, verde en dev y prod. Las dos precondiciones se ejercitan CREANDO el estado que rechazan: un comercio con zona y sin localidad, y una vista colgada de la columna |
 
 La **1 va primera** porque sin padrón limpio la etapa 2 mide contra datos rotos.
 Y la reparación va **después** del alta: arreglar el pasado mientras el presente
@@ -6467,8 +6467,22 @@ orden de siempre: código que deja de usarla → deploy → verificar en prod �
 
 ##### ETAPA 9 — el `DROP COLUMN` (migración `20261005100000`)
 
-Escrita el 25/9/2026, con el deploy de la etapa 7 ya verificado en producción.
-Dry-run **verde en dev y prod**: `scripts/probar-migracion-drop-zona-id.mjs`.
+**Corrida en dev y prod el 25/9/2026.** Dry-run verde en las dos antes de
+aplicarla: `scripts/probar-migracion-drop-zona-id.mjs`.
+
+> **`types/database.ts` estaba 307 líneas atrás.** Regenerarlo después del DROP
+> no trajo solo la columna que se fue: trajo `abierta_a_postulaciones`,
+> los tres `localidad_sugerida_*`, `motivo_rechazo` y la tabla entera
+> `comercios_reportes_ubicacion`. Nadie lo había corrido en varias migraciones.
+> Y el generado desde dev y desde prod salió **byte a byte idéntico**, que de
+> paso es la verificación más barata de que las dos bases tienen el mismo
+> schema.
+>
+> **Ojo con `npm run db:types` en esta máquina.** El script usa `--linked` y no
+> hay `supabase/config.toml`, así que falla — pero el `>` de la redirección ya
+> truncó el archivo a cero antes de que fallara. Se recupera con `git checkout`.
+> Lo que funciona es `--project-id <ref>`, que va por la Management API; con
+> `--db-url` el CLI pide Docker.
 
 **El grep de DESPUÉS encontró dos cosas que "cero lectores, verificado" había
 dado por limpias**, y las dos iban a romper:
@@ -7343,3 +7357,100 @@ escribe ese valor —el único que lo haría es `solicitarVinculacion`, que no s
 llama—. Son filas del seed tomando el default.
 
 Quien mire la tabla para decidir si ese flujo funciona va a concluir que sí.
+
+---
+
+## DOS TRAMOS PARA DESPUÉS DE LARGAR (anotados el 25/9/2026)
+
+Los dos van **después** de lo que queda antes de salir. No son del mismo tipo:
+el primero es una feature con un problema de producto conocido; el segundo es
+el modelo de negocio, y decide si GondolApp cobra o no.
+
+### 1 · Catálogo de premios por distribuidora
+
+Hoy el catálogo es global y es de GondolApp. En una campaña interna de Biomega,
+lo que se canjea debería definirlo Biomega.
+
+Ya estaba anotado como "configurable por actor" —ver "Catálogo de premios por
+marca y distribuidora" más arriba, con sus tres salidas sin elegir—, pero
+**relevado el 25/9/2026 el punto de partida es peor de lo que sugiere esa
+palabra**:
+
+```
+tabla premios                        NO EXISTE
+canjes.premio                        text, sin CHECK, NOT NULL
+el "catálogo"                        un z.enum de CUATRO valores en
+                                     lib/validations/index.ts:185
+los precios                          COSTO_CANJE, un Record en
+                                     app/(gondolero)/gondolero/perfil/actions.ts:14
+las etiquetas                        labelPremio() en lib/utils.ts:204
+canjes                               2 filas en dev (las dos nafta_ypf), 0 en prod
+```
+
+**No hay nada que hacer configurable: hay una entidad que no existe.** El
+catálogo vive repartido en tres constantes de TypeScript en tres archivos
+distintos —el enum, los precios y los labels—, y la columna que lo guarda es
+texto libre. Hacerlo por distribuidora es crear la tabla, migrar los cuatro
+valores y reunir las tres constantes, antes de tocar nada del alcance por
+actor.
+
+Y el problema de producto sigue intacto y sigue siendo previo: **si los premios
+son de cada distri, los puntos quedan atados a quien los entrega y el incentivo
+del gondolero se fragmenta.** 300 puntos con una y 150 con otra puede no
+alcanzar para nada. Eso no se resuelve con modelo de datos.
+
+### 2 · El modelo de tokens — no es una feature, es el modelo de negocio
+
+`distribuidoras.tokens_disponibles` y `movimientos_tokens` existen desde el
+schema inicial, pero **nunca se definió qué los genera ni qué los consume**. Lo
+que hay hoy, medido en las dos bases:
+
+| | dev | prod |
+|---|---|---|
+| filas en `movimientos_tokens` | 4 | 1 |
+| de ellas, `actor_tipo = 'marca'`, `tipo = 'consumo'`, monto 15 | **todas** | **todas** |
+| filas de `actor_tipo = 'distribuidora'` | **0** | **0** |
+| filas de `tipo = 'ingreso'` (o cualquier otro que sume) | **0** | **0** |
+| distribuidoras con tokens | 0 de 3 | **0 de 6** |
+
+**El sistema tiene un solo escritor de tokens en toda la app**, y es una resta:
+`app/(marca)/marca/campanas/nueva/actions.ts` descuenta 15 al crear una campaña
+(línea 155) y registra el movimiento (línea 168). **No existe ningún camino que
+sume.** El admin crea marcas y distris con `tokens_disponibles: 0` y no hay
+pantalla para cargarles. Los 5000 de las marcas son del seed.
+
+O sea: la economía **solo drena**. Hoy no se nota porque las marcas arrancan con
+saldo de seed, y el día que se acabe nadie puede crear una campaña.
+
+#### La idea a evaluar, y el argumento que la sostiene
+
+**Que los tokens los genere la MARCA al contratar, y que la distri los gane
+ejecutando esas campañas.** El dinero entra por un solo lado y se reparte hacia
+adentro.
+
+El contraejemplo es lo que decide: **si los tokens los generara el solo uso de
+la plataforma, el sistema se financia solo y nadie paga.** La distri gana tokens
+relevando y los gasta relevando, el circuito cierra sin que entre un peso, y
+GondolApp no cobra. No es un detalle de parametrización: es la diferencia entre
+un negocio y una herramienta gratis.
+
+Por eso **va con relevamiento propio**, y antes de escribir una línea.
+
+#### Lo que ya está escrito y hay que revisar, no heredar
+
+La sección "Flujo de tokens al vincularse con marca" de más arriba lista cuatro
+parámetros (`tokens_vinculacion_marca_distri`, `tokens_gondolero_mision`,
+`tokens_comercio_validado`, `tokens_gondolero_nuevo`) y dice que las marcas
+inyectan y GondolApp retiene un take rate. **Tres de esos cuatro parámetros
+generan tokens por uso**, que es exactamente el contraejemplo de arriba. Está
+escrito como si la decisión estuviera tomada y no lo está.
+
+#### Dos cosas del código de hoy que el tramo toca sí o sí
+
+- **El descuento es un read-modify-write.** `update({ tokens_disponibles:
+  (marca?.tokens_disponibles ?? 0) - COSTO_CREACION })` lee el saldo y escribe
+  la resta: dos campañas creadas a la vez se pisan y una de las dos sale
+  gratis. Con saldo de seed no importa; con plata sí.
+- **Las dos escrituras no chequean el `.error`.** Ni la resta ni el insert del
+  movimiento. Son dos de las 137 anotadas, pero éstas mueven saldo: el caso
+  caro es la campaña creada sin que se descuente nada.

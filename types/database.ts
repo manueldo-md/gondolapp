@@ -255,6 +255,7 @@ export type Database = {
       }
       campanas: {
         Row: {
+          abierta_a_postulaciones: boolean
           actor_campana: string | null
           comercios_relevados: number | null
           created_at: string | null
@@ -294,6 +295,7 @@ export type Database = {
           visitas_por_semana: number | null
         }
         Insert: {
+          abierta_a_postulaciones?: boolean
           actor_campana?: string | null
           comercios_relevados?: number | null
           created_at?: string | null
@@ -333,6 +335,7 @@ export type Database = {
           visitas_por_semana?: number | null
         }
         Update: {
+          abierta_a_postulaciones?: boolean
           actor_campana?: string | null
           comercios_relevados?: number | null
           created_at?: string | null
@@ -458,13 +461,16 @@ export type Database = {
           lat: number
           lng: number
           localidad_id: number | null
+          localidad_sugerida_estado: string | null
+          localidad_sugerida_id: number | null
+          localidad_sugerida_texto: string | null
+          motivo_rechazo: string | null
           nombre: string
           registrado_por: string | null
           telefono: string | null
           tipo: string | null
           updated_at: string | null
           validado: boolean | null
-          zona_id: string | null
         }
         Insert: {
           campana_id?: string | null
@@ -477,13 +483,16 @@ export type Database = {
           lat: number
           lng: number
           localidad_id?: number | null
+          localidad_sugerida_estado?: string | null
+          localidad_sugerida_id?: number | null
+          localidad_sugerida_texto?: string | null
+          motivo_rechazo?: string | null
           nombre: string
           registrado_por?: string | null
           telefono?: string | null
           tipo?: string | null
           updated_at?: string | null
           validado?: boolean | null
-          zona_id?: string | null
         }
         Update: {
           campana_id?: string | null
@@ -496,13 +505,16 @@ export type Database = {
           lat?: number
           lng?: number
           localidad_id?: number | null
+          localidad_sugerida_estado?: string | null
+          localidad_sugerida_id?: number | null
+          localidad_sugerida_texto?: string | null
+          motivo_rechazo?: string | null
           nombre?: string
           registrado_por?: string | null
           telefono?: string | null
           tipo?: string | null
           updated_at?: string | null
           validado?: boolean | null
-          zona_id?: string | null
         }
         Relationships: [
           {
@@ -520,17 +532,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "comercios_localidad_sugerida_id_fkey"
+            columns: ["localidad_sugerida_id"]
+            isOneToOne: false
+            referencedRelation: "localidades"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "comercios_registrado_por_fkey"
             columns: ["registrado_por"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "comercios_zona_id_fkey"
-            columns: ["zona_id"]
-            isOneToOne: false
-            referencedRelation: "zonas"
             referencedColumns: ["id"]
           },
         ]
@@ -583,6 +595,122 @@ export type Database = {
             columns: ["gondolero_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comercios_reportes_ubicacion: {
+        Row: {
+          comercio_id: string
+          created_at: string | null
+          distancia_metros: number | null
+          estado: string
+          gondolero_id: string | null
+          id: string
+          lat: number
+          lng: number
+          resuelto_en: string | null
+        }
+        Insert: {
+          comercio_id: string
+          created_at?: string | null
+          distancia_metros?: number | null
+          estado?: string
+          gondolero_id?: string | null
+          id?: string
+          lat: number
+          lng: number
+          resuelto_en?: string | null
+        }
+        Update: {
+          comercio_id?: string
+          created_at?: string | null
+          distancia_metros?: number | null
+          estado?: string
+          gondolero_id?: string | null
+          id?: string
+          lat?: number
+          lng?: number
+          resuelto_en?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comercios_reportes_ubicacion_comercio_id_fkey"
+            columns: ["comercio_id"]
+            isOneToOne: false
+            referencedRelation: "comercios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comercios_reportes_ubicacion_gondolero_id_fkey"
+            columns: ["gondolero_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comercios_reportes_ubicacion_resuelto_en_fkey"
+            columns: ["resuelto_en"]
+            isOneToOne: false
+            referencedRelation: "comercios_ubicacion_historial"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comercios_ubicacion_historial: {
+        Row: {
+          comercio_id: string
+          corregido_por: string | null
+          created_at: string | null
+          distri_id: string | null
+          id: string
+          lat_anterior: number | null
+          lat_nueva: number
+          lng_anterior: number | null
+          lng_nueva: number
+        }
+        Insert: {
+          comercio_id: string
+          corregido_por?: string | null
+          created_at?: string | null
+          distri_id?: string | null
+          id?: string
+          lat_anterior?: number | null
+          lat_nueva: number
+          lng_anterior?: number | null
+          lng_nueva: number
+        }
+        Update: {
+          comercio_id?: string
+          corregido_por?: string | null
+          created_at?: string | null
+          distri_id?: string | null
+          id?: string
+          lat_anterior?: number | null
+          lat_nueva?: number
+          lng_anterior?: number | null
+          lng_nueva?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comercios_ubicacion_historial_comercio_id_fkey"
+            columns: ["comercio_id"]
+            isOneToOne: false
+            referencedRelation: "comercios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comercios_ubicacion_historial_corregido_por_fkey"
+            columns: ["corregido_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comercios_ubicacion_historial_distri_id_fkey"
+            columns: ["distri_id"]
+            isOneToOne: false
+            referencedRelation: "distribuidoras"
             referencedColumns: ["id"]
           },
         ]
@@ -816,6 +944,8 @@ export type Database = {
           fixer_id: string | null
           id: string
           iniciado_por: string | null
+          motivo_rechazo: string | null
+          rechazada_at: string | null
           updated_at: string | null
         }
         Insert: {
@@ -825,6 +955,8 @@ export type Database = {
           fixer_id?: string | null
           id?: string
           iniciado_por?: string | null
+          motivo_rechazo?: string | null
+          rechazada_at?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -834,6 +966,8 @@ export type Database = {
           fixer_id?: string | null
           id?: string
           iniciado_por?: string | null
+          motivo_rechazo?: string | null
+          rechazada_at?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -889,6 +1023,9 @@ export type Database = {
           estado: string | null
           fixer_id: string | null
           id: string
+          iniciado_por: string | null
+          motivo_rechazo: string | null
+          rechazada_at: string | null
           repositora_id: string | null
           updated_at: string | null
         }
@@ -897,6 +1034,9 @@ export type Database = {
           estado?: string | null
           fixer_id?: string | null
           id?: string
+          iniciado_por?: string | null
+          motivo_rechazo?: string | null
+          rechazada_at?: string | null
           repositora_id?: string | null
           updated_at?: string | null
         }
@@ -905,6 +1045,9 @@ export type Database = {
           estado?: string | null
           fixer_id?: string | null
           id?: string
+          iniciado_por?: string | null
+          motivo_rechazo?: string | null
+          rechazada_at?: string | null
           repositora_id?: string | null
           updated_at?: string | null
         }
@@ -1168,15 +1311,18 @@ export type Database = {
       gondolero_localidades: {
         Row: {
           gondolero_id: string
-          localidad_id: number
+          nivel: string
+          ref_id: number
         }
         Insert: {
           gondolero_id: string
-          localidad_id: number
+          nivel?: string
+          ref_id: number
         }
         Update: {
           gondolero_id?: string
-          localidad_id?: number
+          nivel?: string
+          ref_id?: number
         }
         Relationships: [
           {
@@ -1184,13 +1330,6 @@ export type Database = {
             columns: ["gondolero_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "gondolero_localidades_localidad_id_fkey"
-            columns: ["localidad_id"]
-            isOneToOne: false
-            referencedRelation: "localidades"
             referencedColumns: ["id"]
           },
         ]
@@ -1602,6 +1741,42 @@ export type Database = {
           },
         ]
       }
+      metricas: {
+        Row: {
+          activa: boolean
+          created_at: string
+          descripcion: string | null
+          fuentes: string[]
+          id: string
+          nombre: string
+          orden: number
+          slug: string
+          tipo_respuesta: string
+        }
+        Insert: {
+          activa?: boolean
+          created_at?: string
+          descripcion?: string | null
+          fuentes?: string[]
+          id?: string
+          nombre: string
+          orden?: number
+          slug: string
+          tipo_respuesta: string
+        }
+        Update: {
+          activa?: boolean
+          created_at?: string
+          descripcion?: string | null
+          fuentes?: string[]
+          id?: string
+          nombre?: string
+          orden?: number
+          slug?: string
+          tipo_respuesta?: string
+        }
+        Relationships: []
+      }
       mision_respuestas: {
         Row: {
           campo_id: string
@@ -1654,46 +1829,11 @@ export type Database = {
           },
         ]
       }
-      metricas: {
-        Row: {
-          activa: boolean
-          created_at: string
-          descripcion: string | null
-          fuentes: string[]
-          id: string
-          nombre: string
-          orden: number
-          slug: string
-          tipo_respuesta: string
-        }
-        Insert: {
-          activa?: boolean
-          created_at?: string
-          descripcion?: string | null
-          fuentes?: string[]
-          id?: string
-          nombre: string
-          orden?: number
-          slug: string
-          tipo_respuesta: string
-        }
-        Update: {
-          activa?: boolean
-          created_at?: string
-          descripcion?: string | null
-          fuentes?: string[]
-          id?: string
-          nombre?: string
-          orden?: number
-          slug?: string
-          tipo_respuesta?: string
-        }
-        Relationships: []
-      }
       misiones: {
         Row: {
           bounty_estado: string | null
           campana_id: string | null
+          capturada_at: string | null
           comercio_id: string | null
           created_at: string | null
           estado: string | null
@@ -1703,11 +1843,13 @@ export type Database = {
           offline_descartada_at: string | null
           offline_motivo_fallo: string | null
           puntos_total: number | null
+          unico_por_comercio: boolean
           updated_at: string | null
         }
         Insert: {
           bounty_estado?: string | null
           campana_id?: string | null
+          capturada_at?: string | null
           comercio_id?: string | null
           created_at?: string | null
           estado?: string | null
@@ -1717,11 +1859,13 @@ export type Database = {
           offline_descartada_at?: string | null
           offline_motivo_fallo?: string | null
           puntos_total?: number | null
+          unico_por_comercio?: boolean
           updated_at?: string | null
         }
         Update: {
           bounty_estado?: string | null
           campana_id?: string | null
+          capturada_at?: string | null
           comercio_id?: string | null
           created_at?: string | null
           estado?: string | null
@@ -1731,6 +1875,7 @@ export type Database = {
           offline_descartada_at?: string | null
           offline_motivo_fallo?: string | null
           puntos_total?: number | null
+          unico_por_comercio?: boolean
           updated_at?: string | null
         }
         Relationships: [
@@ -2392,6 +2537,14 @@ export type Database = {
             }
             Returns: string
           }
+      backfill_codigos_gondolero: {
+        Args: never
+        Returns: {
+          asignados: number
+          detalle_fallidos: string[]
+          fallidos: number
+        }[]
+      }
       disablelongtransactions: { Args: never; Returns: string }
       dropgeometrycolumn:
         | {
@@ -2425,6 +2578,8 @@ export type Database = {
         | { Args: { table_name: string }; Returns: string }
       enablelongtransactions: { Args: never; Returns: string }
       equals: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean }
+      es_actor_de_mi_distri: { Args: { _actor_id: string }; Returns: boolean }
+      generar_codigo_gondolero: { Args: { _tipo: string }; Returns: string }
       geometry: { Args: { "": string }; Returns: unknown }
       geometry_above: {
         Args: { geom1: unknown; geom2: unknown }
@@ -2528,6 +2683,48 @@ export type Database = {
       get_tipo_actor: { Args: never; Returns: string }
       gettransactionid: { Args: never; Returns: unknown }
       longtransactionsenabled: { Args: never; Returns: boolean }
+      panel_pdv: {
+        Args: { _campanas: string[] }
+        Returns: {
+          comercio_id: string
+          comercio_nombre: string
+          comercio_tipo: string
+          con_valor: number
+          lat: number
+          lng: number
+          localidad_id: number
+          localidad_nombre: string
+          misiones: number
+          ultima_medicion: string
+          verdaderos: number
+        }[]
+      }
+      panel_series: {
+        Args: { _campanas: string[] }
+        Returns: {
+          base_pdv: number
+          campana_id: string
+          campana_nombre: string
+          fuente: string
+          mes: string
+          metrica_nombre: string
+          metrica_slug: string
+          obs_con_valor: number
+          observaciones: number
+          orden: number
+          suma_numerica: number
+          tipo_respuesta: string
+          verdaderos: number
+        }[]
+      }
+      panel_visitas: {
+        Args: { _campanas: string[] }
+        Returns: {
+          mes: string
+          misiones: number
+          pdv_visitados: number
+        }[]
+      }
       populate_geometry_columns:
         | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
         | { Args: { use_typmod?: boolean }; Returns: string }
