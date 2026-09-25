@@ -32,6 +32,11 @@ export type TipoNotificacion =
   | 'desvinculacion_repositora'
   // Vinculación (los cuatro que el CHECK rechazaba hasta el 24/9/2026)
   | 'vinculacion_invitacion' | 'vinculacion_invitacion_enviada' | 'vinculacion_nueva'
+  // El camino de VUELTA: la distri se entera de lo que hace el gondolero.
+  // 'vinculacion_nueva' ya estaba (y con cero filas); estos dos son de la
+  // migración 20261004100000. 'desvinculacion_gondolero' es propio y no reusa
+  // 'desvinculacion_distri', que significa lo contrario — la distri lo echó.
+  | 'vinculacion_rechazada' | 'desvinculacion_gondolero'
   // Postulación de fixers a campañas
   | 'postulacion_fixer'
   // Marca

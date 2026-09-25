@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
 import { usuarioDeLaSesion } from '@/lib/actor-sesion'
 import { exigirPertenencia } from '@/lib/pertenencia'
+import { crearNotificacionDistri, crearNotificacionRepositora } from '@/lib/notificaciones'
 
 function adminClient() {
   return createSupabaseClient(
@@ -83,6 +84,80 @@ export async function solicitarVinculacion(
  * ══════════════════════════════════════════════════════════════════════════
  */
 
+/**
+ * ── EL CAMINO DE VUELTA ─────────────────────────────────────────────────────
+ * Hasta el 25/9/2026 **ninguna de las siete escrituras de este lado avisaba
+ * nada**. La distri invita, aprueba, rechaza y desvincula, y las cuatro avisan;
+ * el gondolero acepta, rechaza o se va, y las tres eran mudas.
+ *
+ * No era el caso del 22/9 —nueve avisos que rebotaban contra el CHECK sin que
+ * nadie mirara el error—: acá **los inserts no existían**. Verificado contando:
+ * cero.
+ *
+ * La consecuencia era que la distri no sabía quién estaba en su equipo salvo
+ * que entrara a la lista y comparara. Y una desvinculación iniciada por el
+ * gondolero era invisible hasta que alguien notaba que dejó de trabajar — con
+ * el agravante de que ese camino NO le paga los retenidos.
+ *
+ * Los tipos salen de la migración `20261004100000`. `vinculacion_nueva` ya
+ * estaba en el CHECK con cero filas: alguien lo previó y no lo cableó.
+ */
+async function avisarAlVinculante(params: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any
+  destino: 'distribuidora' | 'repositora'
+  destinoId: string
+  userId: string
+  evento: 'acepto' | 'rechazo' | 'se_fue'
+}): Promise<void> {
+  const { admin, destino, destinoId, userId, evento } = params
+
+  const { data: perfil } = await admin
+    .from('profiles').select('nombre, alias, tipo_actor').eq('id', userId).maybeSingle()
+  const p = perfil as { nombre: string | null; alias: string | null; tipo_actor: string | null } | null
+
+  // El NOMBRE, no el alias. El alias existe para que un gondolero no vea el
+  // nombre real de otro (ver "profiles.alias es privacidad"); los paneles de
+  // empresa traen los dos y la distri contrata a esta persona.
+  const esFixer = p?.tipo_actor === 'fixer'
+  const quien = p?.nombre ?? p?.alias ?? (esFixer ? 'Un fixer' : 'Un gondolero')
+  const rol = esFixer ? 'fixer' : 'gondolero'
+
+  const textos = {
+    acepto: {
+      tipo: 'vinculacion_nueva' as const,
+      titulo: `${quien} aceptó tu invitación`,
+      mensaje: `${quien} ya es parte de tu equipo y puede tomar tus campañas.`,
+    },
+    rechazo: {
+      tipo: 'vinculacion_rechazada' as const,
+      titulo: `${quien} rechazó tu invitación`,
+      mensaje: `${quien} no aceptó la invitación. Podés volver a invitarlo con su código.`,
+    },
+    se_fue: {
+      tipo: 'desvinculacion_gondolero' as const,
+      titulo: `${quien} se desvinculó`,
+      // Lo de los retenidos va en el mensaje porque es lo único accionable:
+      // por este camino NO se pagan, y la distri es la única que puede decidir
+      // hacer algo al respecto.
+      mensaje: `El ${rol} ${quien} cortó el vínculo con tu distribuidora. ` +
+        `Las campañas en curso se cerraron y los puntos que tenía retenidos siguen retenidos.`,
+    },
+  }[evento]
+
+  const link = destino === 'distribuidora'
+    ? (esFixer ? '/distribuidora/fixers' : '/distribuidora/gondoleros')
+    : '/repositora/fixers'
+
+  // Los dos helpers chequean el error y lo loguean. No se propaga: el vínculo
+  // ya se escribió y un aviso que falla no puede deshacerlo.
+  if (destino === 'distribuidora') {
+    await crearNotificacionDistri(destinoId, { ...textos, linkDestino: link })
+  } else {
+    await crearNotificacionRepositora(destinoId, { ...textos, linkDestino: link })
+  }
+}
+
 export async function aceptarVinculacionDistri(
   solicitudId: string
 ): Promise<{ error?: string }> {
@@ -112,6 +187,8 @@ export async function aceptarVinculacionDistri(
     await admin.from('profiles').update({ distri_id: distriId }).eq('id', userId)
   }
 
+  await avisarAlVinculante({ admin, destino: 'distribuidora', destinoId: distriId, userId, evento: 'acepto' })
+
   revalidatePath('/gondolero/perfil')
   return {}
 }
@@ -125,7 +202,7 @@ export async function rechazarVinculacionDistri(
   const admin = adminClient()
   const sol = await exigirPertenencia({
     admin, tabla: 'gondolero_distri_solicitudes', id: solicitudId,
-    columna: 'gondolero_id', valor: userId,
+    columna: 'gondolero_id', valor: userId, columnas: ['distri_id'],
     desde: 'perfil:rechazarVinculacionDistri',
   })
   if (!sol) return { error: 'No encontramos esa invitación.' }
@@ -134,6 +211,8 @@ export async function rechazarVinculacionDistri(
     .from('gondolero_distri_solicitudes')
     .update({ estado: 'rechazada', updated_at: new Date().toISOString() })
     .eq('id', solicitudId)
+
+  await avisarAlVinculante({ admin, destino: 'distribuidora', destinoId: sol.distri_id as string, userId, evento: 'rechazo' })
 
   revalidatePath('/gondolero/perfil')
   return {}
@@ -179,6 +258,8 @@ export async function aceptarVinculacionRepo(
     await admin.from('profiles').update({ repositora_id: repoId }).eq('id', userId)
   }
 
+  await avisarAlVinculante({ admin, destino: 'repositora', destinoId: repoId, userId, evento: 'acepto' })
+
   revalidatePath('/gondolero/perfil')
   revalidatePath('/repositora/fixers')
   return {}
@@ -193,7 +274,7 @@ export async function rechazarVinculacionRepo(
   const admin = adminClient()
   const sol = await exigirPertenencia({
     admin, tabla: 'fixer_repo_solicitudes', id: solicitudId,
-    columna: 'fixer_id', valor: userId,
+    columna: 'fixer_id', valor: userId, columnas: ['repositora_id'],
     desde: 'perfil:rechazarVinculacionRepo',
   })
   if (!sol) return { error: 'No encontramos esa invitación.' }
@@ -203,6 +284,8 @@ export async function rechazarVinculacionRepo(
     .from('fixer_repo_solicitudes')
     .update({ estado: 'rechazada', updated_at: new Date().toISOString() })
     .eq('id', solicitudId)
+
+  await avisarAlVinculante({ admin, destino: 'repositora', destinoId: sol.repositora_id as string, userId, evento: 'rechazo' })
 
   revalidatePath('/gondolero/perfil')
   return {}
@@ -236,6 +319,8 @@ export async function aceptarVinculacionDistri_Fixer(
     await admin.from('profiles').update({ distri_id: distriId }).eq('id', userId)
   }
 
+  await avisarAlVinculante({ admin, destino: 'distribuidora', destinoId: distriId, userId, evento: 'acepto' })
+
   revalidatePath('/gondolero/perfil')
   return {}
 }
@@ -249,7 +334,7 @@ export async function rechazarVinculacionDistri_Fixer(
   const admin = adminClient()
   const sol = await exigirPertenencia({
     admin, tabla: 'fixer_distri_solicitudes', id: solicitudId,
-    columna: 'fixer_id', valor: userId,
+    columna: 'fixer_id', valor: userId, columnas: ['distri_id'],
     desde: 'perfil:rechazarVinculacionDistri_Fixer',
   })
   if (!sol) return { error: 'No encontramos esa invitación.' }
@@ -258,6 +343,8 @@ export async function rechazarVinculacionDistri_Fixer(
     .from('fixer_distri_solicitudes')
     .update({ estado: 'rechazada', updated_at: new Date().toISOString() })
     .eq('id', solicitudId)
+
+  await avisarAlVinculante({ admin, destino: 'distribuidora', destinoId: sol.distri_id as string, userId, evento: 'rechazo' })
 
   revalidatePath('/gondolero/perfil')
   return {}
@@ -324,6 +411,8 @@ export async function desvincularseDeDistri(distriId: string): Promise<{ error?:
 
     await admin.from('profiles').update({ distri_id: otraDistri?.distri_id ?? null }).eq('id', user.id)
   }
+
+  await avisarAlVinculante({ admin, destino: 'distribuidora', destinoId: distriId, userId: user.id, evento: 'se_fue' })
 
   revalidatePath('/gondolero/perfil')
   return {}

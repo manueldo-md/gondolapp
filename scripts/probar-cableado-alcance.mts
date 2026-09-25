@@ -270,6 +270,45 @@ console.log('\n▸ Las nueve que no tenían sesión: ahora piden sesión Y perte
   }
 }
 
+// ── El camino de vuelta: las siete escrituras del gondolero avisan ──────────
+// No es seguridad: es que la distri no sabía quién estaba en su equipo. Las
+// siete eran mudas —los inserts NO EXISTÍAN, a diferencia de los nueve del
+// 22/9 que rebotaban— y un aviso que falta no rompe nada, así que el día que
+// alguien saque uno no se va a enterar nadie. Por eso se cuenta acá.
+console.log('\n▸ Las siete escrituras del gondolero avisan a la distri/repositora')
+{
+  const rel = 'app/(gondolero)/gondolero/perfil/distri-actions.ts'
+  const src = readFileSync(join(RAIZ, rel), 'utf8')
+  const ESPERADOS: [string, string][] = [
+    ['aceptarVinculacionDistri', 'acepto'],
+    ['rechazarVinculacionDistri', 'rechazo'],
+    ['aceptarVinculacionRepo', 'acepto'],
+    ['rechazarVinculacionRepo', 'rechazo'],
+    ['aceptarVinculacionDistri_Fixer', 'acepto'],
+    ['rechazarVinculacionDistri_Fixer', 'rechazo'],
+    ['desvincularseDeDistri', 'se_fue'],
+  ]
+  for (const [fn, evento] of ESPERADOS) {
+    const i = src.indexOf(`export async function ${fn}(`)
+    if (i < 0) { fallos++; console.log(`   ✗  ${fn}: ya no existe`); continue }
+    const sig = src.indexOf('\nexport ', i + 1)
+    const cuerpo = src.slice(i, sig === -1 ? src.length : sig)
+    const ok = cuerpo.includes('avisarAlVinculante(') && cuerpo.includes(`'${evento}'`)
+    if (!ok) fallos++
+    console.log(`   ${ok ? '✓' : '✗'}  ${fn.padEnd(32)} ${evento}`)
+    if (!ok) console.log('       dejó de avisar, o avisa el evento equivocado')
+  }
+  // Los dos tipos nuevos tienen que estar en el type, o el aviso no compila —
+  // pero el type no prueba que el CHECK los acepte. Eso lo prueba
+  // probar-migracion-avisos-vuelta.mjs, con un insert de verdad.
+  const tipos = readFileSync(join(RAIZ, 'lib', 'notificaciones.ts'), 'utf8')
+  for (const t of ['vinculacion_rechazada', 'desvinculacion_gondolero']) {
+    const ok = tipos.includes(`'${t}'`)
+    if (!ok) fallos++
+    console.log(`   ${ok ? '✓' : '✗'}  el tipo ${t} está en TipoNotificacion`)
+  }
+}
+
 // ── El panel de admin: un solo camino al cliente de servicio ────────────────
 // Había ONCE copias del bloque `getUser()` + `createAdminClient(...)`, diez con
 // nombre y una inline. Se llamaban `getAdmin` y lo único que preguntaban era si

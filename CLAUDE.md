@@ -7231,10 +7231,13 @@ tropezarse con ellas:
 - **El tipo `gondolero_solicitud_vinculacion`** está en el CHECK de
   `notificaciones.tipo`, con **cero usos en el código y cero filas en las dos
   bases**. Era para esta feature. Queda reservado y sin dueño.
-- **El vacío del ranking** (`logros-y-ranking.tsx`) le sugiere al gondolero
-  vincularse a una distribuidora. Ese texto ya tiene un comentario diciendo que
-  `solicitarVinculacion` no tiene llamadores; **hay que revisar que lo que
-  sugiere sea "pasale tu código", que es lo que sí puede hacer.**
+- **El vacío del ranking** (`logros-y-ranking.tsx`) YA está alineado, y se
+  verificó: dice *"El ranking aparece cuando una distribuidora te vincule"* y
+  muestra el código con el botón de WhatsApp. Lo arregló **`4e92929`
+  (18/9/2026), el mismo commit que dejó a `solicitarVinculacion` sin
+  llamadores** — o sea que esta decisión no es nueva: se tomó de hecho hace una
+  semana y recién ahora quedó escrita. Barrido el resto de las pantallas:
+  ninguna otra le pide al gondolero algo que la app no le deja hacer.
 
 ### EL TRAMO: los avisos que faltan
 
