@@ -5848,6 +5848,174 @@ lista de claves y no sobre ciudades**. Agrupar por provincia probablemente sea
 pasarle otra clave, no escribir una segunda agrupación — igual que
 `tramosContinuos` quedó genérico para el día que haya semanas.
 
+#### TRAMO PROPIO — `localidad_id` en el alta de comercio
+
+Relevado y decidido el 25/9/2026. Sin empezar. **Bloquea el filtro de
+provincia**, que no puede cortar por una geografía que la mitad de los comercios
+nuevos no tiene.
+
+**El agujero.** Ni `crearComercioNuevo` ni `crearComercioParaCaptura` escriben
+`localidad_id`. Los dos escriben `zona_id`, de la tabla vieja `zonas`, y el
+segundo lo elige con `.limit(1)` **sin ningún filtro**: una zona arbitraria.
+
+La correlación es **perfecta y sin una sola excepción en las dos bases**:
+
+```
+localidad_id IS NULL = false,  zona_id IS NOT NULL = false   →  91
+localidad_id IS NULL = true,   zona_id IS NOT NULL = true    →  13 dev / 6 prod
+```
+
+O sea que `zona_id IS NOT NULL` **es el marcador exacto** de "pasó por el
+agujero". No hace falta heurística para encontrarlos. Cargan **102 misiones en
+dev y 11 en prod**, así que no son descartables.
+
+##### El diseño, que cambió dos veces y por qué
+
+**Primera versión: preguntarle al gondolero en el alta.** Se cayó con un dato:
+**la dirección y los demás campos del alta son OPCIONALES y no los cargan.**
+Sumar un selector obligatorio es trabajo que no van a hacer, y la adopción vale
+más que el dato. **No hay selector en el alta. Cero fricción.**
+
+**Segunda: resolverlo en el servidor por reverse geocoding, y lo que no resuelva
+cae en la bandeja de pendientes de la distri**, que ya existe y ya es donde
+alguien los mira. Ahí va el cascader, con una persona sentada.
+
+**Tercera y definitiva: el geocoding SUGIERE, no escribe.** Lo decidió esta
+medición contra verdad de referencia — 91 comercios tienen localidad asignada
+desde el CSV del piloto, así que se puede medir la precisión en vez de suponerla:
+
+```
+COINCIDE   8 de 12   (67%)
+DISTINTO   1         ← Gualeguaychú resolvió a "Larroque"
+ambiguo    1         ← Colón
+sin dato   2         ← General Campos, Villaguay
+```
+
+**Ese 8% que resuelve DISTINTO es lo que decide.** Un dato malo que entra como
+bueno es peor que un hueco, porque el hueco se ve: un comercio con la localidad
+equivocada no cae en ninguna bandeja y **envenena justo el filtro de provincia
+que este tramo existe para habilitar**. Uno de cada doce.
+
+Así que el servidor guarda la **sugerencia**, el comercio entra igual a la
+bandeja —donde ya iba— con la localidad precargada y a un clic de confirmar. El
+costo marginal es cero: la distri ya abre ese comercio para validarlo.
+
+##### Nominatim queda descartado — política, no volumen
+
+```
+rate                  máximo absoluto 1 request/segundo
+sistemáticas          "strictly forbidden and will get you banned"
+uso comercial         solo si el geocoding NO es la función central;
+                      quien lo tenga como núcleo debe operar su infraestructura
+User-Agent            obligatorio (el código actual sí cumple)
+resultados            "must be cached on your side"
+```
+
+**El volumen no era el problema**: el pico medido es de **4 altas por día** en
+las dos bases. Lo que no se banca es un servicio comunitario gratuito, sin SLA y
+con baneo discrecional, en el camino principal de una app **comercial** — el
+mismo argumento por el que ya se descartaron MapTiler y Stadia para las tiles.
+
+**Va Geoapify**, que ya está adentro y ya fue vetado: 3.000 créditos/día, 5
+req/s, uso comercial permitido en producción, límites *soft*. A 4 altas/día son
+4 créditos de 3.000; una tile cuesta 0,25, así que una sesión de mapa gasta más
+que un mes de geocoding.
+
+> **PRECONDICIÓN DE LA ETAPA 4 — mirar el panel de Geoapify ANTES de escribirla.**
+> `NEXT_PUBLIC_GEOAPIFY_KEY` está pensada para el browser y puede tener
+> restricción por dominio. **Una llamada desde el servidor no manda Referer**, así
+> que rebotaría. Si está restringida, la salida es **una segunda key en el MISMO
+> proyecto**, sin restricción de dominio o restringida por IP.
+>
+> Confirmado en la documentación de Geoapify: se pueden crear varias keys por
+> proyecto, y **la cuota es del proyecto**, no de la key — o sea que la segunda
+> comparte los 3.000/día. Y el límite que no se cruza: crear **cuentas o
+> proyectos** separados para repartir el uso **viola sus T&C**. Varias keys en un
+> proyecto sí; un segundo proyecto para duplicar cuota, no.
+>
+> La key **no está en los `.env` locales**, vive solo en Vercel, así que esto no
+> se puede descubrir probando desde acá.
+
+##### El padrón tiene filas duplicadas, y eso rompe el match
+
+`localidades` no tiene coordenadas: el match es **por nombre**. Y hay **99
+nombres repetidos entre provincias** más **64 repetidos DENTRO de la misma
+provincia**, donde la provincia ya no desambigua.
+
+Peor: **el `county` del proveedor no es nuestro departamento.** Para Colón,
+Nominatim devuelve `"Distrito Primero"`, que es una división sub-departamental
+entrerriana. El departamento —el desambiguador natural de esos 64— **no matchea
+nuestro vocabulario**.
+
+Medido sobre los 19 huérfanos reales: **0 exactos, 18 ambiguos, 1 sin dato**. Los
+18 están en Colón, y el padrón tiene `Colón` **dos veces** en Entre Ríos.
+
+**La etapa 1 se achicó a propósito.** De los 64, solo 13 son entrerrianos y solo
+**Colón** bloquea algo real:
+
+```
+Entre Ríos · Colón
+   id   1   depto Colón      12 comercios · 3 campañas · en el CSV del piloto
+   id 126   depto Uruguay     0 · 0 · 0
+```
+
+Los otros 12 entrerrianos están vacíos en las dos bases y **ninguno figura en el
+CSV del piloto**. Los 51 de provincias sin actividad quedan como **deuda del
+padrón**, no como prerrequisito.
+
+Dos razones para no hand-adjudicar los 64, y la segunda es la que vale:
+
+1. Verificar si "Bella Vista" en Malvinas Argentinas y en San Miguel son dos
+   lugares o una fila duplicada es geografía que **no se puede afirmar sin
+   consultarla**, que es la regla que este proyecto ya pagó tres veces.
+2. **La etapa 2 tolera duplicados por diseño**: ante ambigüedad no adivina, y el
+   comercio cae en la bandeja con la sugerencia vacía. Un duplicado en Santiago
+   del Estero degrada a "lo confirma una persona", que es seguro.
+
+> Ojo con un espejismo del relevamiento: en dev, `Caseros` y `Colón` parecían
+> tener datos **de los dos lados**. Son cuatro filas de `gondolero_localidades`
+> del **mismo gondolero**, que eligió las dos variantes de cada una. Eso no
+> prueba que haya dos pueblos: es el síntoma del duplicado, porque en pantalla se
+> ven idénticos. Producción, que tiene esa tabla vacía, da la señal limpia.
+
+##### LAS ETAPAS
+
+| | Qué | Verifica |
+|---|---|---|
+| 1 | Resolver **Colón**; los 12 entrerrianos restantes se revisan a mano | dry-run con ROLLBACK; `Colón` único en Entre Ríos y el piloto intacto |
+| 2 | `lib/geocoding.ts`, **sin red**: proveedor + padrón → `exacto` / `ambiguo` / `fuera`. Acá muere el bug del `ilike` | los casos medidos: Colón ambiguo antes de la 1, "Larroque" ≠ Gualeguaychú, `county="Distrito Primero"` no desambigua |
+| 3 | Migración de la sugerencia: `comercios.localidad_sugerida` + de dónde salió | dry-run |
+| 4 | El proveedor y la llamada **en el servidor**, en los dos caminos. Falla ABIERTO: si no resuelve, el alta se completa igual | alta por los dos caminos en dev — **y la precondición de la key, de arriba** |
+| 5 | La bandeja de la distri: cascader extraído de `SelectorZona` + confirmar la sugerencia | la sugerencia aparece precargada; confirmarla escribe `localidad_id`; corregirla también |
+| 6 | El script de reparación de los 19, mismo mecanismo, con confirmación humana | correrlo y mirar la lista ANTES de escribir |
+| 7 | Sacar el `zona_id` arbitrario | **grep DESPUÉS** de escribir el código |
+
+La **1 va primera** porque sin padrón limpio la etapa 2 mide contra datos rotos.
+Y la reparación va **después** del alta: arreglar el pasado mientras el presente
+sigue perdiendo es al revés.
+
+##### `comercios.zona_id`: cero lectores, verificado
+
+App, scripts, funciones SQL de las dos bases y vistas: **nadie lo lee**. Los
+`zona_id` que aparecen en un grep son todos de OTRAS tablas (`campana_zonas`,
+`gondolero_zonas`). La columna es nullable y la FK admite NULL, así que dejar de
+escribirlo no rompe nada.
+
+**La etapa 7 deja de ESCRIBIR, no dropea.** El `DROP COLUMN` va después con el
+orden de siempre: código que deja de usarla → deploy → verificar en prod → DROP.
+
+##### Lo que este tramo NO cierra
+
+- **El aviso de campaña acotada se cayó del tramo.** Sin selector en el alta no
+  hay momento en que preguntárselo al gondolero. Si sigue valiendo, es en la
+  bandeja de la distri y es un tramo aparte.
+- **El padrón sigue incompleto** fuera de Entre Ríos —Formosa 10 localidades,
+  Tierra del Fuego 3— así que "fuera del padrón" va a existir siempre. La bandeja
+  lo absorbe; quién carga las que faltan no está decidido.
+- **`gondolero_localidades` está en CERO en producción**, así que cualquier atajo
+  que se apoye en las zonas declaradas del gondolero no tiene con qué en prod.
+- **Los 51 duplicados** de provincias sin actividad.
+
 #### PENDIENTE sin urgencia — la cadena como campo de comercios
 
 Anotado el 24/9/2026. **Una campaña de seguimiento sin fecha de fin ya funciona
