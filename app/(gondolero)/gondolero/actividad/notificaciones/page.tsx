@@ -3,7 +3,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { NotificacionesLista } from './notificaciones-lista'
+import { NotificacionesLista } from '@/components/shared/notificaciones-lista'
+import { marcarUnaNotificacionLeida } from '../../perfil/actions'
 
 const POR_PAGINA = 20
 
@@ -59,13 +60,13 @@ export default async function NotificacionesPage({
             <p className="text-base font-semibold text-gray-700">Sin notificaciones</p>
           </div>
         ) : (
-          <NotificacionesLista notificaciones={lista.map((n: {
-            id: string
-            titulo: string
-            mensaje: string | null
-            leida: boolean
-            created_at: string
-          }) => n)} />
+          <div className="rounded-2xl overflow-hidden">
+            <NotificacionesLista
+              tema="gondolero"
+              marcarLeida={marcarUnaNotificacionLeida}
+              items={lista as { id: string; titulo: string; mensaje: string | null; leida: boolean; created_at: string }[]}
+            />
+          </div>
         )}
 
         {/* Paginación */}

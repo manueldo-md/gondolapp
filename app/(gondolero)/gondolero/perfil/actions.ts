@@ -9,6 +9,7 @@ import { getConfig } from '@/lib/config'
 import { nivelMaximoAlcanzado } from '@/lib/nivel-maximo'
 import { guardarZonasDelGondolero, type ZonaGondolero } from '@/lib/zonas-gondolero'
 import { usuarioDeLaSesion } from '@/lib/actor-sesion'
+import { marcarNotificacionLeida } from '@/lib/marcar-notificacion'
 
 const COSTO_CANJE: Record<TipoPremio, number> = {
   credito_celular: 300,
@@ -217,10 +218,19 @@ export async function marcarNotificacionesLeidas() {
  * Marca una notificación individual como leída.
  * Verifica que la notificación pertenezca al usuario autenticado.
  */
+/**
+ * Ésta ya estaba bien resuelta y fue el modelo para las otras dos: acotaba con
+ * `.eq('gondolero_id', user.id)`, así que una notificación ajena no matchea y
+ * el update no escribe nada.
+ *
+ * Lo único que cambió el 25/9/2026 es que el predicado se mudó a
+ * `lib/marcar-notificacion.ts`, para que marca y distri lo usen en vez de
+ * copiarlo con otro `.eq()`. Tres copias del mismo permiso es como empiezan a
+ * separarse.
+ */
 export async function marcarUnaNotificacionLeida(notificacionId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  const userId = await usuarioDeLaSesion()
+  if (!userId) return
 
   const admin = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -228,11 +238,7 @@ export async function marcarUnaNotificacionLeida(notificacionId: string) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  await admin
-    .from('notificaciones')
-    .update({ leida: true })
-    .eq('id', notificacionId)
-    .eq('gondolero_id', user.id) // solo actualiza si pertenece al usuario
+  await marcarNotificacionLeida(notificacionId, { tipo: 'persona', userId }, admin)
 
   revalidatePath('/gondolero/actividad')
   revalidatePath('/gondolero/actividad/notificaciones')

@@ -1,6 +1,7 @@
 'use server'
 
 import { distriDeLaSesion } from '@/lib/actor-sesion'
+import { marcarNotificacionLeida } from '@/lib/marcar-notificacion'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -27,6 +28,29 @@ export async function marcarNotificacionesDistriLeidas() {
     .eq('actor_id', distriId)
     .eq('actor_tipo', 'distribuidora')
     .eq('leida', false)
+
+  revalidatePath('/distribuidora/notificaciones')
+}
+
+function adminNotif() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
+
+/**
+ * Marca UNA como leída. La regla vive en lib/marcar-notificacion.ts; acá solo
+ * se resuelve de quién es la bandeja. Ver el encabezado de ese archivo.
+ */
+export async function marcarUnaNotificacionDistriLeida(notificacionId: string) {
+  const admin = adminNotif()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) return
+
+  await marcarNotificacionLeida(notificacionId, 
+    { tipo: 'distribuidora', actorId: distriId }, admin)
 
   revalidatePath('/distribuidora/notificaciones')
 }

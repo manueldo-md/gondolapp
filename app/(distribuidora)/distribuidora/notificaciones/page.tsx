@@ -3,8 +3,9 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Bell, Users, Megaphone, Store, Clock, Tag, Info } from 'lucide-react'
-import { tiempoRelativo } from '@/lib/utils'
-import { MarcarDistriLeidas } from './marcar-leidas'
+import { NotificacionesLista } from '@/components/shared/notificaciones-lista'
+import { MarcarTodasLeidas } from './marcar-leidas'
+import { marcarNotificacionesDistriLeidas, marcarUnaNotificacionDistriLeida } from './actions'
 import type { TipoNotificacion } from '@/lib/notificaciones'
 
 const POR_PAGINA = 20
@@ -74,14 +75,19 @@ export default async function DistriNotificacionesPage({
 
   return (
     <div className="max-w-2xl mx-auto">
-      {hayNoLeidas && <MarcarDistriLeidas distriId={distriId} />}
-
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Notificaciones</h1>
           {total > 0 && <p className="text-sm text-gray-400 mt-0.5">{total} en total</p>}
         </div>
-        <Bell size={20} className="text-gray-400" />
+        <div className="flex items-center gap-3">
+          {/* Marcar todas es ahora una ACCIÓN EXPLÍCITA y no el efecto de
+              entrar. Antes esta pantalla las marcaba solas a los 2 segundos:
+              quien entraba con cinco novedades y miraba una perdía el rastro
+              de las otras cuatro. */}
+          {hayNoLeidas && <MarcarTodasLeidas />}
+          <Bell size={20} className="text-gray-400" />
+        </div>
       </div>
 
       {lista.length === 0 ? (
@@ -91,37 +97,21 @@ export default async function DistriNotificacionesPage({
           <p className="text-sm text-gray-400 mt-1">Acá aparecerán las novedades de tus campañas y gondoleros.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-100">
-          {lista.map(n => {
-            const Icon = ICONO_TIPO[n.tipo] ?? Info
-            const colorIcon = COLOR_TIPO[n.tipo] ?? 'text-gray-400'
-            const inner = (
-              <div className={`flex items-start gap-3 px-5 py-4 ${!n.leida ? 'bg-amber-50 border-l-4 border-gondo-amber-400' : ''}`}>
-                <Icon size={18} className={`shrink-0 mt-0.5 ${colorIcon}`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold leading-tight ${!n.leida ? 'text-amber-900' : 'text-gray-800'}`}>
-                    {n.titulo}
-                  </p>
-                  {n.mensaje && (
-                    <p className={`text-xs mt-0.5 ${!n.leida ? 'text-amber-700' : 'text-gray-400'}`}>
-                      {n.mensaje}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">{tiempoRelativo(n.created_at)}</p>
-                </div>
-                {!n.leida && (
-                  <span className="shrink-0 w-2 h-2 rounded-full bg-gondo-amber-400 mt-1.5" />
-                )}
-              </div>
-            )
-            return n.link_destino ? (
-              <Link key={n.id} href={n.link_destino} className="block hover:bg-gray-50 transition-colors">
-                {inner}
-              </Link>
-            ) : (
-              <div key={n.id}>{inner}</div>
-            )
-          })}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <NotificacionesLista
+            tema="distri"
+            marcarLeida={marcarUnaNotificacionDistriLeida}
+            items={lista.map(n => {
+              const Icon = ICONO_TIPO[n.tipo] ?? Info
+              const colorIcon = COLOR_TIPO[n.tipo] ?? 'text-gray-400'
+              return {
+                id: n.id, titulo: n.titulo, mensaje: n.mensaje,
+                leida: n.leida, created_at: n.created_at,
+                href: n.link_destino,
+                icono: <Icon size={18} className={`shrink-0 mt-0.5 ${colorIcon}`} />,
+              }
+            })}
+          />
         </div>
       )}
 
