@@ -338,7 +338,6 @@ export default async function GondolerosPage({
                       {g.vinculadoActual && distriId && (
                         <GondoleroDesvincularBtn
                           gondoleroId={g.id}
-                          distriId={distriId}
                           distriNombre={distriNombre}
                           gondoleroAlias={g.alias ?? g.nombre ?? 'El gondolero'}
                         />

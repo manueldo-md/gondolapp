@@ -144,6 +144,46 @@ console.log('\n▸ El actor sale de la sesión, nunca de un parámetro')
   }
 }
 
+// ── La otra mitad de la regla: el id del que LLAMA no viene por parámetro ───
+// Estas cinco lo recibían. Dos no chequeaban nada —`previsualizarDesvincular*`
+// ni siquiera llamaba a `getUser()`—, dos lo comparaban contra
+// `perfil.distri_id`, y `desvincularFixer` de repositora **escribía con el
+// `repoId` que mandara el cliente, sin verificar nada**.
+//
+// Ahora los cinco lo derivan de la sesión. El control es que no vuelva: un
+// parámetro que el cliente elige es un parámetro que alguien se puede olvidar
+// de verificar, y agregarlo de nuevo compila perfecto.
+console.log('\n▸ El id de la entidad del que llama NO está en la firma')
+{
+  const CERRADAS: [string, string, string[]][] = [
+    ['app/(distribuidora)/distribuidora/gondoleros/desvincular-actions.ts',
+      'distriDeLaSesion', ['previsualizarDesvincularGondolero', 'desvincularGondolero']],
+    ['app/(distribuidora)/distribuidora/fixers/desvincular-actions.ts',
+      'distriDeLaSesion', ['previsualizarDesvincularFixer', 'desvincularFixer']],
+    ['app/(repositora)/repositora/fixers/invitar-actions.ts',
+      'repositoraDeLaSesion', ['desvincularFixer']],
+    ['app/(distribuidora)/distribuidora/comercios/pendientes/actions.ts',
+      'distriDeLaSesion', ['aprobarComercioDistri', 'rechazarComercioDistri', 'asignarLocalidadDistri']],
+  ]
+
+  for (const [rel, derivador, funciones] of CERRADAS) {
+    const src = readFileSync(join(RAIZ, rel), 'utf8')
+    for (const fn of funciones) {
+      const i = src.indexOf(`export async function ${fn}(`)
+      if (i < 0) { fallos++; console.log(`   ✗  ${fn}: ya no existe en ${rel}`); continue }
+      // La firma es todo hasta el `{` que abre el cuerpo.
+      const firma = src.slice(i, i + src.slice(i).indexOf('{'))
+      const tieneIdPropio = /\b(distriId|repoId|repositoraId|marcaId)\s*:/.test(firma)
+      const deriva = src.includes(derivador)
+      const ok = !tieneIdPropio && deriva
+      if (!ok) fallos++
+      console.log(`   ${ok ? '✓' : '✗'}  ${fn.padEnd(32)} ${rel.split('/').slice(-2).join('/')}`)
+      if (tieneIdPropio) console.log(`       volvió a recibir el id de su propia entidad por parámetro`)
+      if (!deriva) console.log(`       el archivo ya no usa ${derivador}`)
+    }
+  }
+}
+
 console.log(`\n   (${revisados.length} funciones que escriben sobre \`fotos\`)`)
 console.log(fallos ? `\n✗ ${fallos} mal\n` : '\n✓ Todas pasan por el guard.\n')
 process.exit(fallos ? 1 : 0)

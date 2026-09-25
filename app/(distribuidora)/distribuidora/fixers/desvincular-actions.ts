@@ -1,11 +1,11 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
 import { crearNotificacionActor } from '@/lib/notificaciones'
+import { distriDeLaSesion } from '@/lib/actor-sesion'
 
 function adminClient() {
   return createAdminClient(
@@ -25,9 +25,14 @@ function adminClient() {
 // impedir nada.
 export async function previsualizarDesvincularFixer(
   fixerId: string,
-  distriId: string,
 ): Promise<ResumenCierre> {
-  return previsualizarCierre({ gondoleroId: fixerId, distriId, admin: adminClient(), iniciadoPor: 'distri' })
+  // Mismo caso que la de gondoleros: no llamaba a `getUser()` y el `distriId`
+  // venía del cliente. Ver el comentario largo allá.
+  const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
+
+  return previsualizarCierre({ gondoleroId: fixerId, distriId, admin, iniciadoPor: 'distri' })
 }
 
 // `verificarDesvincularFixer` se borró el 18/9/2026. Bloqueaba la desvinculación
@@ -47,25 +52,13 @@ export async function previsualizarDesvincularFixer(
  */
 export async function desvincularFixer(
   fixerId: string,
-  distriId: string,
   distriNombre: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
+  // El chequeo contra `perfil.distri_id` que había acá ya no hace falta: el id
+  // ahora ES el de la sesión, así que no hay nada contra qué compararlo.
   const admin = adminClient()
-
-  // Verificar que el usuario pertenece a esta distribuidora
-  const { data: perfil } = await admin
-    .from('profiles')
-    .select('distri_id')
-    .eq('id', user.id)
-    .single()
-
-  if (perfil?.distri_id !== distriId) {
-    return { error: 'No tenés permiso para desvincular este fixer.' }
-  }
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
 
   const now = new Date().toISOString()
 

@@ -1,6 +1,5 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -8,12 +7,15 @@ import {
   validarComercioYCrearMision,
   rechazarComercioConMotivo,
 } from '@/lib/validacion-comercio'
+import { distriPuedeTocarComercio } from '@/lib/comercios-pendientes-distri'
+import { distriDeLaSesion } from '@/lib/actor-sesion'
 
 /**
  * Validación de comercios — panel de distribuidora.
  *
  * Misma regla que el panel de admin (`lib/validacion-comercio.ts`); lo único
- * propio es el permiso: la distri solo toca comercios de SUS campañas.
+ * propio es el permiso: la distri solo toca los comercios que su bandeja le
+ * muestra, o sea los cargados por SUS gondoleros.
  */
 
 function adminClient() {
@@ -24,42 +26,12 @@ function adminClient() {
   )
 }
 
-async function getDistriId(): Promise<string | null> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: profile } = await (supabase as any)
-    .from('profiles')
-    .select('distri_id')
-    .eq('id', user.id)
-    .single() as { data: { distri_id: string | null } | null }
-  return profile?.distri_id ?? null
-}
-
 /**
- * El comercio sin `campana_id` se deja pasar: lo cargó un gondolero desde la
- * captura normal y no pertenece a ninguna campaña de altas.
+ * El permiso vive en `lib/comercios-pendientes-distri.ts`, al lado del criterio
+ * de la LISTA, para que no se puedan separar. Acá solo se llama.
  */
 async function puedeTocar(comercioId: string, distriId: string): Promise<boolean> {
-  const admin = adminClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: comercio } = await (admin as any)
-    .from('comercios')
-    .select('campana_id')
-    .eq('id', comercioId)
-    .maybeSingle() as { data: { campana_id: string | null } | null }
-
-  if (!comercio?.campana_id) return true
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: campana } = await (admin as any)
-    .from('campanas')
-    .select('distri_id')
-    .eq('id', comercio.campana_id)
-    .maybeSingle() as { data: { distri_id: string | null } | null }
-
-  return campana?.distri_id === distriId
+  return distriPuedeTocarComercio(comercioId, distriId, adminClient())
 }
 
 function revalidar() {
@@ -69,7 +41,10 @@ function revalidar() {
 }
 
 export async function aprobarComercioDistri(id: string) {
-  const distriId = await getDistriId()
+  // El id de la distri sale de la SESIÓN y exige tipo_actor = 'distribuidora':
+  // un gondolero también tiene `distri_id` cargado —es su distri principal— y
+  // hasta ahora lo único que lo mantenía fuera de acá era el middleware.
+  const distriId = await distriDeLaSesion(adminClient())
   if (!distriId) redirect('/auth')
 
   if (!(await puedeTocar(id, distriId))) {
@@ -84,7 +59,10 @@ export async function aprobarComercioDistri(id: string) {
 }
 
 export async function rechazarComercioDistri(id: string, motivo?: string) {
-  const distriId = await getDistriId()
+  // El id de la distri sale de la SESIÓN y exige tipo_actor = 'distribuidora':
+  // un gondolero también tiene `distri_id` cargado —es su distri principal— y
+  // hasta ahora lo único que lo mantenía fuera de acá era el middleware.
+  const distriId = await distriDeLaSesion(adminClient())
   if (!distriId) redirect('/auth')
 
   if (!(await puedeTocar(id, distriId))) {
@@ -111,7 +89,10 @@ export async function rechazarComercioDistri(id: string, motivo?: string) {
  * número que decidiría algún día si puede escribir solo.
  */
 export async function asignarLocalidadDistri(comercioId: string, localidadId: number) {
-  const distriId = await getDistriId()
+  // El id de la distri sale de la SESIÓN y exige tipo_actor = 'distribuidora':
+  // un gondolero también tiene `distri_id` cargado —es su distri principal— y
+  // hasta ahora lo único que lo mantenía fuera de acá era el middleware.
+  const distriId = await distriDeLaSesion(adminClient())
   if (!distriId) redirect('/auth')
 
   if (!(await puedeTocar(comercioId, distriId))) {

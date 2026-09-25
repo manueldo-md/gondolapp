@@ -13,12 +13,11 @@ type Estado = 'idle' | 'verificando' | 'confirmando'
 
 interface Props {
   fixerId: string
-  distriId: string
   distriNombre: string
   fixerAlias: string
 }
 
-export function FixerDesvincularBtn({ fixerId, distriId, distriNombre, fixerAlias }: Props) {
+export function FixerDesvincularBtn({ fixerId, distriNombre, fixerAlias }: Props) {
   const [estado, setEstado] = useState<Estado>('idle')
   const [resumen, setResumen] = useState<ResumenCierre | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -28,13 +27,13 @@ export function FixerDesvincularBtn({ fixerId, distriId, distriNombre, fixerAlia
     setEstado('verificando')
     setError(null)
     // La previsualización ya no decide si se puede: decide qué se le avisa.
-    setResumen(await previsualizarDesvincularFixer(fixerId, distriId))
+    setResumen(await previsualizarDesvincularFixer(fixerId))
     setEstado('confirmando')
   }
 
   function handleConfirmar() {
     startTransition(async () => {
-      const res = await desvincularFixer(fixerId, distriId, distriNombre)
+      const res = await desvincularFixer(fixerId, distriNombre)
       if (res.error) {
         setError(res.error)
         setEstado('idle')

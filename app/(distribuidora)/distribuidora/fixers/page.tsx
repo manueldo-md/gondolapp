@@ -309,7 +309,6 @@ export default async function FixersDistriPage({
                       {f.vinculadoActual && distriId && (
                         <FixerDesvincularBtn
                           fixerId={f.id}
-                          distriId={distriId}
                           distriNombre={distriNombre}
                           fixerAlias={f.alias ?? f.nombre ?? 'El fixer'}
                         />

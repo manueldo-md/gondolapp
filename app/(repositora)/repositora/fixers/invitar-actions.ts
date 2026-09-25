@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto'
 import { appUrl } from '@/lib/app-url'
 import { revisarCodigo } from '@/lib/codigo-gondolero'
 import { crearNotificacionActor } from '@/lib/notificaciones'
+import { repositoraDeLaSesion } from '@/lib/actor-sesion'
 
 function adminClient() {
   return createAdminClient(
@@ -236,14 +237,21 @@ export async function rechazarSolicitudFixer(
 
 export async function desvincularFixer(
   fixerId: string,
-  repoId: string,
   repoNombre: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
+  // ── Ésta era la peor de las cinco ─────────────────────────────────────────
+  // Sus dos hermanas de distribuidora al menos comparaban el `distriId` del
+  // cliente contra `perfil.distri_id`. **Ésta no chequeaba nada**: `getUser()`
+  // y directo a escribir con el `repoId` que mandara el cliente. Cualquier
+  // autenticado podía desvincular a cualquier fixer de cualquier repositora,
+  // terminarle la solicitud y limpiarle el `repositora_id` del perfil.
+  //
+  // El middleware no la tapaba: chequea `startsWith('/repositora')`, no CUÁL
+  // repositora.
   const admin = adminClient()
+  const repoId = await repositoraDeLaSesion(admin)
+  if (!repoId) redirect('/auth')
+
   const now = new Date().toISOString()
 
   const [solRes, profileRes] = await Promise.all([

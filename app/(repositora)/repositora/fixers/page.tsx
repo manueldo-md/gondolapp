@@ -216,7 +216,6 @@ export default async function FixersPage({
                       <td className="px-4 py-3.5 text-right">
                         <FixerRepoDesvincularBtn
                           fixerId={f.id}
-                          repoId={repoId}
                           repoNombre={repoNombre}
                           fixerAlias={f.alias ?? f.nombre ?? 'El fixer'}
                         />

@@ -27,6 +27,7 @@ const { Client } = require('pg')
 import { credencialesDeRef, nombreDeRef } from './lib/entorno.mjs'
 import {
   gondolerosParaPendientes, contarComerciosPendientesDistri,
+  distriPuedeTocarComercio,
 } from '../lib/comercios-pendientes-distri'
 
 const esProd = process.argv.includes('--prod')
@@ -127,6 +128,65 @@ console.log('\n▸ Un comercio puede aparecerle a DOS distris, y está bien')
   // aprobando no pagan dos veces.
   caso('ninguno se duplica dentro de la misma distri',
     [...vistosPor.values()].every(ds => ds.length === new Set(ds).size), true)
+}
+
+// ── EL PERMISO ES LA LISTA ──────────────────────────────────────────────────
+// Hasta el 25/9/2026 la ACTION era más permisiva que la bandeja: su `puedeTocar`
+// arrancaba con `if (!comercio?.campana_id) return true`, y como el alta
+// oportunista no escribe `campana_id`, eso dejaba pasar TODO el padrón
+// pendiente a cualquier distribuidora — incluido el trabajo de gondoleros de
+// otra. La bandeja mostraba cero de esos y la action los aprobaba igual.
+//
+// Este bloque afirma la coincidencia en las DOS direcciones. Una sola
+// dirección deja pasar el error caro: una action permisiva sobre una lista
+// corta no se ve desde la pantalla.
+console.log('\n▸ La ACTION dice que sí exactamente sobre lo que la bandeja muestra')
+{
+  const { rows: todos } = await pg.query(
+    `SELECT id, nombre FROM comercios WHERE estado = 'pendiente_validacion'`)
+
+  let desalineados = 0
+  let permitidosEnTotal = 0
+  for (const d of distris) {
+    const gondoleroIds = await gondolerosParaPendientes(d.id, admin)
+    const { rows: enLista } = gondoleroIds.length
+      ? await pg.query(
+          `SELECT id FROM comercios
+            WHERE estado = 'pendiente_validacion' AND registrado_por = ANY($1::uuid[])`,
+          [gondoleroIds])
+      : { rows: [] }
+    const idsLista = new Set(enLista.map((c: { id: string }) => c.id))
+
+    for (const c of todos) {
+      const puede = await distriPuedeTocarComercio(c.id, d.id, admin as never)
+      if (puede) permitidosEnTotal++
+      if (puede !== idsLista.has(c.id)) {
+        desalineados++
+        console.log(`       ✗ ${d.razon_social} · ${c.nombre}: ` +
+          `la action dice ${puede}, la lista ${idsLista.has(c.id)}`)
+      }
+    }
+  }
+  caso(`ningún desalineado sobre ${distris.length}×${todos.length} pares`, desalineados, 0)
+
+  // EL CONTROL DEL CONTROL. Si la action permitiera SIEMPRE, el bloque de
+  // arriba se pondría rojo; si denegara siempre y la lista estuviera vacía,
+  // daría verde sin probar nada. Esto exige que alguien pueda algo.
+  if (vistosEnTotal === 0) {
+    console.log('   ⊘  CONTROL — alguien puede algo: NO VERIFICABLE, la bandeja está vacía')
+  } else {
+    caso('CONTROL — y alguien efectivamente puede (no deniega siempre)',
+      permitidosEnTotal > 0, true)
+  }
+
+  // Y el caso que motivó el cambio, medido y no supuesto: con el criterio
+  // VIEJO, toda distri podía tocar todo comercio sin campana_id.
+  const { rows: sinCamp } = await pg.query(
+    `SELECT count(*) n FROM comercios
+      WHERE estado = 'pendiente_validacion' AND campana_id IS NULL`)
+  const permitidosViejo = Number(sinCamp[0].n) * distris.length
+  console.log(`   el criterio VIEJO permitía ${permitidosViejo} pares ` +
+    `(${sinCamp[0].n} sin campana_id × ${distris.length} distris); ahora son ${permitidosEnTotal}`)
 }
 
 await pg.end()

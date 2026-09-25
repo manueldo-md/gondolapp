@@ -13,12 +13,11 @@ type Estado = 'idle' | 'verificando' | 'confirmando'
 
 interface Props {
   gondoleroId: string
-  distriId: string
   distriNombre: string
   gondoleroAlias: string
 }
 
-export function GondoleroDesvincularBtn({ gondoleroId, distriId, distriNombre, gondoleroAlias }: Props) {
+export function GondoleroDesvincularBtn({ gondoleroId, distriNombre, gondoleroAlias }: Props) {
   const [estado, setEstado] = useState<Estado>('idle')
   const [resumen, setResumen] = useState<ResumenCierre | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -28,13 +27,13 @@ export function GondoleroDesvincularBtn({ gondoleroId, distriId, distriNombre, g
     setEstado('verificando')
     setError(null)
     // La previsualización ya no decide si se puede: decide qué se le avisa.
-    setResumen(await previsualizarDesvincularGondolero(gondoleroId, distriId))
+    setResumen(await previsualizarDesvincularGondolero(gondoleroId))
     setEstado('confirmando')
   }
 
   function handleConfirmar() {
     startTransition(async () => {
-      const res = await desvincularGondolero(gondoleroId, distriId, distriNombre)
+      const res = await desvincularGondolero(gondoleroId, distriNombre)
       if (res.error) {
         setError(res.error)
         setEstado('idle')

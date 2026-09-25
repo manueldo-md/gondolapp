@@ -1,10 +1,10 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
+import { distriDeLaSesion } from '@/lib/actor-sesion'
 import { mensajeDesvinculacion } from '@/lib/mensaje-desvinculacion'
 
 function adminClient() {
@@ -33,9 +33,22 @@ function adminClient() {
  */
 export async function previsualizarDesvincularGondolero(
   gondoleroId: string,
-  distriId: string
 ): Promise<ResumenCierre> {
-  return previsualizarCierre({ gondoleroId, distriId, admin: adminClient(), iniciadoPor: 'distri' })
+  // `distriId` SALIÓ DE LA FIRMA. Hasta el 25/9/2026 llegaba por parámetro y
+  // esta función no llamaba a `getUser()` ni una vez: cualquiera —logueado o
+  // no— podía pedir el resumen de cierre de cualquier gondolero para cualquier
+  // distribuidora, y eso devuelve los nombres de sus campañas en curso y los
+  // puntos que tiene retenidos.
+  //
+  // No alcanzaba con agregar el `getUser()`: eso autentica y no autoriza. Con
+  // la sesión chequeada pero el `distriId` todavía viniendo del cliente,
+  // cualquier autenticado seguía leyendo lo de cualquier otra. El arreglo es
+  // que el id no se pueda elegir.
+  const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
+
+  return previsualizarCierre({ gondoleroId, distriId, admin, iniciadoPor: 'distri' })
 }
 
 /**
@@ -46,25 +59,15 @@ export async function previsualizarDesvincularGondolero(
  */
 export async function desvincularGondolero(
   gondoleroId: string,
-  distriId: string,
   distriNombre: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
+  // `distriId` también salió de la firma. Acá SÍ había un chequeo —comparaba
+  // el parámetro contra `perfil.distri_id`— así que no era un agujero. Pero un
+  // id que hay que verificar es un id que alguien se puede olvidar de
+  // verificar: derivarlo hace que la comparación sobre.
   const admin = adminClient()
-
-  // Verificar que el usuario pertenece a esta distribuidora
-  const { data: perfil } = await admin
-    .from('profiles')
-    .select('distri_id')
-    .eq('id', user.id)
-    .single()
-
-  if (perfil?.distri_id !== distriId) {
-    return { error: 'No tenés permiso para desvincular este gondolero.' }
-  }
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
 
   const now = new Date().toISOString()
 

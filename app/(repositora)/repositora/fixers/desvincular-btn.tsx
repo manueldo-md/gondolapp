@@ -6,19 +6,18 @@ import { desvincularFixer } from './invitar-actions'
 
 interface Props {
   fixerId: string
-  repoId: string
   repoNombre: string
   fixerAlias: string
 }
 
-export function FixerRepoDesvincularBtn({ fixerId, repoId, repoNombre, fixerAlias }: Props) {
+export function FixerRepoDesvincularBtn({ fixerId, repoNombre, fixerAlias }: Props) {
   const [confirmando, setConfirmando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   function handleConfirmar() {
     startTransition(async () => {
-      const res = await desvincularFixer(fixerId, repoId, repoNombre)
+      const res = await desvincularFixer(fixerId, repoNombre)
       if (res.error) {
         setError(res.error)
         setConfirmando(false)

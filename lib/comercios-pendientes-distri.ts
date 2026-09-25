@@ -65,6 +65,61 @@ export async function gondolerosParaPendientes(
   return getGondolerosDeDistri(distriId, admin, true)
 }
 
+/**
+ * ¿Esta distri puede tocar este comercio? **El permiso ES la lista.**
+ *
+ * Vive acá, al lado de `gondolerosParaPendientes`, y no adentro de la action,
+ * por dos razones que son la misma:
+ *
+ *  · **Para que no se separe de la lista.** Si el criterio del permiso viviera
+ *    en el archivo de actions, sería una segunda definición de lo que esta
+ *    misma función ya contesta, y el día que una se corrija la otra queda
+ *    vieja. Es el patrón exacto que dejó el badge y la bandeja de acuerdo por
+ *    casualidad, las dos mal.
+ *  · **Para poder probarlo.** Una función privada de un archivo `'use server'`
+ *    no se puede llamar desde un script, y exportarla la convertiría en un
+ *    endpoint más. `probar-pendientes-distri.mts` verifica contra datos reales
+ *    que esto diga que sí **exactamente** sobre lo que la lista muestra.
+ *
+ * ── LO QUE REEMPLAZA ────────────────────────────────────────────────────────
+ * El `puedeTocar` viejo miraba la CAMPAÑA del comercio y empezaba con
+ * `if (!comercio?.campana_id) return true`. Como el alta oportunista no
+ * escribe `campana_id` a propósito, ese `return true` se comía **6 de 6
+ * pendientes en producción y 5 de 5 en dev**: toda distribuidora podía validar
+ * el padrón pendiente entero, incluido el trabajo de gondoleros de otra.
+ *
+ * Medido antes de cambiarlo: los comercios de una campaña de la distri
+ * cargados por un gondolero que NO es suyo son **cero en las dos bases**, así
+ * que el criterio nuevo no le saca ningún caso legítimo a nadie.
+ */
+export async function distriPuedeTocarComercio(
+  comercioId: string,
+  distriId: string,
+  admin: SupabaseClient,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from('comercios')
+    .select('registrado_por')
+    .eq('id', comercioId)
+    .maybeSingle()
+
+  // supabase-js devuelve el error de Postgres en `.error` y no lo lanza. Sin
+  // el chequeo, un fallo de lectura sería indistinguible de "no existe" —
+  // deniega igual, pero el silencio haría que un permiso roto se vea como un
+  // comercio ajeno, que es el diagnóstico equivocado.
+  if (error) {
+    console.error('[pendientes] no se pudo leer el comercio:', error.message)
+    return false
+  }
+
+  const registradoPor = (data as { registrado_por: string | null } | null)?.registrado_por
+  // Un comercio sin quien lo cargó no le pertenece a ninguna distri: lo valida
+  // el admin, cuya bandeja no filtra por nada. Ante la duda, no.
+  if (!registradoPor) return false
+
+  return (await gondolerosParaPendientes(distriId, admin)).includes(registradoPor)
+}
+
 /** Cuántos comercios pendientes tiene para revisar. Para el badge. */
 export async function contarComerciosPendientesDistri(
   distriId: string,
