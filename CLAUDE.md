@@ -2701,6 +2701,117 @@ sin pagar castiga a alguien que hizo el trabajo y cuya foto quizás se rechazó 
 un criterio discutible; pagarlas paga una misión incompleta. Probablemente
 dependa de cuántas fotos de la misión estaban aprobadas.
 
+## PARA LA SESIÓN DE SEGURIDAD — server actions que confían en el middleware
+
+Relevado el 25/9/2026, a partir de un hallazgo puntual en las actions de admin.
+**El hallazgo puntual resultó ser la mitad chica del problema.**
+
+### La superficie
+
+```
+archivos con 'use server'                                    65
+actions exportadas                                          161
+actions que ESCRIBEN, reciben un id del cliente,
+  no miran `tipo_actor` y no se acotan a `user.id`           54
+```
+
+> **Cómo se midió, para que el próximo no lo tome como evangelio.** El número
+> sale de un clasificador estático: trocea cada archivo por `export async
+> function`, mira si el cuerpo escribe, si la firma toma un id y si algo se
+> acota con `user.id`. **Sobre-reporta**: `asignarLocalidadDistri` aparece en la
+> lista y sí chequea —vía `puedeTocar`, que el regex no ve—. O sea que 54 es un
+> techo, no una cuenta. **Dos se verificaron leyendo el código**, y son las que
+> fundan las dos clases de abajo.
+
+### CLASE 1 — el admin, que depende de una sola capa
+
+`aprobarComercio` y `rechazarComercio` de `/admin/comercios/pendientes` solo
+llaman `requerirSesion()`: que haya alguien logueado. Ninguna mira `tipo_actor`.
+
+**Hoy las cubre el middleware**, y eso está verificado: su matcher toma todas
+las rutas, `RUTAS_PERMITIDAS` no incluye `/admin` para ningún actor que no sea
+admin, y **una server action postea a la ruta de su propia página**, así que un
+gondolero rebota antes de ejecutarla.
+
+Pero es **una capa sola**. El día que alguien toque el matcher, mueva la
+pantalla de ruta o agregue un Route Handler que llame a la misma función, estas
+actions quedan abiertas a cualquier autenticado **sin que nada falle
+visiblemente**.
+
+Son **14 actions de admin** en esa situación, y las que más pesan no son las de
+comercios:
+
+```
+procesarCanje(canjeId, codigo)          entrega un premio
+aprobarFotoAdmin(fotoId)                paga puntos
+cerrarCampana(campanaId)                barre y paga bounties
+validarDistribuidora / validarMarca     habilita un actor
+eliminarZona(id)                        borra
+```
+
+### CLASE 2 — cross-tenant, y el middleware NO la cubre
+
+**Ésta es la que importa más, y no estaba en el pedido.**
+
+El middleware chequea `pathname.startsWith('/distribuidora')`. **No chequea
+CUÁL distribuidora.** Así que cualquier acción que reciba un id y no verifique
+que ese id le pertenece al llamador es cross-tenant, y ninguna capa la tapa.
+
+Verificado leyendo el código:
+
+```ts
+// (distribuidora)/distribuidora/gondolas/actions.ts
+export async function aprobarFoto(fotoId: string) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
+  const { data: foto } = await adminClient.from('fotos')
+    .select('*, campanas(...)').eq('id', fotoId).single()
+  // ← nunca se pregunta de quién es la campaña de esa foto
+```
+
+**Cualquier distribuidora autenticada puede aprobar la foto de la campaña de
+otra, y eso ACREDITA PUNTOS.** No hay ni un `.eq()` contra su `distri_id`.
+
+Y el caso de libro, también verificado:
+
+```ts
+export async function marcarNotificacionesDistriLeidas(distriId: string) {
+  // el distriId lo manda el cliente y se usa tal cual
+```
+
+Por firma, la clase alcanza a **19 actions de distri, 9 de marca y 8 de
+gondolero** —éstas últimas cross-USER: `marcarLogrosVistos(gondoleroId)` y las
+seis de `distri-actions.ts`, que aceptan o rechazan la vinculación de OTRO
+gondolero—. Esas no se leyeron una por una.
+
+### Lo que ya existe y muestra que la forma correcta está inventada
+
+No hay que diseñar nada nuevo: el proyecto ya tiene las tres piezas.
+
+| | Qué hace |
+|---|---|
+| `puedeTocar` (comercios pendientes de distri) | deriva el `distriId` de la SESIÓN y verifica que el comercio le corresponda |
+| `getDistrisDeActor` / `contextoAcceso` | la pertenencia, leída de la tabla de vínculos |
+| `idsDe` de `lib/campanas-de.ts` | intersecta lo pedido contra lo permitido: **la lista ES el permiso** |
+
+La regla que sale de las tres, y que es la que hay que aplicar: **el id de la
+entidad del que llama nunca viene por parámetro — se deriva de la sesión.** Una
+action que recibe `distriId: string` ya perdió, porque el cliente lo elige.
+
+### Por dónde empezaría
+
+1. **Las que mueven plata**, en cualquier panel: `aprobarFoto` × 3 paneles,
+   `procesarCanje`, `cerrarCampana`. Son las que convierten un IDOR en un cobro.
+2. **Las que reciben el id de la propia entidad** (`distriId`, `marcaId`,
+   `gondoleroId`) — se arreglan borrando el parámetro y derivándolo, y eso
+   además hace imposible el error a futuro.
+3. **Las 14 de admin**, que hoy están cubiertas: es poner la segunda capa, no
+   tapar un agujero abierto.
+
+No se tocó nada en este relevamiento: es material para la sesión de seguridad.
+Lo único que se cambió en el día fue `asignarLocalidadAdmin`, que nació
+mirando `tipo_actor` en vez de heredar el patrón.
+
 ### Tramo propio — 137 escrituras que no chequean el error (33 críticas)
 
 **El patrón:** `supabase-js` NO lanza excepción ante un error de Postgres. Lo
