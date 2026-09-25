@@ -320,7 +320,7 @@ export function repartoDe(puntos: PuntoMapa[], modo: ModoPintado): { cat: Catego
  * En un modo sin proporciones —tipo de comercio— devuelve un color liso: el del
  * tipo si todos coinciden, y el neutro si están mezclados.
  */
-export function anilloGrupo(g: GrupoMapa, modo: ModoPintado = 'presencia'): string {
+export function anilloGrupo(g: GrupoMapa, modo: ModoPintado): string {
   const reparto = repartoDe(g.puntos, modo)
   if (reparto.length === 0) return COLOR_NEUTRO
   if (!tieneAnillo(modo)) {
@@ -340,13 +340,13 @@ export function anilloGrupo(g: GrupoMapa, modo: ModoPintado = 'presencia'): stri
 }
 
 /** El color de un PDV suelto. */
-export function colorPunto(p: PuntoMapa, modo: ModoPintado = 'presencia'): string {
+export function colorPunto(p: PuntoMapa, modo: ModoPintado): string {
   const clave = categoriaDe(p, modo)
   return categoriasDe(modo).find(c => c.clave === clave)?.color ?? COLOR_NEUTRO
 }
 
 /** El texto de un grupo: lo que se lee al tocarlo, sin esconder ninguna parte. */
-export function textoGrupo(g: GrupoMapa, modo: ModoPintado = 'presencia'): string {
+export function textoGrupo(g: GrupoMapa, modo: ModoPintado): string {
   const reparto = repartoDe(g.puntos, modo)
   if (g.puntos.length === 1) {
     const cat = reparto[0]?.cat

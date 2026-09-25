@@ -5599,6 +5599,71 @@ bug 1 y 3 contra el bug 2, reproducidos uno por uno.
 npx tsx --tsconfig scripts/tsconfig.render.json scripts/probar-links-mapa.mts
 ```
 
+##### El tercero, al día siguiente: la cabecera de la lista
+
+Con el mapa en cobertura, la lista del grupo encabezaba **"4 PDV · 4 sin
+medir"** mientras el tooltip del MISMO grupo decía "4 PDV · 1 al día · 3
+atrasado" y las filas mostraban las visitas de la semana. Los cuatro tenían
+visitas y estado: la cabecera afirmaba que no se había medido ninguno, que es
+lo contrario de lo que el modo existe para mostrar.
+
+Una línea:
+
+```tsx
+<p …>{textoGrupo(abierto)}</p>        // sin el modo
+```
+
+El tooltip la llamaba con `pintar` y la cabecera no. **Misma familia que los
+dos de ayer: la función andaba, el llamador le pasaba de menos.**
+
+##### Lo que lo dejó pasar fue el DEFAULT de la firma
+
+```ts
+export function textoGrupo(g: GrupoMapa, modo: ModoPintado = 'presencia')
+```
+
+Ese `= 'presencia'` hace que olvidarse del modo **compile** y devuelva texto de
+presencia. Medido con el bug repuesto a propósito:
+
+```
+tsc --noEmit            sin una sola queja
+probar-mapa-pdv.ts      ✓ Todo como se esperaba.
+```
+
+**Invisible por los dos lados.** Y el test no era malo: ya afirmaba
+`textoGrupo(g, 'presencia') === '4 PDV · 4 sin medir'` — la cadena exacta que
+se veía en pantalla. El test tenía razón; el llamador no.
+
+El default se sacó de las **tres** que toman modo —`textoGrupo`, `anilloGrupo`
+y `colorPunto`; `repartoDe` ya lo exigía— así que olvidarlo pasó a ser un error
+de compilación:
+
+```
+components/panel/mapa.tsx(296,65): error TS2554: Expected 2 arguments, but got 1.
+```
+
+Las seis llamadas de un argumento que había en `probar-mapa-pdv.ts` eran todas
+legítimamente de presencia y ahora lo dicen. **Un test que no nombra el modo
+que está afirmando tampoco lo está afirmando.**
+
+> **La regla que sale de los tres bugs juntos:** un parámetro que selecciona
+> QUÉ SIGNIFICA lo que devuelve la función no lleva default. El default lo
+> convierte en opcional para el compilador y en obligatorio para la verdad, y
+> esa diferencia se paga en pantalla. Los defaults de comodidad —un `tope`, una
+> `separacionPx`— no tienen este problema: equivocarse ahí se ve.
+
+##### Por qué esto no lo cubre `probar-links-mapa.mts`
+
+La lista del grupo vive detrás de estado de cliente (`abierto`, que arranca en
+`null`), así que `renderToStaticMarkup` no la alcanza: el script rinde la
+pantalla pero nadie tocó un grupo. **Acá la cobertura es el tipo**, y está
+medida arriba.
+
+Lo que sí se agregó a `probar-mapa-pdv.ts` son los dos controles para el caso
+que el tipo NO cubre —que alguien escriba el texto a mano en el modo
+equivocado—: en cobertura el texto no usa ni una palabra de presencia, y al
+revés.
+
 #### PENDIENTE — el techo de 1.000 filas de PostgREST sobre la cobertura
 
 **Ya existe hoy, no lo trae el mapa.** El dashboard de cobertura se calcula

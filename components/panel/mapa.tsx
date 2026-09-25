@@ -293,7 +293,7 @@ export function MapaCliente({
       {abierto && (
         <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
           <div className="flex items-baseline justify-between gap-3 mb-2">
-            <p className="text-sm font-semibold text-gray-900">{textoGrupo(abierto)}</p>
+            <p className="text-sm font-semibold text-gray-900">{textoGrupo(abierto, pintar)}</p>
             <button
               onClick={() => setAbierto(null)}
               className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 shrink-0"

@@ -109,7 +109,7 @@ console.log('\n▸ LA MINORÍA NO SE ESCONDE')
     repartoDe(mixto.puntos, 'presencia').map(x => [x.cat.clave, x.n]),
     [['presente', 4], ['ausente', 1], ['sinMedir', 1]])
 
-  const anillo = anilloGrupo(mixto)
+  const anillo = anilloGrupo(mixto, 'presencia')
   caso('el anillo tiene los TRES colores', [
     anillo.includes(COLOR_PRESENCIA.presente),
     anillo.includes(COLOR_PRESENCIA.ausente),
@@ -118,7 +118,7 @@ console.log('\n▸ LA MINORÍA NO SE ESCONDE')
   caso('y cierra los 360 grados exactos',
     Number(anillo.match(/([\d.]+)deg\)$/)![1]), 360)
   caso('el texto los nombra a los tres',
-    textoGrupo(mixto), '6 PDV · 4 con presencia · 1 sin presencia · 1 sin medir')
+    textoGrupo(mixto, 'presencia'), '6 PDV · 4 con presencia · 1 sin presencia · 1 sin medir')
 
   // El control que importa: un grupo de un solo color NO puede salir tricolor.
   // Con una sola categoría ya no se arma un `conic-gradient` de un tramo: sale
@@ -168,6 +168,30 @@ console.log('\n▸ COBERTURA: el mismo anillo, otra condición')
     // 'sin medir' a secas y no 'presencia sin medir': la `frase` larga es solo
     // para el punto SUELTO, donde no hay lista que dé contexto.
     textoGrupo(g, 'presencia'), '4 PDV · 4 sin medir')
+
+  // ── EL BUG DE LA CABECERA DE LA LISTA (25/9/2026) ─────────────────────────
+  // Con el mapa en cobertura, la lista del grupo encabezaba "4 PDV · 4 sin
+  // medir" — el texto de arriba — mientras el tooltip del mismo grupo decía
+  // "4 PDV · 1 al día · 3 atrasado" y las filas mostraban las visitas. Los
+  // cuatro tenían visitas y estado: la cabecera afirmaba que no se había
+  // medido ninguno, que es lo contrario de lo que el modo vino a mostrar.
+  //
+  // La causa: `mapa.tsx` llamaba `textoGrupo(abierto)` SIN el modo, y el
+  // `= 'presencia'` de la firma lo dejaba compilar. Misma familia que el
+  // control de pintado del mismo día: la función andaba, el llamador le
+  // pasaba de menos. Por eso el default se sacó de las TRES que toman modo
+  // —`textoGrupo`, `anilloGrupo`, `colorPunto`— y olvidarlo pasó a ser un
+  // error de compilación. Verificado: con el bug puesto, `tsc` señala la
+  // línea exacta.
+  //
+  // Estos dos controles son lo que queda para el caso que el tipo no cubre:
+  // que alguien escriba el texto a mano en el modo equivocado.
+  caso('en cobertura el texto no usa una sola palabra de presencia',
+    ['sin medir', 'con presencia', 'sin presencia']
+      .filter(t => textoGrupo(g, 'cobertura').includes(t)), [])
+  caso('y en presencia no usa una de cobertura',
+    ['al día', 'va bien', 'atrasado']
+      .filter(t => textoGrupo(g, 'presencia').includes(t)), [])
 
   // Un PDV del mapa sin estado de cobertura no debería existir —los dos
   // universos salen de las mismas misiones— pero si aparece se pinta gris
@@ -261,10 +285,10 @@ console.log('\n▸ LOS DOS BUGS DEL 25/9: el link perdía la campaña y el modo 
 console.log('\n▸ Un PDV solo no es un grupo disfrazado')
 {
   const solo = agruparEnMapa([pdv('x', -32, -58, null)], 12)[0]
-  caso('texto de uno sin medir', textoGrupo(solo), 'x — presencia sin medir')
-  caso('texto de uno presente', textoGrupo(agruparEnMapa([pdv('y', -32, -58, true)], 12)[0]), 'y — con presencia')
-  caso('texto de uno ausente', textoGrupo(agruparEnMapa([pdv('z', -32, -58, false)], 12)[0]), 'z — sin presencia')
-  caso('color de uno sin medir', colorPunto(pdv('x', -32, -58, null)), COLOR_PRESENCIA.sinMedir)
+  caso('texto de uno sin medir', textoGrupo(solo, 'presencia'), 'x — presencia sin medir')
+  caso('texto de uno presente', textoGrupo(agruparEnMapa([pdv('y', -32, -58, true)], 12)[0], 'presencia'), 'y — con presencia')
+  caso('texto de uno ausente', textoGrupo(agruparEnMapa([pdv('z', -32, -58, false)], 12)[0], 'presencia'), 'z — sin presencia')
+  caso('color de uno sin medir', colorPunto(pdv('x', -32, -58, null), 'presencia'), COLOR_PRESENCIA.sinMedir)
 }
 
 console.log('\n▸ LA GRILLA ES DEL MUNDO, NO DE LA PANTALLA')
