@@ -3679,6 +3679,103 @@ Medido el 17/9/2026: **prod 4 en desacuerdo** (los tres de la campaña más
 antes), **dev 0**. Dev no lo tiene porque ahí nadie usó el toggle, no porque el
 código sea distinto.
 
+### La bandeja de comercios pendientes de la distri no mostró NUNCA un comercio
+
+Reportado el 25/9/2026: un comercio en `pendiente_validacion`, con geocoding
+resuelto, no aparecía en la bandeja de la distri.
+
+**El alcance real es mucho mayor que el caso reportado.** Medido en las dos
+bases antes de tocar nada:
+
+```
+                pendiente_validacion   los veía la distri   INVISIBLES
+dev                     7                      0                7
+producción              8                      0                8
+```
+
+**Cero visibles, en las dos.** No es que algunos se escapen: **esta pantalla no
+mostró un solo comercio desde que existe.** El admin sí los ve —su consulta no
+filtra por distri— así que el trabajo llegaba a alguien, pero no a quien el
+flujo dice que tiene que validarlo.
+
+#### La causa: una columna con dos significados
+
+La bandeja filtraba por las CAMPAÑAS de la distri:
+
+```ts
+.eq('estado', 'pendiente_validacion').in('campana_id', campanaIds)
+```
+
+Y `campana_id` **solo lo escribe `crearComercioNuevo`**, el alta de una campaña
+de altas. El alta oportunista —dar de alta un comercio para poder hacerle la
+misión, que es el camino normal— **no lo escribe a propósito**: si lo hiciera, la
+fachada se cobraría como unidad de pago (ver `fotoEsUnidadDePago`).
+
+O sea que la columna hace dos trabajos —*"a qué campaña pertenece"* y *"esta
+alta es una unidad de pago"*— y la bandeja leía la primera acepción mientras la
+escritura respetaba la segunda. En producción, **95 de 98 comercios no tienen
+`campana_id`**.
+
+> **Y el permiso ya decía que sí.** `puedeTocar` tiene un
+> `if (!comercio?.campana_id) return true` con el comentario *"lo cargó un
+> gondolero desde la captura normal"*. Alguien previó exactamente este caso
+> **para la acción y no para la lista**: la distri podía validarlo, solo que no
+> podía verlo.
+
+#### El criterio nuevo: por GONDOLERO
+
+Los comercios cargados por gondoleros vinculados a esa distri, vía
+`getGondolerosDeDistri`, que ya resuelve la pertenencia desde la tabla de
+vínculos.
+
+Se descartó **por geografía** —los de las localidades donde opera— por una razón
+de oportunidad: `localidad_id` acaba de completarse en el tramo anterior y
+todavía no tiene rodaje. No se decide un permiso con un dato que se terminó de
+poblar ayer.
+
+Y **sacar el filtro sin reemplazarlo** dejaría a toda distri viendo el padrón
+pendiente entero, que es el problema ya anotado en "Toda distribuidora ve todos
+los comercios del sistema".
+
+**`incluyeHistorico = true`**: un comercio cargado por alguien que ya se
+desvinculó sigue siendo trabajo de esa distri. Excluirlo haría que desvincular a
+un gondolero **escondiera sus altas pendientes** — el mismo hueco silencioso por
+otra puerta.
+
+#### Un comercio le puede aparecer a DOS distris, y está bien
+
+Un gondolero puede estar vinculado a varias a la vez —el Walled Garden protege
+los datos de cada ejecutor, no la exclusividad de la persona— y cualquiera de
+las dos puede validarlo. `validarComercioYCrearMision` es idempotente, así que
+las dos aprobando no pagan dos veces.
+
+**Pasa hoy en dev**: hay un comercio que ven Biomega y Distribuidora Del Valle.
+
+#### El badge tenía la consulta COPIADA
+
+`layout.tsx` repetía el mismo filtro por campañas. Las dos copias estaban de
+acuerdo por casualidad —las dos mal—, que es el peor estado posible: el día que
+alguien arreglara una, el badge diría 8 sobre una lista vacía y eso es **peor
+que el bug original**, porque el usuario no puede reconciliarlo con nada.
+
+El criterio vive ahora en `lib/comercios-pendientes-distri.ts` y lo usan los
+dos. `probar-pendientes-distri.mts` tiene un control por distribuidora que
+verifica que **el badge diga exactamente lo que muestra la lista**.
+
+#### Medido después del arreglo
+
+```
+producción   Biomega ve los 8 · las otras 5 distris, 0 · sin dueño: 0
+dev          Biomega 7 · Del Valle 1 (compartido) · sin dueño: 0
+```
+
+`scripts/probar-pendientes-distri.mts` es solo lectura y corre contra las dos
+bases. **Llama a la misma función que corre en producción** en vez de
+reimplementar el filtro — un control que replica lo que dice verificar se queda
+verde el día que los dos se separan, y este proyecto ya lo pagó tres veces. Y
+reproduce el criterio VIEJO al lado, para que la mejora sea un número y no una
+afirmación.
+
 ### PENDIENTE de UX — aprobar la foto de fachada NO valida el comercio
 
 En resultados de campaña aparecen las fotos de fachada para aprobar. Aprobarlas

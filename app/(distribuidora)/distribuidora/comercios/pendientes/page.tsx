@@ -8,6 +8,7 @@ import type { TipoComercio } from '@/types'
 import { AprobarRechazarBtnsDistri } from './aprobar-rechazar-btns'
 import { firmarFachadas } from '@/lib/storage-fotos'
 import { SelectorLocalidad } from '@/components/shared/selector-localidad'
+import { gondolerosParaPendientes } from '@/lib/comercios-pendientes-distri'
 import { asignarLocalidadDistri } from './actions'
 
 const TIPO_COLOR: Record<TipoComercio, string> = {
@@ -73,18 +74,22 @@ export default async function ComerciosPendientesDistriPage() {
   const distriId = profile?.distri_id
   if (!distriId) redirect('/distribuidora/dashboard')
 
-  // Obtener IDs de campañas de esta distribuidora
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: campanas } = await (admin as any)
-    .from('campanas')
-    .select('id')
-    .eq('distri_id', distriId)
+  // ── QUÉ COMERCIOS LE TOCAN A ESTA DISTRI: los de SUS GONDOLEROS ──────────
+  // Hasta el 25/9/2026 esto filtraba por las CAMPAÑAS de la distri
+  // (`.in('campana_id', …)`), y `campana_id` solo lo escribe el alta de una
+  // campaña de altas. El alta oportunista —el camino normal— no lo escribe **a
+  // propósito**: si lo hiciera, la fachada se cobraría como unidad de pago.
+  //
+  // Medido: 7 pendientes en dev y 8 en prod, y **cero visibles en las dos**.
+  // Esta pantalla no mostró un solo comercio desde que existe.
+  //
+  // El criterio vive en lib/comercios-pendientes-distri.ts, compartido con el
+  // badge del sidebar, que tenía la misma consulta copiada.
+  const gondoleroIds = await gondolerosParaPendientes(distriId, admin)
 
-  const campanaIds = ((campanas ?? []) as { id: string }[]).map(c => c.id)
-
-  // Comercios pendientes de campañas de esta distri
+  // Comercios pendientes cargados por los gondoleros de esta distri
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: comerciosRaw } = campanaIds.length > 0
+  const { data: comerciosRaw } = gondoleroIds.length > 0
     ? await (admin as any)
         .from('comercios')
         .select(`
@@ -97,7 +102,7 @@ export default async function ComerciosPendientesDistriPage() {
           campana:campanas!campana_id(nombre)
         `)
         .eq('estado', 'pendiente_validacion')
-        .in('campana_id', campanaIds)
+        .in('registrado_por', gondoleroIds)
         .order('created_at', { ascending: false })
         .limit(200)
     : { data: [] }
@@ -124,7 +129,7 @@ export default async function ComerciosPendientesDistriPage() {
   const comercioIds = comercios.map((c: { id: string }) => c.id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: pendientesGeo }, { data: activos }] = await Promise.all([
-    campanaIds.length > 0 && comercioIds.length > 0
+    comercioIds.length > 0
       ? (admin as any).from('comercios').select('id, lat, lng').in('id', comercioIds)
       : Promise.resolve({ data: [] }),
     (admin as any).from('comercios').select('id, lat, lng').eq('estado', 'activo'),

@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { DistriShell } from './distri-shell'
 import { getGondolerosDeDistri } from '@/lib/utils-distri'
+import { contarComerciosPendientesDistri } from '@/lib/comercios-pendientes-distri'
 
 export default async function DistriLayout({
   children,
@@ -79,25 +80,16 @@ export default async function DistriLayout({
       // ignorar
     }
 
-    try {
-      // Contar comercios pendientes de campañas de esta distri
-      const { data: campanaIds } = await admin
-        .from('campanas')
-        .select('id')
-        .eq('distri_id', profile.distri_id)
-      const ids = (campanaIds ?? []).map((c: { id: string }) => c.id)
-      if (ids.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const res = await (admin as any)
-          .from('comercios')
-          .select('*', { count: 'exact', head: true })
-          .eq('estado', 'pendiente_validacion')
-          .in('campana_id', ids)
-        comerciosPendientesCount = res.count ?? 0
-      }
-    } catch {
-      // ignorar si la columna aún no existe
-    }
+    // Comercios pendientes que le tocan a ESTA distri: los cargados por sus
+    // gondoleros. El criterio vive en UN solo lugar — acá estaba COPIADO de la
+    // bandeja, filtrando por las CAMPAÑAS de la distri, y las dos copias
+    // estaban de acuerdo por casualidad: las dos mal. El alta oportunista no
+    // escribe `campana_id`, así que el badge contaba cero siempre.
+    //
+    // Un badge que diga 8 sobre una lista vacía sería peor que el bug que
+    // había, y eso es exactamente lo que pasa cuando el criterio está escrito
+    // dos veces y alguien corrige una.
+    comerciosPendientesCount = await contarComerciosPendientesDistri(profile.distri_id, admin)
 
     // ── EL PUNTITO ROJO DE "ALERTAS" SE FUE, Y NO ES UN OLVIDO ──────────────
     // Lo encendía una consulta a `fotos.declaracion = 'producto_no_encontrado'`
