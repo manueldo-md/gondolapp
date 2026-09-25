@@ -103,7 +103,7 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
   const handleAceptar = (inv: Invitacion) => {
     setProcesandoId(inv.id)
     startTransition(async () => {
-      const res = await aceptarVinculacionDistri(inv.id, gondoleroId, inv.distri_id)
+      const res = await aceptarVinculacionDistri(inv.id)
       setProcesandoId(null)
       if (res.error) {
         showFeedback(false, res.error)
@@ -132,7 +132,7 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
   const handleAceptarRepo = (inv: RepoInvitacion) => {
     setProcesandoId(inv.id)
     startTransition(async () => {
-      const res = await aceptarVinculacionRepo(inv.id, gondoleroId, inv.repo_id)
+      const res = await aceptarVinculacionRepo(inv.id)
       setProcesandoId(null)
       if (res.error) {
         showFeedback(false, res.error)
@@ -161,7 +161,7 @@ export function DistriSection({ distrisActivas: initialDistrisActivas, solicitud
   const handleAceptarDistriF = (inv: DistriFixerInvitacion) => {
     setProcesandoId(inv.id)
     startTransition(async () => {
-      const res = await aceptarVinculacionDistri_Fixer(inv.id, gondoleroId, inv.distri_id)
+      const res = await aceptarVinculacionDistri_Fixer(inv.id)
       setProcesandoId(null)
       if (res.error) {
         showFeedback(false, res.error)

@@ -17,7 +17,7 @@ export function MarcarLogrosVistos({
   useEffect(() => {
     if (!hayNoVistos) return
     const timer = setTimeout(() => {
-      marcarLogrosVistos(gondoleroId)
+      marcarLogrosVistos()
     }, 1500)
     return () => clearTimeout(timer)
   }, [gondoleroId, hayNoVistos])

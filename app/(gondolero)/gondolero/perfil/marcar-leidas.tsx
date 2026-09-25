@@ -6,7 +6,7 @@ import { marcarNotificacionesLeidas } from './actions'
 export function MarcarNotificacionesLeidas({ gondoleroId }: { gondoleroId: string }) {
   useEffect(() => {
     const timer = setTimeout(async () => {
-      await marcarNotificacionesLeidas(gondoleroId)
+      await marcarNotificacionesLeidas()
     }, 2000)
     return () => clearTimeout(timer)
   }, [gondoleroId])

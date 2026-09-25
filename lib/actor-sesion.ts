@@ -83,6 +83,27 @@ export async function distriDeLaSesion(admin: Admin): Promise<string | null> {
   return p.distri_id
 }
 
+/**
+ * El id del usuario logueado, y nada más.
+ *
+ * Para las actions donde el dueño del objeto ES la persona —las seis de
+ * vinculación del perfil del gondolero— y no la empresa. Ahí no hace falta
+ * mirar `tipo_actor`: la solicitud tiene el `gondolero_id` adentro y lo que se
+ * compara es contra `user.id`.
+ */
+export async function usuarioDeLaSesion(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user?.id ?? null
+}
+
+/** La marca del que llama. Mismo criterio que `distriDeLaSesion`. */
+export async function marcaDeLaSesion(admin: Admin): Promise<string | null> {
+  const p = await perfilDeLaSesion(admin)
+  if (!p || p.tipo_actor !== 'marca') return null
+  return p.marca_id
+}
+
 /** La repositora del que llama. Mismo criterio que `distriDeLaSesion`. */
 export async function repositoraDeLaSesion(admin: Admin): Promise<string | null> {
   const p = await perfilDeLaSesion(admin)

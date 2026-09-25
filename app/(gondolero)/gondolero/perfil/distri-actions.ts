@@ -5,6 +5,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { cerrarVinculacion, previsualizarCierre, type ResumenCierre } from '@/lib/cerrar-vinculacion'
+import { usuarioDeLaSesion } from '@/lib/actor-sesion'
+import { exigirPertenencia } from '@/lib/pertenencia'
 
 function adminClient() {
   return createSupabaseClient(
@@ -52,16 +54,49 @@ export async function solicitarVinculacion(
   return {}
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * LAS SEIS DE VINCULACIÓN — el relevamiento del 25/9/2026
+ *
+ * Las seis recibían un `solicitudId` del cliente y **ninguna verificaba que
+ * fuera suyo**. Con la sesión de cualquier gondolero se podía aceptar o
+ * rechazar la vinculación de CUALQUIER otro.
+ *
+ * Es peor que leer datos ajenos, y por una razón concreta: **decide de quién
+ * depende el trabajo de una persona.** Un vínculo aceptado o roto cambia qué
+ * campañas ve, quién le aprueba las fotos y —vía `cerrarVinculacion`— si sus
+ * bounties retenidos se pagan o se quedan retenidos.
+ *
+ * Y el rechazo es el ataque barato, porque **la víctima no se entera**: la
+ * solicitud queda 'rechazada' y en pantalla eso es indistinguible de que la
+ * distribuidora no la haya aprobado.
+ *
+ * ── LOS PARÁMETROS EXTRA SE FUERON, Y NO SE REEMPLAZARON POR UN CHEQUEO ─────
+ * `gondoleroId`, `fixerId` y `distriId`/`repoId` **estaban en la fila**. O sea
+ * que no hacía falta verificarlos: alcanza con leerlos de la solicitud. Eso
+ * mata el IDOR y el parámetro de una vez, y deja una firma donde el error ya
+ * no se puede cometer.
+ *
+ * El dueño se compara con `exigirPertenencia` (lib/pertenencia.ts), que es el
+ * patrón de las actions de reinicio extraído: leer la fila, comparar contra la
+ * sesión, cortar.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+
 export async function aceptarVinculacionDistri(
-  solicitudId: string,
-  gondoleroId: string,
-  distriId: string
+  solicitudId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  const userId = await usuarioDeLaSesion()
+  if (!userId) redirect('/auth')
 
   const admin = adminClient()
+  const sol = await exigirPertenencia({
+    admin, tabla: 'gondolero_distri_solicitudes', id: solicitudId,
+    columna: 'gondolero_id', valor: userId, columnas: ['distri_id'],
+    desde: 'perfil:aceptarVinculacionDistri',
+  })
+  if (!sol) return { error: 'No encontramos esa invitación.' }
+  const distriId = sol.distri_id as string
 
   // Marcar solicitud como aprobada (fuente de verdad en nuevo modelo)
   const { error } = await admin
@@ -72,9 +107,9 @@ export async function aceptarVinculacionDistri(
   if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
 
   // Actualizar profiles.distri_id solo si no tiene ninguna distri principal aún
-  const { data: profile } = await admin.from('profiles').select('distri_id').eq('id', gondoleroId).single()
+  const { data: profile } = await admin.from('profiles').select('distri_id').eq('id', userId).single()
   if (!profile?.distri_id) {
-    await admin.from('profiles').update({ distri_id: distriId }).eq('id', gondoleroId)
+    await admin.from('profiles').update({ distri_id: distriId }).eq('id', userId)
   }
 
   revalidatePath('/gondolero/perfil')
@@ -84,11 +119,16 @@ export async function aceptarVinculacionDistri(
 export async function rechazarVinculacionDistri(
   solicitudId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  const userId = await usuarioDeLaSesion()
+  if (!userId) redirect('/auth')
 
   const admin = adminClient()
+  const sol = await exigirPertenencia({
+    admin, tabla: 'gondolero_distri_solicitudes', id: solicitudId,
+    columna: 'gondolero_id', valor: userId,
+    desde: 'perfil:rechazarVinculacionDistri',
+  })
+  if (!sol) return { error: 'No encontramos esa invitación.' }
 
   await admin
     .from('gondolero_distri_solicitudes')
@@ -100,15 +140,19 @@ export async function rechazarVinculacionDistri(
 }
 
 export async function aceptarVinculacionRepo(
-  solicitudId: string,
-  fixerId: string,
-  repoId: string
+  solicitudId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  const userId = await usuarioDeLaSesion()
+  if (!userId) redirect('/auth')
 
   const admin = adminClient()
+  const sol = await exigirPertenencia({
+    admin, tabla: 'fixer_repo_solicitudes', id: solicitudId,
+    columna: 'fixer_id', valor: userId, columnas: ['repositora_id'],
+    desde: 'perfil:aceptarVinculacionRepo',
+  })
+  if (!sol) return { error: 'No encontramos esa invitación.' }
+  const repoId = sol.repositora_id as string
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (admin as any)
@@ -118,7 +162,22 @@ export async function aceptarVinculacionRepo(
 
   if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
 
-  await admin.from('profiles').update({ repositora_id: repoId }).eq('id', fixerId)
+  // ── LA GUARDA QUE FALTABA ─────────────────────────────────────────────────
+  // Sus dos hermanas escriben la columna **solo si está en null**; ésta la
+  // pisaba siempre. Y pisarla no es cosmético: un fixer puede estar vinculado
+  // a varias repositoras a la vez —el Walled Garden protege los datos de cada
+  // ejecutor, no la exclusividad de la persona— así que sobreescribirla lo
+  // movía de equipo sin desvincularlo de nada.
+  //
+  // Es exactamente lo que se corrigió el 22/9/2026 en `aprobarSolicitudFixer`,
+  // del lado de la repositora. Este camino quedó sin el arreglo.
+  //
+  // El vínculo verdadero ya quedó arriba, en la tabla, que es la fuente.
+  const { data: perfil } = await admin
+    .from('profiles').select('repositora_id').eq('id', userId).maybeSingle()
+  if (!(perfil as { repositora_id: string | null } | null)?.repositora_id) {
+    await admin.from('profiles').update({ repositora_id: repoId }).eq('id', userId)
+  }
 
   revalidatePath('/gondolero/perfil')
   revalidatePath('/repositora/fixers')
@@ -128,11 +187,16 @@ export async function aceptarVinculacionRepo(
 export async function rechazarVinculacionRepo(
   solicitudId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  const userId = await usuarioDeLaSesion()
+  if (!userId) redirect('/auth')
 
   const admin = adminClient()
+  const sol = await exigirPertenencia({
+    admin, tabla: 'fixer_repo_solicitudes', id: solicitudId,
+    columna: 'fixer_id', valor: userId,
+    desde: 'perfil:rechazarVinculacionRepo',
+  })
+  if (!sol) return { error: 'No encontramos esa invitación.' }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (admin as any)
@@ -145,15 +209,19 @@ export async function rechazarVinculacionRepo(
 }
 
 export async function aceptarVinculacionDistri_Fixer(
-  solicitudId: string,
-  fixerId: string,
-  distriId: string
+  solicitudId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  const userId = await usuarioDeLaSesion()
+  if (!userId) redirect('/auth')
 
   const admin = adminClient()
+  const sol = await exigirPertenencia({
+    admin, tabla: 'fixer_distri_solicitudes', id: solicitudId,
+    columna: 'fixer_id', valor: userId, columnas: ['distri_id'],
+    desde: 'perfil:aceptarVinculacionDistri_Fixer',
+  })
+  if (!sol) return { error: 'No encontramos esa invitación.' }
+  const distriId = sol.distri_id as string
 
   const { error } = await admin
     .from('fixer_distri_solicitudes')
@@ -163,9 +231,9 @@ export async function aceptarVinculacionDistri_Fixer(
   if (error) return { error: 'No se pudo completar la vinculación. Intentá de nuevo.' }
 
   // Actualizar distri_id en profile si no tiene ninguna aún
-  const { data: profile } = await admin.from('profiles').select('distri_id').eq('id', fixerId).single()
+  const { data: profile } = await admin.from('profiles').select('distri_id').eq('id', userId).single()
   if (!profile?.distri_id) {
-    await admin.from('profiles').update({ distri_id: distriId }).eq('id', fixerId)
+    await admin.from('profiles').update({ distri_id: distriId }).eq('id', userId)
   }
 
   revalidatePath('/gondolero/perfil')
@@ -175,11 +243,16 @@ export async function aceptarVinculacionDistri_Fixer(
 export async function rechazarVinculacionDistri_Fixer(
   solicitudId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  const userId = await usuarioDeLaSesion()
+  if (!userId) redirect('/auth')
 
   const admin = adminClient()
+  const sol = await exigirPertenencia({
+    admin, tabla: 'fixer_distri_solicitudes', id: solicitudId,
+    columna: 'fixer_id', valor: userId,
+    desde: 'perfil:rechazarVinculacionDistri_Fixer',
+  })
+  if (!sol) return { error: 'No encontramos esa invitación.' }
 
   await admin
     .from('fixer_distri_solicitudes')

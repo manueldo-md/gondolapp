@@ -155,31 +155,91 @@ console.log('\n▸ El actor sale de la sesión, nunca de un parámetro')
 // de verificar, y agregarlo de nuevo compila perfecto.
 console.log('\n▸ El id de la entidad del que llama NO está en la firma')
 {
-  const CERRADAS: [string, string, string[]][] = [
+  // [archivo, derivador, [funciones], [nombres de parámetro PROHIBIDOS en ese archivo]]
+  const CERRADAS: [string, string, string[], string[]][] = [
     ['app/(distribuidora)/distribuidora/gondoleros/desvincular-actions.ts',
-      'distriDeLaSesion', ['previsualizarDesvincularGondolero', 'desvincularGondolero']],
+      'distriDeLaSesion', ['previsualizarDesvincularGondolero', 'desvincularGondolero'], ['distriId']],
     ['app/(distribuidora)/distribuidora/fixers/desvincular-actions.ts',
-      'distriDeLaSesion', ['previsualizarDesvincularFixer', 'desvincularFixer']],
+      'distriDeLaSesion', ['previsualizarDesvincularFixer', 'desvincularFixer'], ['distriId']],
     ['app/(repositora)/repositora/fixers/invitar-actions.ts',
-      'repositoraDeLaSesion', ['desvincularFixer']],
+      'repositoraDeLaSesion', ['desvincularFixer'], ['repoId', 'repositoraId']],
     ['app/(distribuidora)/distribuidora/comercios/pendientes/actions.ts',
-      'distriDeLaSesion', ['aprobarComercioDistri', 'rechazarComercioDistri', 'asignarLocalidadDistri']],
+      'distriDeLaSesion', ['aprobarComercioDistri', 'rechazarComercioDistri', 'asignarLocalidadDistri'], ['distriId']],
+    // Las seis de vinculación del gondolero: el id extra ESTABA EN LA FILA, así
+    // que no se reemplazó por un chequeo — se borró y se lee de la solicitud.
+    ['app/(gondolero)/gondolero/perfil/distri-actions.ts',
+      'exigirPertenencia', [
+        'aceptarVinculacionDistri', 'rechazarVinculacionDistri',
+        'aceptarVinculacionRepo', 'rechazarVinculacionRepo',
+        'aceptarVinculacionDistri_Fixer', 'rechazarVinculacionDistri_Fixer',
+      ], ['gondoleroId', 'fixerId', 'distriId', 'repoId']],
+    ['app/(gondolero)/gondolero/logros/actions.ts', 'usuarioDeLaSesion', ['marcarLogrosVistos'], ['gondoleroId']],
+    ['app/(gondolero)/gondolero/perfil/actions.ts', 'usuarioDeLaSesion', ['marcarNotificacionesLeidas'], ['gondoleroId']],
   ]
 
-  for (const [rel, derivador, funciones] of CERRADAS) {
+  for (const [rel, derivador, funciones, prohibidos] of CERRADAS) {
     const src = readFileSync(join(RAIZ, rel), 'utf8')
     for (const fn of funciones) {
       const i = src.indexOf(`export async function ${fn}(`)
       if (i < 0) { fallos++; console.log(`   ✗  ${fn}: ya no existe en ${rel}`); continue }
       // La firma es todo hasta el `{` que abre el cuerpo.
       const firma = src.slice(i, i + src.slice(i).indexOf('{'))
-      const tieneIdPropio = /\b(distriId|repoId|repositoraId|marcaId)\s*:/.test(firma)
-      const deriva = src.includes(derivador)
+      // Los nombres prohibidos son POR ACTION, no una regla global, y esto
+      // costó un falso positivo: en el panel de gondolero `gondoleroId` era el
+      // id del que llama, y en el de distribuidora `desvincularGondolero
+      // (gondoleroId, …)` es el id del OBJETO, que tiene que quedarse.
+      //
+      // **Cuál id es "el propio" es un hecho de cada action, no una convención
+      // de nombre.** Un regex global acertaría en un panel y mentiría en el
+      // otro — y mentiría en verde, que es peor.
+      const tieneIdPropio = prohibidos.some(n => new RegExp(`\\b${n}\\s*:`).test(firma))
+      // El derivador se busca en el CUERPO de esta función, no en el archivo.
+      // La primera versión miraba el archivo entero y no mordía contra el bug
+      // que más importa: sacarle el guard a UNA sola función de las seis pasaba
+      // en verde, porque las otras cinco seguían nombrándolo.
+      const desde = src.indexOf('{', i)
+      const sig = src.indexOf('\nexport ', desde)
+      const cuerpo = src.slice(desde, sig === -1 ? src.length : sig)
+      const deriva = cuerpo.includes(derivador)
       const ok = !tieneIdPropio && deriva
       if (!ok) fallos++
       console.log(`   ${ok ? '✓' : '✗'}  ${fn.padEnd(32)} ${rel.split('/').slice(-2).join('/')}`)
       if (tieneIdPropio) console.log(`       volvió a recibir el id de su propia entidad por parámetro`)
-      if (!deriva) console.log(`       el archivo ya no usa ${derivador}`)
+      if (!deriva) console.log(`       esta función ya no pasa por ${derivador}`)
+    }
+  }
+}
+
+// ── Las que no tenían NI getUser() ──────────────────────────────────────────
+// Nueve actions escribían sin pedir sesión. Siete eran los dos archivos de
+// borradores de campaña, que reescriben bloques y campos de campañas activas.
+//
+// El control es doble: que el archivo pida sesión, y que la action verifique
+// PERTENENCIA. Solo lo primero sería el error que casi cometemos con
+// `previsualizarDesvincularGondolero` — autenticar no es autorizar.
+console.log('\n▸ Las nueve que no tenían sesión: ahora piden sesión Y pertenencia')
+{
+  const ANTES_SIN_SESION: [string, string[], string][] = [
+    ['app/(marca)/marca/campanas/[id]/detalle/draft-actions.ts',
+      ['guardarBorradorMarca', 'republicarCampanaMarca', 'reenviarParaRevision', 'descartarCambiosMarca'],
+      'exigirCampanaDeLaMarca'],
+    ['app/(distribuidora)/distribuidora/campanas/[id]/detalle/draft-actions.ts',
+      ['guardarBorradorDistri', 'republicarCampanaDistri', 'descartarCambiosDistri'],
+      'exigirCampanaDeLaDistri'],
+    ['app/(gondolero)/gondolero/logros/actions.ts', ['marcarLogrosVistos'], 'usuarioDeLaSesion'],
+    ['app/(gondolero)/gondolero/perfil/actions.ts', ['marcarNotificacionesLeidas'], 'usuarioDeLaSesion'],
+  ]
+
+  for (const [rel, funciones, guard] of ANTES_SIN_SESION) {
+    const src = readFileSync(join(RAIZ, rel), 'utf8')
+    for (const fn of funciones) {
+      const i = src.indexOf(`export async function ${fn}(`)
+      if (i < 0) { fallos++; console.log(`   ✗  ${fn}: ya no existe`); continue }
+      const cuerpo = src.slice(i, i + (src.slice(i + 1).indexOf('\nexport ') + 1 || src.length))
+      const ok = cuerpo.includes(guard)
+      if (!ok) fallos++
+      console.log(`   ${ok ? '✓' : '✗'}  ${fn.padEnd(26)} ${guard}`)
+      if (!ok) console.log(`       volvió a escribir sin verificar de quién es`)
     }
   }
 }

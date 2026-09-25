@@ -8,6 +8,7 @@ import type { TipoPremio } from '@/types'
 import { getConfig } from '@/lib/config'
 import { nivelMaximoAlcanzado } from '@/lib/nivel-maximo'
 import { guardarZonasDelGondolero, type ZonaGondolero } from '@/lib/zonas-gondolero'
+import { usuarioDeLaSesion } from '@/lib/actor-sesion'
 
 const COSTO_CANJE: Record<TipoPremio, number> = {
   credito_celular: 300,
@@ -186,7 +187,16 @@ export async function actualizarZonasGondolero(zonas: ZonaGondolero[]) {
   return {}
 }
 
-export async function marcarNotificacionesLeidas(gondoleroId: string) {
+/**
+ * `gondoleroId` **salió de la firma**, y acá no había ni `getUser()`: sin
+ * sesión, cualquiera le marcaba las notificaciones como leídas a cualquiera.
+ * Eso no borra nada, pero es la forma más limpia de que alguien no se entere
+ * de que le rechazaron una foto o le aprobaron un comercio.
+ */
+export async function marcarNotificacionesLeidas() {
+  const userId = await usuarioDeLaSesion()
+  if (!userId) redirect('/auth')
+
   const admin = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -196,7 +206,7 @@ export async function marcarNotificacionesLeidas(gondoleroId: string) {
   await admin
     .from('notificaciones')
     .update({ leida: true })
-    .eq('gondolero_id', gondoleroId)
+    .eq('gondolero_id', userId)
     .eq('leida', false)
 
   revalidatePath('/gondolero/perfil')

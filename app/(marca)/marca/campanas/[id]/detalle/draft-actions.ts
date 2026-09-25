@@ -5,6 +5,9 @@ import { revalidatePath } from 'next/cache'
 import type { CampoBloque } from '@/components/shared/campos-bloque-builder'
 import { filaBloqueCampo } from '@/lib/campana-altas'
 import { crearNotificacionAdmin } from '@/lib/notificaciones'
+import { marcaDeLaSesion } from '@/lib/actor-sesion'
+import { exigirPertenencia } from '@/lib/pertenencia'
+import { redirect } from 'next/navigation'
 
 function admin() {
   return createAdminClient(
@@ -12,6 +15,41 @@ function admin() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+}
+
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ESTE ARCHIVO NO TENÍA UN SOLO `getUser()`
+ *
+ * Relevado el 25/9/2026: las cuatro actions recibían un `campanaId` del
+ * cliente y escribían sobre `campanas` **sin pedir sesión — ni autenticación,
+ * ni pertenencia**. Bastaba con postear. Su gemelo de distribuidora estaba
+ * igual.
+ *
+ * Y no es una fila: `republicarCampanaMarca` limpia el draft, puede subir el
+ * bounty, inserta localidades y **crea bloques y campos nuevos**. Medido el
+ * mismo día: 22 campañas activas en dev y 7 en producción, con 24 bloques, 47
+ * campos y **237 misiones vivas** colgando en dev (138 en prod). Cambiarle los
+ * bloques a una campaña activa le cambia el formulario al gondolero que la
+ * está por completar, en el comercio.
+ *
+ * Ahora cada una deriva la marca de la SESIÓN y exige que la campaña sea suya,
+ * con `exigirPertenencia` — el patrón de las actions de reinicio, extraído a
+ * lib/pertenencia.ts.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+
+/** La campaña, si es de la marca de la sesión. Si no, tira. */
+async function exigirCampanaDeLaMarca(campanaId: string, desde: string, columnas: string[] = []) {
+  const db = admin()
+  const marcaId = await marcaDeLaSesion(db)
+  if (!marcaId) redirect('/auth')
+  const fila = await exigirPertenencia({
+    admin: db, tabla: 'campanas', id: campanaId,
+    columna: 'marca_id', valor: marcaId, columnas, desde,
+  })
+  return { db, fila }
 }
 
 export interface DraftData {
@@ -22,7 +60,8 @@ export interface DraftData {
 }
 
 export async function guardarBorradorMarca(campanaId: string, data: DraftData) {
-  await admin().from('campanas').update({
+  const { db } = await exigirCampanaDeLaMarca(campanaId, 'marca/draft:guardarBorradorMarca')
+  await db.from('campanas').update({
     draft_descripcion: data.instruccion,
     draft_bounty: data.puntos,
     draft_zonas: data.nuevasZonas,
@@ -33,13 +72,11 @@ export async function guardarBorradorMarca(campanaId: string, data: DraftData) {
 }
 
 export async function republicarCampanaMarca(campanaId: string): Promise<{ error?: string }> {
-  const { data: c } = await admin()
-    .from('campanas')
-    .select('puntos_por_mision, puntos_por_foto, draft_descripcion, draft_bounty, draft_zonas, draft_bloques')
-    .eq('id', campanaId)
-    .single()
-
-  if (!c) return { error: 'Campaña no encontrada' }
+  const { fila } = await exigirCampanaDeLaMarca(campanaId, 'marca/draft:republicarCampanaMarca',
+    ['puntos_por_mision', 'puntos_por_foto', 'draft_descripcion', 'draft_bounty', 'draft_zonas', 'draft_bloques'])
+  if (!fila) return { error: 'Campaña no encontrada' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const c = fila as any
 
   // Validate: bounty can only increase
   // Usar puntos_por_mision si existe, fallback a puntos_por_foto para campañas legacy
@@ -107,13 +144,10 @@ export async function republicarCampanaMarca(campanaId: string): Promise<{ error
 }
 
 export async function reenviarParaRevision(campanaId: string): Promise<{ error?: string }> {
-  const { data: c } = await admin()
-    .from('campanas')
-    .select('nombre, estado')
-    .eq('id', campanaId)
-    .single()
-
-  if (!c) return { error: 'Campaña no encontrada' }
+  const { fila } = await exigirCampanaDeLaMarca(campanaId, 'marca/draft:reenviarParaRevision', ['nombre', 'estado'])
+  if (!fila) return { error: 'Campaña no encontrada' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const c = fila as any
   if (c.estado !== 'pendiente_cambios' && c.estado !== 'borrador') {
     return { error: 'La campaña no puede ser reenviada en su estado actual' }
   }
@@ -136,7 +170,8 @@ export async function reenviarParaRevision(campanaId: string): Promise<{ error?:
 }
 
 export async function descartarCambiosMarca(campanaId: string) {
-  await admin().from('campanas').update({
+  const { db } = await exigirCampanaDeLaMarca(campanaId, 'marca/draft:descartarCambiosMarca')
+  await db.from('campanas').update({
     tiene_draft: false,
     draft_descripcion: null,
     draft_zonas: null,
