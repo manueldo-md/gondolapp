@@ -1,4 +1,5 @@
 'use server'
+import { acreditarPorFoto } from '@/lib/credito-foto'
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
@@ -92,13 +93,11 @@ export async function aprobarFoto(fotoId: string) {
   // 17/9/2026 — 200 puntos acreditados 31 segundos después del alta, con el
   // comercio todavía sin validar. Ahora la paga validarComercioYCrearMision.
   if (fotoEsUnidadDePago({ tipoCampana: campana?.tipo, misionId }) && puntosEfectivos > 0) {
-    await adminClient.from('movimientos_puntos').insert({
-      gondolero_id: foto.gondolero_id,
-      tipo:         'credito',
-      monto:        puntosEfectivos,
-      concepto:     `Foto aprobada · ${campana.nombre}`,
-      campana_id:   foto.campana_id,
-      foto_id:      fotoId,
+    await acreditarPorFoto({
+      admin: adminClient, gondoleroId: foto.gondolero_id, fotoId, campanaId: foto.campana_id,
+      monto: puntosEfectivos,
+      concepto: `Foto aprobada · ${campana.nombre}`,
+      desde: 'distri/gondolas:aprobarFoto',
     })
   }
 
@@ -319,13 +318,11 @@ export async function accionMasivaDistri(
     // Fotos sin misión (legacy): acreditar directamente.
     // Fotos con misión: actualizarEstadoMision acredita al alcanzar el mínimo.
     if (!misionIdFoto && puntos > 0) {
-      await adminClient.from('movimientos_puntos').insert({
-        gondolero_id: foto.gondolero_id,
-        tipo:         'credito',
-        monto:        puntos,
-        concepto:     `Foto aprobada · ${campana?.nombre ?? ''}`,
-        campana_id:   foto.campana_id,
-        foto_id:      foto.id,
+      await acreditarPorFoto({
+        admin: adminClient, gondoleroId: foto.gondolero_id, fotoId: foto.id, campanaId: foto.campana_id,
+        monto: puntos,
+        concepto: `Foto aprobada · ${campana?.nombre ?? ''}`,
+        desde: 'distri/gondolas:accionMasivaDistri',
       })
     }
 

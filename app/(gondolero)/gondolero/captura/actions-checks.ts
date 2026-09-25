@@ -1,4 +1,5 @@
 'use server'
+import { acreditarPorFoto } from '@/lib/credito-foto'
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -50,13 +51,11 @@ async function liberarBounty(admin: any, comercioId: string) {
       ? (campana?.puntos_por_mision ?? 0)
       : (campana?.puntos_por_foto ?? 0)
     if (puntos > 0) {
-      await admin.from('movimientos_puntos').insert({
-        gondolero_id: foto.gondolero_id,
-        tipo:         'credito',
-        monto:        puntos,
-        concepto:     'Comercio validado automáticamente',
-        campana_id:   foto.campana_id,
-        foto_id:      foto.id,
+      await acreditarPorFoto({
+        admin, gondoleroId: foto.gondolero_id, fotoId: foto.id, campanaId: foto.campana_id,
+        monto: puntos,
+        concepto: 'Comercio validado automáticamente',
+        desde: 'gondolero/checks:liberarBounty',
       })
 
       // El saldo lo acredita el trigger on_movimiento_puntos con el insert de

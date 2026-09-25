@@ -184,6 +184,55 @@ console.log('\n▸ El id de la entidad del que llama NO está en la firma')
   }
 }
 
+// ── El panel de admin: un solo camino al cliente de servicio ────────────────
+// Había ONCE copias del bloque `getUser()` + `createAdminClient(...)`, diez con
+// nombre y una inline. Se llamaban `getAdmin` y lo único que preguntaban era si
+// había alguien logueado.
+//
+// Lo que hace seguro el arreglo no es que ahora chequeen: es que **no se pueda
+// conseguir el cliente de servicio sin pasar por el chequeo**. Eso solo vale
+// mientras nadie se arme el suyo, y eso es lo que mide este bloque.
+console.log('\n▸ Ninguna action de admin se arma su propio cliente de servicio')
+{
+  let propios = 0
+  for (const ruta of archivos(join(RAIZ, 'app', '(admin)'))) {
+    const src = readFileSync(ruta, 'utf8')
+    if (!src.includes("'use server'")) continue
+    const rel = ruta.slice(RAIZ.length + 1).replace(/\\/g, '/')
+    if (src.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+      propios++; fallos++
+      console.log(`   ✗  ${rel}`)
+      console.log('       arma su propio cliente de servicio en vez de usar getAdmin()')
+    }
+  }
+  if (!propios) console.log('   ✓  todas pasan por lib/admin-sesion.ts')
+}
+
+// ── El crédito por foto, en un solo lugar ───────────────────────────────────
+// Los seis inserts no chequeaban `.error`. Con el índice único puesto y sin el
+// chequeo, un duplicado deja de pagar dos veces y pasa a NO PAGAR NADA en
+// silencio — un bug mudo por otro, y el segundo le saca plata al gondolero.
+console.log('\n▸ El crédito por foto pasa por `acreditarPorFoto`')
+{
+  let crudos = 0
+  for (const ruta of [...archivos(join(RAIZ, 'app')), ...archivos(join(RAIZ, 'lib'))]) {
+    if (ruta.endsWith('credito-foto.ts')) continue
+    const src = readFileSync(ruta, 'utf8')
+    // Un insert sobre el libro de puntos que mencione `foto_id` en el objeto.
+    const m = src.match(/\.from\('movimientos_puntos'\)\s*\.insert\(\{[\s\S]{0,400}?\}\)/g) ?? []
+    for (const bloque of m) {
+      if (!bloque.includes('foto_id')) continue
+      crudos++; fallos++
+      console.log(`   ✗  ${ruta.slice(RAIZ.length + 1).replace(/\\/g, '/')}`)
+      console.log('       inserta un crédito con foto_id sin pasar por acreditarPorFoto')
+    }
+  }
+  if (!crudos) console.log('   ✓  ningún insert crudo con foto_id')
+  const llamadores = archivos(join(RAIZ, 'app'))
+    .filter(r => readFileSync(r, 'utf8').includes('acreditarPorFoto({')).length
+  console.log(`   (${llamadores} archivos lo llaman)`)
+}
+
 console.log(`\n   (${revisados.length} funciones que escriben sobre \`fotos\`)`)
 console.log(fallos ? `\n✗ ${fallos} mal\n` : '\n✓ Todas pasan por el guard.\n')
 process.exit(fallos ? 1 : 0)

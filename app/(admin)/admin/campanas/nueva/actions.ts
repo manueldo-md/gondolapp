@@ -1,9 +1,8 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { getAdmin } from '@/lib/admin-sesion'
 import { validarMinimoComercios } from '@/lib/campana-minimo'
 import { validarFechasCampana } from '@/lib/campana-fechas'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import type { TipoCampana } from '@/types'
@@ -11,31 +10,10 @@ import {
   esCampanaDeAltas, validarBloqueCampana, parsearCamposBloque, filaBloqueCampo, BLOQUE_ALTAS,
 } from '@/lib/campana-altas'
 
-function adminClient() {
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
-
 export async function crearCampanaAdmin(formData: FormData) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
-  const admin = adminClient()
-
-  // Verificar que el usuario sea admin
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('tipo_actor')
-    .eq('id', user.id)
-    .single()
-
-  if (profile?.tipo_actor !== 'admin') {
-    return { error: 'No tenés permiso para realizar esta acción.' }
-  }
+  // El chequeo de tipo_actor que estaba escrito acá vive ahora en
+  // getAdmin(), junto con el de las otras 39 actions del panel.
+  const admin = await getAdmin()
 
   // El mínimo es obligatorio y no puede superar el tope. Se valida también acá
   // y no solo en el editor: el formulario puede eludirse, y una campaña sin

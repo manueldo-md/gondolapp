@@ -1,4 +1,5 @@
 'use server'
+import { acreditarPorFoto } from '@/lib/credito-foto'
 
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
@@ -78,13 +79,11 @@ export async function aprobarFotoMarca(fotoId: string) {
   // 17/9/2026 — 200 puntos acreditados 31 segundos después del alta, con el
   // comercio todavía sin validar. Ahora la paga validarComercioYCrearMision.
   if (fotoEsUnidadDePago({ tipoCampana: campana?.tipo, misionId }) && puntosEfectivos > 0) {
-    await admin.from('movimientos_puntos').insert({
-      gondolero_id: foto.gondolero_id,
-      tipo:         'credito',
-      monto:        puntosEfectivos,
-      concepto:     `Foto aprobada · ${campana.nombre}`,
-      campana_id:   foto.campana_id,
-      foto_id:      fotoId,
+    await acreditarPorFoto({
+      admin, gondoleroId: foto.gondolero_id, fotoId, campanaId: foto.campana_id,
+      monto: puntosEfectivos,
+      concepto: `Foto aprobada · ${campana.nombre}`,
+      desde: 'marca/gondolas:aprobarFotoMarca',
     })
   }
 

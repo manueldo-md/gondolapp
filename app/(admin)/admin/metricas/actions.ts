@@ -1,21 +1,9 @@
 'use server'
+import { getAdmin } from '@/lib/admin-sesion'
 
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { cambioDeMetricaPermitido } from '@/lib/metricas'
 
-async function getAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
 
 /**
  * Tipifica una pregunta que ya existe, o le saca la métrica.

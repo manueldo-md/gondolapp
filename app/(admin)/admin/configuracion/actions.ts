@@ -1,20 +1,8 @@
 'use server'
+import { getAdmin, getAdminConUsuario } from '@/lib/admin-sesion'
 
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
-async function getAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
 
 export async function guardarConfigCompresion(
   maxKb: number,
@@ -39,22 +27,16 @@ export async function guardarConfigCompresion(
 }
 
 export async function guardarConfiguracion(clave: string, valor: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
-  const admin = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  // Tenía el bloque inline, sin nombre, así que era la copia que ningún grep
+  // de `getAdmin` encontraba. Ver lib/admin-sesion.ts.
+  const { admin, userId } = await getAdminConUsuario()
 
   const { error } = await admin
     .from('configuracion')
     .update({
       valor,
       updated_at: new Date().toISOString(),
-      updated_by: user.id,
+      updated_by: userId,
     })
     .eq('clave', clave)
 

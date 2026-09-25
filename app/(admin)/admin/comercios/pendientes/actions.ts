@@ -1,8 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { redirect } from 'next/navigation'
+import { getAdmin } from '@/lib/admin-sesion'
 import { revalidatePath } from 'next/cache'
 import {
   validarComercioYCrearMision,
@@ -19,24 +17,14 @@ import {
  * sin el fallback a `puntos_por_mision`, y ninguna creaba la misión del alta.
  */
 
-function adminClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
-
-async function requerirSesion() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-}
 
 export async function aprobarComercio(id: string) {
-  await requerirSesion()
+  // `getAdmin()` exige `tipo_actor = 'admin'`. Hasta el 25/9/2026 acá había un
+  // `requerirSesion()` que solo miraba que hubiera alguien logueado: el único
+  // que la protegía era el middleware. Ver lib/admin-sesion.ts.
+  const admin = await getAdmin()
 
-  const resultado = await validarComercioYCrearMision(id, adminClient())
+  const resultado = await validarComercioYCrearMision(id, admin)
 
   revalidatePath('/admin/comercios/pendientes')
   revalidatePath('/admin/comercios')
@@ -47,9 +35,9 @@ export async function aprobarComercio(id: string) {
 }
 
 export async function rechazarComercio(id: string, motivo?: string) {
-  await requerirSesion()
+  const admin = await getAdmin()
 
-  const resultado = await rechazarComercioConMotivo(id, motivo, adminClient())
+  const resultado = await rechazarComercioConMotivo(id, motivo, admin)
 
   revalidatePath('/admin/comercios/pendientes')
   revalidatePath('/admin/comercios')
@@ -73,28 +61,20 @@ export async function rechazarComercio(id: string, motivo?: string) {
  * La sugerencia NO se borra: comparar las dos columnas es la única forma de
  * medir con qué frecuencia el geocoding acierta en la vida real.
  *
- * ── EL PERMISO SE CHEQUEA ACÁ, Y NO SOLO EN EL MIDDLEWARE ───────────────────
- * Las otras dos actions de este archivo se conforman con `requerirSesion()`:
- * que haya alguien logueado. Lo que las protege de verdad es el middleware, que
- * matchea `/admin` y rebota a cualquiera cuyo `tipo_actor` no lo incluya — y
- * una server action postea a la ruta de su propia página, así que pasa por ahí.
+ * ── EL PERMISO, QUE YA NO ES PROPIO DE ESTA FUNCIÓN ─────────────────────────
+ * Esta nació el 25/9/2026 mirando `tipo_actor` a mano, porque las otras dos de
+ * este archivo se conformaban con `requerirSesion()` —que haya alguien
+ * logueado— y lo único que las protegía era el middleware.
  *
- * Funciona, pero es **una sola capa**: el día que alguien toque el matcher o
- * mueva la pantalla de ruta, estas actions quedan abiertas a cualquier
- * autenticado sin que nada falle visiblemente. La de distri no depende de eso
- * —`puedeTocar` chequea el vínculo— así que acá se hace lo mismo.
+ * Ese mismo día el chequeo se mudó a `getAdmin()` (lib/admin-sesion.ts), que
+ * es el único camino al cliente de servicio del panel. Ahora lo tienen las 40
+ * actions y no hay forma de saltearlo por olvido: no se puede conseguir el
+ * cliente sin pasar por el chequeo.
  */
 export async function asignarLocalidadAdmin(comercioId: string, localidadId: number) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
-  const admin = adminClient()
-  const { data: perfil } = await admin
-    .from('profiles').select('tipo_actor').eq('id', user.id).maybeSingle()
-  if (perfil?.tipo_actor !== 'admin') {
-    return { error: 'No tenés permiso para editar este comercio.' }
-  }
+  // El chequeo de `tipo_actor` que esta función tenía escrito a mano vive ahora
+  // en `getAdmin()`, y lo tienen las 40 actions del panel, no solo ésta.
+  const admin = await getAdmin()
 
   // No se confía en el id que llega del cliente: tiene que existir. Sin esto,
   // un número cualquiera lo rebotaría la FK con un error ilegible.

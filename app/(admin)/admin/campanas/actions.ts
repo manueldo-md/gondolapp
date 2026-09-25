@@ -1,8 +1,7 @@
 'use server'
-
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getAdmin } from '@/lib/admin-sesion'
 import { redirect } from 'next/navigation'
+
 import { revalidatePath } from 'next/cache'
 import { crearNotificacionMarca } from '@/lib/notificaciones'
 import { destrabarMisiones } from '@/lib/misiones-trabadas'
@@ -10,16 +9,6 @@ import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
 import { campanaEnAlcance } from '@/lib/alcance-revision'
 import { actorRevisorDeLaSesion } from '@/lib/actor-sesion'
 
-async function getAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
 
 export async function pausarCampana(campanaId: string) {
   const admin = await getAdmin()
