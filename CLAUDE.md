@@ -5978,11 +5978,73 @@ Dos razones para no hand-adjudicar los 64, y la segunda es la que vale:
 > prueba que haya dos pueblos: es el síntoma del duplicado, porque en pantalla se
 > ven idénticos. Producción, que tiene esa tabla vacía, da la señal limpia.
 
+##### La etapa 1 resuelve SOLO Colón (migración `20260930100000`)
+
+Es el único de los 64 con **evidencia dura** de cuál de los dos sobra:
+
+```
+id   1  depto Colón     12 comercios · 3 campañas · 11 filas del CSV del piloto
+id 126  depto Uruguay    0 · 0 · 0
+```
+
+Y una **segunda señal independiente que coincide**: el departamento se llama
+igual que la localidad. Ese patrón aparece en **17 de los 64** pares, y Colón es
+el único de esos 17 que además tiene datos, así que los dos criterios apuntan al
+mismo id sin depender uno del otro.
+
+**Los otros 63 quedan como deuda del padrón** — los 12 entrerrianos y los 51 de
+otras provincias. Ninguno tiene comercios ni campañas en ninguna de las dos
+bases, así que decidir cuál sobra sería adivinar geografía sin consultarla.
+
+> **PISTA para quien los revise con una fuente, NO diagnóstico.** Entre los 12
+> entrerrianos hay dos regularidades que pueden ser un error sistemático del
+> seed o pueden ser homónimos legítimos: en **cinco** pares uno de los dos
+> departamentos es **Paraná** (Aldea Santa María, Cerrito, Ramírez, Sauce
+> Montrull), y en **dos** aparece **Islas del Ibicuy** contra Gualeguay (Médanos,
+> Villa Paranacito). Ninguno de los 12 tiene departamento auto-nombrado, así que
+> la heurística de arriba no los alcanza.
+
+**Y por qué no bloquean nada:** la etapa 2 **no adivina ante ambigüedad**. Un
+duplicado hace que el geocoding devuelva `ambiguo`, el comercio cae en la bandeja
+con la sugerencia vacía y **lo confirma una persona**. Eso es seguro; lo
+inseguro sería lo contrario — elegir uno al azar y escribirlo como bueno.
+
+##### Lo delicado de la migración fue el CASCADE
+
+De las tres FK que apuntan a `localidades`, dos son `NO ACTION` —`comercios` y
+`campana_localidades`, que por eso hacen fallar solas un borrado con datos— pero
+**`gondolero_localidades` es `ON DELETE CASCADE`**. Un `DELETE` pelado le borra
+la zona declarada a un gondolero **sin decir nada**.
+
+En dev existe exactamente ese caso: un gondolero eligió **las dos** variantes de
+Colón, porque en pantalla se ven idénticas — que es el síntoma del duplicado, no
+evidencia de dos pueblos. Por eso la migración **repunta antes de borrar**, con
+`ON CONFLICT DO NOTHING` (la PK es `(gondolero_id, localidad_id)` y ya tiene la
+buena, así que colisionaría).
+
+`scripts/probar-migracion-colon.mjs` — dry-run en transacción con `ROLLBACK`,
+verde contra **dev y producción**. Lo que prueba, en orden:
+
+1. **Que no se pierda la zona de nadie** — los mismos gondoleros siguen teniendo
+   Colón después, sin duplicados y sin huérfanas.
+2. **Que no se borre el bueno** — los comercios y las campañas siguen enteros.
+   Verificar una sola dirección dejaría pasar el borrado inverso.
+3. **Que sea idempotente** — la segunda corrida sale por el `RETURN` y no borra
+   de más.
+4. **Que la precondición muerda** — se le cuelga un comercio a la fila que iba a
+   borrarse y se espera la excepción. Una precondición que nadie ejercitó puede
+   estar mal escrita sin que se note.
+
+> El control 4 necesitó un `SAVEPOINT`: la excepción aborta la transacción
+> entera, y sin él todo lo que viene después falla con *"current transaction is
+> aborted"* — el script reportaría un defecto propio como si fuera de la
+> migración. Pasó en la primera corrida.
+
 ##### LAS ETAPAS
 
 | | Qué | Verifica |
 |---|---|---|
-| 1 | Resolver **Colón**; los 12 entrerrianos restantes se revisan a mano | dry-run con ROLLBACK; `Colón` único en Entre Ríos y el piloto intacto |
+| 1 | ✅ **HECHA** — `20260930100000`: resolver **Colón**, nada más. Los otros 63 quedan como deuda | `probar-migracion-colon.mjs`, verde en dev y prod: nadie pierde su zona, el piloto entero, idempotente, y la precondición muerde |
 | 2 | `lib/geocoding.ts`, **sin red**: proveedor + padrón → `exacto` / `ambiguo` / `fuera`. Acá muere el bug del `ilike` | los casos medidos: Colón ambiguo antes de la 1, "Larroque" ≠ Gualeguaychú, `county="Distrito Primero"` no desambigua |
 | 3 | Migración de la sugerencia: `comercios.localidad_sugerida` + de dónde salió | dry-run |
 | 4 | El proveedor y la llamada **en el servidor**, en los dos caminos. Falla ABIERTO: si no resuelve, el alta se completa igual | alta por los dos caminos en dev — **y la precondición de la key, de arriba** |
