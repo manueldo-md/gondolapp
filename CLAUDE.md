@@ -6040,14 +6040,103 @@ verde contra **dev y producción**. Lo que prueba, en orden:
 > aborted"* — el script reportaría un defecto propio como si fuera de la
 > migración. Pasó en la primera corrida.
 
+##### La precondición de la etapa 4 valió la pena: la key del browser SÍ rebotaba
+
+`NEXT_PUBLIC_GEOAPIFY_KEY` tiene **Allowed HTTP Origins** con los dos dominios
+del deploy. Una llamada desde el servidor no manda Origin ni Referer, así que
+habría rebotado con 401/403 — y el síntoma habría sido "el geocoding no anda",
+no "la key está restringida".
+
+Quedó `GEOAPIFY_SERVER_KEY`: **segunda key del MISMO proyecto**, sin ninguna
+restricción, en Vercel (los dos proyectos) y en los dos `.env` locales. Comparte
+la cuota de 3.000/día, que es lo correcto — un segundo *proyecto* para duplicar
+cuota viola los T&C de Geoapify.
+
+##### Lo medido con el proveedor que se usa de verdad
+
+Hasta acá la precisión estaba medida con **Nominatim**, que es el que se
+descartó. Con Geoapify y el padrón ya limpio, contra verdad de referencia:
+
+```
+exacto 9 · ambiguo 0 · fuera 0 · sin_dato 3 · error 0
+de los 9 exactos:  COINCIDE 8 · DISTINTO 1   (11% mal)
+```
+
+Y sobre los comercios que hoy no tienen localidad: **13 de 13 exacto**. Antes de
+la etapa 1 eran **0 exactos y 18 ambiguos**. Ese salto es lo que hizo la
+migración de Colón, medido y no supuesto.
+
+**El caso DISTINTO sigue siendo el mismo con los dos proveedores**: un comercio
+de Gualeguaychú resuelve a "Larroque". Que se repita con Geoapify confirma que
+no es una rareza del proveedor —probablemente el GPS del comercio esté cerca de
+Larroque— y que ninguna lógica lo va a detectar. Sostiene la decisión: es una
+SUGERENCIA.
+
+`scripts/medir-geocoding.mts` deja la medición repetible, con `--prod` y
+`--sin-loc`.
+
+> **La primera versión de esa medición dio un resultado FALSO** y decía que
+> Concordia estaba fuera del padrón. Reimplementaba el matching a mano y
+> normalizaba los acentos del parámetro contra nombres acentuados de la base.
+> Es el tercer caso del mismo defecto —la sonda del mapa, el control del thumb—:
+> **un script que reimplementa lo que dice medir, mide otra cosa.** Ahora llama
+> a `resolverLocalidad`, la que corre en producción.
+
+##### Dónde va la llamada, y por qué inline
+
+`lib/localidad-sugerida.ts`, y la llaman **los dos** caminos de alta —
+`crearComercioNuevo` y `crearComercioParaCaptura`— con la misma línea. Dos
+copias de esto sería garantizar que el día que se corrija una, la otra quede
+vieja en silencio, que es la lección de `registrarMision`.
+
+Va **inline y después del insert**, no en background. `unstable_after` existe en
+Next 14.2 pero es experimental y obliga a tocar `next.config`, y esto no puede
+romper un alta. Inline con timeout de 4 s es más simple y el upload de la foto
+de fachada ya domina la latencia.
+
+**Falla abierto siempre.** La función no lanza nunca y corre con el comercio ya
+guardado: un proveedor caído, sin cuota o lento no puede voltear un alta con el
+gondolero parado en la puerta. Lo peor que pasa es que quede sin sugerencia y lo
+resuelva una persona, que es el camino que igual existe.
+
+##### El padrón se trae por nombre, y los acentos son un límite conocido
+
+No se trae entero **a propósito**: 941 filas entran hoy bajo el techo de 1.000
+de PostgREST, pero ese techo **no avisa**, y este padrón está pensado para
+crecer — la cola de "fuera del padrón" existe para eso. Un `select` que un día
+devuelva 1.000 de 1.200 daría sugerencias equivocadas sin que nada falle.
+
+La base **no tiene la extensión `unaccent`** y **246 de las 941 localidades
+llevan acento o ñ**, así que el filtro es case-insensitive pero no
+accent-insensitive. No se tapa con variantes inventadas porque **el modo de
+falla ya es seguro**: sin la fila, la resolución da `fuera` y el comercio va a
+la bandeja. Se degrada a trabajo manual, nunca a un dato equivocado. Medido con
+`lang=es`, Geoapify devuelve los nombres acentuados y el caso no aparece.
+
+##### Probado donde duele
+
+`scripts/probar-localidad-sugerida.mts` — el camino COMPLETO contra dev: red,
+padrón y escritura. Crea comercios de prueba, los geocodifica y los borra,
+verificando que no quede ninguno.
+
+Existe porque `probar-geocoding.ts` cubre la decisión pero **no puede cubrir el
+cableado**: que la key sea la correcta, que el padrón llegue con los acentos
+bien, que el CHECK acepte lo que la lib produce, y que un fallo no voltee nada.
+Es el hueco exacto que costó los dos bugs del 25/9.
+
+Los cuatro controles: un punto en Colón resuelve exacto **y NO toca
+`localidad_id`**; un punto en el mar queda `sin_dato`; **sin key no lanza y deja
+`error`** —que no es `sin_dato`, y esa diferencia es la que permite reprocesar—;
+y una coordenada imposible tampoco voltea nada.
+
 ##### LAS ETAPAS
 
 | | Qué | Verifica |
 |---|---|---|
 | 1 | ✅ **HECHA** — `20260930100000`: resolver **Colón**, nada más. Los otros 63 quedan como deuda | `probar-migracion-colon.mjs`, verde en dev y prod: nadie pierde su zona, el piloto entero, idempotente, y la precondición muerde |
-| 2 | `lib/geocoding.ts`, **sin red**: proveedor + padrón → `exacto` / `ambiguo` / `fuera`. Acá muere el bug del `ilike` | los casos medidos: Colón ambiguo antes de la 1, "Larroque" ≠ Gualeguaychú, `county="Distrito Primero"` no desambigua |
-| 3 | Migración de la sugerencia: `comercios.localidad_sugerida` + de dónde salió | dry-run |
-| 4 | El proveedor y la llamada **en el servidor**, en los dos caminos. Falla ABIERTO: si no resuelve, el alta se completa igual | alta por los dos caminos en dev — **y la precondición de la key, de arriba** |
+| 2 | ✅ **HECHA** — `lib/geocoding.ts`, sin red ni base: proveedor + padrón → `exacto` / `ambiguo` / `fuera` / `sin_dato`. Acá murió el bug del `ilike` | `probar-geocoding.ts`, 27 controles. **Verificado que muerden**: con el `ilike` repuesto se ponen 7 en rojo |
+| 3 | ✅ **HECHA** — `20261001100000`: `localidad_sugerida_id` / `_estado` / `_texto`, con el CHECK que impide un id sin estado `exacto` | `probar-migracion-sugerida.mjs`, verde en dev y prod. El dry-run encontró un hueco real en mi CHECK (tres valores) |
+| 4 | ✅ **HECHA** — `lib/localidad-sugerida.ts` en los dos caminos de alta, inline y fail-open. Key server-side aparte | `probar-localidad-sugerida.mts`: camino completo contra dev con red, padrón y escritura |
 | 5 | La bandeja de la distri: cascader extraído de `SelectorZona` + confirmar la sugerencia | la sugerencia aparece precargada; confirmarla escribe `localidad_id`; corregirla también |
 | 6 | El script de reparación de los 19, mismo mecanismo, con confirmación humana | correrlo y mirar la lista ANTES de escribir |
 | 7 | Sacar el `zona_id` arbitrario | **grep DESPUÉS** de escribir el código |

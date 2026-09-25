@@ -14,6 +14,7 @@ import { puedeRegistrarMision } from '@/lib/campana-vigencia'
 import { coberturaPorComercio, type VisitaMision } from '@/lib/cobertura-seguimiento'
 import { accesoACampana } from '@/lib/acceso-campana'
 import { contextoAcceso } from '@/lib/utils-distri'
+import { sugerirLocalidad } from '@/lib/localidad-sugerida'
 
 /**
  * Comercios que ya tienen una misión viva en esta campaña.
@@ -492,6 +493,16 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     return { error: 'No se pudo guardar el comercio: ' + (errInsert?.message ?? 'error desconocido') }
   }
 
+  // La localidad NO se le pregunta al gondolero: los campos del alta ya son
+  // opcionales y no los carga, así que un selector obligatorio es trabajo que
+  // no va a hacer. Se resuelve acá, en el servidor, donde hay señal.
+  //
+  // Va DESPUÉS del insert y no lanza nunca: el comercio ya está guardado y un
+  // proveedor caído o lento no puede voltear un alta. Lo que escribe es una
+  // SUGERENCIA —mide 1 de cada 9 exactos en OTRA localidad— que confirma una
+  // persona en la bandeja de pendientes. Ver lib/localidad-sugerida.ts.
+  await sugerirLocalidad(comercio.id, params.lat, params.lng, admin)
+
   // Insertar registro en fotos con bounty_estado = 'retenido'
   // Usamos un bloque genérico — primero buscamos, si no hay creamos
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -645,6 +656,16 @@ export async function crearComercioParaCaptura(params: {
   if (error || !comercio) {
     return { error: 'No se pudo guardar el comercio: ' + (error?.message ?? 'error desconocido') }
   }
+
+  // La localidad NO se le pregunta al gondolero: los campos del alta ya son
+  // opcionales y no los carga, así que un selector obligatorio es trabajo que
+  // no va a hacer. Se resuelve acá, en el servidor, donde hay señal.
+  //
+  // Va DESPUÉS del insert y no lanza nunca: el comercio ya está guardado y un
+  // proveedor caído o lento no puede voltear un alta. Lo que escribe es una
+  // SUGERENCIA —mide 1 de cada 9 exactos en OTRA localidad— que confirma una
+  // persona en la bandeja de pendientes. Ver lib/localidad-sugerida.ts.
+  await sugerirLocalidad(comercio.id, params.lat, params.lng, admin)
 
   return { comercioId: comercio.id }
 }
