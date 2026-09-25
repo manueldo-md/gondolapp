@@ -22,14 +22,13 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { PantallaMapa, type FilaPdvMapa } from '@/components/panel/pantalla-mapa'
-import type { ModoPintado } from '@/lib/mapa-pdv'
+import { modoDesde } from '@/lib/mapa-pdv'
 import {
   SelectorAlcance, SinAlcanceElegido, SinCampanas,
 } from '@/components/panel/selector-alcance'
 import { campanasDe, idsDe } from '@/lib/campanas-de'
 import { coberturaDeCampana } from '@/lib/cobertura-mapa'
 import { opcionesDeDistri, alcanceDesde } from '@/lib/panel-distri'
-import { hrefMapa } from '@/lib/mapa-pdv'
 
 const RUTA = '/distribuidora/mapa'
 
@@ -80,7 +79,7 @@ export default async function MapaDistriPage({
   }
 
   const campanaId = searchParams.campana || null
-  const pintar: ModoPintado = searchParams.pintar === 'tipo' ? 'tipo' : 'presencia'
+  const pintar = modoDesde(searchParams.pintar)
 
   const campanas = await campanasDe(alcance, admin)
   const pdvRes = await admin.rpc('panel_pdv', { _campanas: idsDe(campanas, campanaId) })
@@ -103,10 +102,11 @@ export default async function MapaDistriPage({
         campanas={campanas.map(c => ({ id: c.id, nombre: c.nombre }))}
         campanaId={campanaId}
         pintar={pintar}
-        // La ruta base lleva el alcance adentro, y los links de los controles
-        // se arman con `hrefMapa`, que lo conserva. Armarlos a mano fue el bug
-        // que se comió el alcance en la serie mensual del panel.
-        rutaBase={hrefMapa(RUTA, { alcance: searchParams.alcance })}
+        // La ruta va PELADA: el estado lo arma la pantalla con `hrefDelMapa`
+        // a partir del alcance, la campaña y el modo. Antes acá se armaba una
+        // "ruta base" con el alcance y sin la campaña, y el control de pintado
+        // —que mergeaba sobre ella— borraba el `?campana=` en cada click.
+        ruta={RUTA}
         alcanceClave={searchParams.alcance}
         cobertura={cobertura}
         visitasPorSemana={laElegida?.visitas_por_semana ?? null}

@@ -22,6 +22,7 @@ import {
   SEPARACION_PX, COLOR_PRESENCIA, decidirFallo, mensajeFallo, urlTile, MINIMO_FALLOS, hrefMapa,
   type PuntoMapa,
   repartoDe, COLOR_COBERTURA, COLOR_TIPO, COLOR_NEUTRO, type ModoPintado,
+  hrefDelMapa, modoDesde,
 } from '../lib/mapa-pdv'
 
 let fallos = 0
@@ -201,6 +202,60 @@ console.log('\n▸ TIPO no lleva anillo: son categorías, no proporciones')
   const desconocido = { ...pdv('x', -32, -58, true), tipo: 'lo-que-sea' }
   caso('un tipo que no está en la tabla cae en "otro"',
     colorPunto(desconocido, 'tipo'), COLOR_TIPO.otro)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▸ LOS DOS BUGS DEL 25/9: el link perdía la campaña y el modo no se parseaba')
+// Se reportaron como uno: "toco Cobertura semanal y el mapa vuelve a Presencia".
+// Eran DOS, apilados, y cada uno alcanzaba para producir ese síntoma.
+{
+  // ── 1. El href del control de pintado se comía el `?campana=` ─────────────
+  // `hrefMapa` estaba bien; lo que estaba mal era lo que se le pasaba: la
+  // pantalla recibía una "ruta base" armada con el alcance y SIN la campaña, y
+  // el control de pintado mergeaba sobre eso.
+  const estado = { alcance: 'm7', campana: 'k9', pintar: 'presencia' as ModoPintado }
+
+  caso('cambiar el pintado CONSERVA alcance y campaña',
+    hrefDelMapa('/distribuidora/mapa', estado, { pintar: 'cobertura' }),
+    '/distribuidora/mapa?alcance=m7&campana=k9&pintar=cobertura')
+
+  // CONTROL: así se rompía. El merge sobre una base sin la campaña la borra, y
+  // `hrefMapa` hace exactamente lo que le piden — el bug nunca estuvo acá.
+  caso('CONTROL — mergear sobre una base SIN campaña la pierde',
+    hrefMapa('/distribuidora/mapa?alcance=m7', { pintar: 'cobertura' }),
+    '/distribuidora/mapa?alcance=m7&pintar=cobertura')
+
+  caso('cambiar la campaña conserva el pintado',
+    hrefDelMapa('/distribuidora/mapa', { ...estado, pintar: 'cobertura' }, { campana: 'k8' }),
+    '/distribuidora/mapa?alcance=m7&campana=k8&pintar=cobertura')
+
+  // `presencia` es el default y no se escribe: dos URLs para la misma pantalla
+  // es lo que hace que un "volver" no vuelva a donde uno estaba.
+  caso('volver a presencia BORRA el parámetro',
+    hrefDelMapa('/distribuidora/mapa', { ...estado, pintar: 'cobertura' }, { pintar: 'presencia' }),
+    '/distribuidora/mapa?alcance=m7&campana=k9')
+  caso('y "todos los PDV" borra la campaña',
+    hrefDelMapa('/distribuidora/mapa', estado, { campana: null }),
+    '/distribuidora/mapa?alcance=m7')
+  caso('en marca, sin alcance, no aparece el parámetro',
+    hrefDelMapa('/marca/mapa', { campana: 'k9' }, { pintar: 'tipo' }),
+    '/marca/mapa?campana=k9&pintar=tipo')
+
+  // ── 2. El modo nuevo no se parseaba ───────────────────────────────────────
+  // Las dos páginas tenían `=== 'tipo' ? 'tipo' : 'presencia'` escrito a mano, y
+  // al agregar cobertura ninguna se actualizó. El valor caía al default EN
+  // SILENCIO: el control se podía tocar y la pantalla volvía sola.
+  caso('cobertura se parsea', modoDesde('cobertura'), 'cobertura')
+  caso('tipo también', modoDesde('tipo'), 'tipo')
+  caso('presencia también', modoDesde('presencia'), 'presencia')
+  caso('un valor inventado cae al default', modoDesde('naranja'), 'presencia')
+  caso('y la ausencia también', modoDesde(undefined), 'presencia')
+
+  // CONTROL: el parser sale de CATEGORIAS, así que un modo nuevo no puede
+  // quedar afuera. Si volviera a escribirse a mano, este caso sería el rojo.
+  caso('CONTROL — los tres modos del anillo son parseables',
+    (['presencia', 'tipo', 'cobertura'] as const).map(m => modoDesde(m)),
+    ['presencia', 'tipo', 'cobertura'])
 }
 
 console.log('\n▸ Un PDV solo no es un grupo disfrazado')

@@ -479,6 +479,65 @@ export function decidirFallo(estado: {
  * PDV" y "Presencia" —las opciones por default de cada control— sin dejar
  * `?campana=` colgando.
  */
+/**
+ * El modo que pide la URL, o `'presencia'`.
+ *
+ * ── POR QUÉ ESTO ES UNA FUNCIÓN Y NO UN TERNARIO EN CADA PÁGINA ─────────────
+ * Las dos páginas del mapa tenían escrito `=== 'tipo' ? 'tipo' : 'presencia'`, y
+ * al agregar el tercer modo **ninguna de las dos se actualizó**: `?pintar=
+ * cobertura` se convertía en `'presencia'` antes de llegar al componente, así
+ * que el control aparecía, se podía tocar, y la pantalla volvía sola a
+ * Presencia. Un valor nuevo que no se agrega a un parser no falla: se degrada en
+ * silencio al default, que es la peor forma de romperse.
+ *
+ * Con esto, agregar un modo es agregarlo a `CATEGORIAS` y nada más — el parser
+ * sale de ahí, así que no hay una segunda lista que se pueda quedar vieja.
+ */
+export function modoDesde(valor: string | null | undefined): ModoPintado {
+  return valor && valor in CATEGORIAS ? (valor as ModoPintado) : 'presencia'
+}
+
+/** Todo lo que la pantalla del mapa lleva en la URL. */
+export type EstadoDelMapa = {
+  alcance?: string | null
+  campana?: string | null
+  pintar?: ModoPintado | null
+}
+
+/**
+ * El link a la MISMA pantalla con un cambio aplicado sobre el estado actual.
+ *
+ * ── POR QUÉ NO ALCANZABA CON `hrefMapa` ─────────────────────────────────────
+ * `hrefMapa` mergea sobre la ruta que le den, y hace exactamente eso. El bug
+ * estaba en lo que se le daba: la pantalla recibía un `rutaBase` armado con el
+ * alcance y **sin la campaña**, así que el control de pintado —que mergea sobre
+ * esa base— borraba el `?campana=` en cada click.
+ *
+ * Pasó desapercibido desde el 24/9/2026 porque perder la campaña en presencia o
+ * en tipo no rompe nada visible: el mapa se ensancha a todos los PDV del
+ * alcance y parece una decisión. Con cobertura se volvió ruidoso —el modo deja
+ * de ser válido y la opción desaparece— pero el bug es el mismo y es anterior.
+ *
+ * Por eso la firma pide el ESTADO COMPLETO y no una ruta ya armada: no hay
+ * forma de olvidarse una clave, que es lo único que hacía falta para romperlo.
+ * Cada control dice qué cambia y el resto se conserva solo.
+ */
+export function hrefDelMapa(
+  /** La ruta sin query. */
+  ruta: string,
+  estado: EstadoDelMapa,
+  cambio: EstadoDelMapa = {},
+): string {
+  const final = { ...estado, ...cambio }
+  return hrefMapa(ruta, {
+    alcance: final.alcance ?? null,
+    campana: final.campana ?? null,
+    // `presencia` es el default y no se escribe: si se escribiera habría dos
+    // URLs para la misma pantalla y la de arriba sería la más larga.
+    pintar: final.pintar && final.pintar !== 'presencia' ? final.pintar : null,
+  })
+}
+
 export function hrefMapa(
   rutaBase: string,
   params: Record<string, string | null | undefined>,

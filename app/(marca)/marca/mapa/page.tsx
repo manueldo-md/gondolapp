@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { PantallaMapa, type FilaPdvMapa } from '@/components/panel/pantalla-mapa'
-import type { ModoPintado } from '@/lib/mapa-pdv'
+import { modoDesde } from '@/lib/mapa-pdv'
 import { campanasDe, idsDe } from '@/lib/campanas-de'
 import { coberturaDeCampana } from '@/lib/cobertura-mapa'
 
@@ -36,7 +36,7 @@ export default async function MapaPage({
   if (!marcaId) redirect('/auth')
 
   const campanaId = searchParams.campana || null
-  const pintar: ModoPintado = searchParams.pintar === 'tipo' ? 'tipo' : 'presencia'
+  const pintar = modoDesde(searchParams.pintar)
 
   // El arreglo NO se arma con lo que viene en la URL: `idsDe` intersecta el
   // pedido contra las campañas de esta marca y devuelve vacío si no es suya.
@@ -63,7 +63,7 @@ export default async function MapaPage({
       campanas={campanas.map(c => ({ id: c.id, nombre: c.nombre }))}
       campanaId={campanaId}
       pintar={pintar}
-      rutaBase={RUTA}
+      ruta={RUTA}
       cobertura={cobertura}
       visitasPorSemana={laElegida?.visitas_por_semana ?? null}
       panel="marca"

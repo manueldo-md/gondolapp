@@ -5510,6 +5510,95 @@ entre la última visita y la anterior, y eso es más trabajo que la pantalla.
 
 Va después, con el caso real adelante y no antes.
 
+#### Los dos bugs del control de pintado (25/9/2026) — los dos eran de CABLEADO
+
+Reportado así: con Georgalos y `[TEST] Reposición diaria` elegida, tocar
+"Cobertura semanal" recargaba, volvía a Presencia y **la opción desaparecía**.
+
+Eran **dos bugs apilados**, y cualquiera de los dos solo produce ese síntoma.
+
+**Bug 1 — la base sobre la que se mergeaba, no el merge.** La pregunta era si el
+control de pintado usaba la misma función que el de campaña. **Sí la usaba, y
+`hrefMapa` estaba bien.** Lo que estaba mal era lo que se le pasaba: la página
+montaba la pantalla con
+
+```tsx
+rutaBase={hrefMapa(RUTA, { alcance: searchParams.alcance })}   // sin la campaña
+```
+
+El control de campaña andaba porque **pone** `campana` explícito; el de pintado
+mergeaba sobre una base que nunca la había tenido. Una función de merge no puede
+conservar lo que su base no trae.
+
+**Y esto no lo trajo el tramo 7a: viene de `029ef33`**, la etapa 4 del tramo
+anterior. Cambiar Presencia↔Tipo con una campaña elegida viene perdiéndola desde
+entonces, y **era invisible porque perder la campaña solo ensancha el mapa**: se
+ven más puntos, ninguno falta, nada dice que el filtro se cayó. Se hizo visible
+recién cuando apareció un modo que **no existe** sin campaña.
+
+**Bug 2 — el parseo, que nadie actualizó.** Las dos páginas tenían, a mano:
+
+```ts
+const pintar: ModoPintado = searchParams.pintar === 'tipo' ? 'tipo' : 'presencia'
+```
+
+O sea que `?pintar=cobertura` se convertía en `'presencia'` **antes de llegar al
+componente**. Este solo ya produce el síntoma completo, y habría seguido ahí
+aunque el link se arreglara.
+
+##### Cómo quedó
+
+| | |
+|---|---|
+| `hrefDelMapa(ruta, estado, cambio)` | recibe el estado **completo**, así ningún llamador puede omitir una clave. `presencia` y los vacíos BORRAN su parámetro |
+| `modoDesde(valor)` | deriva de `CATEGORIAS`: agregar un modo no puede dejar un parser viejo |
+| `PantallaMapa` | recibe la ruta **pelada** y arma el `EstadoDelMapa` adentro. Los dos controles salen del mismo estado |
+| El fallback | ahora **loguea** qué descartó y por qué |
+
+`hrefMapa` se queda: lo usan la línea de comercio y las pantallas de evidencia,
+donde la base sí es la ruta actual.
+
+##### Lo que el fallback silencioso hacía, que es lo peor de los dos
+
+Descartar `pintar=cobertura` sin decir nada hace que un bug **parezca un cambio
+de opinión de la pantalla**: el usuario toca una opción, la pantalla vuelve sola
+a otra cosa y la opción se va. No hay error, no hay log, no hay nada que
+reportar salvo "se comporta raro". Ahora:
+
+```
+[mapa] se pidió pintar=cobertura y se descartó: campaña=…, alcance=…
+```
+
+##### LA LECCIÓN, QUE NO ES EL BUG
+
+`probar-mapa-pdv.ts` cubre `hrefDelMapa` y `modoDesde` sueltas, y le agregué 12
+controles de regresión. **Medido: contra el bug 1 puesto a propósito, esa suite
+se queda ENTERA EN VERDE.** No es una falla de los controles — el error nunca
+estuvo en las funciones, estuvo en **quién las llama y con qué**.
+
+Y mi propio `ver-mapa-cobertura.mts` tampoco podía verlo: llama a las libs
+directo y **nunca parsea una URL**, así que el bug 2 le pasaba por al lado.
+
+Es el tercer caso de la misma familia en este proyecto:
+
+| | La función | El llamador |
+|---|---|---|
+| `rutaEvidencia` | andaba | le pasaba `'distribuidora'` en vez de `'distri'` |
+| La sonda del mapa | andaba | medía una URL escrita a mano, no la del componente |
+| `hrefDelMapa` | andaba | mergeaba sobre una base incompleta |
+
+> Cuando una lib es correcta y el bug está en el cableado, **el único test que
+> sirve es el que rinde la pantalla y mira lo que sale**.
+
+`scripts/probar-links-mapa.mts` hace eso: rinde `PantallaMapa` con
+`renderToStaticMarkup`, parsea el `?pintar=` con la MISMA `modoDesde` que la
+página, y lee los `href` de verdad. **Verificado que muerde**: 3 rojos contra el
+bug 1 y 3 contra el bug 2, reproducidos uno por uno.
+
+```bash
+npx tsx --tsconfig scripts/tsconfig.render.json scripts/probar-links-mapa.mts
+```
+
 #### PENDIENTE — el techo de 1.000 filas de PostgREST sobre la cobertura
 
 **Ya existe hoy, no lo trae el mapa.** El dashboard de cobertura se calcula

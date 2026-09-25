@@ -31,7 +31,10 @@
  */
 import { MapIcon, AlertTriangle } from 'lucide-react'
 import { MapaCliente } from '@/components/panel/mapa'
-import { hrefMapa, repartoDe, tieneAnillo, type PuntoMapa, type ModoPintado } from '@/lib/mapa-pdv'
+import {
+  hrefDelMapa, repartoDe, tieneAnillo,
+  type PuntoMapa, type ModoPintado, type EstadoDelMapa,
+} from '@/lib/mapa-pdv'
 import type { CoberturaDePdv } from '@/lib/cobertura-mapa'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
 
@@ -80,7 +83,7 @@ function Control({ titulo, opciones, activo, href }: {
 }
 
 export function PantallaMapa({
-  filas, campanas, campanaId, pintar, rutaBase, apiKey, alcanceClave, panel,
+  filas, campanas, campanaId, pintar, ruta, apiKey, alcanceClave, panel,
   cobertura, visitasPorSemana,
 }: {
   filas: FilaPdvMapa[]
@@ -96,12 +99,11 @@ export function PantallaMapa({
   campanaId: string | null
   pintar: ModoPintado
   /**
-   * La ruta de ESTA pantalla, que puede traer su propia query — el mapa de la
-   * distribuidora lleva `?alcance=<marca>`. Los links de los controles se
-   * arman con `hrefMapa`, que la conserva: armarlos a mano fue el bug que se
-   * comió el alcance en la serie mensual.
+   * La ruta de ESTA pantalla, SIN query. Los links los arma `hrefDelMapa` con
+   * el estado completo, así ningún control puede perder un parámetro que otro
+   * puso — que es exactamente el bug que tuvo el control de pintado.
    */
-  rutaBase: string
+  ruta: string
   apiKey: string
   /**
    * Lo que la server action de las fotos necesita para reconstruir el alcance.
@@ -139,8 +141,25 @@ export function PantallaMapa({
   // cambió de modalidad o escrito a mano. Sin datos de cobertura el mapa
   // pintaría los 58 PDV de gris "sin dato", que se lee como que el sistema
   // perdió la medición. Cae a presencia, que es lo que el mapa siempre sabe.
+  // El estado completo de la pantalla, en un solo lugar. Cada control lo
+  // recibe entero y solo dice qué cambia.
+  const estado: EstadoDelMapa = { alcance: alcanceClave, campana: campanaId, pintar }
+
   const ofreceCobertura = (cobertura?.size ?? 0) > 0
-  const modo: ModoPintado = pintar === 'cobertura' && !ofreceCobertura ? 'presencia' : pintar
+  const descarta = pintar === 'cobertura' && !ofreceCobertura
+  const modo: ModoPintado = descarta ? 'presencia' : pintar
+
+  if (descarta) {
+    // ── UN PARÁMETRO QUE SE DESCARTA SE DICE ──────────────────────────────
+    // Sin esto la pantalla vuelve a Presencia sin explicación y se lee como si
+    // hubiera cambiado de opinión sola. Fue justo lo que hizo que el bug del
+    // `?campana=` perdido pareciera otra cosa: el síntoma visible era el
+    // fallback, y la causa estaba dos pasos antes.
+    console.warn(
+      `[mapa] se pidió pintar=cobertura y se descartó: ` +
+      `campaña=${campanaId ?? '(ninguna)'}, alcance=${alcanceClave ?? '(ninguno)'}. ` +
+      `Sin una campaña de seguimiento elegida no hay cobertura que pintar.`)
+  }
 
   // La referencia sale del MISMO reparto que pinta los círculos, así que no
   // puede decir una cosa distinta de lo que se ve. Antes eran tres contadores
@@ -169,7 +188,7 @@ export function PantallaMapa({
         <Control
           titulo="Qué se muestra"
           activo={campanaId ?? ''}
-          href={v => hrefMapa(rutaBase, { campana: v || null })}
+          href={v => hrefDelMapa(ruta, estado, { campana: v || null })}
           opciones={[
             { valor: '', label: 'Todos los PDV' },
             ...campanas.map(c => ({ valor: c.id, label: c.nombre })),
@@ -178,7 +197,7 @@ export function PantallaMapa({
         <Control
           titulo="Cómo se pinta"
           activo={modo}
-          href={v => hrefMapa(rutaBase, { pintar: v === 'presencia' ? null : v })}
+          href={v => hrefDelMapa(ruta, estado, { pintar: v as ModoPintado })}
           opciones={[
             { valor: 'presencia', label: 'Presencia' },
             { valor: 'tipo',      label: 'Tipo de comercio' },
