@@ -1,20 +1,24 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { marcaDeLaSesion } from '@/lib/actor-sesion'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 
-export async function marcarNotificacionesMarcaLeidas(marcaId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
+/**
+ * `marcaId` SALIÓ DE LA FIRMA. Hasta el 25/9/2026 llegaba por parámetro y se
+ * usaba tal cual: cualquier autenticado podía marcarle las notificaciones como
+ * leídas a cualquier otra empresa. Es el caso de libro de la regla —el id de la
+ * entidad del que llama se deriva de la sesión— y por eso se arregla borrándolo.
+ */
+export async function marcarNotificacionesMarcaLeidas() {
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+  const marcaId = await marcaDeLaSesion(admin)
+  if (!marcaId) redirect('/auth')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (admin as any)

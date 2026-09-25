@@ -28,7 +28,7 @@ export function SolicitudesTab({
 
   const handleAprobar = (s: SolicitudRow) => {
     startTransition(async () => {
-      const res = await aprobarSolicitud(s.id, s.gondolero_id, distriId, distriNombre)
+      const res = await aprobarSolicitud(s.id, distriNombre)
       if (res.error) {
         setFeedback(f => ({ ...f, [s.id]: { ok: false, msg: res.error! } }))
       } else {
@@ -39,7 +39,7 @@ export function SolicitudesTab({
 
   const handleRechazar = (s: SolicitudRow) => {
     startTransition(async () => {
-      const res = await rechazarSolicitud(s.id, s.gondolero_id, distriNombre)
+      const res = await rechazarSolicitud(s.id, distriNombre)
       if (res.error) {
         setFeedback(f => ({ ...f, [s.id]: { ok: false, msg: res.error! } }))
       } else {

@@ -162,6 +162,24 @@ export async function descartarReporteUbicacion(
   if (!user) redirect('/auth')
 
   const admin = adminClient()
+
+  // ── El mismo chequeo que su hermana, que ésta no tenía ────────────────────
+  // `corregirUbicacionComercio` exige `tipo_actor` distribuidora o admin; ésta
+  // se conformaba con que hubiera alguien logueado, así que un gondolero podía
+  // descartar los reportes de ubicación — o sea la evidencia de que un pin
+  // está mal, que es justo lo que un gondolero produce.
+  //
+  // Lo que NO se agrega es un filtro por dueño, y es deliberado: la decisión
+  // de producto de este archivo es que cualquier distribuidora pueda corregir
+  // cualquier comercio, porque el mapa es un activo compartido y el control es
+  // el RASTRO, no el permiso. Descartar es la otra mitad de esa misma
+  // decisión. Ver el comentario de `corregirUbicacionComercio`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: perfil } = await (admin as any)
+    .from('profiles').select('tipo_actor').eq('id', user.id).maybeSingle()
+  if (perfil?.tipo_actor !== 'distribuidora' && perfil?.tipo_actor !== 'admin') {
+    return { ok: false, error: 'No tenés permiso para descartar reportes.' }
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (admin as any)
     .from('comercios_reportes_ubicacion')

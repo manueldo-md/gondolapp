@@ -7143,3 +7143,51 @@ equivalente.
 > `prod:` para lo que declara `docs/schema-real-2026-09.md` y `dev :` para lo
 > que devuelve la base consultada, **sea cual sea el `--ref`**. No son los dos
 > ambientes. Leerlo al revés lleva a conclusiones opuestas.
+
+### Dos hallazgos del 25/9/2026 que NO son de seguridad
+
+**1. Aceptar o rechazar una invitación no avisa a la distribuidora.**
+
+Verificado antes de anotarlo, porque había dos explicaciones posibles: los
+nueve avisos que arreglamos el 22/9 **rebotaban** contra el CHECK, y éste
+podía ser lo mismo. No lo es.
+
+```
+inserts de notificación en las seis actions del gondolero:  0
+```
+
+**No están.** El camino inverso —la distri avisa al gondolero— sí los tiene:
+`aprobarSolicitud` y `rechazarSolicitud` insertan `solicitud_aprobada` y
+`solicitud_rechazada`. El de vuelta nunca se escribió.
+
+Y hay un detalle que dice que alguien lo previó: **el CHECK ya acepta
+`vinculacion_nueva`**, un tipo que existe en el enum y en `lib/notificaciones.ts`
+y que tiene **cero filas en las dos bases**. Lo usa un solo lugar
+(`app/vinculacion/actions.ts`, el camino por token) y ni siquiera ese llegó a
+producir filas. El slot está, el insert no.
+
+Al hacerlo: el destinatario es la DISTRI, o sea `actor_id` + `actor_tipo =
+'distribuidora'`, no `gondolero_id`. Y conviene el helper `crearNotificacionActor`,
+que chequea el error — los nueve del 22/9 rebotaban justamente por no usarlo.
+
+**2. El editor de borradores SÍ muestra los bloques publicados.**
+
+Reportado como que no se ven. Se relevó y **la feature existe**:
+`components/campanas/draft-editor.tsx` los renderiza de solo lectura, con sus
+preguntas, el tipo entre paréntesis y el asterisco de obligatorio. Las dos
+páginas de detalle traen el embed `bloques_foto ( …, bloque_campos ( … ) )` y
+se lo pasan como `bloquesActuales`.
+
+Lo que pasa es otra cosa, y es lo que hay que arreglar: **hay campañas con CERO
+bloques, y el vacío es mudo.**
+
+```
+campañas sin un solo bloque    dev 3    prod 1
+```
+
+Para ésas el editor dice "Bloques de foto (0)" y nada más, que en pantalla se
+lee igual que si no los renderizara. No hay cartel que distinga "esta campaña
+no tiene bloques" de "el editor no los muestra", y esa ambigüedad es el bug.
+
+Aparte, dos campañas de altas tienen 1 bloque con 0 campos — eso es correcto
+por diseño (ver `lib/campana-altas.ts`) pero se ve igual de vacío.

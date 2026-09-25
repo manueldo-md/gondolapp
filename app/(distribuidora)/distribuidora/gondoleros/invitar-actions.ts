@@ -1,4 +1,5 @@
 'use server'
+import { distriDeLaSesion } from '@/lib/actor-sesion'
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -20,15 +21,23 @@ function adminClient() {
   )
 }
 
+/**
+ * `distriId` SALIÓ DE LA FIRMA. Llegaba del cliente y se insertaba tal cual:
+ * cualquier autenticado podía **acuñar un token de invitación a nombre de
+ * cualquier distribuidora**, y el que abriera el link se vinculaba a ella. No
+ * es una fuga de datos: es suplantación.
+ *
+ * Tres de los seis `generarLink*` estaban así; los otros tres leían el id del
+ * perfil y descartaban el parámetro —uno hasta lo dice en un comentario—. Ahora
+ * los seis derivan de la sesión, y donde el parámetro no era un agujero era un
+ * parámetro muerto, que es la trampa para el próximo.
+ */
 export async function generarLinkInvitacion(
-  distriId: string,
   distriNombre: string
 ): Promise<{ link?: string; error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
   const token = randomUUID().replace(/-/g, '').substring(0, 24)
   const expiraAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
@@ -103,16 +112,20 @@ export async function vincularPorCodigo(
   return { gondolero: { id: gondolero.id, alias: gondolero.alias, nombre: gondolero.nombre, nivel, tipo_actor: gondolero.tipo_actor } }
 }
 
+/**
+ * `distriId` salió de la firma: la invitación se manda SIEMPRE en nombre de la
+ * distribuidora de la sesión. Con el parámetro, cualquier autenticado invitaba
+ * gente a nombre de otra — el mismo agujero que `generarLinkInvitacion`, por
+ * la otra puerta. El id de la persona sí viene del cliente, y está bien: sale
+ * de la búsqueda por código, que es el objeto de la acción.
+ */
 export async function confirmarVinculacionPorCodigo(
   gondoleroId: string,
-  distriId: string,
   distriNombre: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
 
   // Crear solicitud pendiente — el gondolero debe aceptar desde su perfil
   const { error } = await admin

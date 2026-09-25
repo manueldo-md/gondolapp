@@ -18,7 +18,7 @@ export function InvitarMarcaPanel({ distriId, distriNombre }: Props) {
 
   const handleGenerar = () => {
     startTransition(async () => {
-      const res = await generarLinkInvitacionDistri(distriId, distriNombre)
+      const res = await generarLinkInvitacionDistri(distriNombre)
       if (res.error) {
         setError(res.error)
       } else if (res.link) {

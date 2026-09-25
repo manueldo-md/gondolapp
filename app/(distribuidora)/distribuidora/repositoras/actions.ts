@@ -5,6 +5,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { appUrl } from '@/lib/app-url'
+import { distriDeLaSesion } from '@/lib/actor-sesion'
+import { exigirPertenencia } from '@/lib/pertenencia'
 
 function adminClient() {
   return createAdminClient(
@@ -51,14 +53,25 @@ export async function generarLinkInvitacionDistriRepo(
   return { link: `${baseUrl}/vinculacion-distri-repo?token=${token}` }
 }
 
+
+/**
+ * Cortaba sin mirar de quién era la relación: `getUser()` y
+ * `update(…).eq(id, relacionId)`. Mismo patrón que `terminarRelacionDistri`;
+ * ver el comentario largo allá. Ahora usa el de las actions de reinicio.
+ */
 export async function terminarRelacionDistriRepo(
   relacionId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
+
+  const rel = await exigirPertenencia({
+    admin, tabla: 'distri_repo_relaciones', id: relacionId,
+    columna: 'distri_id', valor: distriId, desde: 'distri/repositoras:terminarRelacionDistriRepo',
+  })
+  if (!rel) return { error: 'No encontramos esa relación.' }
+
   const now = new Date().toISOString()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

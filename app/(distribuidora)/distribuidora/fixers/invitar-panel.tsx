@@ -32,7 +32,7 @@ export function InvitarFixerPanel({
   const handleGenerarLink = () => {
     setLinkError(null)
     startLink(async () => {
-      const res = await generarLinkInvitacionFixer(distriId, distriNombre)
+      const res = await generarLinkInvitacionFixer(distriNombre)
       if (res.error) { setLinkError(res.error); return }
       setLink(res.link!)
     })
@@ -69,7 +69,7 @@ export function InvitarFixerPanel({
     if (!fixerEncontrado) return
     const nombre = fixerEncontrado.alias ?? fixerEncontrado.nombre ?? 'El fixer'
     startVincular(async () => {
-      const res = await confirmarVinculacionPorCodigo(fixerEncontrado.id, distriId, distriNombre)
+      const res = await confirmarVinculacionPorCodigo(fixerEncontrado.id, distriNombre)
       if (res.error) { setCodigoError(res.error); return }
       setVinculadoNombre(nombre)
       setVinculadoOk(true)

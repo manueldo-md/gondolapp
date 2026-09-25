@@ -1,6 +1,7 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { distriDeLaSesion } from '@/lib/actor-sesion'
+import { exigirPertenencia } from '@/lib/pertenencia'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -16,15 +17,21 @@ function adminClient() {
 
 export async function aprobarSolicitudFixer(
   solicitudId: string,
-  fixerId: string,
-  distriId: string,
   distriNombre: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
+
+  // El `fixerId` y el `distriId` llegaban del cliente y no se verificaba
+  // ninguno. El primero estaba en la fila; el segundo ahora sale de la sesión.
+  const sol = await exigirPertenencia({
+    admin, tabla: 'fixer_distri_solicitudes', id: solicitudId,
+    columna: 'distri_id', valor: distriId, columnas: ['fixer_id'],
+    desde: 'distri/fixers:aprobarSolicitudFixer',
+  })
+  if (!sol) return { error: 'No encontramos esa solicitud.' }
+  const fixerId = sol.fixer_id as string
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: solicitudError } = await (admin as any)
@@ -75,15 +82,21 @@ export async function aprobarSolicitudFixer(
  */
 export async function rechazarSolicitudFixer(
   solicitudId: string,
-  fixerId: string,
   distriNombre: string,
   motivo?: string | null,
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
+
+  const sol = await exigirPertenencia({
+    admin, tabla: 'fixer_distri_solicitudes', id: solicitudId,
+    columna: 'distri_id', valor: distriId, columnas: ['fixer_id'],
+    desde: 'distri/fixers:rechazarSolicitudFixer',
+  })
+  if (!sol) return { error: 'No encontramos esa solicitud.' }
+  const fixerId = sol.fixer_id as string
+
   const ahora = new Date().toISOString()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

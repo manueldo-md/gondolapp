@@ -1,4 +1,5 @@
 'use server'
+import { distriDeLaSesion } from '@/lib/actor-sesion'
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -17,15 +18,13 @@ function adminClient() {
   )
 }
 
+/** Ver el comentario de `generarLinkInvitacion` (gondoleros): mismo agujero. */
 export async function generarLinkInvitacionFixer(
-  distriId: string,
   distriNombre: string
 ): Promise<{ link?: string; error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
   const token = randomUUID().replace(/-/g, '').substring(0, 24)
   const expiraAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
@@ -95,16 +94,20 @@ export async function buscarFixerPorCodigo(
   return { fixer: { id: fixer.id, alias: fixer.alias, nombre: fixer.nombre } }
 }
 
+/**
+ * `distriId` salió de la firma: la invitación se manda SIEMPRE en nombre de la
+ * distribuidora de la sesión. Con el parámetro, cualquier autenticado invitaba
+ * gente a nombre de otra — el mismo agujero que `generarLinkInvitacion`, por
+ * la otra puerta. El id de la persona sí viene del cliente, y está bien: sale
+ * de la búsqueda por código, que es el objeto de la acción.
+ */
 export async function confirmarVinculacionPorCodigo(
   fixerId: string,
-  distriId: string,
   distriNombre: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const distriId = await distriDeLaSesion(admin)
+  if (!distriId) redirect('/auth')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (admin as any)

@@ -156,7 +156,7 @@ console.log('\n▸ El actor sale de la sesión, nunca de un parámetro')
 console.log('\n▸ El id de la entidad del que llama NO está en la firma')
 {
   // [archivo, derivador, [funciones], [nombres de parámetro PROHIBIDOS en ese archivo]]
-  const CERRADAS: [string, string, string[], string[]][] = [
+  const CERRADAS: [string, string | string[], string[], string[]][] = [
     ['app/(distribuidora)/distribuidora/gondoleros/desvincular-actions.ts',
       'distriDeLaSesion', ['previsualizarDesvincularGondolero', 'desvincularGondolero'], ['distriId']],
     ['app/(distribuidora)/distribuidora/fixers/desvincular-actions.ts',
@@ -175,6 +175,30 @@ console.log('\n▸ El id de la entidad del que llama NO está en la firma')
       ], ['gondoleroId', 'fixerId', 'distriId', 'repoId']],
     ['app/(gondolero)/gondolero/logros/actions.ts', 'usuarioDeLaSesion', ['marcarLogrosVistos'], ['gondoleroId']],
     ['app/(gondolero)/gondolero/perfil/actions.ts', 'usuarioDeLaSesion', ['marcarNotificacionesLeidas'], ['gondoleroId']],
+
+    // ── Las 14 del último grupo: relaciones, invitaciones y solicitudes ──────
+    ['app/(distribuidora)/distribuidora/notificaciones/actions.ts',
+      'distriDeLaSesion', ['marcarNotificacionesDistriLeidas'], ['distriId']],
+    ['app/(marca)/marca/notificaciones/actions.ts',
+      'marcaDeLaSesion', ['marcarNotificacionesMarcaLeidas'], ['marcaId']],
+    ['app/(distribuidora)/distribuidora/marcas/actions.ts',
+      ['distriDeLaSesion'], ['generarLinkInvitacionDistri'], ['distriId']],
+    ['app/(distribuidora)/distribuidora/marcas/actions.ts',
+      ['distriDeLaSesion', 'exigirPertenencia'], ['terminarRelacionDistri'], ['distriId']],
+    ['app/(distribuidora)/distribuidora/repositoras/actions.ts',
+      ['distriDeLaSesion', 'exigirPertenencia'], ['terminarRelacionDistriRepo'], ['distriId']],
+    ['app/(marca)/marca/distribuidoras/actions.ts',
+      ['marcaDeLaSesion', 'exigirPertenencia'], ['terminarRelacion'], ['marcaId']],
+    ['app/(marca)/marca/repositoras/actions.ts',
+      ['marcaDeLaSesion', 'exigirPertenencia'], ['terminarRelacionRepo'], ['marcaId']],
+    ['app/(distribuidora)/distribuidora/gondoleros/invitar-actions.ts',
+      'distriDeLaSesion', ['generarLinkInvitacion', 'confirmarVinculacionPorCodigo'], ['distriId']],
+    ['app/(distribuidora)/distribuidora/fixers/invitar-actions.ts',
+      'distriDeLaSesion', ['generarLinkInvitacionFixer', 'confirmarVinculacionPorCodigo'], ['distriId']],
+    ['app/(distribuidora)/distribuidora/gondoleros/solicitudes-actions.ts',
+      ['distriDeLaSesion', 'exigirPertenencia'], ['aprobarSolicitud', 'rechazarSolicitud'], ['distriId', 'gondoleroId']],
+    ['app/(distribuidora)/distribuidora/fixers/solicitudes-actions.ts',
+      ['distriDeLaSesion', 'exigirPertenencia'], ['aprobarSolicitudFixer', 'rechazarSolicitudFixer'], ['distriId', 'fixerId']],
   ]
 
   for (const [rel, derivador, funciones, prohibidos] of CERRADAS) {
@@ -200,12 +224,14 @@ console.log('\n▸ El id de la entidad del que llama NO está en la firma')
       const desde = src.indexOf('{', i)
       const sig = src.indexOf('\nexport ', desde)
       const cuerpo = src.slice(desde, sig === -1 ? src.length : sig)
-      const deriva = cuerpo.includes(derivador)
+      const requeridos = Array.isArray(derivador) ? derivador : [derivador]
+      const faltan = requeridos.filter(g => !cuerpo.includes(g))
+      const deriva = faltan.length === 0
       const ok = !tieneIdPropio && deriva
       if (!ok) fallos++
       console.log(`   ${ok ? '✓' : '✗'}  ${fn.padEnd(32)} ${rel.split('/').slice(-2).join('/')}`)
       if (tieneIdPropio) console.log(`       volvió a recibir el id de su propia entidad por parámetro`)
-      if (!deriva) console.log(`       esta función ya no pasa por ${derivador}`)
+      if (!deriva) console.log(`       esta función ya no pasa por ${faltan.join(', ')}`)
     }
   }
 }

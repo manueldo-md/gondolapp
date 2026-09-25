@@ -34,7 +34,7 @@ export function InvitarPanel({
   const handleGenerarLink = () => {
     setLinkError(null)
     startLink(async () => {
-      const res = await generarLinkInvitacion(distriId, distriNombre)
+      const res = await generarLinkInvitacion(distriNombre)
       if (res.error) { setLinkError(res.error); return }
       setLink(res.link!)
     })
@@ -71,7 +71,7 @@ export function InvitarPanel({
     if (!gondoleroEncontrado) return
     const nombre = gondoleroEncontrado.alias ?? gondoleroEncontrado.nombre ?? 'El gondolero'
     startVincular(async () => {
-      const res = await confirmarVinculacionPorCodigo(gondoleroEncontrado.id, distriId, distriNombre)
+      const res = await confirmarVinculacionPorCodigo(gondoleroEncontrado.id, distriNombre)
       if (res.error) { setCodigoError(res.error); return }
       setVinculadoNombre(nombre)
       setVinculadoOk(true)

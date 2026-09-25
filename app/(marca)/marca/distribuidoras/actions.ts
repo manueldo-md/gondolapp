@@ -5,6 +5,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { appUrl } from '@/lib/app-url'
+import { marcaDeLaSesion } from '@/lib/actor-sesion'
+import { exigirPertenencia } from '@/lib/pertenencia'
 
 function adminClient() {
   return createAdminClient(
@@ -89,14 +91,24 @@ export async function verificarTerminarRelacion(
   return { campanasBloqueantes: (campanas ?? []) as { id: string; nombre: string }[] }
 }
 
+
+/**
+ * Cortaba sin mirar de quién era la relación: `getUser()` y
+ * `update(…).eq(id, relacionId)`. Mismo patrón que `terminarRelacionDistri`;
+ * ver el comentario largo allá. Ahora usa el de las actions de reinicio.
+ */
 export async function terminarRelacion(
   relacionId: string
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+  const marcaId = await marcaDeLaSesion(admin)
+  if (!marcaId) redirect('/auth')
+
+  const rel = await exigirPertenencia({
+    admin, tabla: 'marca_distri_relaciones', id: relacionId,
+    columna: 'marca_id', valor: marcaId, desde: 'marca/distribuidoras:terminarRelacion',
+  })
+  if (!rel) return { error: 'No encontramos esa relación.' }
 
   const now = new Date().toISOString()
 

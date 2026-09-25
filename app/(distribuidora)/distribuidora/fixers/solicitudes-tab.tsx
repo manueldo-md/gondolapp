@@ -23,8 +23,8 @@ export function SolicitudesFixerTab({
     <SolicitudesFixer
       solicitudes={solicitudes}
       tema="distri"
-      onAprobar={s => aprobarSolicitudFixer(s.id, s.fixer_id, distriId, distriNombre)}
-      onRechazar={(s, motivo) => rechazarSolicitudFixer(s.id, s.fixer_id, distriNombre, motivo)}
+      onAprobar={s => aprobarSolicitudFixer(s.id, distriNombre)}
+      onRechazar={(s, motivo) => rechazarSolicitudFixer(s.id, distriNombre, motivo)}
     />
   )
 }
