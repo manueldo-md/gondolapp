@@ -402,23 +402,16 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     }
   }
 
-  // Obtener zona_id
-  const { data: zona } = await admin
-    .from('zonas')
-    .select('id')
-    .eq('nombre', 'Entre Ríos')
-    .limit(1)
-    .maybeSingle()
-
-  let zonaId: string | null = zona?.id ?? null
-  if (!zonaId) {
-    const { data: primeraZona } = await admin
-      .from('zonas')
-      .select('id')
-      .limit(1)
-      .maybeSingle()
-    zonaId = primeraZona?.id ?? null
-  }
+  // NO se escribe `zona_id`. Es de la tabla vieja `zonas` (8 filas), no la lee
+  // NADIE —verificado en la app, los scripts, las funciones SQL de las dos bases
+  // y las vistas— y lo que se elegía era arbitrario: acá "Entre Ríos" a mano con
+  // fallback a la primera fila, y en el alta oportunista directamente
+  // `.limit(1)` sin filtro. La geografía del comercio ahora es `localidad_id`,
+  // que la resuelve `sugerirLocalidad` unas líneas más abajo.
+  //
+  // La columna SIGUE en la base a propósito: el DROP va después de verificar
+  // este deploy en producción. Al revés, el deploy anterior escribiría en una
+  // columna que ya no existe.
 
   // Deduplicación por nombre contra los comercios que siguen en juego.
   //
@@ -472,7 +465,6 @@ export async function crearComercioNuevo(params: CrearComercioParams) {
     direccion:        params.direccion,
     lat:              params.lat,
     lng:              params.lng,
-    zona_id:          zonaId,
     registrado_por:   user.id,
     validado:         false,
     estado:           'pendiente_validacion',
@@ -618,10 +610,6 @@ export async function crearComercioParaCaptura(params: {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Obtener zona_id (primera disponible)
-  const { data: zona } = await admin.from('zonas').select('id').limit(1).maybeSingle()
-  const zonaId: string | null = zona?.id ?? null
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const insertData: Record<string, unknown> = {
     nombre:         params.nombre,
@@ -629,7 +617,6 @@ export async function crearComercioParaCaptura(params: {
     direccion:      params.direccion,
     lat:            params.lat,
     lng:            params.lng,
-    zona_id:        zonaId,
     registrado_por: user.id,
     validado:       false,
     estado:         'pendiente_validacion',

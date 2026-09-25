@@ -6263,7 +6263,7 @@ para poder medirlo.
 | 4 | ✅ **HECHA** — `lib/localidad-sugerida.ts` en los dos caminos de alta, inline y fail-open. Key server-side aparte | `probar-localidad-sugerida.mts`: camino completo contra dev con red, padrón y escritura |
 | 5 | ✅ **HECHA** — columna Localidad en la bandeja de la distri: sugerencia precargada, un clic para confirmar, cascader para corregir. El cascader salió a un hook que `SelectorZona` también usa | `probar-selector-localidad.mts` (20 controles, los 5 estados); el embed doble probado contra dev; `SelectorZona` rinde idéntico byte a byte. **Falta el click-through** y la bandeja de admin |
 | 6 | ✅ **HECHA** — `reparar-localidades.mts`, mismo mecanismo que el alta. `--aplicar` exige `--confirmo=N`, y N solo se sabe leyendo la propuesta | corrido en dev: **13 de 13 exacto, 0 fallidos, 0 sin localidad**. Verificado que la confirmación muerde sin el número y con uno equivocado |
-| 7 | Sacar el `zona_id` arbitrario | **grep DESPUÉS** de escribir el código |
+| 7 | ✅ **HECHA** — los dos caminos dejan de escribir `zona_id`. NO dropea: eso va después de verificar el deploy en prod | **grep DESPUÉS** de escribir el código: sobre `comercios` no queda ni una lectura ni una escritura. Lo que aparece es de `campana_zonas` y `gondolero_zonas`, más el tipo generado (la columna sigue) |
 
 La **1 va primera** porque sin padrón limpio la etapa 2 mide contra datos rotos.
 Y la reparación va **después** del alta: arreglar el pasado mientras el presente
@@ -6274,6 +6274,12 @@ sigue perdiendo es al revés.
 App, scripts, funciones SQL de las dos bases y vistas: **nadie lo lee**. Los
 `zona_id` que aparecen en un grep son todos de OTRAS tablas (`campana_zonas`,
 `gondolero_zonas`). La columna es nullable y la FK admite NULL, así que dejar de
+
+> **Lo que se sacó era peor de lo que decía el relevamiento.** No eran dos
+> `.limit(1)`: `crearComercioNuevo` **hardcodeaba "Entre Ríos"** —`.eq('nombre',
+> 'Entre Ríos')`— con fallback a la primera fila de la tabla. O sea que un
+> comercio de Córdoba quedaba con la zona de Entre Ríos, y si esa fila no
+> existía, con cualquiera. La otra ruta usaba `.limit(1)` pelado.
 escribirlo no rompe nada.
 
 **La etapa 7 deja de ESCRIBIR, no dropea.** El `DROP COLUMN` va después con el
