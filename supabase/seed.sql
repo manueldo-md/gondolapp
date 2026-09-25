@@ -31,37 +31,38 @@ VALUES
 -- COMERCIOS DE PRUEBA — Entre Ríos
 -- =============================================================================
 
-INSERT INTO comercios (id, nombre, direccion, lat, lng, tipo, validado, zona_id)
+-- Sin `zona_id`: la columna se dropea en `20261005100000`. Acá ya escribía NULL
+-- —este archivo nunca insertó en `zonas`, así que los cinco subselects no
+-- matcheaban nada—, pero después del DROP el statement sería un error duro y el
+-- seed entero dejaría de correr. La geografía que la app lee hoy es
+-- `localidad_id`, del padrón, que no se carga por migración y por eso tampoco
+-- se pone acá.
+INSERT INTO comercios (id, nombre, direccion, lat, lng, tipo, validado)
 VALUES
   ('33333333-0000-0000-0000-000000000001',
    'Super Norte',
    'Av. Libertad 1223, Concordia',
-   -31.3850, -58.0178, 'autoservicio', true,
-   (SELECT id FROM zonas WHERE nombre = 'Concordia')),
+   -31.3850, -58.0178, 'autoservicio', true),
 
   ('33333333-0000-0000-0000-000000000002',
    'Kiosco El Cid',
    'San Luis 456, Concordia',
-   -31.3920, -58.0210, 'kiosco', true,
-   (SELECT id FROM zonas WHERE nombre = 'Concordia')),
+   -31.3920, -58.0210, 'kiosco', true),
 
   ('33333333-0000-0000-0000-000000000003',
    'Almacén Don Jorge',
    'Rivadavia 789, Colón',
-   -32.2280, -58.1460, 'almacen', true,
-   (SELECT id FROM zonas WHERE nombre = 'Colón')),
+   -32.2280, -58.1460, 'almacen', true),
 
   ('33333333-0000-0000-0000-000000000004',
    'Super Central',
    '25 de Mayo 100, Concepción del Uruguay',
-   -32.4820, -58.2340, 'autoservicio', true,
-   (SELECT id FROM zonas WHERE nombre = 'Concepción del Uruguay')),
+   -32.4820, -58.2340, 'autoservicio', true),
 
   ('33333333-0000-0000-0000-000000000005',
    'Almacén La Esquina',
    'Urquiza 321, Concordia',
-   -31.3900, -58.0240, 'almacen', false,
-   (SELECT id FROM zonas WHERE nombre = 'Concordia'));
+   -31.3900, -58.0240, 'almacen', false);
 
 -- =============================================================================
 -- CAMPAÑA DE PRUEBA — Activa

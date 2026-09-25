@@ -6443,6 +6443,7 @@ muestra el nombre y no el selector. Se estrena con la próxima alta.
 | 6 | ✅ **HECHA** — `reparar-localidades.mts`, mismo mecanismo que el alta. `--aplicar` exige `--confirmo=N`, y N solo se sabe leyendo la propuesta | corrido en dev: **13 de 13 exacto, 0 fallidos, 0 sin localidad**. Verificado que la confirmación muerde sin el número y con uno equivocado |
 | 7 | ✅ **HECHA** — los dos caminos dejan de escribir `zona_id`. NO dropea: eso va después de verificar el deploy en prod | **grep DESPUÉS** de escribir el código: sobre `comercios` no queda ni una lectura ni una escritura. Lo que aparece es de `campana_zonas` y `gondolero_zonas`, más el tipo generado (la columna sigue) |
 | 8 | ✅ **HECHA** — `20261002100000`: la zona se guarda por NIVEL y se expande al leer. Incluye "toda la provincia" en el selector | `probar-migracion-zonas-nivel.mjs` (dev y prod) + `probar-zonas-gondolero.mts` (16 controles). El dry-run encontró que la migración NO era idempotente |
+| 9 | ✅ **ESCRITA** — `20261005100000`: el `DROP COLUMN` de `comercios.zona_id`, con el seed y el tipo de `Comercio` en el mismo commit. **Falta correrla** | `probar-migracion-drop-zona-id.mjs`, verde en dev y prod. Las dos precondiciones se ejercitan CREANDO el estado que rechazan: un comercio con zona y sin localidad, y una vista colgada de la columna |
 
 La **1 va primera** porque sin padrón limpio la etapa 2 mide contra datos rotos.
 Y la reparación va **después** del alta: arreglar el pasado mientras el presente
@@ -6463,6 +6464,49 @@ escribirlo no rompe nada.
 
 **La etapa 7 deja de ESCRIBIR, no dropea.** El `DROP COLUMN` va después con el
 orden de siempre: código que deja de usarla → deploy → verificar en prod → DROP.
+
+##### ETAPA 9 — el `DROP COLUMN` (migración `20261005100000`)
+
+Escrita el 25/9/2026, con el deploy de la etapa 7 ya verificado en producción.
+Dry-run **verde en dev y prod**: `scripts/probar-migracion-drop-zona-id.mjs`.
+
+**El grep de DESPUÉS encontró dos cosas que "cero lectores, verificado" había
+dado por limpias**, y las dos iban a romper:
+
+| Dónde | Qué | Qué habría pasado |
+|---|---|---|
+| `supabase/seed.sql` | insertaba `zona_id` en `comercios` | el seed entero deja de correr en cualquier base nueva. Escribía NULL igual: el archivo nunca insertó en `zonas`, así que los cinco subselects no matcheaban nada |
+| `types/index.ts` | `Comercio.zona_id` | un campo que existe en el tipo y no en la tabla es una invitación a escribirlo, y PostgREST rechaza **la consulta entera** por una columna que no existe |
+
+Las dos van en el mismo commit que la migración. `types/database.ts` es
+generado: se regenera con `npm run db:types` **después** de correrla.
+
+**La precondición no es "que nadie la lea": es que ya no quede nadie a quien
+marcar.** `zona_id IS NOT NULL` es el marcador exacto de "entró por el agujero
+del alta", y el DROP lo borra. Medido antes de escribir la migración:
+
+```
+con zona, SIN localidad    dev 0    prod 0     ← si esto no es cero, aborta
+con zona, con localidad    dev 14   prod 6
+```
+
+Es el único momento en que ese dato todavía existe, así que la migración se
+niega a correr si el primer número no es cero.
+
+La segunda precondición enumera **todo lo que cuelga de la columna** salvo su
+propia FK, y aborta nombrándolo. `DROP COLUMN` sin CASCADE ya se negaría ante
+una vista, pero **se llevaría un índice sin decir nada**. Medido en las dos
+bases: la única dependencia es `comercios_zona_id_fkey`. Cero vistas, cero
+índices, cero policies, cero funciones.
+
+> **El `coalesce` de esa consulta no es decorativo.** El filtro excluye la FK
+> comparando contra su oid; si la FK no existiera, la comparación daría NULL,
+> el `NOT` daría NULL y la fila se descartaría. O sea: un filtro que se apaga
+> solo justo cuando la base no es la esperada.
+
+Y la verificación mira **la otra dirección**, que es la que atrapa un DROP
+apuntado a la tabla equivocada: `zona_id` vive en tres tablas y solo se va de
+una. `campana_zonas`, `gondolero_zonas` y `zonas` tienen que seguir enteras.
 
 ##### ETAPA 8 — la zona del gondolero se guarda por NIVEL (migración `20261002100000`)
 
@@ -7191,6 +7235,18 @@ no tiene bloques" de "el editor no los muestra", y esa ambigüedad es el bug.
 
 Aparte, dos campañas de altas tienen 1 bloque con 0 campos — eso es correcto
 por diseño (ver `lib/campana-altas.ts`) pero se ve igual de vacío.
+
+✅ **HECHO el 25/9/2026.** El cartel va en `draft-editor.tsx`, condicionado a
+`bloquesActuales.length === 0 && nuevosBloques.length === 0 && !agregandoBloque`
+— la tercera condición porque mientras se está cargando un bloque el cartel
+contradice lo que la persona está haciendo.
+
+> **El (0) del título no alcanzaba, y ése es el punto.** Un contador en cero es
+> exactamente lo que muestra un render que falla, así que no distingue nada. Lo
+> que distingue es una frase que **solo puede venir de haber consultado la
+> lista**: "Esta campaña todavía no tiene ningún bloque". Es el mismo criterio
+> que el aviso de excluidos del filtro de provincia — un alcance que se vacía
+> entero se lee como "no hay datos", no como un filtro estricto.
 
 ---
 

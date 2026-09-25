@@ -143,7 +143,12 @@ export interface Comercio {
   tipo: TipoComercio | null
   foto_fachada_url: string | null
   validado: boolean
-  zona_id: string | null
+  /**
+   * NO hay `zona_id`. La columna se dropeó en `20261005100000` y la geografía
+   * del comercio es `localidad_id`, del padrón. Dejarla acá después del DROP
+   * sería una invitación a escribirla: TypeScript la aceptaría y PostgREST
+   * rechazaría la consulta entera por una columna que no existe.
+   */
   registrado_por: string | null
   created_at: string
 }

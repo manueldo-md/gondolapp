@@ -376,6 +376,23 @@ export function CampanaDraftEditor({
           </div>
         )}
 
+        {/* ── Vacío, dicho ───────────────────────────────────────────────────
+            Sin este cartel la sección mostraba "Bloques de foto (0)" y nada
+            más, que en pantalla se lee IGUAL que si el editor no los
+            renderizara. Son dos cosas muy distintas —una campaña sin bloques
+            contra un editor roto— y la ambigüedad es el bug: había 3 campañas
+            así en dev y 1 en prod el 25/9/2026.
+
+            El (0) del título no alcanza: un contador en cero es justo lo que
+            muestra un render que falla. Lo que distingue es una frase que
+            solo puede venir de haber consultado la lista. */}
+        {bloquesActuales.length === 0 && nuevosBloques.length === 0 && !agregandoBloque && (
+          <p className="text-xs text-gray-400 mb-3">
+            Esta campaña todavía no tiene ningún bloque. Sin bloques no se le pide
+            ninguna foto en particular al gondolero.
+          </p>
+        )}
+
         {/* Formulario de nuevo bloque */}
         {!agregandoBloque ? (
           <button
