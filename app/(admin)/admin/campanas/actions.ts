@@ -7,6 +7,8 @@ import { revalidatePath } from 'next/cache'
 import { crearNotificacionMarca } from '@/lib/notificaciones'
 import { destrabarMisiones } from '@/lib/misiones-trabadas'
 import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
+import { campanaEnAlcance } from '@/lib/alcance-revision'
+import { actorRevisorDeLaSesion } from '@/lib/actor-sesion'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -33,6 +35,24 @@ export async function activarCampana(campanaId: string) {
 
 export async function cerrarCampana(campanaId: string) {
   const admin = await getAdmin()
+
+  // ── El alcance, antes de pagar nada ───────────────────────────────────────
+  // Esta función acredita puntos en masa y recibe el `campanaId` del cliente.
+  // `getAdmin()` solo dice que hay una sesión; el nombre engaña. Para un admin
+  // real el alcance es "todas" y esto no cambia nada — es la segunda capa
+  // debajo del middleware, que hoy es lo único que la protege.
+  //
+  // El objeto acá es la CAMPAÑA y no una foto, así que el guard es
+  // `campanaEnAlcance` directo. Mismo helper, misma regla.
+  const actor = await actorRevisorDeLaSesion(admin)
+  if (!actor) redirect('/auth')
+  if (!(await campanaEnAlcance(campanaId, actor, admin))) {
+    console.error(
+      `[alcance-revision] admin/campanas:cerrarCampana: ${actor.tipo} intentó ` +
+      `cerrar la campaña ${campanaId}, que está fuera de su alcance.`
+    )
+    throw new Error('Esa campaña no está a tu alcance.')
+  }
 
   // ── Liberar puntos retenidos de todos los gondoleros en esta campaña ──────
   //

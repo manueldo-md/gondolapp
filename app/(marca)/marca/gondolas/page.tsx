@@ -11,6 +11,7 @@ import { FotoRespuestas, type RespuestaItem } from '@/components/shared/foto-res
 import { PreciosFoto } from '@/components/shared/precios-foto'
 import { preciosDeRespuestas, idMetricaPrecio } from '@/lib/precios-relevados'
 import { FotoDistancia } from '@/components/shared/foto-distancia'
+import { idsDe } from '@/lib/campanas-de'
 
 interface FotoRow {
   id: string
@@ -122,11 +123,22 @@ export default async function GondolasPage({
     .order('created_at', { ascending: false })
     .limit(100)
 
-  if (filtrosCampana) {
-    query = query.eq('campana_id', filtrosCampana)
-  } else {
-    query = query.in('campana_id', campanaIds)
-  }
+  // `filtrosCampana` viene de la query string, o sea del usuario. **Nunca se
+  // pasa derecho.** Hasta el 25/9/2026 esto era un `if/else`: con `?campana=`
+  // el filtro por campaña REEMPLAZABA al filtro por marca, así que un uuid
+  // ajeno en la URL mostraba las fotos de otra marca. Y el botón Aprobar de esa
+  // pantalla funcionaba sobre ellas, porque `aprobarFotoMarca` tampoco
+  // chequeaba — las dos mitades juntas eran un camino completo.
+  //
+  // `idsDe` intersecta lo pedido contra lo permitido y devuelve `[]` si la
+  // campaña no es suya: "no tenés datos de esa campaña" y no "te muestro todo".
+  // Es la misma función que usa el panel. Ver lib/campanas-de.ts.
+  const idsVisibles = idsDe(campanas, filtrosCampana)
+  // Un `.in()` vacío rompe PostgREST: se usa un uuid imposible, igual que el
+  // panel de distribuidora.
+  query = query.in('campana_id', idsVisibles.length > 0
+    ? idsVisibles
+    : ['00000000-0000-0000-0000-000000000000'])
 
   if (filtroEstado) {
     query = query.eq('estado', filtroEstado as EstadoFoto)

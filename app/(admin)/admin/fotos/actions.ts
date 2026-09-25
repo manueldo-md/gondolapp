@@ -7,6 +7,8 @@ import { revalidatePath } from 'next/cache'
 import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
 import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
+import { exigirFotoRevisable, fotosQuePuedeRevisar } from '@/lib/alcance-revision'
+import { actorRevisorDeLaSesion } from '@/lib/actor-sesion'
 
 async function getAdmin() {
   const supabase = await createClient()
@@ -19,8 +21,47 @@ async function getAdmin() {
   )
 }
 
-export async function aprobarFotoAdmin(fotoId: string) {
+/**
+ * El cliente service-role y QUIÉN está del otro lado, juntos.
+ *
+ * `getAdmin()` solo dice que hay una sesión; el nombre engaña, porque lo que
+ * devuelve es un cliente con permisos de admin para cualquiera que pase.
+ * Lo que decide es el actor, y para un admin real el alcance es "todas".
+ *
+ * Esto NO reemplaza el chequeo de `tipo_actor` que estas actions necesitan
+ * como segunda capa —hoy las tapa solo el middleware—: un actor no-admin que
+ * llegara acá quedaría acotado a SUS campañas, que es mejor que nada pero no
+ * es lo mismo que rebotarlo.
+ */
+async function getAdminYActor() {
   const admin = await getAdmin()
+  const actor = await actorRevisorDeLaSesion(admin)
+  if (!actor) redirect('/auth')
+  return { admin, actor }
+}
+
+/**
+ * Los estados desde los que el ADMIN puede aprobar.
+ *
+ * Incluye `rechazada` y los otros paneles no: corregir un rechazo equivocado es
+ * trabajo de admin, y es la única vía que hay. **Y deja abierto el replay por
+ * la puerta de al lado**: aprobar → rechazar → aprobar vuelve a acreditar,
+ * porque `rechazarFotoAdmin` no revierte el movimiento, solo pone
+ * `puntos_otorgados: 0`. Eso no lo cierra un filtro de estado; lo cierra el
+ * índice único sobre `movimientos_puntos(foto_id, tipo)`, que va aparte.
+ */
+const DESDE_DONDE_APRUEBA_ADMIN = ['pendiente', 'en_revision', 'rechazada']
+
+export async function aprobarFotoAdmin(fotoId: string) {
+  const { admin, actor } = await getAdminYActor()
+
+  // El alcance, y de paso el estado: hasta el 25/9/2026 esta función no miraba
+  // `estado`, así que reaprobar la misma foto volvía a acreditar. Ver
+  // lib/alcance-revision.ts.
+  const revisable = await exigirFotoRevisable({
+    fotoId, actor, estados: DESDE_DONDE_APRUEBA_ADMIN, admin, desde: 'admin/fotos:aprobarFotoAdmin',
+  })
+  if (!revisable) return
 
   const { data: fotoRaw } = await admin
     .from('fotos')
@@ -127,7 +168,16 @@ export async function rechazarFotoAdmin(fotoId: string, motivoRechazo?: string) 
   const motivo = motivoRechazo?.trim()
   if (!motivo) throw new Error('Falta el motivo del rechazo')
 
-  const admin = await getAdmin()
+  const { admin, actor } = await getAdminYActor()
+
+  // `aprobada` está en la lista: revocar una aprobación equivocada es trabajo
+  // de admin. OJO — eso NO devuelve los puntos ya acreditados; solo pone
+  // `puntos_otorgados: 0`, que es un número de pantalla. Anotado aparte.
+  const revisable = await exigirFotoRevisable({
+    fotoId, actor, estados: ['pendiente', 'en_revision', 'aprobada'], admin,
+    desde: 'admin/fotos:rechazarFotoAdmin',
+  })
+  if (!revisable) return
 
   const { data: fotoRaw } = await admin
     .from('fotos')
@@ -177,13 +227,34 @@ export async function accionMasiva(
   // la foto a partir de lo que dice el rechazo. Se aplica el mismo a todas.
   const motivo = motivoRechazo?.trim()
   if (accion === 'rechazada' && !motivo) throw new Error('Falta el motivo del rechazo')
-  const admin = await getAdmin()
+  const { admin, actor } = await getAdminYActor()
+
+  // ── El permiso, foto por foto ─────────────────────────────────────────────
+  // El lote entero lo elige el cliente. Se filtra y NO se aborta: un id ajeno
+  // mezclado no debe impedir el trabajo legítimo del resto del lote.
+  //
+  // Los estados los sigue decidiendo el bloque de abajo, que es el que sabe qué
+  // permite cada acción. Acá se aceptan todos a propósito, para que la
+  // clasificación de "ajena" no dependa del estado en que esté la foto de otro.
+  const alcance = await fotosQuePuedeRevisar({
+    fotoIds, actor, admin,
+    estados: ['pendiente', 'en_revision', 'aprobada', 'rechazada', 'archivada'],
+  })
+  if (alcance.ajenas.length > 0) {
+    console.error(
+      `[alcance-revision] admin/fotos:accionMasiva: ${actor.tipo} mandó ` +
+      `${alcance.ajenas.length} foto(s) fuera de su alcance en un lote de ` +
+      `${fotoIds.length}. Se descartan:`, alcance.ajenas
+    )
+  }
+  const idsPermitidos = alcance.permitidas.map(f => f.id)
+  if (!idsPermitidos.length) return { procesadas: 0, errores: 0 }
 
   // Reglas: no aprobar archivadas ni ya aprobadas, no archivar aprobadas
   let query = admin
     .from('fotos')
     .select('id, estado, gondolero_id, campana_id, mision_id, bloque_id, comercio:comercios(nombre), campana:campanas(tipo, puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar)')
-    .in('id', fotoIds)
+    .in('id', idsPermitidos)
 
   if (accion === 'aprobada') {
     query = query.neq('estado', 'archivada').neq('estado', 'aprobada')
@@ -310,7 +381,17 @@ export async function cambiarEstadoFoto(fotoId: string, nuevoEstado: string, mot
     return
   }
   // pendiente | en_revision | archivada → UPDATE directo sin tocar puntos
-  const admin = await getAdmin()
+  //
+  // No toca puntos, pero SÍ habilita tocarlos: mandar una foto aprobada de
+  // vuelta a 'pendiente' es lo que después deja aprobarla de nuevo. Así que el
+  // alcance se chequea igual, y por eso los estados de origen son todos.
+  const { admin, actor } = await getAdminYActor()
+  const revisable = await exigirFotoRevisable({
+    fotoId, actor, admin, desde: 'admin/fotos:cambiarEstadoFoto',
+    estados: ['pendiente', 'en_revision', 'aprobada', 'rechazada', 'archivada'],
+  })
+  if (!revisable) return
+
   await admin.from('fotos').update({ estado: nuevoEstado }).eq('id', fotoId)
   revalidatePath('/admin/fotos')
 }

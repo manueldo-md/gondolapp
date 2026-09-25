@@ -1,6 +1,5 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -8,6 +7,8 @@ import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
 import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
 import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
+import { exigirFotoRevisable, ESTADOS_REVISABLES } from '@/lib/alcance-revision'
+import { actorRevisorDeLaSesion } from '@/lib/actor-sesion'
 
 function adminClient() {
   return createSupabaseClient(
@@ -18,11 +19,19 @@ function adminClient() {
 }
 
 export async function aprobarFotoMarca(fotoId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+
+  // El id de la foto viene del cliente; el alcance, de la sesión. Hasta el
+  // 25/9/2026 esto solo chequeaba que hubiera alguien logueado, y la pantalla
+  // que lista estas fotos aceptaba `?campana=` sin intersectar: con esas dos
+  // cosas juntas, una marca veía las fotos de otra Y las podía aprobar, que es
+  // lo que libera bounty. Ver lib/alcance-revision.ts.
+  const actor = await actorRevisorDeLaSesion(admin)
+  if (!actor) redirect('/auth')
+  const revisable = await exigirFotoRevisable({
+    fotoId, actor, estados: ESTADOS_REVISABLES, admin, desde: 'marca/gondolas:aprobarFotoMarca',
+  })
+  if (!revisable) return
 
   // 1. Obtener la foto con datos de la campaña en una sola query
   const { data: foto, error: fotoError } = await admin
@@ -142,11 +151,14 @@ export async function rechazarFotoMarca(fotoId: string, motivoRechazo?: string) 
   const motivo = motivoRechazo?.trim()
   if (!motivo) throw new Error('Falta el motivo del rechazo')
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const admin = adminClient()
+
+  const actor = await actorRevisorDeLaSesion(admin)
+  if (!actor) redirect('/auth')
+  const revisable = await exigirFotoRevisable({
+    fotoId, actor, estados: ESTADOS_REVISABLES, admin, desde: 'marca/gondolas:rechazarFotoMarca',
+  })
+  if (!revisable) return
 
   const { data: fotoRaw } = await admin
     .from('fotos')

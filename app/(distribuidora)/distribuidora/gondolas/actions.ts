@@ -1,6 +1,5 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -8,6 +7,18 @@ import { verificarLogros } from '@/lib/logros'
 import { actualizarEstadoMision } from '@/lib/misiones'
 import { sincronizarComerciosCompletados } from '@/lib/comercios-relevados'
 import { fotoEsUnidadDePago } from '@/lib/validacion-comercio'
+import { exigirFotoRevisable, fotosQuePuedeRevisar, ESTADOS_REVISABLES } from '@/lib/alcance-revision'
+import { actorRevisorDeLaSesion } from '@/lib/actor-sesion'
+
+/**
+ * OJO: este archivo lo re-exporta el panel de REPOSITORA
+ * (app/(repositora)/repositora/campanas/[id]/resultados/actions.ts), que le
+ * agrega un `revalidatePath` y nada más.
+ *
+ * Por eso el alcance no se resuelve como "la distri de la sesión" sino con
+ * `actorRevisorDeLaSesion`, que mira `tipo_actor`: la misma función sirve a los
+ * dos paneles y la repositora queda cubierta por construcción, no por acordarse.
+ */
 
 function createAdminClient() {
   return createSupabaseClient(
@@ -18,11 +29,23 @@ function createAdminClient() {
 }
 
 export async function aprobarFoto(fotoId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const adminClient = createAdminClient()
+
+  // ── El permiso, antes de leer nada ────────────────────────────────────────
+  // `fotoId` lo elige el cliente; el alcance sale de la SESIÓN, y esto verifica
+  // que la foto caiga adentro. Hasta el 25/9/2026 acá solo se preguntaba si
+  // había alguien logueado: cualquier distribuidora podía aprobar la foto de la
+  // campaña de otra, y eso libera bounty y acredita puntos. Ver
+  // lib/alcance-revision.ts.
+  //
+  // `ESTADOS_REVISABLES` cierra lo otro que había en estas mismas líneas: no se
+  // miraba `estado`, así que reaprobar una foto ya aprobada volvía a acreditar.
+  const actor = await actorRevisorDeLaSesion(adminClient)
+  if (!actor) redirect('/auth')
+  const revisable = await exigirFotoRevisable({
+    fotoId, actor, estados: ESTADOS_REVISABLES, admin: adminClient, desde: 'distri/gondolas:aprobarFoto',
+  })
+  if (!revisable) return
 
   // 1. Obtener la foto con datos de la campaña
   const { data: foto, error: fotoError } = await adminClient
@@ -148,11 +171,16 @@ export async function rechazarFoto(fotoId: string, motivoRechazo?: string) {
   const motivo = motivoRechazo?.trim()
   if (!motivo) throw new Error('Falta el motivo del rechazo')
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
-
   const adminClient = createAdminClient()
+
+  // Rechazar también es tocar el trabajo de otro: no paga, pero manda al
+  // gondolero a rehacer una foto que su revisor real había dado por buena.
+  const actor = await actorRevisorDeLaSesion(adminClient)
+  if (!actor) redirect('/auth')
+  const revisable = await exigirFotoRevisable({
+    fotoId, actor, estados: ESTADOS_REVISABLES, admin: adminClient, desde: 'distri/gondolas:rechazarFoto',
+  })
+  if (!revisable) return
 
   const { data: fotoRaw } = await adminClient
     .from('fotos')
@@ -207,17 +235,35 @@ export async function accionMasivaDistri(
   // la foto a partir de lo que dice el rechazo. Se aplica el mismo a todas.
   const motivo = motivoRechazo?.trim()
   if (accion === 'rechazada' && !motivo) throw new Error('Falta el motivo del rechazo')
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
 
   const adminClient = createAdminClient()
+
+  // ── El permiso, foto por foto ─────────────────────────────────────────────
+  // Acá el arreglo entero lo elige el cliente, así que un solo id ajeno
+  // mezclado en la lista pasaba desapercibido. Se filtra y NO se aborta el lote:
+  // `exigirFotoRevisable` tira porque una acción de a una sobre algo ajeno no
+  // tiene lectura benigna, pero en el masivo abortar dejaría el trabajo
+  // legítimo sin hacer por culpa de un id que el atacante eligió meter.
+  const actor = await actorRevisorDeLaSesion(adminClient)
+  if (!actor) redirect('/auth')
+  const alcance = await fotosQuePuedeRevisar({
+    fotoIds, actor, estados: ESTADOS_REVISABLES, admin: adminClient,
+  })
+  if (alcance.ajenas.length > 0) {
+    console.error(
+      `[alcance-revision] distri/gondolas:accionMasivaDistri: ${actor.tipo}` +
+      `${'id' in actor ? ' ' + actor.id : ''} mandó ${alcance.ajenas.length} foto(s) ` +
+      `de otra campaña en un lote de ${fotoIds.length}. Se descartan:`, alcance.ajenas
+    )
+  }
+  const idsPermitidos = alcance.permitidas.map(f => f.id)
+  if (!idsPermitidos.length) return
 
   // Solo fotos pendientes pueden procesarse en masa
   const { data: fotosRaw } = await adminClient
     .from('fotos')
     .select('id, gondolero_id, campana_id, mision_id, bloque_id, comercios(nombre), campanas(tipo, puntos_por_foto, puntos_por_mision, nombre, min_comercios_para_cobrar)')
-    .in('id', fotoIds)
+    .in('id', idsPermitidos)
     .eq('estado', 'pendiente')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
