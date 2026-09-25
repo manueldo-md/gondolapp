@@ -5705,8 +5705,7 @@ Anotado el 24/9/2026, relevando el tramo 7a.
 
 #### TRAMO PROPIO — filtro de provincia en los paneles de marca y distri
 
-Anotado el 25/9/2026. **No empezar todavía**: hay una pregunta de producto
-abierta al final que cambia el alcance del tramo.
+Anotado el 25/9/2026, **con el diseño ya decidido** (ver abajo). Sin empezar.
 
 **Por qué.** Una campaña nacional da resultados en varias provincias y hoy el
 panel muestra las ciudades sin agrupar. La marca piensa primero por REGIÓN
@@ -5791,22 +5790,56 @@ bases. O sea que el único agujero es el de arriba, y no hay un segundo.
   alcanza". La primera es una consecuencia de lo que el usuario eligió; la
   segunda es un hueco de datos que él no produjo y que puede ir a arreglar.
 
-##### LA PREGUNTA DE PRODUCTO, que es la que frena el tramo
+##### DECIDIDO el 25/9/2026 — el múltiple alcanza, la región NO se modela
 
-Se definió "selección múltiple **porque la unidad de decisión es la región**"
-—Mesopotamia, el Litoral—. Pero lo que se va a construir es un selector de
-PROVINCIAS, así que cada vez que alguien quiera mirar el Litoral va a tener que
-acordarse de cuáles tildar, y dos personas van a tildar distinto.
+**Las regiones comerciales varían por industria y por empresa: "Litoral" no
+significa lo mismo para dos marcas.** Modelarlas obliga a definir quién las
+define —GondolApp para todos, o cada marca las suyas— y eso es una ABM entera,
+con su pantalla, sus permisos y su mantenimiento. Con 24 provincias, tildar tres
+no es fricción real.
 
-**O la región es la unidad y entonces hay que modelarla** (una agrupación con
-nombre, elegible de una, con las provincias adentro), **o no lo es y el selector
-múltiple alcanza.** Las dos son defendibles y cuestan muy distinto: la segunda
-es el tramo tal cual está escrito; la primera agrega una tabla o una constante
-de regiones y la decisión de quién las define —GondolApp para todos, o cada
-marca las suyas, que no es lo mismo porque las regiones comerciales varían por
-industria—.
+**Lo que resuelve el caso práctico es que la selección viaje en la URL.** El que
+arma Mesopotamia una vez guarda el link y lo comparte, igual que el desglose del
+panel y los dos controles del mapa. La región no hace falta modelarla si se
+puede mandar por chat.
 
-Contestar esto ANTES de escribir: es la diferencia entre un filtro y un modelo.
+**Cuándo se justifica volver:** si alguien pide **guardar** regiones con nombre.
+Ahí la URL deja de alcanzar —un link no tiene nombre ni aparece en una lista— y
+recién entonces el modelo se paga solo. Mientras el pedido sea "quiero mirar
+estas tres juntas", es un link.
+
+##### La consecuencia técnica de que viaje en la URL
+
+Sería **el primer parámetro MULTIVALUADO del estado en URL de este proyecto**, y
+la plomería de hoy no lo contempla:
+
+```ts
+EstadoDelMapa = { alcance?, campana?, pintar? }     // todo escalar
+hrefMapa(...)  →  q.set(k, v)                        // un valor por clave
+```
+
+`q.set` pisa; para varias provincias hace falta `delete` + `append`, o un
+escalar con separador. Y `hrefDelMapa` pide el estado completo **a propósito**
+—es lo que arregló los dos bugs del 25/9— así que la clave nueva tiene que
+entrar ahí y no por un costado, o vuelve el control que se come el filtro del
+otro.
+
+**La trampa propia del multi-select, que no tienen los escalares:** con un
+escalar, ausente significa "el default". Con una selección múltiple, **ninguna
+tildada es ambiguo**: puede querer decir "todas" (sin filtro) o "ninguna"
+(pantalla vacía). Hay que elegir una y que la URL la exprese sin ambigüedad —
+lo más parecido a lo que ya hay es que la ausencia del parámetro sea "todas" y
+que no exista forma de escribir "ninguna", igual que `pintar=presencia` no se
+escribe nunca.
+
+##### Los tres hallazgos, confirmados
+
+1. **La rama de una sola provincia tiene que verse bien**, no ser un caso
+   degenerado del selector. Es el caso normal hoy: 5 de 8 alcances.
+2. **El aviso de excluidos no es cortesía.** Un alcance que se vacía entero
+   —los 9 de 9 de Del Valle— se lee como "no hay datos", no como un filtro
+   estricto.
+3. **El número que vale es el de `panel_pdv`**, no el de misiones.
 
 ##### Y una relación que conviene no perder
 
