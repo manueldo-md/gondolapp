@@ -69,6 +69,12 @@ const TEMAS = {
     mensaje: 'text-gondo-indigo-700',
     punto:   'bg-gondo-indigo-500',
   },
+  admin: {
+    fila:    'bg-red-50 border-l-4 border-red-400',
+    titulo:  'text-red-900',
+    mensaje: 'text-red-700',
+    punto:   'bg-red-500',
+  },
 } as const
 
 export function NotificacionesLista({

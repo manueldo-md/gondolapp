@@ -32,6 +32,18 @@ export type DuenoNotificacion =
   | { tipo: 'persona'; userId: string }
   /** Empresas: la fila lleva `actor_id` + `actor_tipo`. */
   | { tipo: 'distribuidora' | 'marca' | 'repositora'; actorId: string }
+  /**
+   * Admin: es un BROADCAST. `actor_tipo = 'admin'` y **`actor_id` en NULL** —
+   * la bandeja es del equipo, no de una persona, así que no hay id contra el
+   * cual acotar.
+   *
+   * Por eso esta variante no lleva ninguno, y conviene que se note: **lo único
+   * que la protege es `getAdmin()`**, que desde el 25/9/2026 exige
+   * `tipo_actor = 'admin'` (ver lib/admin-sesion.ts). Antes de ese cambio, el
+   * predicado de acá y el chequeo de allá habrían dejado la bandeja del equipo
+   * al alcance de cualquier autenticado.
+   */
+  | { tipo: 'admin' }
 
 export async function marcarNotificacionLeida(
   notificacionId: string,
@@ -40,9 +52,10 @@ export async function marcarNotificacionLeida(
 ): Promise<{ error: string | null }> {
   const base = admin.from('notificaciones').update({ leida: true }).eq('id', notificacionId)
 
-  const { error } = dueno.tipo === 'persona'
-    ? await base.eq('gondolero_id', dueno.userId)
-    : await base.eq('actor_id', dueno.actorId).eq('actor_tipo', dueno.tipo)
+  const { error } =
+    dueno.tipo === 'persona' ? await base.eq('gondolero_id', dueno.userId) :
+    dueno.tipo === 'admin'   ? await base.eq('actor_tipo', 'admin') :
+    await base.eq('actor_id', dueno.actorId).eq('actor_tipo', dueno.tipo)
 
   // supabase-js devuelve el error en `.error` y no lo lanza. Acá no se
   // propaga: la pantalla ya pintó la notificación como leída y volver atrás

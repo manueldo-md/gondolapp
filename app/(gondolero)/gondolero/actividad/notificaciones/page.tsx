@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { NotificacionesLista } from '@/components/shared/notificaciones-lista'
 import { marcarUnaNotificacionLeida } from '../../perfil/actions'
+import { MarcarTodasLeidas } from './marcar-todas'
 
 const POR_PAGINA = 20
 
@@ -33,8 +34,9 @@ export default async function NotificacionesPage({
     .order('created_at', { ascending: false })
     .range(desde, desde + POR_PAGINA - 1)
 
-  const lista = notificaciones ?? []
+  const lista = (notificaciones ?? []) as { id: string; titulo: string; mensaje: string | null; leida: boolean; created_at: string }[]
   const total = count ?? 0
+  const hayNoLeidas = lista.some(n => !n.leida)
   const totalPaginas = Math.ceil(total / POR_PAGINA)
 
   return (
@@ -47,10 +49,15 @@ export default async function NotificacionesPage({
           <ArrowLeft size={16} />
           Actividad
         </Link>
-        <h1 className="text-lg font-bold text-gray-900">Notificaciones</h1>
-        {total > 0 && (
-          <p className="text-sm text-gray-400 mt-0.5">{total} en total</p>
-        )}
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Notificaciones</h1>
+            {total > 0 && (
+              <p className="text-sm text-gray-400 mt-0.5">{total} en total</p>
+            )}
+          </div>
+          {hayNoLeidas && <MarcarTodasLeidas />}
+        </div>
       </div>
 
       <div className="px-4 py-4">
@@ -64,7 +71,7 @@ export default async function NotificacionesPage({
             <NotificacionesLista
               tema="gondolero"
               marcarLeida={marcarUnaNotificacionLeida}
-              items={lista as { id: string; titulo: string; mensaje: string | null; leida: boolean; created_at: string }[]}
+              items={lista}
             />
           </div>
         )}
