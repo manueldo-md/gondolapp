@@ -6129,6 +6129,79 @@ Los cuatro controles: un punto en Colón resuelve exacto **y NO toca
 `error`** —que no es `sin_dato`, y esa diferencia es la que permite reprocesar—;
 y una coordenada imposible tampoco voltea nada.
 
+##### La etapa 5: la bandeja confirma, y el cascader quedó en UN lugar
+
+`/distribuidora/comercios/pendientes` gana una columna **Localidad**. Con
+sugerencia exacta es **un clic**; los demás estados abren el cascader.
+
+**Un hook y no un componente compartido** (`components/shared/cascada-localidad.ts`).
+Hay dos pantallas que eligen localidad y no eligen lo mismo: `SelectorZona`
+elige VARIAS con "todas las del departamento" —perfil del gondolero y los tres
+editores de campaña— y `SelectorLocalidad` elige UNA. El marcado del tercer
+nivel es distinto por definición, así que un componente compartido tendría que
+ramificar por dentro. Lo idéntico son las tres consultas y **las reglas de
+reseteo en cascada**, y eso es lo que se compartió.
+
+> El riesgo que evita no es duplicar JSX sino duplicar REGLAS: que una pantalla
+> resetee el departamento al cambiar de provincia y la otra no, y alguien
+> termine guardando una localidad de otra provincia.
+
+De paso el hook arregló dos cosas que estaban en `SelectorZona`:
+
+- **Los nombres salían de `e.target.options[selectedIndex].text`**, o sea del
+  texto del `<option>` renderizado. Ahora salen de la lista, que es el estado.
+- **No había guarda de respuesta tardía.** Con dos cambios de provincia
+  seguidos, la respuesta lenta de la primera podía pisar la lista de la
+  segunda y dejar departamentos que no son de la provincia elegida. El hook
+  descarta la respuesta vieja.
+
+##### Los cuatro estados se ven distinto, y eso es la feature
+
+```
+exacto    la cadena entera + Confirmar (un clic) + "Otra"
+ambiguo   el nombre y que existe en más de un lugar — SIN Confirmar
+fuera     lo que dijo el GPS, que el padrón no tiene — SIN Confirmar
+sin_dato  "Sin dato de ubicación"
+error     "No se pudo consultar" — que NO es lo mismo que sin_dato
+```
+
+**Que `ambiguo` y `fuera` no ofrezcan Confirmar es el control que importa.** Si
+lo ofrecieran, la máquina estaría eligiendo entre dos localidades con un clic de
+disfraz, que es lo que todo el tramo evita. El CHECK de la base lo impide del
+lado del dato; esto lo impide del lado de la pantalla.
+
+**La sugerencia se muestra con la cadena entera** —"Colón — Colón, Entre Ríos"—
+y no solo el pueblo: con el nombre solo no se ve que apunta al departamento
+equivocado, que es exactamente el error que hay que poder cazar de un vistazo.
+
+**Confirmar NO borra la sugerencia.** Comparar las dos columnas es la única
+forma de medir con qué frecuencia el geocoding acierta en la vida real.
+
+##### Lo que se verificó, y lo que NO
+
+| | |
+|---|---|
+| `probar-selector-localidad.mts` | rinde el componente y mira los cinco estados. 20 controles, incluido que `ambiguo` no ofrezca Confirmar **aunque venga un id** |
+| El embed doble | `localidad:localidades!localidad_id` y `sugerida:localidades!localidad_sugerida_id` en la misma consulta: **probado contra dev**, devuelve la cadena completa |
+| El refactor de `SelectorZona` | render idéntico **byte a byte** antes y después |
+
+> **Lo que el render-diff NO prueba:** la cascada vive en efectos de cliente, y
+> un render estático no los corre. El marcado quedó igual; que sigan cargándose
+> provincias → departamentos → localidades hay que verlo con un click-through en
+> el perfil del gondolero y en un editor de campaña. Decirlo es parte del
+> resultado: un diff verde acá no cubre lo que el componente hace.
+
+##### PENDIENTE del tramo — la bandeja de ADMIN no tiene esto
+
+`/admin/comercios/pendientes` también valida comercios, con su propia
+`actions.ts` y su propia página, y **no asigna localidad**. Un comercio validado
+desde ahí queda con `localidad_id` en NULL: el mismo agujero que este tramo
+cierra, por la otra puerta.
+
+No entró porque la etapa pedía la bandeja de la distri, y el componente y el
+hook ya son compartidos — es montar la columna y clonar la action con el permiso
+de admin. Pero **mientras no se haga, el agujero sigue abierto para ese camino**.
+
 ##### LAS ETAPAS
 
 | | Qué | Verifica |
@@ -6137,7 +6210,7 @@ y una coordenada imposible tampoco voltea nada.
 | 2 | ✅ **HECHA** — `lib/geocoding.ts`, sin red ni base: proveedor + padrón → `exacto` / `ambiguo` / `fuera` / `sin_dato`. Acá murió el bug del `ilike` | `probar-geocoding.ts`, 27 controles. **Verificado que muerden**: con el `ilike` repuesto se ponen 7 en rojo |
 | 3 | ✅ **HECHA** — `20261001100000`: `localidad_sugerida_id` / `_estado` / `_texto`, con el CHECK que impide un id sin estado `exacto` | `probar-migracion-sugerida.mjs`, verde en dev y prod. El dry-run encontró un hueco real en mi CHECK (tres valores) |
 | 4 | ✅ **HECHA** — `lib/localidad-sugerida.ts` en los dos caminos de alta, inline y fail-open. Key server-side aparte | `probar-localidad-sugerida.mts`: camino completo contra dev con red, padrón y escritura |
-| 5 | La bandeja de la distri: cascader extraído de `SelectorZona` + confirmar la sugerencia | la sugerencia aparece precargada; confirmarla escribe `localidad_id`; corregirla también |
+| 5 | ✅ **HECHA** — columna Localidad en la bandeja de la distri: sugerencia precargada, un clic para confirmar, cascader para corregir. El cascader salió a un hook que `SelectorZona` también usa | `probar-selector-localidad.mts` (20 controles, los 5 estados); el embed doble probado contra dev; `SelectorZona` rinde idéntico byte a byte. **Falta el click-through** y la bandeja de admin |
 | 6 | El script de reparación de los 19, mismo mecanismo, con confirmación humana | correrlo y mirar la lista ANTES de escribir |
 | 7 | Sacar el `zona_id` arbitrario | **grep DESPUÉS** de escribir el código |
 

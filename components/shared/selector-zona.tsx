@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useCascadaLocalidad } from './cascada-localidad'
 import { X, Plus, MapPin, Check } from 'lucide-react'
 
 // ── Tipo exportado para que los padres lo usen ────────────────
@@ -16,10 +16,6 @@ export interface GrupoZona {
   todas:             boolean
 }
 
-// ── Tipos internos ────────────────────────────────────────────
-interface Provincia    { id: number; nombre: string }
-interface Departamento { id: number; nombre: string }
-interface Localidad    { id: number; nombre: string }
 
 // ── Props ─────────────────────────────────────────────────────
 interface Props {
@@ -42,47 +38,30 @@ export function SelectorZona({
   showLabel    = true,
 }: Props) {
   // ── Estado del picker ──────────────────────────────────────
-  const [provincias,    setProvincias]    = useState<Provincia[]>([])
-  const [departamentos, setDepartamentos] = useState<Departamento[]>([])
-  const [localidades,   setLocalidades]   = useState<Localidad[]>([])
+  // La cascada provincia → departamento → localidad vive en un solo lugar:
+  // esta pantalla elige VARIAS localidades y el selector del comercio elige
+  // UNA, pero las tres consultas y las reglas de reseteo son las mismas. Dos
+  // copias de eso es garantizar que una resetee al cambiar de provincia y la
+  // otra no. Ver components/shared/cascada-localidad.ts.
+  const {
+    provincias, departamentos, localidades,
+    provinciaId, departamentoId, elegirProvincia, elegirDepartamento, limpiar,
+  } = useCascadaLocalidad()
 
-  const [provinciaId,       setProvinciaId]       = useState<number | ''>('')
-  const [provinciaNombre,   setProvinciaNombre]   = useState('')
-  const [departamentoId,    setDepartamentoId]    = useState<number | ''>('')
-  const [departamentoNombre, setDepartamentoNombre] = useState('')
+  // Los nombres salen de las listas y ya no de `e.target.options[...].text`:
+  // ese truco lee el texto del <option> renderizado, asi que depende de que el
+  // DOM y el estado esten en sincronia.
+  const provinciaNombre    = provincias.find(p => p.id === provinciaId)?.nombre ?? ''
+  const departamentoNombre = departamentos.find(d => d.id === departamentoId)?.nombre ?? ''
 
   const [selLocal,  setSelLocal]  = useState<Set<number>>(new Set())
   const [todasSel,  setTodasSel]  = useState(false)
 
-  // ── Cargar provincias al montar ────────────────────────────
+  // El hook trae las listas. Lo unico propio de esta pantalla es que al cambiar
+  // de departamento se limpie lo tildado: las localidades son otras.
   useEffect(() => {
-    createClient().from('provincias').select('id, nombre').order('nombre')
-      .then(({ data }) => setProvincias((data ?? []) as Provincia[]))
-  }, [])
-
-  // ── Cargar departamentos al cambiar provincia ──────────────
-  useEffect(() => {
-    if (!provinciaId) {
-      setDepartamentos([]); setDepartamentoId(''); setDepartamentoNombre(''); setLocalidades([])
-      return
-    }
-    createClient()
-      .from('departamentos').select('id, nombre').eq('provincia_id', provinciaId).order('nombre')
-      .then(({ data }) => {
-        setDepartamentos((data ?? []) as Departamento[])
-        setDepartamentoId(''); setDepartamentoNombre(''); setLocalidades([])
-      })
-  }, [provinciaId])
-
-  // ── Cargar localidades al cambiar departamento ─────────────
-  useEffect(() => {
-    if (!departamentoId) { setLocalidades([]); setSelLocal(new Set()); setTodasSel(false); return }
-    createClient()
-      .from('localidades').select('id, nombre').eq('departamento_id', departamentoId).order('nombre')
-      .then(({ data }) => {
-        setLocalidades((data ?? []) as Localidad[])
-        setSelLocal(new Set()); setTodasSel(false)
-      })
+    setSelLocal(new Set())
+    setTodasSel(false)
   }, [departamentoId])
 
   // ── Handlers ───────────────────────────────────────────────
@@ -126,9 +105,8 @@ export function SelectorZona({
       },
     ])
     // Reset picker
-    setProvinciaId('');    setProvinciaNombre('')
-    setDepartamentos([]);  setDepartamentoId(''); setDepartamentoNombre('')
-    setLocalidades([]);    setSelLocal(new Set()); setTodasSel(false)
+    limpiar()
+    setSelLocal(new Set()); setTodasSel(false)
   }
 
   const removeGrupo = (index: number) => onGrupos(grupos.filter((_, i) => i !== index))
@@ -157,11 +135,7 @@ export function SelectorZona({
           <select
             className={selectCls}
             value={provinciaId}
-            onChange={e => {
-              const id = e.target.value ? Number(e.target.value) : ''
-              setProvinciaId(id)
-              setProvinciaNombre(e.target.options[e.target.selectedIndex].text)
-            }}
+            onChange={e => elegirProvincia(e.target.value ? Number(e.target.value) : '')}
           >
             <option value="">Provincia…</option>
             {provincias.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
@@ -171,11 +145,7 @@ export function SelectorZona({
             className={selectCls}
             value={departamentoId}
             disabled={!provinciaId}
-            onChange={e => {
-              const id = e.target.value ? Number(e.target.value) : ''
-              setDepartamentoId(id)
-              setDepartamentoNombre(e.target.options[e.target.selectedIndex].text)
-            }}
+            onChange={e => elegirDepartamento(e.target.value ? Number(e.target.value) : '')}
           >
             <option value="">Departamento…</option>
             {departamentos.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}

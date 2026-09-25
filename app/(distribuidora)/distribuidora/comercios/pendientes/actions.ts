@@ -97,3 +97,43 @@ export async function rechazarComercioDistri(id: string, motivo?: string) {
   if (!resultado.ok) return { error: resultado.error }
   return { ok: true }
 }
+
+/**
+ * Escribe la localidad DEFINITIVA del comercio.
+ *
+ * ETAPA 5: es lo único que convierte la sugerencia del servidor en dato. El
+ * geocoding acierta 8 de cada 9 veces que resuelve, pero **la novena apunta a
+ * otra localidad** y ese caso no lo detecta ninguna lógica — la respuesta es
+ * internamente consistente. Lo detecta quien conoce la zona, mirando.
+ *
+ * La sugerencia NO se borra: comparar las dos columnas es la única forma de
+ * medir con qué frecuencia el geocoding acierta en la vida real, que es el
+ * número que decidiría algún día si puede escribir solo.
+ */
+export async function asignarLocalidadDistri(comercioId: string, localidadId: number) {
+  const distriId = await getDistriId()
+  if (!distriId) redirect('/auth')
+
+  if (!(await puedeTocar(comercioId, distriId))) {
+    return { error: 'No tenés permiso para editar este comercio.' }
+  }
+
+  // No se confía en el id que llega del cliente: tiene que existir. Sin esto,
+  // un número cualquiera entraría y la FK lo rebotaría con un error ilegible.
+  const admin = adminClient()
+  const { data: loc } = await admin
+    .from('localidades').select('id').eq('id', localidadId).maybeSingle()
+  if (!loc) return { error: 'Esa localidad no existe.' }
+
+  // supabase-js devuelve el error en .error y no lo lanza. Sin este chequeo,
+  // una asignación que falla se vería igual que una que anduvo.
+  const { error } = await admin
+    .from('comercios').update({ localidad_id: localidadId }).eq('id', comercioId)
+  if (error) {
+    console.error('[localidad] No se pudo asignar:', error.message)
+    return { error: 'No se pudo guardar la localidad.' }
+  }
+
+  revalidar()
+  return { ok: true }
+}

@@ -7,6 +7,8 @@ import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { AprobarRechazarBtnsDistri } from './aprobar-rechazar-btns'
 import { firmarFachadas } from '@/lib/storage-fotos'
+import { SelectorLocalidad } from '@/components/shared/selector-localidad'
+import { asignarLocalidadDistri } from './actions'
 
 const TIPO_COLOR: Record<TipoComercio, string> = {
   autoservicio: 'bg-blue-100 text-blue-700',
@@ -24,6 +26,20 @@ const TIPO_LABEL: Record<TipoComercio, string> = {
   mayorista:    'Mayorista',
   dietetica:    'Dietética',
   otro:         'Otro',
+}
+
+/** Un embed de PostgREST llega como objeto o como array segun el caso. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const uno = (v: any) => (Array.isArray(v) ? v[0] ?? null : v ?? null)
+
+/** "Colon — Colon, Entre Rios": la cadena entera, que es lo que permite ver
+ *  que la sugerencia esta mal sin abrir nada. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function etiquetaDe(l: any): string | null {
+  if (!l) return null
+  const d = uno(l.departamentos)
+  const p = uno(d?.provincias)
+  return d && p ? l.nombre + ' — ' + d.nombre + ', ' + p.nombre : l.nombre
 }
 
 function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -74,6 +90,9 @@ export default async function ComerciosPendientesDistriPage() {
         .select(`
           id, nombre, direccion, tipo, estado, created_at,
           registrado_por, foto_fachada_url, campana_id,
+          localidad_id, localidad_sugerida_id, localidad_sugerida_estado, localidad_sugerida_texto,
+          localidad:localidades!localidad_id(nombre),
+          sugerida:localidades!localidad_sugerida_id(nombre, departamentos!inner(nombre, provincias!inner(nombre))),
           registrador:profiles!registrado_por(nombre, alias),
           campana:campanas!campana_id(nombre)
         `)
@@ -89,6 +108,9 @@ export default async function ComerciosPendientesDistriPage() {
     registrador_nombre: Array.isArray(c.registrador) ? c.registrador[0]?.nombre : c.registrador?.nombre,
     registrador_alias:  Array.isArray(c.registrador) ? c.registrador[0]?.alias  : c.registrador?.alias,
     campana_nombre:     Array.isArray(c.campana)     ? c.campana[0]?.nombre     : c.campana?.nombre,
+    // Los embeds de PostgREST vienen como objeto o como array segun el caso.
+    localidad_nombre:   uno(c.localidad)?.nombre ?? null,
+    sugerida_etiqueta:  etiquetaDe(uno(c.sugerida)),
   }))
 
   // Signed URLs para fotos de fachada
@@ -142,7 +164,7 @@ export default async function ComerciosPendientesDistriPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                {['Comercio', 'Tipo', 'Campaña', 'Gondolero', 'Fecha', 'Acciones'].map(h => (
+                {['Comercio', 'Tipo', 'Localidad', 'Campaña', 'Gondolero', 'Fecha', 'Acciones'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {h}
                   </th>
@@ -184,6 +206,22 @@ export default async function ComerciosPendientesDistriPage() {
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${TIPO_COLOR[c.tipo as TipoComercio] ?? 'bg-gray-100 text-gray-600'}`}>
                       {TIPO_LABEL[c.tipo as TipoComercio] ?? c.tipo}
                     </span>
+                  </td>
+                  <td className="px-4 py-3.5 min-w-[280px]">
+                    {c.localidad_id ? (
+                      <span className="text-xs text-gray-700">{c.localidad_nombre}</span>
+                    ) : (
+                      <SelectorLocalidad
+                        comercioId={c.id}
+                        sugerencia={{
+                          estado:   c.localidad_sugerida_estado ?? null,
+                          id:       c.localidad_sugerida_id ?? null,
+                          texto:    c.localidad_sugerida_texto ?? null,
+                          etiqueta: c.sugerida_etiqueta ?? null,
+                        }}
+                        onAsignar={asignarLocalidadDistri}
+                      />
+                    )}
                   </td>
                   <td className="px-4 py-3.5 text-xs text-gray-500">{c.campana_nombre ?? '—'}</td>
                   <td className="px-4 py-3.5 text-xs text-gray-500">{c.registrador_alias ?? c.registrador_nombre ?? '—'}</td>
