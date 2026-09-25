@@ -5703,6 +5703,118 @@ hereda el techo: no lo agrega, lo hace más visible.
 
 Anotado el 24/9/2026, relevando el tramo 7a.
 
+#### TRAMO PROPIO — filtro de provincia en los paneles de marca y distri
+
+Anotado el 25/9/2026. **No empezar todavía**: hay una pregunta de producto
+abierta al final que cambia el alcance del tramo.
+
+**Por qué.** Una campaña nacional da resultados en varias provincias y hoy el
+panel muestra las ciudades sin agrupar. La marca piensa primero por REGIÓN
+—"cómo estoy en el Litoral"— y después baja a ciudad.
+
+**Definido:**
+
+- **Selección múltiple, no una sola.** Las regiones comerciales no coinciden con
+  las provincias: Mesopotamia es Entre Ríos, Corrientes y Misiones, y **esa es
+  la unidad con la que se decide**. Un selector de a una obligaría a mirar tres
+  pantallas y sumar a mano, que es justo lo que el filtro viene a evitar.
+- Si hay una sola provincia en los datos, que aparezca esa y ya.
+- Aplica a **los tres**: la cobertura por ciudad, el mapa y la serie.
+
+##### Lo medido el 25/9/2026, que reordena las prioridades
+
+```
+                               DEV                          PROD
+panel_pdv devuelve provincia?  NO (devuelve localidad)      NO
+cadena localidad→depto→prov    intacta: 0 huérfanos, 24 provincias (las dos)
+comercios sin localidad        13 de 104                    6 de 97
+```
+
+Por alcance, que es como se mira el panel:
+
+```
+DEV                              PDV   sin localidad   provincias
+  Suprante SRL                    31         8              2
+  ACME S.A.                       27         1              2
+  Georgalos S.A.                  67        11              1
+  propias de Biomega              14         9              1
+  propias de Distribuidora DV      9         9              0   ← ninguno filtrable
+PROD
+  ACME S.A.                       22         0              2
+  Georgalos S.A.                  59         3              1
+  Suprante SRL                    26         3              1
+```
+
+**Tres cosas que salen de ahí y no se ven leyendo el código:**
+
+**1. La rama "una sola provincia" es el caso NORMAL, no el borde.** Cinco de los
+ocho alcances tienen una sola provincia, incluido Georgalos, que es el piloto y
+el más grande. **El filtro llega dormido para la mayoría**, igual que la
+cobertura del 7a. Eso no lo invalida —se construye para la campaña nacional que
+todavía no existe— pero sí decide por dónde empezar: la rama de una provincia es
+la que va a correr, así que tiene que ser la que mejor se vea, y no un caso
+degenerado del selector múltiple.
+
+**2. El peor caso es mucho peor que Georgalos.** El hueco se planteó como "9 de
+65 en Georgalos"; medido da 11 de 67 ahí, pero **"propias de Distribuidora Del
+Valle" tiene 9 de 9 sin localidad: cero provincias**. Con un filtro puesto ese
+alcance queda **completamente vacío**, y "propias de Biomega" pierde el 64%. Un
+alcance que se vacía entero no se lee como un filtro estricto, se lee como
+"no hay datos". Así que el aviso de excluidos no es un detalle de cortesía: es
+lo único que separa un filtro de una pantalla rota.
+
+> La diferencia entre 9 y 11 probablemente sea de scope —esta medición cuenta
+> sobre todas las misiones y `panel_pdv` excluye algunos estados—. Al agarrar el
+> tramo, **el número que vale es el que devuelve `panel_pdv`**, no éste.
+
+**3. Derivar la provincia no pierde ni una fila** *de las que tienen localidad*:
+cero localidades sin departamento y cero departamentos sin provincia, en las dos
+bases. O sea que el único agujero es el de arriba, y no hay un segundo.
+
+##### A resolver cuando se agarre
+
+- **`panel_pdv` NO trae la provincia** —verificado contra las dos bases, devuelve
+  `localidad_id` y `localidad_nombre`—, así que hay que ampliarlo o resolverla
+  aparte. **Ojo con la tentación del embed:** `localidades.provincia_id` NO
+  EXISTE (ver la nota del dump pre-incidente); la cadena real es
+  `comercio → localidad → departamento → provincia`, cuatro niveles, y
+  `lib/resultados.ts` ya decidió cortarla en dos consultas en vez de anidar.
+  Ampliar `panel_pdv` es lo más probable, porque el mapa y la cobertura ya salen
+  de ahí y una segunda fuente sería una segunda definición de "en qué provincia
+  está este PDV".
+- **Los comercios sin localidad quedan afuera de cualquier filtro por
+  provincia**, y con el filtro puesto desaparecen sin decir nada — el mismo
+  problema que el mapa ya resuelve declarando los que no puede dibujar. La
+  salida es la misma: **decirlo**, con el número.
+- **El aviso tiene que distinguir dos cosas que no son iguales:** "tu filtro
+  excluyó 12 PDV" y "8 PDV no tienen ciudad cargada, así que ningún filtro los
+  alcanza". La primera es una consecuencia de lo que el usuario eligió; la
+  segunda es un hueco de datos que él no produjo y que puede ir a arreglar.
+
+##### LA PREGUNTA DE PRODUCTO, que es la que frena el tramo
+
+Se definió "selección múltiple **porque la unidad de decisión es la región**"
+—Mesopotamia, el Litoral—. Pero lo que se va a construir es un selector de
+PROVINCIAS, así que cada vez que alguien quiera mirar el Litoral va a tener que
+acordarse de cuáles tildar, y dos personas van a tildar distinto.
+
+**O la región es la unidad y entonces hay que modelarla** (una agrupación con
+nombre, elegible de una, con las provincias adentro), **o no lo es y el selector
+múltiple alcanza.** Las dos son defendibles y cuestan muy distinto: la segunda
+es el tramo tal cual está escrito; la primera agrega una tabla o una constante
+de regiones y la decisión de quién las define —GondolApp para todos, o cada
+marca las suyas, que no es lo mismo porque las regiones comerciales varían por
+industria—.
+
+Contestar esto ANTES de escribir: es la diferencia entre un filtro y un modelo.
+
+##### Y una relación que conviene no perder
+
+`lib/panel-metricas.ts` ya tiene `agruparCobertura`, que trabaja **sobre una
+lista de claves y no sobre ciudades**. Agrupar por provincia probablemente sea
+pasarle otra clave, no escribir una segunda agrupación — igual que
+`tramosContinuos` quedó genérico para el día que haya semanas.
+
 #### PENDIENTE sin urgencia — la cadena como campo de comercios
 
 Anotado el 24/9/2026. **Una campaña de seguimiento sin fecha de fin ya funciona
