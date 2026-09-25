@@ -158,3 +158,41 @@ export async function guardarZonasDelGondolero(
   }
   return {}
 }
+
+// ── Redundancia entre niveles ───────────────────────────────────────────────
+// Una provincia entera ya contiene a sus departamentos y a sus localidades, así
+// que tener las dos cosas es **la misma zona escrita dos veces**. No rompe nada
+// —al expandir, esas localidades ya estaban— pero el chip muestra algo que no
+// significa nada y, sobre todo, borrar uno de los dos no cambia la cobertura:
+// el usuario saca "Colón" y sigue cubriendo Colón, sin entender por qué.
+//
+// El selector ya lo evitaba en UNA dirección: agregar la provincia reemplaza lo
+// que hubiera de ella. Faltaba la otra, que es la que se prueba acá.
+//
+// La forma es estructural a propósito: `GrupoZona` es un tipo de la UI y esto
+// no tiene por qué importarlo — alcanza con las tres claves que mira.
+
+export interface ZonaConNivel {
+  nivel: NivelZona
+  provinciaId: number
+  departamentoId: number
+}
+
+/** ¿Ya está toda esta provincia? Entonces nada de adentro agrega nada. */
+export function provinciaYaCompleta(grupos: ZonaConNivel[], provinciaId: number | ''): boolean {
+  if (provinciaId === '') return false
+  return grupos.some(g => g.nivel === 'provincia' && g.provinciaId === provinciaId)
+}
+
+/**
+ * ¿Ya está este departamento, sea suelto o completo?
+ *
+ * NO cuenta los grupos de provincia: ésos los cubre `provinciaYaCompleta`, que
+ * da un mensaje distinto. Mezclarlos diría "este departamento ya fue agregado"
+ * cuando lo que pasa es que está toda la provincia — y el usuario iría a buscar
+ * un chip de departamento que no existe.
+ */
+export function departamentoYaAgregado(grupos: ZonaConNivel[], departamentoId: number | ''): boolean {
+  if (departamentoId === '') return false
+  return grupos.some(g => g.nivel !== 'provincia' && g.departamentoId === departamentoId)
+}

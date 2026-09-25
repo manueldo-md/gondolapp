@@ -12,7 +12,10 @@
  * expansiones y verifica que la segunda la traiga. Con el modelo viejo eso era
  * imposible por construcción.
  */
-import { expandirZonas, type ZonaGondolero } from '../lib/zonas-gondolero'
+import {
+  expandirZonas, provinciaYaCompleta, departamentoYaAgregado,
+  type ZonaGondolero, type ZonaConNivel,
+} from '../lib/zonas-gondolero'
 
 let fallos = 0
 function caso(nombre: string, real: unknown, esperado: unknown) {
@@ -134,6 +137,48 @@ console.log('\n▸ Un error de la base NO se devuelve como lista vacía')
   let tiro = false
   try { await expandirZonas([{ nivel: 'provincia', refId: 1 }], roto) } catch { tiro = true }
   caso('lanza en vez de devolver []', tiro, true)
+}
+
+console.log('\n▸ REDUNDANCIA ENTRE NIVELES — una provincia entera contiene lo de adentro')
+{
+  // El selector ya evitaba una dirección: agregar la provincia reemplaza sus
+  // departamentos. Faltaba la otra —agregar un departamento de una provincia
+  // que ya está entera— y quedaban los dos.
+  const conProvincia: ZonaConNivel[] = [
+    { nivel: 'provincia', provinciaId: 1, departamentoId: 0 },
+  ]
+  caso('con la provincia entera, no se puede agregar nada de adentro',
+    provinciaYaCompleta(conProvincia, 1), true)
+  caso('pero otra provincia sí', provinciaYaCompleta(conProvincia, 2), false)
+  caso('sin provincia elegida, no bloquea', provinciaYaCompleta(conProvincia, ''), false)
+
+  // LO QUE HACE QUE EL CHIP CONFUNDA: agregar el departamento no cambiaba NADA
+  // de la cobertura, así que después borrarlo tampoco. El usuario saca "Colón"
+  // y sigue cubriendo Colón, sin entender por qué.
+  const soloProvincia = orden(await expandirZonas(
+    [{ nivel: 'provincia', refId: 1 }], fakeAdmin(PADRON) as never))
+  const conRedundancia = orden(await expandirZonas(
+    [{ nivel: 'provincia', refId: 1 }, { nivel: 'departamento', refId: 10 }], fakeAdmin(PADRON) as never))
+  caso('agregar el departamento redundante NO cambia la cobertura',
+    conRedundancia, soloProvincia)
+}
+
+console.log('\n▸ El departamento repetido es OTRO caso, y da otro mensaje')
+{
+  const grupos: ZonaConNivel[] = [
+    { nivel: 'localidad',    provinciaId: 1, departamentoId: 10 },
+    { nivel: 'departamento', provinciaId: 1, departamentoId: 11 },
+    { nivel: 'provincia',    provinciaId: 2, departamentoId: 0  },
+  ]
+  caso('un departamento con localidades sueltas ya está', departamentoYaAgregado(grupos, 10), true)
+  caso('un departamento completo también', departamentoYaAgregado(grupos, 11), true)
+  caso('uno que no está, no', departamentoYaAgregado(grupos, 99), false)
+  // CONTROL: los grupos de PROVINCIA no cuentan acá. Si contaran, el mensaje
+  // diría "este departamento ya fue agregado" y el usuario iría a buscar un
+  // chip de departamento que no existe — está la provincia entera.
+  caso('CONTROL — un grupo de provincia NO cuenta como departamento agregado',
+    departamentoYaAgregado(grupos, 0), false)
+  caso('sin departamento elegido, no bloquea', departamentoYaAgregado(grupos, ''), false)
 }
 
 console.log(fallos ? `\n✗ ${fallos} mal\n` : '\n✓ Todo como se esperaba.\n')

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useCascadaLocalidad } from './cascada-localidad'
+import { provinciaYaCompleta, departamentoYaAgregado } from '@/lib/zonas-gondolero'
 import { X, Plus, MapPin, Check } from 'lucide-react'
 
 // ── Tipo exportado para que los padres lo usen ────────────────
@@ -94,12 +95,15 @@ export function SelectorZona({
     (todasSel && localidades.length > 0) || (!todasSel && selLocal.size > 0)
   )
 
-  // Evitar agregar el mismo departamento dos veces
-  const deptYaAgregado = grupos.some(g => g.nivel !== 'provincia' && g.departamentoId === departamentoId)
-  const provinciaYaEntera = grupos.some(g => g.nivel === 'provincia' && g.provinciaId === provinciaId)
+  // La redundancia entre niveles vive en lib/zonas-gondolero.ts: es una regla,
+  // no una condición de render, y ahí se puede probar sin montar el componente.
+  const deptYaAgregado    = departamentoYaAgregado(grupos, departamentoId)
+  const provinciaYaEntera = provinciaYaCompleta(grupos, provinciaId)
 
   const agregarZona = () => {
-    if (!canAgregar || deptYaAgregado) return
+    // Si la provincia ya está entera, un departamento o una localidad de adentro
+    // no agregan cobertura: agregarlos deja la misma zona escrita dos veces.
+    if (!canAgregar || deptYaAgregado || provinciaYaEntera) return
     // Con "todas" NO se guardan las localidades: se guarda el departamento. Si
     // se guardara la lista, el día que el padrón sume una localidad de ese
     // departamento el gondolero dejaría de cubrirla sin enterarse.
@@ -250,8 +254,16 @@ export function SelectorZona({
           </button>
         )}
 
+        {/* La provincia entera gana sobre cualquier cosa de adentro */}
+        {provinciaYaEntera && (
+          <p className="text-xs text-amber-600 font-medium">
+            {provinciaNombre} ya está completa. Sacala de la lista si querés elegir
+            departamentos o localidades sueltas.
+          </p>
+        )}
+
         {/* Mensaje si el departamento ya fue agregado */}
-        {deptYaAgregado && departamentoId && (
+        {deptYaAgregado && departamentoId && !provinciaYaEntera && (
           <p className="text-xs text-amber-600 font-medium">
             Este departamento ya fue agregado. Removelo primero para reemplazarlo.
           </p>
@@ -261,7 +273,7 @@ export function SelectorZona({
         <button
           type="button"
           onClick={agregarZona}
-          disabled={!canAgregar || deptYaAgregado}
+          disabled={!canAgregar || deptYaAgregado || provinciaYaEntera}
           className={`flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-semibold rounded-lg
             transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${addBtnClass}`}
         >

@@ -6360,6 +6360,32 @@ localidades**, guarda el departamento. Eso arregla de paso algo que no se veía 
 el chip decía *"12 localidades"* aunque el gondolero hubiera elegido todo el
 departamento, porque al persistir se expandía y al releer eran indistinguibles.
 
+##### La redundancia entre niveles, en las DOS direcciones
+
+La primera versión del botón evitaba una sola: agregar la provincia reemplaza
+lo que hubiera de ella. **Faltaba la inversa** —agregar un departamento de una
+provincia que ya está entera— y quedaban los dos chips.
+
+No rompe nada: al expandir, esas localidades ya estaban. Lo que rompe es la
+lectura, y de una forma particularmente mala: **agregar el departamento no
+cambia la cobertura, así que borrarlo tampoco.** El usuario saca "Colón" del
+listado y sigue cubriendo Colón, sin ninguna forma de entender por qué. Hay un
+control que mide exactamente eso — la expansión con y sin el grupo redundante
+da la misma lista.
+
+Ahora un departamento o una localidad de una provincia completa **no se
+agregan**, y el aviso dice cuál es la provincia y qué hacer: *"Entre Ríos ya
+está completa. Sacala de la lista si querés elegir departamentos o localidades
+sueltas."*
+
+**Los dos avisos no se pisan, y son casos distintos.** "Este departamento ya
+fue agregado" manda a buscar un chip de departamento; si lo que está es la
+provincia entera, ese chip no existe. Por eso `departamentoYaAgregado` **no**
+cuenta los grupos de provincia, y hay un CONTROL que lo fija.
+
+Las dos reglas viven en `lib/zonas-gondolero.ts` y no adentro del componente:
+son reglas, no condiciones de render, y ahí se prueban sin montar nada.
+
 ##### Los 4 departamentos completos de dev: NO se convierten
 
 Se detectan con exactitud, y aun así se dejan como están.
