@@ -4,6 +4,8 @@ import { tiempoRelativo } from '@/lib/utils'
 import type { TipoComercio } from '@/types'
 import { AprobarRechazarBtns } from './aprobar-rechazar-btns'
 import { firmarFachadas } from '@/lib/storage-fotos'
+import { SelectorLocalidad } from '@/components/shared/selector-localidad'
+import { asignarLocalidadAdmin } from './actions'
 
 function adminClient() {
   return createAdminClient(
@@ -31,6 +33,20 @@ const TIPO_LABEL: Record<TipoComercio, string> = {
   otro:         'Otro',
 }
 
+/** Un embed de PostgREST llega como objeto o como array segun el caso. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unoEmbed = (v: any) => (Array.isArray(v) ? v[0] ?? null : v ?? null)
+
+/** "Colon — Colon, Entre Rios": la cadena entera, que es lo que permite ver que
+ *  la sugerencia apunta al departamento equivocado sin abrir nada. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function etiquetaLocalidad(l: any): string | null {
+  if (!l) return null
+  const d = unoEmbed(l.departamentos)
+  const p = unoEmbed(d?.provincias)
+  return d && p ? l.nombre + ' — ' + d.nombre + ', ' + p.nombre : l.nombre
+}
+
 export default async function ComerciosPendientesPage() {
   const admin = adminClient()
 
@@ -40,6 +56,9 @@ export default async function ComerciosPendientesPage() {
     .select(`
       id, nombre, direccion, tipo, estado, created_at, lat, lng,
       registrado_por, foto_fachada_url, campana_id,
+      localidad_id, localidad_sugerida_id, localidad_sugerida_estado, localidad_sugerida_texto,
+      localidad:localidades!localidad_id(nombre),
+      sugerida:localidades!localidad_sugerida_id(nombre, departamentos!inner(nombre, provincias!inner(nombre))),
       registrador:profiles!registrado_por(nombre, alias),
       campana:campanas!campana_id(nombre)
     `)
@@ -53,6 +72,9 @@ export default async function ComerciosPendientesPage() {
     registrador_nombre: Array.isArray(c.registrador) ? c.registrador[0]?.nombre : c.registrador?.nombre,
     registrador_alias:  Array.isArray(c.registrador) ? c.registrador[0]?.alias  : c.registrador?.alias,
     campana_nombre:     Array.isArray(c.campana)     ? c.campana[0]?.nombre     : c.campana?.nombre,
+    // Los embeds de PostgREST vienen como objeto o como array segun el caso.
+    localidad_nombre:   unoEmbed(c.localidad)?.nombre ?? null,
+    sugerida_etiqueta:  etiquetaLocalidad(unoEmbed(c.sugerida)),
   }))
 
   // Conteo de checks GPS por comercio
@@ -130,7 +152,7 @@ export default async function ComerciosPendientesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Comercio', 'Tipo', 'Campaña', 'Gondolero', 'Checks', 'Fecha', 'Acciones'].map(h => (
+                  {['Comercio', 'Tipo', 'Localidad', 'Campaña', 'Gondolero', 'Checks', 'Fecha', 'Acciones'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                       {h}
                     </th>
@@ -188,6 +210,24 @@ export default async function ComerciosPendientesPage() {
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${TIPO_COLOR[c.tipo as TipoComercio] ?? 'bg-gray-100 text-gray-600'}`}>
                         {TIPO_LABEL[c.tipo as TipoComercio] ?? c.tipo}
                       </span>
+                    </td>
+
+                    {/* Localidad — misma pieza que en la bandeja de la distri */}
+                    <td className="px-4 py-3.5 min-w-[280px]">
+                      {c.localidad_id ? (
+                        <span className="text-xs text-gray-700">{c.localidad_nombre}</span>
+                      ) : (
+                        <SelectorLocalidad
+                          comercioId={c.id}
+                          sugerencia={{
+                            estado:   c.localidad_sugerida_estado ?? null,
+                            id:       c.localidad_sugerida_id ?? null,
+                            texto:    c.localidad_sugerida_texto ?? null,
+                            etiqueta: c.sugerida_etiqueta ?? null,
+                          }}
+                          onAsignar={asignarLocalidadAdmin}
+                        />
+                      )}
                     </td>
 
                     {/* Campaña */}

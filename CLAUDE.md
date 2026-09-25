@@ -6288,67 +6288,37 @@ forma de medir con qué frecuencia el geocoding acierta en la vida real.
 > el perfil del gondolero y en un editor de campaña. Decirlo es parte del
 > resultado: un diff verde acá no cubre lo que el componente hace.
 
-##### PENDIENTE del tramo — la bandeja de ADMIN no tiene esto
+##### ✅ La bandeja de ADMIN también asigna localidad (25/9/2026)
 
-`/admin/comercios/pendientes` también valida comercios, con su propia
-`actions.ts` y su propia página, y **no asigna localidad**. Un comercio validado
-desde ahí queda con `localidad_id` en NULL: el mismo agujero que este tramo
-cierra, por la otra puerta.
+Misma columna, mismo `SelectorLocalidad`, mismo hook. Lo único propio es la
+action — `asignarLocalidadAdmin`, gemela de la de distri.
 
-No entró porque la etapa pedía la bandeja de la distri, y el componente y el
-hook ya son compartidos — es montar la columna y clonar la action con el permiso
-de admin. Pero **mientras no se haga, el agujero sigue abierto para ese camino**.
+**El admin NO tenía el problema de visibilidad de la distri.** Su consulta
+filtra solo por `estado`, sin campaña ni gondolero, así que ve todos los
+pendientes: medido, 6 de 6 en las dos bases. Era la única superficie por la
+que ese trabajo llegaba a alguien mientras la bandeja de la distri estuvo
+vacía.
 
-##### La etapa 6: los 19 reparados, con la confirmación adentro del número
+> **Pero tiene un `.limit(200)` sin aviso**, que es el mismo corte silencioso
+> que el proyecto ya documentó tres veces. Hoy no muerde —6 pendientes— y el
+> día que muerda, el síntoma va a ser que faltan comercios de la cola sin que
+> nada falle.
 
-`scripts/reparar-localidades.mts`. Usa **exactamente el mismo mecanismo** que el
-alta: `calcularSugerencia` se extrajo de `sugerirLocalidad` para que las dos
-puntas llamen a una sola función. Dos implementaciones del mismo geocoding sería
-garantizar que el día que se corrija una, la otra quede vieja en silencio.
+**El permiso se chequea en la action, y no solo en el middleware.** Las otras
+dos actions de ese archivo se conforman con `requerirSesion()`: que haya
+alguien logueado. Lo que las protege de verdad es el middleware, que matchea
+`/admin` y rebota a quien no lo tenga en sus rutas permitidas — y una server
+action postea a la ruta de su propia página, así que pasa por ahí.
 
-**Escribe `localidad_id` y no solo la sugerencia**, a diferencia del alta. La
-razón es que estos comercios **ya están validados**: de los 19, solo 2 en dev y 3
-en prod están en `pendiente_validacion`, así que **no pasan por la bandeja** y
-nadie los iba a confirmar nunca. Acá la revisión humana es la del script.
+Funciona, pero es **una sola capa**: el día que alguien toque el matcher o
+mueva la pantalla de ruta, esas actions quedan abiertas a cualquier
+autenticado **sin que nada falle visiblemente**. La de distri no depende de
+eso —`puedeTocar` chequea el vínculo— así que la nueva hace lo mismo y mira
+`tipo_actor`. Las dos viejas quedaron como estaban: cambiarlas es otro tramo.
 
-##### La confirmación no es un flag que se tipea sin mirar
-
-`--aplicar` exige además `--confirmo=N` con el número exacto que se va a
-escribir, **que solo se sabe corriendo la propuesta y leyéndola**. Un `--si` se
-tipea de memoria; un número hay que ir a buscarlo. Misma familia que el
-`RAISE EXCEPTION` de las migraciones: un OK que se puede dar sin haber mirado no
-es una confirmación.
-
-Verificado que muerde, en las dos formas de equivocarse:
-
-```
---aplicar sin --confirmo   →  ✗ y no escribe nada
---aplicar --confirmo=12    →  ✗ "se escribirían 13", y no escribe nada
-```
-
-**Solo escribe los `exacto`.** Los `ambiguo`, `fuera` y `sin_dato` quedan con su
-sugerencia registrada y sin localidad: son los que necesitan a alguien que
-conozca la zona, y el script no es esa persona. Y **nunca pisa una localidad
-existente** — el `UPDATE` lleva `.is('localidad_id', null)`, por si alguien la
-cargó entre la propuesta y la escritura.
-
-##### Corrido en dev: 13 de 13, y el 14 que cierra el círculo
-
-```
-13 comercios sin localidad → 13 exacto → escritos 13 · fallidos 0
-siguen sin localidad: 0
-```
-
-Después de correrlo hay **14 comercios con `zona_id`** —el marcador del agujero—
-y los 14 en Colón. El decimocuarto es *"Kiosco ganador EN"* del 25/9: el alta
-hecha desde un celular real, que el servidor geocodificó solo y que **una persona
-confirmó en la bandeja**. Ya tenía `localidad_id` antes de la reparación, y por
-eso no entró en los 13.
-
-O sea que las dos puntas quedaron probadas con datos reales: **el alta nueva pasa
-por la bandeja, y las viejas por el script.** En los 14, `localidad_sugerida_id`
-coincide con `localidad_id` — el geocoding acertó en todas, y quedó registrado
-para poder medirlo.
+**Llega dormida para lo que ya existe:** los 6 pendientes de cada base ya
+tienen `localidad_id` puesto por el script de reparación, así que la columna
+muestra el nombre y no el selector. Se estrena con la próxima alta.
 
 ##### LAS ETAPAS
 
