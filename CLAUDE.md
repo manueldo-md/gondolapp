@@ -7191,3 +7191,87 @@ no tiene bloques" de "el editor no los muestra", y esa ambigüedad es el bug.
 
 Aparte, dos campañas de altas tienen 1 bloque con 0 campos — eso es correcto
 por diseño (ver `lib/campana-altas.ts`) pero se ve igual de vacío.
+
+---
+
+## TRAMO PROPIO — el vínculo gondolero↔distri es de una sola dirección
+
+Anotado el 25/9/2026. Sin empezar. Salió de probar el tramo de seguridad, y no
+es de seguridad: **todas las escrituras van de la distri hacia el gondolero, y
+ninguna vuelve.**
+
+### El reparto, verificado en el código
+
+```
+                                       ¿avisa?   ¿hay pantalla?
+DISTRI → GONDOLERO
+  invita (link o código)                 sí           sí
+  aprueba o rechaza una solicitud        sí           sí
+  desvincula                             sí           sí
+
+GONDOLERO → DISTRI
+  acepta la invitación                   NO           sí
+  la rechaza                             NO           sí
+  pide vincularse                        —         NO EXISTE
+  se desvincula                          NO           sí
+```
+
+**Las cuatro del lado del gondolero son mudas o no existen.** Medido:
+`desvincularseDeDistri` tiene **cero** menciones de notificación; su gemela del
+lado de la distri tiene tres.
+
+### Tres cosas que conviene saber antes de agarrarlo
+
+**1. Los inserts NO EXISTEN — no es el caso del 22/9.** Ahí nueve avisos
+rebotaban contra el CHECK sin que nadie mirara el error. Acá no hay nada que
+rebote: cero inserts de notificación en las seis actions de vinculación del
+perfil del gondolero.
+
+**2. El tipo ya está reservado.** `vinculacion_nueva` está en el CHECK de
+`notificaciones.tipo` y en `lib/notificaciones.ts`, **con cero filas en las dos
+bases**. Lo escribe un solo lugar —`app/vinculacion/actions.ts`, el camino por
+token— y ni siquiera ése llegó a producir una fila. Alguien previó esto y no lo
+cableó.
+
+**3. `solicitarVinculacion` existe y no tiene un solo llamador.** La función
+está completa en `gondolero/perfil/distri-actions.ts` —valida que la distri
+exista y esté validada, hace el upsert— y ninguna pantalla la invoca. Ya hay un
+comentario en `logros-y-ranking.tsx` que lo dice. Al 25/9/2026 lleva así desde
+al menos el 18/9 (`4e92929`).
+
+> **Y la tabla engaña.** `gondolero_distri_solicitudes` tiene **18 filas en
+> producción y 15 en dev con `iniciado_por = 'gondolero'`**, que se leen como
+> "el gondolero pidió entrar". No es cierto: **`iniciado_por` tiene
+> `DEFAULT 'gondolero'`** y ningún código vivo escribe ese valor —el único que
+> lo haría es `solicitarVinculacion`—. Son filas del seed tomando el default.
+> Quien mire la tabla para decidir si el flujo funciona va a concluir que sí.
+
+### Qué queda roto en la práctica
+
+- **La distri no sabe quién está en su equipo** salvo que entre a la lista y
+  compare. Invita a cinco, y para saber cuántos entraron tiene que contarlos.
+- **El gondolero no tiene forma de pedir entrar.** Si la distri no lo invita
+  primero, no hay camino. Eso choca con el vacío del ranking, que le sugiere
+  vincularse a una distribuidora — le pide algo que la app no le deja hacer.
+- **Una desvinculación iniciada por el gondolero es invisible** para la distri
+  hasta que alguien nota que dejó de trabajar. Y ese camino **no le paga los
+  retenidos** (ver "Quién corta decide si los retenidos se pagan"), así que el
+  gondolero se va con puntos trabados y la distri ni se entera.
+
+### A definir antes de escribir
+
+- **Los avisos son cuatro, no uno**: aceptó, rechazó, pidió entrar, se fue. Cada
+  uno necesita su `tipo` —`vinculacion_nueva` cubre el primero— y los tres
+  restantes hay que agregarlos al CHECK. **Migración antes del deploy**, al revés
+  que un DROP: el código nuevo escribiría un valor que la base rechaza.
+- **El destinatario es la DISTRI**, o sea `actor_id` + `actor_tipo =
+  'distribuidora'`, no `gondolero_id`. Y va por `crearNotificacionActor`, que
+  chequea el error — los nueve del 22/9 rebotaban justamente por no usarlo.
+- **Dónde vive la pantalla de "pedir vincularme".** El perfil del gondolero ya
+  lista sus vínculos; hace falta un buscador de distribuidoras validadas. Y
+  decidir si se puede pedir a varias a la vez, que el modelo permite.
+- **Si el pedido del gondolero llega a la bandeja de solicitudes de la distri**
+  —que existe y hoy solo recibe filas que la propia distri creó (ver el hallazgo
+  de la etapa 3 del tramo de postulación de fixers, donde la distri podía
+  aprobar su propia invitación)—. Con el pedido del gondolero, esa pestaña por
+  fin tendría quién produzca sus filas.
