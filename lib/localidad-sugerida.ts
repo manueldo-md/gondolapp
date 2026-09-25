@@ -28,7 +28,7 @@
  * persona, que es el camino que igual existe.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { resolverLocalidad, candidatosDe, explicarResolucion, type DireccionProveedor, type FilaPadron } from './geocoding'
+import { resolverLocalidad, candidatosDe, explicarResolucion, type DireccionProveedor, type FilaPadron, type Resolucion } from './geocoding'
 
 /** Corto a propósito: es latencia que el gondolero espera parado en el local. */
 const TIMEOUT_MS = 4000
@@ -131,6 +131,27 @@ async function traerPadron(cands: string[], admin: SupabaseClient): Promise<Fila
  * `registrarMision` tiene que vivir en un solo lugar: dos copias de esto es
  * garantizar que el día que se corrija una, la otra quede vieja en silencio.
  */
+/**
+ * El mecanismo, sin guardar: proveedor → padrón → decisión.
+ *
+ * Está separado de `sugerirLocalidad` porque el script de reparación de los
+ * comercios viejos usa EXACTAMENTE esto y escribe otra cosa. Dos
+ * implementaciones del mismo mecanismo es garantizar que el día que se corrija
+ * una, la otra quede vieja en silencio — la lección de `registrarMision`.
+ *
+ * Devuelve `null` solo cuando no se pudo preguntar (sin key, red caída), que
+ * es distinto de haber preguntado y no obtener nada.
+ */
+export async function calcularSugerencia(
+  lat: number,
+  lng: number,
+  admin: SupabaseClient,
+): Promise<Resolucion | null> {
+  const dir = await consultarProveedor(lat, lng)
+  if (!dir) return null
+  return resolverLocalidad(dir, await traerPadron(candidatosDe(dir), admin))
+}
+
 export async function sugerirLocalidad(
   comercioId: string,
   lat: number,
@@ -138,16 +159,14 @@ export async function sugerirLocalidad(
   admin: SupabaseClient,
 ): Promise<void> {
   try {
-    const dir = await consultarProveedor(lat, lng)
+    const r = await calcularSugerencia(lat, lng, admin)
 
     // `error` distingue "no se pudo preguntar" de "se preguntó y no dio nada".
     // Sin esa diferencia no se puede reprocesar solo lo que falta.
-    if (!dir) {
+    if (!r) {
       await guardar(comercioId, { estado: 'error' }, admin)
       return
     }
-
-    const r = resolverLocalidad(dir, await traerPadron(candidatosDe(dir), admin))
     console.log(`[localidad] ${comercioId}: ${r.estado} — ${explicarResolucion(r)}`)
 
     switch (r.estado) {

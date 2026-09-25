@@ -6202,6 +6202,57 @@ No entró porque la etapa pedía la bandeja de la distri, y el componente y el
 hook ya son compartidos — es montar la columna y clonar la action con el permiso
 de admin. Pero **mientras no se haga, el agujero sigue abierto para ese camino**.
 
+##### La etapa 6: los 19 reparados, con la confirmación adentro del número
+
+`scripts/reparar-localidades.mts`. Usa **exactamente el mismo mecanismo** que el
+alta: `calcularSugerencia` se extrajo de `sugerirLocalidad` para que las dos
+puntas llamen a una sola función. Dos implementaciones del mismo geocoding sería
+garantizar que el día que se corrija una, la otra quede vieja en silencio.
+
+**Escribe `localidad_id` y no solo la sugerencia**, a diferencia del alta. La
+razón es que estos comercios **ya están validados**: de los 19, solo 2 en dev y 3
+en prod están en `pendiente_validacion`, así que **no pasan por la bandeja** y
+nadie los iba a confirmar nunca. Acá la revisión humana es la del script.
+
+##### La confirmación no es un flag que se tipea sin mirar
+
+`--aplicar` exige además `--confirmo=N` con el número exacto que se va a
+escribir, **que solo se sabe corriendo la propuesta y leyéndola**. Un `--si` se
+tipea de memoria; un número hay que ir a buscarlo. Misma familia que el
+`RAISE EXCEPTION` de las migraciones: un OK que se puede dar sin haber mirado no
+es una confirmación.
+
+Verificado que muerde, en las dos formas de equivocarse:
+
+```
+--aplicar sin --confirmo   →  ✗ y no escribe nada
+--aplicar --confirmo=12    →  ✗ "se escribirían 13", y no escribe nada
+```
+
+**Solo escribe los `exacto`.** Los `ambiguo`, `fuera` y `sin_dato` quedan con su
+sugerencia registrada y sin localidad: son los que necesitan a alguien que
+conozca la zona, y el script no es esa persona. Y **nunca pisa una localidad
+existente** — el `UPDATE` lleva `.is('localidad_id', null)`, por si alguien la
+cargó entre la propuesta y la escritura.
+
+##### Corrido en dev: 13 de 13, y el 14 que cierra el círculo
+
+```
+13 comercios sin localidad → 13 exacto → escritos 13 · fallidos 0
+siguen sin localidad: 0
+```
+
+Después de correrlo hay **14 comercios con `zona_id`** —el marcador del agujero—
+y los 14 en Colón. El decimocuarto es *"Kiosco ganador EN"* del 25/9: el alta
+hecha desde un celular real, que el servidor geocodificó solo y que **una persona
+confirmó en la bandeja**. Ya tenía `localidad_id` antes de la reparación, y por
+eso no entró en los 13.
+
+O sea que las dos puntas quedaron probadas con datos reales: **el alta nueva pasa
+por la bandeja, y las viejas por el script.** En los 14, `localidad_sugerida_id`
+coincide con `localidad_id` — el geocoding acertó en todas, y quedó registrado
+para poder medirlo.
+
 ##### LAS ETAPAS
 
 | | Qué | Verifica |
@@ -6211,7 +6262,7 @@ de admin. Pero **mientras no se haga, el agujero sigue abierto para ese camino**
 | 3 | ✅ **HECHA** — `20261001100000`: `localidad_sugerida_id` / `_estado` / `_texto`, con el CHECK que impide un id sin estado `exacto` | `probar-migracion-sugerida.mjs`, verde en dev y prod. El dry-run encontró un hueco real en mi CHECK (tres valores) |
 | 4 | ✅ **HECHA** — `lib/localidad-sugerida.ts` en los dos caminos de alta, inline y fail-open. Key server-side aparte | `probar-localidad-sugerida.mts`: camino completo contra dev con red, padrón y escritura |
 | 5 | ✅ **HECHA** — columna Localidad en la bandeja de la distri: sugerencia precargada, un clic para confirmar, cascader para corregir. El cascader salió a un hook que `SelectorZona` también usa | `probar-selector-localidad.mts` (20 controles, los 5 estados); el embed doble probado contra dev; `SelectorZona` rinde idéntico byte a byte. **Falta el click-through** y la bandeja de admin |
-| 6 | El script de reparación de los 19, mismo mecanismo, con confirmación humana | correrlo y mirar la lista ANTES de escribir |
+| 6 | ✅ **HECHA** — `reparar-localidades.mts`, mismo mecanismo que el alta. `--aplicar` exige `--confirmo=N`, y N solo se sabe leyendo la propuesta | corrido en dev: **13 de 13 exacto, 0 fallidos, 0 sin localidad**. Verificado que la confirmación muerde sin el número y con uno equivocado |
 | 7 | Sacar el `zona_id` arbitrario | **grep DESPUÉS** de escribir el código |
 
 La **1 va primera** porque sin padrón limpio la etapa 2 mide contra datos rotos.
@@ -6239,6 +6290,67 @@ orden de siempre: código que deja de usarla → deploy → verificar en prod �
 - **`gondolero_localidades` está en CERO en producción**, así que cualquier atajo
   que se apoye en las zonas declaradas del gondolero no tiene con qué en prod.
 - **Los 51 duplicados** de provincias sin actividad.
+
+#### PENDIENTE — "toda la provincia" en el selector de zonas, y CÓMO se guarda
+
+Pedido el 25/9/2026: un gondolero que cubre Entre Ríos entera hoy tiene que
+tildar 17 departamentos uno por uno.
+
+**La pregunta que decide el tamaño del trabajo: ¿se guarda la provincia como
+tal, o se expande a sus localidades?**
+
+##### Lo medido, que cambia la respuesta
+
+```
+                                        dev            prod
+gondolero_localidades                42 filas / 2    0 filas / 0
+campana_localidades                  29 filas / 7   29 filas / 7
+departamentos COMPLETOS ya guardados      4              0
+expandir una provincia insertaría    Entre Ríos 143 · Buenos Aires 252
+```
+
+**Los dos escritores guardan SOLO `localidad_id`** —
+`actualizarLocalidadesGondolero` y `draft-actions.ts`—. El flag `todas` de
+`GrupoZona` es estado de UI y **se pierde al persistir**.
+
+O sea que **"todas las del departamento" YA TIENE exactamente el problema que se
+pregunta para la provincia**, y lo tiene desde que existe: hay **4 departamentos
+completos** guardados en dev como listas de localidades. El día que el padrón
+sume una localidad en uno de esos deptos, ese gondolero no la cubre. No es un
+riesgo nuevo que introduzca "toda la provincia": es uno viejo que la provincia
+haría 8 veces más grande.
+
+##### La recomendación: guardar el nivel, y hacerlo AHORA
+
+**Las dos tablas no tienen la misma semántica, y eso es lo que decide:**
+
+| | Qué significa | Qué pasa si el padrón crece |
+|---|---|---|
+| `gondolero_localidades` | *"mi zona de trabajo"* | Un pueblo nuevo en su provincia **SÍ es suyo**. Expandir lo deja afuera |
+| `campana_localidades` | *"dónde corre esta campaña"* | Un pueblo nuevo entrando solo a una campaña viva es **peor**. Expandir es un snapshot, y es defendible |
+
+Así que el cambio es del **lado del gondolero**, no de las campañas.
+
+**Y el momento es ahora, por una razón que no se repite: `gondolero_localidades`
+tiene CERO filas en producción.** No hay nada que migrar. En dev son 42 filas de
+2 gondoleros. Cualquier día posterior a que esa tabla se llene, lo mismo pasa a
+ser una migración de datos con gente real adentro.
+
+**Costo:** solo **2 lectores** —el filtro de campañas y el display del perfil— y
+1 escritor. Es chico, pero es un cambio de modelo: tabla o columna de nivel,
+migración, y los dos lectores pasan a resolver "mis localidades" expandiendo al
+leer. **Es una etapa, no un checkbox en el selector.**
+
+##### Por qué NO se agregó el botón en la etapa 5
+
+Agregarlo como expansión —que es lo barato— **multiplica por 8 un bug dormido en
+prod** y convierte el arreglo posterior en una migración de datos en vez de un
+cambio de schema. Contradice la respuesta a la pregunta que se hizo junto con el
+pedido, así que se dejó la decisión antes que el código.
+
+Si igual se prefiere la versión rápida, son ~20 líneas en `SelectorZona`: un
+botón que tilde todos los departamentos de la provincia. Queda dicho que eso es
+deuda, no solución.
 
 #### PENDIENTE sin urgencia — la cadena como campo de comercios
 
