@@ -6264,6 +6264,7 @@ para poder medirlo.
 | 5 | ✅ **HECHA** — columna Localidad en la bandeja de la distri: sugerencia precargada, un clic para confirmar, cascader para corregir. El cascader salió a un hook que `SelectorZona` también usa | `probar-selector-localidad.mts` (20 controles, los 5 estados); el embed doble probado contra dev; `SelectorZona` rinde idéntico byte a byte. **Falta el click-through** y la bandeja de admin |
 | 6 | ✅ **HECHA** — `reparar-localidades.mts`, mismo mecanismo que el alta. `--aplicar` exige `--confirmo=N`, y N solo se sabe leyendo la propuesta | corrido en dev: **13 de 13 exacto, 0 fallidos, 0 sin localidad**. Verificado que la confirmación muerde sin el número y con uno equivocado |
 | 7 | ✅ **HECHA** — los dos caminos dejan de escribir `zona_id`. NO dropea: eso va después de verificar el deploy en prod | **grep DESPUÉS** de escribir el código: sobre `comercios` no queda ni una lectura ni una escritura. Lo que aparece es de `campana_zonas` y `gondolero_zonas`, más el tipo generado (la columna sigue) |
+| 8 | ✅ **HECHA** — `20261002100000`: la zona se guarda por NIVEL y se expande al leer. Incluye "toda la provincia" en el selector | `probar-migracion-zonas-nivel.mjs` (dev y prod) + `probar-zonas-gondolero.mts` (16 controles). El dry-run encontró que la migración NO era idempotente |
 
 La **1 va primera** porque sin padrón limpio la etapa 2 mide contra datos rotos.
 Y la reparación va **después** del alta: arreglar el pasado mientras el presente
@@ -6285,6 +6286,108 @@ escribirlo no rompe nada.
 **La etapa 7 deja de ESCRIBIR, no dropea.** El `DROP COLUMN` va después con el
 orden de siempre: código que deja de usarla → deploy → verificar en prod → DROP.
 
+##### ETAPA 8 — la zona del gondolero se guarda por NIVEL (migración `20261002100000`)
+
+`gondolero_localidades` gana `nivel` (`provincia | departamento | localidad`) y
+`ref_id`, y pierde `localidad_id`. La expansión pasa a hacerse **al leer**,
+contra el padrón de hoy.
+
+**Se hizo ahora por la ventana, no por la urgencia:** la tabla tiene **cero
+filas en producción**. No hubo nada que migrar. Cualquier día posterior a que se
+llene, el mismo cambio es una migración de datos con gente real adentro.
+
+##### La FK se reemplazó ENTERA, que era la condición
+
+`ref_id` no puede tener FK: apunta a tres tablas. Y la FK daba **dos** cosas, no
+una:
+
+| | Con qué se repuso |
+|---|---|
+| validar al escribir | `gondolero_zonas_validar_ref` (BEFORE INSERT/UPDATE) |
+| **borrar en cascada** | tres triggers AFTER DELETE en localidades, departamentos y provincias |
+
+Un trigger que solo valide repone la mitad, **y la mitad que falta es la que ya
+mordió**: `20260930100000` borró una localidad y lo que impidió las huérfanas
+fue el `ON DELETE CASCADE`.
+
+> **OJO CON EL TIPO DE `ref_id` — esto muerde dentro de un año.** Es `integer`
+> porque `localidades.id`, `departamentos.id` y `provincias.id` son los tres
+> integer. **`zonas.id` es `uuid`** — la tabla vieja, otra jerarquía. Un nivel
+> nuevo que referencie algo con uuid NO entra: habría que elegir entre un `text`
+> que acepte los dos (perdiendo la validación de tipo) o una segunda columna.
+
+##### La expansión vive en TypeScript
+
+`lib/zonas-gondolero.ts`. Resolverlo con un `OR` de tres subqueries metería la
+regla en SQL, y entonces existiría en dos lenguajes — la trampa que
+`lib/fecha-ar.ts` tiene documentada con la semana.
+
+Dos consultas como mucho, y **cero si solo hay localidades sueltas**, que es el
+caso de hoy. Los lectores siguen recibiendo lo de siempre: `number[]`.
+
+> **El límite, anotado antes de que moleste:** la lista termina en un `.in()`.
+> Buenos Aires son 252 ids y Entre Ríos 143, así que hoy entra cómodo; con cinco
+> provincias grandes serían ~700. Cuando moleste, **la salida es invertir la
+> pregunta** —¿la localidad de la campaña cae bajo alguna de mis zonas?, que son
+> pocas filas— y eso es un cambio de forma en los dos lectores, no en la lib.
+
+##### Lo que el dry-run encontró, y la lectura no
+
+**La migración no era idempotente.** El `UPDATE` que copia `localidad_id` a
+`ref_id` falla en la segunda corrida con *"column localidad_id does not exist"*,
+porque **Postgres parsea el statement entero aunque el `WHERE` no matchee ni una
+fila**. Quedó dentro de un `EXECUTE` guardado por `information_schema`.
+
+Y dos defectos míos en el propio dry-run: un insert de setup que chocaba con el
+de la prueba anterior cuando los ids coincidían, y un CONTROL que elegía un id
+de localidad que también existe como provincia —con ids chicos las tres tablas
+se pisan— así que salía NO VERIFICABLE en vez de probar algo.
+
+> Y una tercera, de herramienta: **`$$` en el string de reemplazo de
+> `String.replace()` es el escape de un `$` literal**, así que el script que
+> escribía el `DO $$` dejó `DO $` y la migración no parseaba. Se arregla con una
+> función de reemplazo, que no interpreta.
+
+##### El botón que se pidió, y lo que hace además
+
+"Agregar toda **Entre Ríos** (17 departamentos)" aparece apenas se elige una
+provincia. **Reemplaza lo que hubiera de esa provincia**: tener "toda Entre
+Ríos" y además tres de sus departamentos es la misma zona escrita dos veces, y
+al borrar una quedaría la otra sin que se entienda por qué.
+
+Y `agregarZona` cambió: con "todas las del departamento" **ya no guarda las
+localidades**, guarda el departamento. Eso arregla de paso algo que no se veía —
+el chip decía *"12 localidades"* aunque el gondolero hubiera elegido todo el
+departamento, porque al persistir se expandía y al releer eran indistinguibles.
+
+##### Los 4 departamentos completos de dev: NO se convierten
+
+Se detectan con exactitud, y aun así se dejan como están.
+
+**"Las 3 de 3" es indistinguible de "todas".** Convertirlos le cambiaría la
+semántica de *"estas tres"* a *"todas las que haya"* — una decisión sobre su
+zona de trabajo que él no tomó, y cuyo efecto aparece meses después cuando entra
+un pueblo nuevo. El filtro de "solo departamentos con más de N localidades"
+tampoco sirve: sigue siendo adivinar, con menos casos.
+
+Son 4, de 2 gondoleros, **todos en dev** —prod tiene cero— y el costo de no
+convertirlos es que vuelvan a tildar "todo el departamento" una vez.
+
+##### Probado
+
+| | |
+|---|---|
+| `probar-migracion-zonas-nivel.mjs` | dry-run en transacción, verde en dev y prod. Prueba la validación **y la cascada**, que ninguna fila se pierda, que la PK permita provincia N y departamento N a la vez, y la idempotencia |
+| `probar-zonas-gondolero.mts` | 16 controles sin base. El que importa: **el padrón crece y la zona lo sigue**, con el CONTROL de que la lista expandida que se guardaba antes no lo cubriría |
+
+##### Un hallazgo lateral que no es de este tramo
+
+La policy de `gondolero_localidades` es `service_role_all` con **`USING true`
+para `{public}`**. O sea que cualquier usuario autenticado puede leer las zonas
+de **todos** los gondoleros. No rompe nada hoy y por eso el lector del filtro de
+campañas funciona con el cliente de usuario — pero choca de frente con el
+Walled Garden de la sección 6.
+
 ##### Lo que este tramo NO cierra
 
 - **El aviso de campaña acotada se cayó del tramo.** Sin selector en el alta no
@@ -6297,7 +6400,12 @@ orden de siempre: código que deja de usarla → deploy → verificar en prod �
   que se apoye en las zonas declaradas del gondolero no tiene con qué en prod.
 - **Los 51 duplicados** de provincias sin actividad.
 
-#### PENDIENTE — "toda la provincia" en el selector de zonas, y CÓMO se guarda
+#### ✅ HECHO — "toda la provincia" en el selector de zonas (etapa 8, 25/9/2026)
+
+> **Resuelto en la etapa 8 del tramo de arriba**, y como se decidió: guardando
+> el NIVEL, no la expansión. Lo que sigue es el relevamiento que llevó a esa
+> decisión; el resultado está en "ETAPA 8 — la zona del gondolero se guarda por
+> NIVEL".
 
 Pedido el 25/9/2026: un gondolero que cubre Entre Ríos entera hoy tiene que
 tildar 17 departamentos uno por uno.

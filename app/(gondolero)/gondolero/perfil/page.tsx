@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { ZonaGondolero } from '@/lib/zonas-gondolero'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { User } from 'lucide-react'
@@ -49,7 +50,9 @@ export default async function PerfilPage() {
       // 18/9/2026 con `nivel`, que había quedado acá después del DROP.
       .select('nombre, alias, distri_id, celular, codigo_gondolero, tipo_actor')
       .eq('id', user.id).single(),
-    admin.from('gondolero_localidades').select('localidad_id').eq('gondolero_id', user.id),
+    // Las zonas AL NIVEL que las eligió, no expandidas: el selector tiene que
+    // poder mostrar "toda la provincia" y no 143 tildes.
+    admin.from('gondolero_localidades').select('nivel, ref_id').eq('gondolero_id', user.id),
     // MISIONES aprobadas del mes, no fotos: el nivel tiene que contar también
     // las campañas de solo preguntas. Mismo criterio que la pantalla de Logros.
     admin.from('misiones')
@@ -74,7 +77,8 @@ export default async function PerfilPage() {
     )
   }
   const profile = profileRes.data
-  const localidadesActuales = (gondoleroLocalidadesRes.data ?? []).map((gl: { localidad_id: number }) => gl.localidad_id)
+  const zonasActuales: ZonaGondolero[] = (gondoleroLocalidadesRes.data ?? [])
+    .map((z: { nivel: string; ref_id: number }) => ({ nivel: z.nivel as ZonaGondolero['nivel'], refId: z.ref_id }))
 
   // Distribuidoras activas (muchas a muchas, fuente = solicitudes estado='aprobada')
   let distrisActivas: { solicitudId: string; distri_id: string; distri_nombre: string }[] = []
@@ -227,10 +231,10 @@ export default async function PerfilPage() {
         {/* ── Mis zonas de trabajo — colapsable, cerrada por defecto ── */}
         <ColapsableSection
           title="Mis zonas de trabajo"
-          badge={localidadesActuales.length > 0 ? `${localidadesActuales.length} zona${localidadesActuales.length !== 1 ? 's' : ''}` : null}
+          badge={zonasActuales.length > 0 ? `${zonasActuales.length} zona${zonasActuales.length !== 1 ? 's' : ''}` : null}
           defaultOpen={false}
         >
-          <LocalidadesSelector localidadesActuales={localidadesActuales} />
+          <LocalidadesSelector zonasActuales={zonasActuales} />
         </ColapsableSection>
 
         {/* ── Mi distribuidora / organización — colapsable, cerrada por defecto ── */}

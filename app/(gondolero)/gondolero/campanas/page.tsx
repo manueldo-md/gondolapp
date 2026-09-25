@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { localidadesDelGondolero } from '@/lib/zonas-gondolero'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { LayoutGrid } from 'lucide-react'
@@ -31,13 +32,26 @@ export default async function CampanasPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const [gondoleroZonasRes, gondoleroLocalidadesRes] = await Promise.all([
-    supabase.from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id),
-    supabase.from('gondolero_localidades').select('localidad_id').eq('gondolero_id', user.id),
-  ])
+  const gondoleroZonasRes = await supabase
+    .from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id)
+
+  // Las zonas se guardan al NIVEL que eligió el gondolero —provincia,
+  // departamento o localidad— y se EXPANDEN acá, contra el padrón de hoy. Antes
+  // se guardaba la expansión, y eso dejaba a un gondolero sin cubrir un pueblo
+  // nuevo de su propio departamento. Ver lib/zonas-gondolero.ts.
+  //
+  // Falla ABIERTA y ruidosa: si no se pueden leer las zonas, el gondolero ve
+  // todas las campañas —que es el comportamiento que ya había cuando la tabla
+  // estaba vacía— en vez de quedarse sin ninguna. Pero queda en el log, porque
+  // "no declaró zonas" y "no se pudieron leer" se ven igual en pantalla.
+  let localidadIds: number[] = []
+  try {
+    localidadIds = await localidadesDelGondolero(user.id, supabase)
+  } catch {
+    console.error('[campanas] No se pudieron expandir las zonas de', user.id, '— se muestran todas.')
+  }
 
   const zonaIds = (gondoleroZonasRes.data ?? []).map((gz: { zona_id: string }) => gz.zona_id)
-  const localidadIds = (gondoleroLocalidadesRes.data ?? []).map((gl: { localidad_id: number }) => gl.localidad_id)
   const tieneZonas = zonaIds.length > 0 || localidadIds.length > 0
 
   const admin = createAdminClient(

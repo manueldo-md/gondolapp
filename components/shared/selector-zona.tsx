@@ -6,13 +6,20 @@ import { X, Plus, MapPin, Check } from 'lucide-react'
 
 // ── Tipo exportado para que los padres lo usen ────────────────
 export interface GrupoZona {
+  /**
+   * A qué NIVEL se eligió esta zona. Es lo que se persiste, y por eso importa:
+   * "toda la provincia" guardado como sus 143 localidades queda viejo el día
+   * que el padrón sume una. Ver lib/zonas-gondolero.ts.
+   */
+  nivel:             'provincia' | 'departamento' | 'localidad'
   provinciaId:       number
   provinciaNombre:   string
+  /** 0 cuando el nivel es 'provincia': no hay departamento elegido. */
   departamentoId:    number
   departamentoNombre: string
-  /** IDs concretos de localidades incluidas en este grupo */
+  /** Solo se llena en nivel 'localidad'. */
   localidadIds:      number[]
-  /** true cuando se eligió "Todas las localidades de [Depto]" */
+  /** Compatibilidad: equivale a nivel !== 'localidad'. */
   todas:             boolean
 }
 
@@ -88,19 +95,23 @@ export function SelectorZona({
   )
 
   // Evitar agregar el mismo departamento dos veces
-  const deptYaAgregado = grupos.some(g => g.departamentoId === departamentoId)
+  const deptYaAgregado = grupos.some(g => g.nivel !== 'provincia' && g.departamentoId === departamentoId)
+  const provinciaYaEntera = grupos.some(g => g.nivel === 'provincia' && g.provinciaId === provinciaId)
 
   const agregarZona = () => {
     if (!canAgregar || deptYaAgregado) return
-    const localidadIds = todasSel ? localidades.map(l => l.id) : [...selLocal]
+    // Con "todas" NO se guardan las localidades: se guarda el departamento. Si
+    // se guardara la lista, el día que el padrón sume una localidad de ese
+    // departamento el gondolero dejaría de cubrirla sin enterarse.
     onGrupos([
       ...grupos,
       {
+        nivel:             todasSel ? 'departamento' : 'localidad',
         provinciaId:       provinciaId as number,
         provinciaNombre,
         departamentoId:    departamentoId as number,
         departamentoNombre,
-        localidadIds,
+        localidadIds:      todasSel ? [] : [...selLocal],
         todas:             todasSel,
       },
     ])
@@ -204,6 +215,41 @@ export function SelectorZona({
           </div>
         )}
 
+        {/* Toda la provincia — el caso que obligaba a tildar 17 departamentos */}
+        {provinciaId !== '' && (
+          <button
+            type="button"
+            onClick={() => {
+              if (provinciaYaEntera) return
+              // Reemplaza lo que hubiera de esa provincia: tener "toda Entre
+              // Ríos" y además tres de sus departamentos es la misma zona
+              // escrita dos veces, y al borrar una quedaría la otra sin que se
+              // entienda por qué.
+              onGrupos([
+                ...grupos.filter(g => g.provinciaId !== provinciaId),
+                {
+                  nivel: 'provincia',
+                  provinciaId: provinciaId as number,
+                  provinciaNombre,
+                  departamentoId: 0,
+                  departamentoNombre: '',
+                  localidadIds: [],
+                  todas: true,
+                },
+              ])
+              limpiar(); setSelLocal(new Set()); setTodasSel(false)
+            }}
+            disabled={provinciaYaEntera}
+            className="w-full px-3 py-2 text-xs font-medium rounded-lg border border-dashed
+              border-gray-300 text-gray-600 hover:border-gray-400 hover:text-gray-800
+              disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {provinciaYaEntera
+              ? `Toda ${provinciaNombre} ya está agregada`
+              : `Agregar toda ${provinciaNombre} (${departamentos.length} departamentos)`}
+          </button>
+        )}
+
         {/* Mensaje si el departamento ya fue agregado */}
         {deptYaAgregado && departamentoId && (
           <p className="text-xs text-amber-600 font-medium">
@@ -234,14 +280,23 @@ export function SelectorZona({
             >
               <MapPin size={13} className="text-blue-500 shrink-0 mt-px" />
               <div className="flex-1 min-w-0 text-sm">
-                <span className="font-medium text-gray-800">{g.departamentoNombre}</span>
-                <span className="text-gray-400 mx-1">·</span>
-                <span className="text-gray-500">{g.provinciaNombre}</span>
-                <span className="ml-2 text-xs text-blue-600 font-medium">
-                  {g.todas
-                    ? 'Todas las localidades'
-                    : `${g.localidadIds.length} localidad${g.localidadIds.length !== 1 ? 'es' : ''}`}
-                </span>
+                {g.nivel === 'provincia' ? (
+                  <>
+                    <span className="font-medium text-gray-800">{g.provinciaNombre}</span>
+                    <span className="ml-2 text-xs text-blue-600 font-medium">Toda la provincia</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-gray-800">{g.departamentoNombre}</span>
+                    <span className="text-gray-400 mx-1">·</span>
+                    <span className="text-gray-500">{g.provinciaNombre}</span>
+                    <span className="ml-2 text-xs text-blue-600 font-medium">
+                      {g.nivel === 'departamento'
+                        ? 'Todo el departamento'
+                        : `${g.localidadIds.length} localidad${g.localidadIds.length !== 1 ? 'es' : ''}`}
+                    </span>
+                  </>
+                )}
               </div>
               <button
                 type="button"

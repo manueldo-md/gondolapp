@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import type { TipoPremio } from '@/types'
 import { getConfig } from '@/lib/config'
 import { nivelMaximoAlcanzado } from '@/lib/nivel-maximo'
+import { guardarZonasDelGondolero, type ZonaGondolero } from '@/lib/zonas-gondolero'
 
 const COSTO_CANJE: Record<TipoPremio, number> = {
   credito_celular: 300,
@@ -154,7 +155,15 @@ export async function actualizarPerfil({ nombre, celular }: { nombre: string; ce
   revalidatePath('/gondolero/perfil')
 }
 
-export async function actualizarLocalidadesGondolero(localidadIds: number[]) {
+/**
+ * Guarda las zonas del gondolero AL NIVEL QUE ELIGIÓ.
+ *
+ * Antes recibía `localidadIds: number[]` y guardaba la expansión, así que
+ * "todas las del departamento" quedaba vieja cuando el padrón crecía. Ahora
+ * guarda provincia / departamento / localidad y la expansión se hace al leer.
+ * Ver lib/zonas-gondolero.ts.
+ */
+export async function actualizarZonasGondolero(zonas: ZonaGondolero[]) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
@@ -165,18 +174,16 @@ export async function actualizarLocalidadesGondolero(localidadIds: number[]) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Reemplazar todas las localidades del gondolero
-  await admin.from('gondolero_localidades').delete().eq('gondolero_id', user.id)
-
-  if (localidadIds.length > 0) {
-    await admin.from('gondolero_localidades').insert(
-      localidadIds.map(localidad_id => ({ gondolero_id: user.id, localidad_id }))
-    )
-  }
+  // Antes este par delete+insert no chequeaba ningún error: si el insert
+  // fallaba, el borrado ya había pasado y el gondolero se quedaba SIN zonas
+  // creyendo que las guardó. Ahora lo hace la lib y devuelve el error.
+  const r = await guardarZonasDelGondolero(user.id, zonas, admin)
+  if (r.error) return r
 
   revalidatePath('/gondolero/perfil')
   revalidatePath('/gondolero/campanas')
   revalidatePath('/gondolero/actividad')
+  return {}
 }
 
 export async function marcarNotificacionesLeidas(gondoleroId: string) {
