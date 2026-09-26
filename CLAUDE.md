@@ -2013,6 +2013,63 @@ pagada con su única foto rechazada.
 **Decidir antes de tocar.** Revertir un pago que ya está en el saldo no es un
 arreglo de código.
 
+#### DECIDIDO el 26/9/2026 — la misión se cierra y la plata no se toca
+
+**El argumento: el gondolero no hizo nada mal.** Le pagamos y después
+rechazamos el comercio. La base deja de mentir; la contabilidad no se toca.
+
+##### La medición: quién lee `descartada + acreditado`
+
+Se midió antes de escribir, porque la pregunta era si convenía un estado propio
+(`anulada_pagada`) o la combinación. **Ganó la combinación, y no por poco.**
+
+`descartada` es el centinela establecido del proyecto para "esta misión no
+cuenta para nada", y **todos los lectores están escritos como "todo menos
+descartada"**. Ninguno interpreta mal la combinación: los tres caminos de pago
+exigen `estado='aprobada'` —`aprobarMisionCore` para contar el mínimo y para la
+barrida, `cerrar-vinculacion` y `misiones-trabadas` para sus barridas— y
+`descartada + acreditado` no entra en ninguno.
+
+Un estado nuevo, en cambio, **fallaría ABIERTO en quince lugares y en silencio**:
+
+| Lector | Con `descartada` | Con un estado nuevo |
+|---|---|---|
+| `panel_series` / `panel_visitas` / `panel_pdv` (6 filtros SQL) | excluida | **el comercio rechazado cuenta como cobertura** |
+| índice `misiones_campana_comercio_uniq` | libera el comercio | **lo bloquea para siempre** |
+| guarda de `actualizarEstadoMision` | no reabre | **reabre y vuelve a pagar** |
+| `puntos-retenidos.ts` | excluida | cuenta el comercio "en revisión" |
+| `comercios-relevados.ts` ×2, `cobertura-seguimiento`, `linea-comercio` | no ocupan cupo | ocupan cupo |
+| `captura/page.tsx:991` | no pide fotos | **vuelve a pedir fotos** |
+| `ESTADO_MISION` | "Descartada" | muestra el string crudo |
+
+Más una migración para el CHECK y otra que recree las tres funciones del panel.
+**Quince lectores que hay que acordarse de tocar contra cero**, y el modo de
+falla del olvido es incluir, no excluir.
+
+> **Lo que se pierde, y cómo se compensa.** Un estado propio dice lo que pasó;
+> una combinación inédita hay que ir a deducirla. Se compensa donde se puede
+> mirar: un `COMMENT ON COLUMN misiones.bounty_estado` que la nombre, el
+> comentario en el único lugar que la escribe, y esta sección.
+
+##### La puerta que el cambio ABRE, y que hay que cerrar en el mismo commit
+
+Encontrada midiendo, no leyendo, y es plata otra vez:
+
+`validarComercioYCrearMision` decide si ya pagó con
+`find(m => m.estado !== 'descartada')` — o sea **"hay misión viva"**. Hoy la
+misión rechazada sigue en `aprobada`, así que revalidar el comercio cae en el
+`if (viva.estado === 'aprobada') return` y no vuelve a pagar.
+
+**Al pasarla a `descartada`, deja de haber misión viva**: una revalidación
+—camino contemplado, el código hasta limpia el `motivo_rechazo` de un rechazo
+anterior— crearía una misión nueva y pagaría **de nuevo**. 400 puntos por un
+comercio.
+
+El arreglo es cambiar el criterio de la guarda por el que corresponde:
+**"este comercio ya se pagó"** (`bounty_estado = 'acreditado'` en cualquier
+misión suya) en vez de "hay una misión viva". Es un invariante más fuerte y no
+depende de qué estado tenga la fila.
+
 ### Formato de `mision_respuestas.valor` — normalizado el 14/9/2026
 
 `valor` es `jsonb` y **cada tipo de campo tiene un tipo JSON que le corresponde**:
@@ -2711,6 +2768,34 @@ La regla verdadera está en la migración
 **La salida terminal ya existe y es `descartarRecaptura()`**: el gondolero la usa
 cuando no puede volver al comercio, y cierra con `estado='descartada'` +
 `bounty_estado='anulado'`.
+
+### TRAMO PROPIO — no pagar el alta hasta que el comercio esté firme
+
+Anotado el 26/9/2026. Sin empezar. **Es el único que evita el caso en vez de
+limpiarlo**, y por eso va anotado aparte del arreglo de los 200 puntos.
+
+Hoy el alta se acredita **al validar**, y validar es reversible: el mismo
+comercio se puede rechazar cinco horas después. De ahí salen los 200 puntos
+pagados por un comercio mal ubicado.
+
+**Y el incentivo es real, que es lo que lo hace un tramo y no una curiosidad:
+dar de alta comercios mal ubicados sale gratis si el pago llega rápido.** El
+rechazo posterior no tiene ninguna consecuencia económica, así que la única
+defensa contra el alta descuidada es que alguien la mire a tiempo — y el que
+mira es la distri, que no gana nada mirando más rápido.
+
+Dos formas, las dos con costo:
+
+- **Una ventana corta antes de liquidar.** Simple, pero elige un número
+  arbitrario y sigue pagando lo que se rechace después de la ventana.
+- **Liquidar recién al cerrar la campaña.** Cierra el agujero entero y rompe
+  la promesa que hoy existe: el gondolero cobra el alta al instante, y eso es
+  parte de por qué carga comercios.
+
+**El costo de las dos es el mismo y es de producto**, no técnico: hoy el alta
+paga rápido, y eso es un incentivo tan real como el que se quiere corregir. Al
+agarrarlo hay que medir cuántas altas se rechazan DESPUÉS de validarse — si son
+una en cien, el remedio es peor.
 
 ### Campaña que vence con una recaptura sin hacer — RESUELTO el 26/9/2026
 
