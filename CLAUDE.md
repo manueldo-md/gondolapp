@@ -7554,9 +7554,39 @@ ahora está vacía en las dos bases:
 
 **El ranking por zona y por provincia de Logros es una feature, y está muerta en
 silencio.** No se cae: se muestra vacía. Dropear la tabla no la rompe más de lo
-que ya está, pero el tramo tiene que **portarla a `gondolero_localidades`** —que
-guarda por nivel, así que "colegas de mi provincia" sale más directo que hoy—,
-no borrarla junto con la tabla.
+que ya está, pero el tramo tiene que **portarla a `gondolero_localidades`**, no
+borrarla junto con la tabla.
+
+#### Y "colegas de mi provincia" sale más directo con el nivel
+
+Hoy hacen falta **tres consultas y una tabla de apoyo**, porque en el sistema
+viejo una zona no dice de qué tipo es:
+
+```
+1. gondolero_zonas  →  misZonaIds                        (logros:113)
+2. zonas            →  ¿cuáles de ésas son 'provincia'?  (logros:226)
+3. gondolero_zonas  →  quiénes más tienen esas zonas     (logros:248)
+```
+
+Con `gondolero_localidades` el paso 2 **desaparece**: el nivel viaja en la fila.
+
+```
+1. gondolero_localidades  WHERE gondolero_id = yo AND nivel = 'provincia'
+2. gondolero_localidades  WHERE nivel = 'provincia' AND ref_id IN (las mías)
+```
+
+Dos consultas, una tabla, y sin preguntarle a nadie de qué tipo es cada zona.
+
+> **Ojo con la versión ambiciosa, que NO es gratis.** Lo de arriba son "los que
+> declararon la misma provincia". Si se quiere "los que trabajan EN mi
+> provincia" —incluyendo al que declaró una localidad suelta— hay que subir la
+> jerarquía, y **`localidades` no tiene `provincia_id`**: son dos saltos
+> (`localidad → departamento → provincia`), el mismo detalle que ya está
+> documentado en `expandirZonas` y que costó un embed apuntando a una columna
+> inexistente. Es una decisión de producto con costo, no un detalle de
+> implementación.
+>
+> El padrón de hoy: **24 provincias, 524 departamentos, 941 localidades.**
 
 ### El resto del sistema legacy, para dimensionarlo
 
