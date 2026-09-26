@@ -228,10 +228,21 @@ export default async function PerfilPage() {
 
       <div className="px-4 space-y-4 pt-4">
 
-        {/* ── Mis zonas de trabajo — colapsable, cerrada por defecto ── */}
+        {/* ── Mis zonas de trabajo — colapsable, cerrada por defecto ────────
+            El badge marca TAMBIÉN cuando está en cero, y ése es el caso que
+            importa. Antes un cero no ponía badge —ni acá ni en la sección de
+            abajo—, así que el recién registrado veía dos títulos cerrados sin
+            una sola marca de que adentro le faltaba algo. **Un cero sin marca
+            se lee como resuelto.**
+
+            Y el badge solo aparecía con invitaciones pendientes o con más de
+            una distri activa: justo los casos en que ya está resuelto. */}
         <ColapsableSection
           title="Mis zonas de trabajo"
-          badge={zonasActuales.length > 0 ? `${zonasActuales.length} zona${zonasActuales.length !== 1 ? 's' : ''}` : null}
+          badge={zonasActuales.length > 0
+            ? `${zonasActuales.length} zona${zonasActuales.length !== 1 ? 's' : ''}`
+            : 'Sin configurar'}
+          badgeColor={zonasActuales.length > 0 ? 'verde' : 'amber'}
           defaultOpen={false}
         >
           <LocalidadesSelector zonasActuales={zonasActuales} />
@@ -251,9 +262,20 @@ export default async function PerfilPage() {
             const totalActive = profile?.tipo_actor === 'fixer'
               ? reposActivas.length + distriFixerActivas.length
               : distrisActivas.length
+            // Cero vínculos NO es `null`. Es lo único que le impide trabajar, y
+            // es justo lo que quedaba sin marca. Una solicitud pendiente sí
+            // marca distinto: ahí no tiene nada que hacer más que esperar.
+            if (totalActive === 0) return solicitudPendiente ? 'Pendiente' : 'Sin vincular'
             return totalActive > 1 ? totalActive : null
           })()}
-          badgeColor={(invitacionesPendientes.length + repoInvitacionesPendientes.length + distriFixerInvitacionesPendientes.length) > 0 ? 'red' : 'verde'}
+          badgeColor={(() => {
+            const totalPending = invitacionesPendientes.length + repoInvitacionesPendientes.length + distriFixerInvitacionesPendientes.length
+            if (totalPending > 0) return 'red'
+            const totalActive = profile?.tipo_actor === 'fixer'
+              ? reposActivas.length + distriFixerActivas.length
+              : distrisActivas.length
+            return totalActive === 0 ? 'amber' : 'verde'
+          })()}
           defaultOpen={false}
         >
           <CodigoGondolero codigo={profile?.codigo_gondolero ?? null} />

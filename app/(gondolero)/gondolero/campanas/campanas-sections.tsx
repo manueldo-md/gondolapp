@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition } from 'react'
 import Link from 'next/link'
 import {
-  Star, Clock, Camera, CheckCircle2, ChevronDown, ChevronRight, DollarSign, WifiOff,
+  Star, Clock, Camera, CheckCircle2, ChevronDown, ChevronRight, DollarSign, WifiOff, Lock,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -23,6 +23,7 @@ import {
 } from '@/lib/campana-cache'
 import { formatearDia } from '@/lib/fecha-ar'
 import { textoPostulacion, type EstadoPostulacion } from '@/lib/postulacion-fixer'
+import type { Bloqueadas } from '@/lib/campanas-bloqueadas'
 import { postularseACampana } from './postular-actions'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -562,6 +563,7 @@ export function CampanasSections({
   misCampanas,
   disponibles,
   ofertas = [],
+  bloqueadas = { grupos: [], gruposOcultos: 0, campanasOcultas: 0, total: 0 },
   finalizadas,
   gondoleroNivel,
   misDistriIds,
@@ -575,6 +577,8 @@ export function CampanasSections({
   disponibles: CampanaCardData[]
   /** Las que puede VER pero no trabajar: le falta el vínculo con el ejecutor. */
   ofertas?: { campana: CampanaCardData; postulacion: EstadoPostulacion }[]
+  /** Las que NO puede tomar, agrupadas por con quién tiene que vincularse. */
+  bloqueadas?: Bloqueadas
   finalizadas: CampanaCardData[]
   gondoleroNivel: NivelGondolero | null
   misDistriIds: string[]
@@ -681,7 +685,11 @@ export function CampanasSections({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [misCampanas, gondoleroLocalidadIds])
 
-  const hayAlgo = misCampanas.length + disponibles.length + ofertas.length + finalizadas.length > 0
+  // Las bloqueadas CUENTAN como algo que mostrar: son la explicación de por qué
+  // el resto está vacío, y esconderlas detrás del 📭 sería volver al problema.
+  const hayAlgo =
+    misCampanas.length + disponibles.length + ofertas.length +
+    finalizadas.length + bloqueadas.grupos.length > 0
 
   if (!hayAlgo) {
     return (
@@ -690,8 +698,14 @@ export function CampanasSections({
         <h2 className="text-base font-semibold text-gray-700 mb-1">
           No hay campañas activas
         </h2>
+        {/* Decía "campañas disponibles EN TU ZONA", y eso le echaba la culpa a
+            la geografía de algo que casi nunca es geográfico: con el bloque de
+            bloqueadas puesto, acá solo se llega cuando no hay NADA —ni siquiera
+            algo a lo que no tenga acceso—, o sea cuando el problema no es suyo
+            ni tiene nada que configurar. Un vacío que inventa una causa es peor
+            que uno que no dice ninguna. */}
         <p className="text-sm text-gray-400 max-w-xs">
-          Cuando haya campañas disponibles en tu zona van a aparecer acá.
+          Todavía no hay campañas para vos. Cuando se publique alguna te avisamos acá.
         </p>
       </div>
     )
@@ -775,6 +789,66 @@ export function CampanasSections({
         </Seccion>
       )}
 
+      {/* ── Bloqueadas: por qué no ve más ─────────────────────────────────────
+          Va DESPUÉS de lo que puede hacer y ANTES de lo terminado: es una
+          explicación, no una oferta, y ponerla arriba convertiría la pantalla
+          de un gondolero nuevo en una lista de puertas cerradas.
+
+          Una fila por EJECUTOR y no por campaña: el texto de las once campañas
+          de Biomega es el mismo texto once veces, y lo que puede hacer con esa
+          información es una sola cosa. El porqué está en lib/campanas-bloqueadas.ts. */}
+      {bloqueadas.grupos.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="px-4 pt-3.5 pb-2">
+            <div className="flex items-center gap-2">
+              <Lock size={13} className="text-gray-400 shrink-0" />
+              <span className="text-sm font-semibold text-gray-700">
+                No disponibles para vos
+              </span>
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                {bloqueadas.total}
+              </span>
+            </div>
+          </div>
+
+          <div className="divide-y divide-gray-50">
+            {bloqueadas.grupos.map(g => (
+              <div key={g.clave} className="px-4 py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-sm font-medium text-gray-800 truncate">{g.nombre}</p>
+                  <span className="text-xs text-gray-400 shrink-0">
+                    {g.campanas} {g.campanas === 1 ? 'campaña' : 'campañas'}
+                  </span>
+                </div>
+                {/* El texto sale tal cual de `accesoACampana`: es el MISMO que
+                    decide el acceso, así que no puede decir una cosa distinta
+                    de la que hace el gate. */}
+                <p className="text-xs text-gray-400 mt-0.5 leading-snug">{g.mensaje}</p>
+              </div>
+            ))}
+          </div>
+
+          {bloqueadas.gruposOcultos > 0 && (
+            <p className="px-4 pb-3 text-xs text-gray-400">
+              y {bloqueadas.campanasOcultas}{' '}
+              {bloqueadas.campanasOcultas === 1 ? 'campaña más' : 'campañas más'} de{' '}
+              {bloqueadas.gruposOcultos}{' '}
+              {bloqueadas.gruposOcultos === 1 ? 'organización' : 'organizaciones'}.
+            </p>
+          )}
+
+          <Link
+            href="/gondolero/perfil"
+            className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50 active:bg-gray-100 transition-colors"
+          >
+            <span className="text-xs font-semibold text-gray-600">
+              Cómo vincularme
+            </span>
+            <ChevronRight size={14} className="text-gray-400" />
+          </Link>
+        </div>
+      )}
+
       {/* ── Campañas finalizadas (últimos 90 días) ── */}
       {finalizadas.length > 0 && (
         <Seccion
@@ -795,8 +869,12 @@ export function CampanasSections({
         </Seccion>
       )}
 
-      {/* Estado vacío de disponibles cuando solo hay en mis campañas */}
-      {disponibles.length === 0 && finalizadas.length === 0 && misCampanas.length > 0 && (
+      {/* Estado vacío de disponibles cuando solo hay en mis campañas.
+          `bloqueadas.total === 0` es obligatorio: "ya estás en todas" con once
+          campañas de Biomega listadas arriba como no disponibles se contradice
+          solo, y la que gana es la frase optimista. */}
+      {disponibles.length === 0 && finalizadas.length === 0 && misCampanas.length > 0
+        && bloqueadas.total === 0 && (
         <div className="flex flex-col items-center justify-center py-10 text-center">
           <div className="text-4xl mb-3">🎉</div>
           <p className="text-sm font-semibold text-gray-700">

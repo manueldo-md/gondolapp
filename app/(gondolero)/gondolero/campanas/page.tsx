@@ -11,6 +11,7 @@ import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { estaVencida } from '@/lib/campana-vigencia'
 import { estadoPostulacion } from '@/lib/postulacion-fixer'
 import { tieneAccesoACampana, accesoACampana, type CampanaAcceso, type MotivoSinAcceso, type EjecutorCampana } from '@/lib/acceso-campana'
+import { agruparBloqueadas, type CampanaBloqueable } from '@/lib/campanas-bloqueadas'
 
 type CampanaRow = CampanaCardData
 
@@ -23,6 +24,7 @@ const CAMPANA_SELECT = `
   actor_campana, abierta_a_postulaciones,
   marca:marcas ( razon_social ),
   distri:distribuidoras ( razon_social ),
+  repositora:repositoras ( razon_social ),
   bloques_foto ( id, bloque_campos ( tipo ) )
 `
 
@@ -382,6 +384,36 @@ export default async function CampanasPage() {
       postulacion: estadoPostulacion(solPorEjecutor.get(x.acceso.postulable.id)),
     }))
 
+  // ── Sección 2c: Bloqueadas ────────────────────────────────────────────────────
+  // Las que NO puede tomar, agrupadas por con quién tiene que vincularse.
+  //
+  // Hasta el 25/9/2026 no aparecían de ninguna forma, y eso dejaba la escasez
+  // sin explicación: un recién registrado veía 1 de 6 en prod y el único cartel
+  // de la pantalla hablaba de zonas, o sea que le echaba la culpa a la
+  // geografía. Con vínculo cero, declarar zonas no cambia nada.
+  //
+  // El motivo NO se escribe acá: sale de `accesoACampana`, el mismo que decide
+  // `disponibles` y `ofertas`. La agrupación está en `lib/campanas-bloqueadas.ts`
+  // —sin import de Next, así que se prueba sin request— y el porqué de agrupar
+  // en vez de topear está en su encabezado.
+  //
+  // Se excluyen las propias sin acceso: ésas ya bajan a "Finalizadas" con el
+  // trabajo que hicieron, y contarlas dos veces sería decirle que le falta
+  // vincularse con alguien con quien ya trabajó.
+  // Un fixer se vincula por repositora y un gondolero por distribuidora: las
+  // dos cuentan, o el cartel de zonas volvería a aparecerle a un fixer que sí
+  // tiene con quién trabajar.
+  const tieneAlgunVinculo = misDistriIds.length > 0 || misRepoIds.length > 0
+
+  const bloqueadas = agruparBloqueadas(
+    vigentes.filter(c =>
+      !misCampanasIds.has(c.id)
+      && !sinAccesoIds.has(c.id)
+      && !ofertas.some(o => o.campana.id === c.id)
+    ) as unknown as CampanaBloqueable[],
+    ctxAcceso,
+  )
+
   // ── Sección 3: Finalizadas ────────────────────────────────────────────────────
   // REGLA: (estado IN ('cerrada','suspendida','pausada') OR fecha_fin pasada)
   //        AND (tiene participación OR misiones)
@@ -479,7 +511,16 @@ export default async function CampanasPage() {
       {/* Misiones guardadas offline — solo aparece si hay pendientes en IDB */}
       <MisionesPendientes />
 
-      {!tieneZonas && (
+      {/* ── El cartel de zonas, solo cuando las zonas son la limitación real ──
+          Se mostraba siempre que faltaran zonas, incluso con CERO vínculos, y
+          ahí miente por omisión: declarar localidades no le habilita una sola
+          campaña más mientras no lo vincule nadie. Era el primer texto que leía
+          un recién registrado, y le señalaba la causa equivocada.
+
+          Con vínculo, en cambio, es exacto: las zonas son lo único que le está
+          recortando la lista. Para el otro caso habla el bloque de bloqueadas,
+          que dice el motivo de verdad. */}
+      {!tieneZonas && tieneAlgunVinculo && (
         <div className="mx-4 mt-4 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
           <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
           <p className="text-sm text-amber-800">
@@ -495,6 +536,7 @@ export default async function CampanasPage() {
           misCampanas={misCampanas}
           disponibles={disponibles}
           ofertas={ofertas}
+          bloqueadas={bloqueadas}
           finalizadas={finalizadas}
           gondoleroNivel={gondoleroNivel}
           misDistriIds={misDistriIds}

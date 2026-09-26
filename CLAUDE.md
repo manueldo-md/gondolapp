@@ -7690,18 +7690,77 @@ Es exactamente el mensaje que hace falta. El problema es dónde está:
 > invitaciones pendientes o con más de una distri activa: justo los casos en que
 > ya está resuelto.
 
-### Lo que sigue
+### Lo que se hizo — los tres, el 25/9/2026
 
-El camino existe y funciona; lo que falta es que lo encuentre el que entra por
-primera vez. Tres cosas, por orden de impacto y sin empezar:
+**Actividad queda MUDA a propósito.** Un recién registrado no tiene actividad y
+eso es correcto; meterle un cartel ahí sería el mismo mensaje en cuatro lugares.
 
-1. **Que Campañas diga la causa real.** Hoy tiene un cartel que culpa a la
-   geografía. Con cero vínculos el mensaje tiene que ser el del vínculo, con el
-   código a mano; el de zonas va después, o los dos, pero no el de zonas solo.
-2. **Que el Perfil se note.** Un badge en las dos secciones colapsadas cuando
-   están en cero —o abrirlas por defecto mientras falte lo de adentro— alcanza.
-3. **Decidir si las campañas bloqueadas se muestran.** Hoy son invisibles: cinco
-   de seis en prod. `accesoACampana` ya devuelve el `mensaje` exacto de cada una
-   ("Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora"),
-   así que mostrarlas apagadas con su motivo es barato. **Y ese texto explica de
-   una la escasez mucho mejor que cualquier cartel genérico.**
+#### 1. Las bloqueadas, agrupadas por con quién hay que vincularse
+
+`lib/campanas-bloqueadas.ts` + la sección "No disponibles para vos" en
+`campanas-sections.tsx`. El motivo **no se reescribe**: sale de
+`accesoACampana`, el mismo que decide `disponibles` y `ofertas`, así que la
+pantalla no puede decir una cosa distinta de la que hace el gate.
+
+**La decisión era tope o agrupación, y la resolvió cómo crece cada número:**
+
+| | campañas bloqueadas | grupos |
+|---|---|---|
+| dev | 16 | **4** (Biomega sola son 11) |
+| prod | 4 | **3** |
+
+Las campañas crecen con el negocio; los grupos crecen con las distribuidoras
+que operan en su zona, que es otro orden de magnitud. Si mañana Biomega publica
+cincuenta, la lista por campaña pasa a 50 filas ilegibles y la agrupada sigue
+siendo una línea con otro número adentro. **Un tope sobre las campañas habría
+escondido información sin ordenarla; agrupar la ordena y no esconde nada.** Y la
+unidad accionable no es la campaña: el texto de las once de Biomega es el mismo
+texto once veces, y lo que puede hacer con eso es una sola cosa.
+
+Igual hay un tope, pero **sobre los grupos** (`TOPE_GRUPOS = 4`), con un "y N
+campañas más de M organizaciones". Hoy no muerde en ninguna base.
+
+**Dos motivos NO se muestran**, y eso es parte del diseño: `actor_distinto` no
+llega nunca —la query ya filtra por `actor_campana`— y `campana_sin_financiador`
+es un problema de datos de la campaña, con un mensaje neutro a propósito y con
+el que el gondolero no puede hacer nada. El que se tiene que enterar es quien la
+creó, y para eso `accesoACampana` ya loguea.
+
+#### 2. El vacío dejó de culpar a la geografía — y el cartel de zonas también
+
+El 📭 decía *"campañas disponibles **en tu zona**"*. Ahora dice "Todavía no hay
+campañas para vos", y con el bloque del punto 1 puesto **casi no se llega ahí**:
+las bloqueadas cuentan como algo que mostrar, así que el vacío queda solo para
+cuando no hay nada de nada.
+
+> **Y el cartel amarillo de zonas ahora pide `tieneAlgunVinculo`.** Se mostraba
+> siempre que faltaran zonas, incluso con CERO vínculos, y ahí miente por
+> omisión: declarar localidades no habilita una sola campaña más mientras no lo
+> vincule nadie. Era **el primer texto que leía un recién registrado** y le
+> señalaba la causa equivocada. Con vínculo es exacto y se muestra igual.
+
+#### 3. Los badges del perfil marcan el CERO
+
+"Mis zonas de trabajo" → `Sin configurar` en ámbar. "Mi distribuidora" →
+`Sin vincular` en ámbar, o `Pendiente` si ya hay una solicitud esperando.
+
+El badge solo aparecía con invitaciones pendientes o con más de una distri
+activa — **justo los casos en que ya está resuelto**. Ojo con
+`ColapsableSection`: esconde el badge cuando vale `0` o `''`, así que el aviso
+tiene que ser un string, no un número.
+
+#### Lo que el control encontró, que la lectura no
+
+`scripts/probar-campanas-bloqueadas.ts`, 9 casos. **Dos defectos míos, los dos
+en los controles y no en la lib:**
+
+1. **Una fixture que no probaba lo que decía.** Para disparar
+   `campana_sin_financiador` había puesto `financiada_por='distri'` sin
+   `distri_id`… y sin `marca_id`. El paso 2 de `accesoACampana` la deja pasar
+   como de GondolApp —"sin ejecutora y sin marca no hay a quién pertenecer"—, o
+   sea que el caso nunca llegaba al motivo que quería probar.
+2. **Dos controles de orden que NO PODÍAN FALLAR.** Los nombres de las fixtures
+   estaban en el mismo orden que los tamaños ("Biomega" 3, "Distri Norte" 1), así
+   que ordenar por nombre daba el mismo resultado que ordenar por tamaño.
+   **Verificado rompiendo el sort a propósito: quedaban en verde.** Con los
+   nombres invertidos, la misma mutación pone tres en rojo.
