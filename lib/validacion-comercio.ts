@@ -191,9 +191,25 @@ export async function validarComercioYCrearMision(
   const puntos                = puntosDeLaCampana(campana)
 
   // ── Guarda de idempotencia ────────────────────────────────────────────────
+  //
+  // ── EL CRITERIO ES "ESTE COMERCIO YA SE PAGÓ", NO "HAY MISIÓN VIVA" ───────
+  // Y la diferencia no es de estilo: **una es el invariante y la otra es una
+  // consecuencia suya**. Es la misma distinción que "la lista ES el permiso"
+  // de `lib/campanas-de.ts` y que el filtro del lector de `aprobarMisionCore`.
+  //
+  // Lo que no puede pasar es pagar dos veces el mismo comercio. Que exista una
+  // misión viva era, hasta el 26/9/2026, una forma de saberlo — y dejó de
+  // serlo en ese mismo commit: al cerrar la misión de un comercio rechazado
+  // con `estado='descartada'`, deja de haber misión viva. Con el criterio
+  // viejo, revalidar ese comercio —camino contemplado: unas líneas más arriba
+  // este mismo archivo limpia el `motivo_rechazo` de un rechazo anterior—
+  // creaba una misión nueva y **pagaba de nuevo**: 400 puntos por un comercio.
+  //
+  // El criterio nuevo no depende de qué estado tenga la fila, así que ningún
+  // estado que se agregue mañana lo puede burlar.
   const { data: existentes, error: errMis } = await db
     .from('misiones')
-    .select('id, estado')
+    .select('id, estado, bounty_estado')
     .eq('campana_id', campana.id)
     .eq('comercio_id', comercioId)
 
@@ -202,17 +218,29 @@ export async function validarComercioYCrearMision(
     return { ok: true, misionId: null, puntos: 0 }
   }
 
+  type MisionPrevia = { id: string; estado: string | null; bounty_estado: string | null }
+  const previas = (existentes ?? []) as MisionPrevia[]
+
+  // 1. ¿Ya se pagó? Se corta acá, sea cual sea el estado de esa misión.
+  const yaPagada = previas.find(m => m.bounty_estado === 'acreditado')
+  if (yaPagada) {
+    return { ok: true, misionId: yaPagada.id, puntos }
+  }
+
+  // 2. ¿Hay una misión abierta que reutilizar? Esto ya NO decide el pago:
+  //    decide si se crea otra fila o se sigue con la que hay.
+  //
   // `!==` de JS y no `.neq()` de PostgREST: `misiones.estado` es nullable y la
   // lógica de tres valores dejaría afuera las filas con NULL, que sí son misiones
   // vivas. Mismo criterio que obtenerEstadoComercios y comercios-relevados.
-  const viva = ((existentes ?? []) as { id: string; estado: string | null }[])
-    .find(m => m.estado !== 'descartada')
+  const viva = previas.find(m => m.estado !== 'descartada')
 
   let misionId: string
   if (viva) {
     misionId = viva.id
     if (viva.estado === 'aprobada') {
-      // Ya estaba todo hecho. Revalidar no vuelve a pagar.
+      // Aprobada y sin acreditar: el bounty está retenido esperando el mínimo.
+      // Revalidar no la vuelve a aprobar ni adelanta ese pago.
       return { ok: true, misionId, puntos }
     }
   } else {
@@ -355,18 +383,49 @@ export async function rechazarComercioConMotivo(
 
   if (errFotos) console.error('[rechazarComercio] no se pudieron anular las fotos:', errFotos.message)
 
-  // Si el comercio se validó y DESPUÉS se rechazó, la misión ya existe. Tiene
+  // ── La misión se cierra SIEMPRE, y el bounty depende de si ya se pagó ─────
+  //
+  // Si el comercio se validó y DESPUÉS se rechazó, la misión ya existe y tiene
   // que quedar en un estado terminal: una misión 'pendiente' que nadie va a
   // revisar nunca es exactamente el patrón de las misiones trabadas.
+  //
+  // Hasta el 26/9/2026 esto llevaba un `.neq('estado','aprobada')` sin ningún
+  // comentario, así que una misión YA APROBADA no se tocaba y quedaba
+  // `aprobada` + `acreditado` con su única foto en `rechazada`. En producción
+  // hay una fila así: 200 puntos pagados a las 11:17 y el comercio rechazado a
+  // las 15:58 del mismo día.
+  //
+  // Son DOS updates y no uno, porque el bounty de cada grupo dice algo
+  // distinto y meterlos juntos obligaría a mentir en uno:
+  //
+  //   · no acreditada  → `descartada` + `anulado`. Nunca cobró y no va a cobrar.
+  //   · YA ACREDITADA  → `descartada`, y **el bounty NO se toca**. Ponerle
+  //     'anulado' sería decir que no se pagó, y se pagó. El gondolero no hizo
+  //     nada mal: le pagamos y después rechazamos el comercio.
+  //
+  // Lo que NO se hace es revertir el pago. Está decidido y documentado en
+  // CLAUDE.md: la plata ya está en el saldo y puede estar canjeada.
   if (comercio.campana_id) {
-    const { error: errMis } = await db
-      .from('misiones')
-      .update({ estado: 'descartada', bounty_estado: 'anulado' })
+    const deEsteComercio = (q: ReturnType<typeof db.from>) => q
       .eq('campana_id', comercio.campana_id)
       .eq('comercio_id', comercioId)
-      .neq('estado', 'aprobada')
+
+    const { error: errMis } = await deEsteComercio(
+      db.from('misiones').update({ estado: 'descartada', bounty_estado: 'anulado' })
+    ).neq('bounty_estado', 'acreditado')
 
     if (errMis) console.error('[rechazarComercio] no se pudo descartar la misión:', errMis.message)
+
+    // La pagada: se cierra igual, sin tocarle la plata. El filtro es el mismo
+    // `bounty_estado` de arriba visto del otro lado, así que las dos escrituras
+    // cubren todas las filas y ninguna las dos veces.
+    const { error: errPagada } = await deEsteComercio(
+      db.from('misiones').update({ estado: 'descartada' })
+    ).eq('bounty_estado', 'acreditado')
+
+    if (errPagada) {
+      console.error('[rechazarComercio] no se pudo cerrar la misión ya pagada:', errPagada.message)
+    }
     await sincronizarComerciosRelevados(comercio.campana_id, admin)
     if (comercio.registrado_por) {
       await sincronizarComerciosCompletados(comercio.campana_id, comercio.registrado_por, admin)

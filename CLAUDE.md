@@ -2067,8 +2067,50 @@ comercio.
 
 El arreglo es cambiar el criterio de la guarda por el que corresponde:
 **"este comercio ya se pagó"** (`bounty_estado = 'acreditado'` en cualquier
-misión suya) en vez de "hay una misión viva". Es un invariante más fuerte y no
-depende de qué estado tenga la fila.
+misión suya) en vez de "hay una misión viva".
+
+##### GUARDAR POR EL INVARIANTE, NO POR SU CONSECUENCIA
+
+Vale más que este caso, y es la misma forma que **"la lista ES el permiso"** de
+`lib/campanas-de.ts` y que el filtro del lector de `aprobarMisionCore`.
+
+> **Lo que no puede pasar** es pagar dos veces el mismo comercio. Eso es el
+> invariante. **"Hay una misión viva"** era una forma de saberlo: cierta
+> mientras nadie cerrara una misión ya pagada.
+
+Una guarda escrita sobre la consecuencia se rompe cuando la consecuencia deja
+de seguirse del invariante — **y se rompe en silencio, porque nada falla: se
+paga de nuevo y la función devuelve `ok`**. Acá el que la rompió fue un cambio
+en OTRO archivo, al cerrar la misión del comercio rechazado. Esa es la firma
+del patrón: la guarda vive en un lado y su premisa en otro.
+
+La versión por invariante no depende del estado de la fila, así que ningún
+estado que se agregue mañana la puede burlar.
+
+Es la misma familia que "el cableado es lo que falla, no la función": las dos
+piezas estaban bien y el acuerdo entre ellas no.
+
+##### HECHO el 26/9/2026
+
+Las cuatro piezas, en un commit:
+
+| | Qué |
+|---|---|
+| `validacion-comercio.ts` · guarda | el criterio pasa a ser "ya se pagó". La búsqueda de misión viva queda, pero ya **no decide el pago**: decide si se reutiliza la fila o se crea otra |
+| `validacion-comercio.ts` · `rechazarComercioConMotivo` | **dos updates y no uno**. No acreditada → `descartada` + `anulado`. Ya acreditada → `descartada` y el bounty **no se toca**: ponerle `anulado` sería decir que no se pagó |
+| `20261007100000` | cierra la fila de prod. Su verificación central es que **no se movió un peso**: compara `movimientos_puntos` y los saldos antes y después |
+| `COMMENT ON COLUMN misiones.bounty_estado` | la combinación explicada donde se la encuentra, sin tener que dar con el commit |
+
+Dos controles, y los dos se verificó que muerden:
+
+- `probar-migracion-comercio-rechazado.mjs` — verde en dev y prod. En dev no
+  hay ni un comercio rechazado, así que el caso 6 arma el escenario entero
+  para tener qué arreglar.
+- `probar-pago-unico-alta.mts` — el camino completo contra dev: validar,
+  rechazar, **revalidar**. **Con la guarda vieja repuesta a propósito da 400
+  puntos, dos misiones y dos movimientos.** Es el segundo pago reproducido.
+  Y el caso 4 es el control del control: un comercio nuevo SÍ se paga, porque
+  "no paga dos veces" lo cumple igual de bien una guarda que no paga nunca.
 
 ### Formato de `mision_respuestas.valor` — normalizado el 14/9/2026
 
