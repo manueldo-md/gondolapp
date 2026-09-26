@@ -14,7 +14,7 @@ import {
 } from '@/lib/utils'
 import type { TipoCampana, NivelGondolero, EstadoParticipacion } from '@/types'
 import { NIVEL_LABEL, cumpleNivelMinimo } from '@/lib/nivel'
-import { etiquetaVigencia } from '@/lib/campana-vigencia'
+import { etiquetaVigencia, puedeRecapturar } from '@/lib/campana-vigencia'
 import {
   leerCampana,
   sincronizarCampanas,
@@ -460,14 +460,29 @@ function CampanaCardOferta({ campana, postulacion }: { campana: CampanaCardData;
 function CampanaCardCerrada({
   campana,
   misDistriIds,
+  fotosRechazadas = 0,
+  misionRetakeId,
 }: {
   campana: CampanaCardData
   misDistriIds: string[]
+  /** Fotos que todavía se pueden rehacer en esta campaña vencida. */
+  fotosRechazadas?: number
+  misionRetakeId?: string
 }) {
   const esMiDistri = !!campana.distri_id && misDistriIds.includes(campana.distri_id)
   const suspendida = campana.estado === 'suspendida'
 
+  // ── La prórroga de recaptura, acá también ───────────────────────────────
+  // Una campaña que vence con una foto sin rehacer BAJA a "Finalizadas", y
+  // hasta el 26/9/2026 esta tarjeta no mostraba nada: el aviso ámbar y el
+  // botón "Retomar misión" viven en la tarjeta ACTIVA, así que desaparecían
+  // justo cuando empezaba a correr el reloj. El gondolero perdía la misión sin
+  // enterarse de que tenía días para salvarla.
+  const prorroga = puedeRecapturar(campana.fecha_fin)
+  const hayRetake = fotosRechazadas > 0 && !!misionRetakeId && prorroga.ok
+
   return (
+    <div className="space-y-1.5">
     <Link
       href={`/gondolero/campanas/${campana.id}`}
       className="flex items-center gap-3 bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 transition-transform duration-100 active:scale-[0.98]"
@@ -503,6 +518,23 @@ function CampanaCardCerrada({
       </div>
       <ChevronRight size={16} className="text-gray-300 shrink-0" />
     </Link>
+
+    {hayRetake && (
+      <Link
+        href={`/gondolero/captura?campana=${campana.id}&retake=${misionRetakeId}`}
+        className="block bg-red-50 border border-red-200 rounded-xl px-3 py-2.5"
+      >
+        <p className="text-xs font-semibold text-red-700">
+          ⏳ {fotosRechazadas === 1 ? 'Te queda una foto por rehacer' : `Te quedan ${fotosRechazadas} fotos por rehacer`}
+        </p>
+        <p className="text-xs text-red-600 mt-0.5">
+          La campaña terminó. {prorroga.diasRestantes === 1
+            ? 'Te queda 1 día'
+            : `Te quedan ${prorroga.diasRestantes} días`} para rehacerla, o podés cerrar la misión. →
+        </p>
+      </Link>
+    )}
+    </div>
   )
 }
 
@@ -864,6 +896,8 @@ export function CampanasSections({
               key={c.id}
               campana={c}
               misDistriIds={misDistriIds}
+              fotosRechazadas={fotosRechazadasRecord[c.id] ?? 0}
+              misionRetakeId={misionRetakeRecord[c.id]}
             />
           ))}
         </Seccion>

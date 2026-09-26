@@ -42,7 +42,7 @@ import {
 import { guardarMisionEnCola, borrarMisionDeCola, actualizarMisionEnCola, esErrorDeRed, listarMisionesPendientes } from '@/lib/mision-queue'
 import { RADIO_BLOQUEO_METROS } from '@/lib/gps-radios'
 import { mensajeErrorInfra } from '@/lib/error-infra'
-import { estaVencida } from '@/lib/campana-vigencia'
+import { estaVencida, puedeRecapturar, DIAS_GRACIA_RECAPTURA } from '@/lib/campana-vigencia'
 import { motivoBloqueo, cupoPropioLleno, TEXTO_BLOQUEO } from '@/lib/comercio-seleccionable'
 import {
   encolarReporte, marcarComercioReportado, leerComerciosReportados,
@@ -809,6 +809,11 @@ function CapturaContent() {
   const [puntosMisionRetake, setPuntosMisionRetake] = useState(0)
   const [confirmandoDescarte, setConfirmandoDescarte] = useState(false)
   const [descartando, setDescartando] = useState(false)
+  /**
+   * Días que quedan de prórroga cuando la campaña YA venció y esto es un
+   * retake. `null` con la campaña vigente: no hay reloj que mostrar.
+   */
+  const [diasProrroga, setDiasProrroga] = useState<number | null>(null)
   // Paso 5b: preview URL del último campo foto capturado (para confirmacion cuando fotoPreview es null)
   const [ultimoCampoFotoPreviewUrl, setUltimoCampoFotoPreviewUrl] = useState<string | null>(null)
   // ID del campo tipo='foto' que se está capturando en paso 'formulario-camara'
@@ -888,11 +893,30 @@ function CapturaContent() {
           //
           // El chequeo va ANTES del setCampana para que no llegue a montarse el
           // primer paso. `estado=activa` no alcanza: nada cierra por fecha.
-          if (data && estaVencida((data as { fecha_fin?: string | null }).fecha_fin)) {
-            setErrorGlobal('Esta campaña ya terminó y no acepta misiones nuevas. Buscá otra en la lista de campañas.')
+          //
+          // ── EL RETAKE TIENE SU PROPIO PLAZO ──────────────────────────────
+          // Terminar una misión ABIERTA no es lo mismo que empezar una nueva:
+          // el trabajo ya se hizo y la misión ya existe. Hasta el 26/9/2026
+          // este mismo `estaVencida` cortaba las dos cosas, y con eso cerraba
+          // la única pantalla que tiene el botón "Descartar la misión" — o
+          // sea que la salida quedaba tan bloqueada como la entrada y la
+          // misión se volvía imposible de terminar de ninguna manera.
+          //
+          // El plazo sale de `puedeRecapturar` y lo pone la CAMPAÑA
+          // (`fecha_fin + DIAS_GRACIA_RECAPTURA`), no el gondolero.
+          const fechaFin = (data as { fecha_fin?: string | null } | null)?.fecha_fin
+          const permiso = esRetake
+            ? puedeRecapturar(fechaFin)
+            : { ok: !estaVencida(fechaFin), enProrroga: false, diasRestantes: null }
+
+          if (data && !permiso.ok) {
+            setErrorGlobal(esRetake
+              ? `Esta campaña terminó hace más de ${DIAS_GRACIA_RECAPTURA} días y ya no acepta fotos rehechas.`
+              : 'Esta campaña ya terminó y no acepta misiones nuevas. Buscá otra en la lista de campañas.')
             setCargando(false)
             return
           }
+          setDiasProrroga(permiso.enProrroga ? permiso.diasRestantes : null)
 
           // Segunda capa del filtro de ACCESO, por el mismo motivo y en el mismo
           // lugar que el de fecha. La lista ya baja a "Finalizadas" las campañas
@@ -2366,6 +2390,25 @@ function CapturaContent() {
         </div>
 
         <div className="px-4 py-5 space-y-4">
+          {/* ── La campaña terminó y esto es tiempo prestado ────────────────
+              Se dice con el número de días y arriba de todo: el gondolero
+              entró por un link que en la lista aparece bajo "Finalizadas", así
+              que lo primero que tiene que saber es hasta cuándo puede. */}
+          {diasProrroga !== null && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
+              <p className="text-sm font-semibold text-red-800 mb-1">
+                Esta campaña ya terminó
+              </p>
+              <p className="text-xs text-red-700">
+                Te {diasProrroga === 1 ? 'queda' : 'quedan'}{' '}
+                <span className="font-semibold">
+                  {diasProrroga} {diasProrroga === 1 ? 'día' : 'días'}
+                </span>{' '}
+                para rehacer la foto. Después la misión se cierra sin acreditarse.
+              </p>
+            </div>
+          )}
+
           {/* Explicación */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
             <p className="text-sm font-semibold text-amber-800 mb-1">

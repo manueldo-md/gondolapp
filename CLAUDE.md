@@ -1930,57 +1930,88 @@ Guarda a no romper: `actualizarEstadoMision` sale temprano si la misión está
 descartada. Sin eso, aprobar una foto que había quedado pendiente le pisa el
 estado con 'aprobada' y le paga los puntos que resignó.
 
-### Aprobación parcial de fotos — qué pasa hoy (relevado 15/9/2026)
+### Aprobación parcial de fotos — CORREGIDO el 26/9/2026
 
-Campaña con dos campos foto. El revisor aprueba una y rechaza la otra. Qué
-pasa hoy, leído del código, **antes de que una distri lo haga en producción**:
+> **⚠️ La nota vieja de este lugar estaba mal, y conviene saber por qué antes de
+> volver a abrirlo.** Decía que la aprobación parcial *"no tiene estado
+> terminal"* y que *"los puntos se pagan todos y tarde por arrastre"*. Lo
+> segundo fue cierto y **se arregló el 16/9/2026** —un día después de
+> escribirla— cuando `aprobarMisionCore` sumó `.eq('estado','aprobada')` a la
+> barrida. Lo primero nunca fue cierto: el estado parcial **es transitorio a
+> propósito** y tiene dos salidas terminales.
+>
+> Se deja el rastro porque una nota que dice "hay un agujero" sobrevive a su
+> agujero, y alguien la reabre.
 
-**La misión queda en `pendiente`.** `actualizarEstadoMision`
-(`lib/misiones.ts:174-184`) solo tiene una rama:
+Campaña con dos campos foto, una aprobada y una rechazada. Lo que pasa,
+releído entero el 26/9/2026:
 
-```ts
-if (aprobadas === total) { await aprobarMisionCore(...) }
-// Caso C (diferido): fotos con rechazadas → misión queda en pendiente
+1. El revisor rechaza la foto B, sale la notificación con el motivo y el texto
+   *"podés retomar la misión y rehacer esa foto"*.
+2. En el mismo acto se llama a `actualizarEstadoMision`, que lee las fotos
+   **vigentes** (`reemplazada_por IS NULL`): `aprobadas(1) !== total(2)`, así
+   que no entra en ninguna rama y sale.
+3. La misión queda `pendiente` + `retenido`.
+4. La foto A queda con su `bounty_estado='retenido'`, **pero una foto con
+   `mision_id` nunca se paga sola**: `fotoEsUnidadDePago` devuelve `false`, y
+   `cerrarCampana` aplica el mismo filtro.
+
+**Nadie cobra y nadie pierde nada.** No es un limbo: es "tenés una foto para
+rehacer", con dos salidas terminales que existen y se usan —`registrarRecaptura`
+(5 usos en dev, 1 en prod) y `descartarRecaptura`—.
+
+**El `else` que falta es deliberado**, y está argumentado en `lib/misiones.ts`:
+el rechazo llama a esta misma función en el mismo acto, así que un `else`
+mataría la misión **antes** de que el gondolero pueda recapturar, justo cuando
+acaba de recibir la notificación que le dice que puede.
+
+Medido el 26/9/2026:
+
+```
+misiones mixtas (≥1 aprobada y ≥1 rechazada)   dev 1 (ya descartada)   prod 0
+esperando recaptura, campaña vigente           dev 1 · 50 pts          prod 0
+esperando recaptura, campaña VENCIDA           dev 0                   prod 0
 ```
 
-Con 1 aprobada y 1 rechazada, `aprobadas !== total` y **no pasa nada**. No hay
-`else`. El comentario del archivo dice que el Caso C está cubierto ("se
-rechaza"); no lo está — es un `if` sin salida.
+#### Lo que sí quedó abierto, que es otra cosa
 
-**Los puntos: ninguno en el momento, y después TODOS por arrastre.** Este es el
-hallazgo que importa y no es el que parece.
+Tres cosas, ninguna es la aprobación parcial en sí:
 
-El pago es por misión, nunca por foto: la unidad es `misiones.puntos_total` y
-solo la libera `aprobarMisionCore`, al que no se llega. Hasta ahí, retenido.
+1. **`rechazarComercio` no toca una misión ya aprobada** — hay 200 puntos de
+   producción parados ahí. Ver la sección propia más abajo.
+2. **El vencimiento con recaptura pendiente**: la salida existe en el servidor y
+   es inalcanzable por la UI.
+3. **Los puntos retenidos de una misión pendiente no se muestran** en el detalle
+   de campaña.
 
-Pero el paso 3b de `aprobarMisionCore` libera así:
+### Los 200 puntos de producción: `rechazarComercio` y la misión ya aprobada
 
-```ts
-.eq('campana_id', campanaId).eq('gondolero_id', gondoleroId)
-.eq('bounty_estado', 'retenido')
+Encontrado el 26/9/2026 midiendo, no leyendo. En **producción**:
+
+```
+misión   estado 'aprobada'    bounty 'acreditado'   200 pts
+foto     estado 'rechazada'   bounty 'anulado'      "Mal ubicado en el mapa"
 ```
 
-**Filtra por `bounty_estado`, no por `estado`.** Así que el día que CUALQUIER
-otra misión de ese gondolero en esa campaña se apruebe y cruce el mínimo, la
-barrida alcanza también a la misión parcial —que sigue en `pendiente` y en
-`retenido`— y **le paga el 100% de `puntos_total`, incluida la parte de la foto
-rechazada**. El rechazo no tiene ningún efecto económico.
+La secuencia, por los timestamps: el comercio se validó, la misión se aprobó y
+**los 200 puntos se pagaron el 17/9 a las 11:17** (movimiento `Foto aprobada ·
+Alta comercios zona norte`). A las **15:58 del mismo día** alguien rechazó el
+comercio: la foto pasó a `rechazada` + `anulado`, y la misión no se tocó.
 
-Es el mismo mecanismo que ya está documentado para el descarte, donde se tapó
-con `bounty_estado='anulado'`. La aprobación parcial no tiene ese tapón.
+La causa es una línea sin comentario en `lib/validacion-comercio.ts`:
 
-**¿Limbo?** Sí, pero distinto al de abril. Hay dos salidas, y las dos son del
-gondolero: rehacer la foto (`reemplazada_por` la saca del conteo y la misión
-puede aprobarse) o descartar la misión entera (cobra cero).
-**La distri que aprobó parcial no tiene ninguna.** Si el gondolero nunca actúa,
-queda así para siempre — o hasta que la barrida de arriba lo pague solo.
+```ts
+.update({ estado: 'descartada', bounty_estado: 'anulado' })
+.neq('estado', 'aprobada')     // ← una misión ya aprobada NO se descarta
+```
 
-Resumen de las tres respuestas: estado `pendiente`, puntos **todos y tarde** por
-un filtro que mira la columna equivocada, y limbo del lado del revisor.
+Se lee como "no toques lo ya liquidado", que es defendible —los puntos ya están
+en el saldo y pueden estar canjeados—, pero **es una decisión de producto que
+nadie escribió**, y mientras tanto la base se contradice: misión aprobada y
+pagada con su única foto rechazada.
 
-No implementar sin decidir antes la regla de producto: si el rechazo de una foto
-tiene que anular la misión, pagar proporcional, o forzar la recaptura. Las tres
-son defendibles y el código hoy no hace ninguna.
+**Decidir antes de tocar.** Revertir un pago que ya está en el saldo no es un
+arreglo de código.
 
 ### Formato de `mision_respuestas.valor` — normalizado el 14/9/2026
 
@@ -2681,25 +2712,72 @@ La regla verdadera está en la migración
 cuando no puede volver al comercio, y cierra con `estado='descartada'` +
 `bounty_estado='anulado'`.
 
-### Pendiente — campaña que vence con una recaptura sin hacer
+### Campaña que vence con una recaptura sin hacer — RESUELTO el 26/9/2026
 
-Es el hueco real, y su disparador NO es el rechazo de la foto sino el
-vencimiento. Si `fecha_fin` pasa mientras el gondolero tiene una foto rechazada
-sin rehacer, el gate de `lib/campana-vigencia.ts` le bloquea el retake y la
-misión queda en `pendiente` + `retenido` sin salida: no se puede rehacer, no se
-puede aprobar, y desde el 16/9/2026 tampoco la paga la barrida (que ahora exige
-`estado='aprobada'`).
+Su disparador NO era el rechazo de la foto sino el vencimiento. Y al releerlo
+entero apareció que era **peor de lo que decía esta nota**, por una razón que
+no estaba escrita:
 
-No se puede resolver desde `actualizarEstadoMision`: esa función solo corre
-cuando alguien revisa una foto, y acá no va a revisar nadie más. Hace falta una
-barrida al vencer, que es justamente la pieza que se descartó al hacer el gate
-(ver `lib/campana-vigencia.ts`: se evaluaron y descartaron el cierre al
-registrar, al leer y con pg_cron).
+> El gate de `estaVencida` en `captura/page.tsx` bloqueaba el retake, y con él
+> la pantalla `retake-intro` — **que es la única que tiene el botón "Descartar
+> la misión"**. O sea que la salida quedaba tan cerrada como la entrada. No era
+> "no puede rehacer": era **no puede terminar la misión de ninguna manera**.
+>
+> Y la salida existía del lado del servidor: `descartarRecaptura` **nunca tuvo
+> gate de vigencia**. La action funcionaba; era inalcanzable.
 
-Al decidirlo hay que definir también **qué pasa con esas misiones**: cerrarlas
-sin pagar castiga a alguien que hizo el trabajo y cuya foto quizás se rechazó por
-un criterio discutible; pagarlas paga una misión incompleta. Probablemente
-dependa de cuántas fotos de la misión estaban aprobadas.
+Tampoco la rescataba nada: "Destrabar misiones" exige misión **sin ninguna
+foto** y campaña **sin campos de foto**, y las dos condiciones la excluyen.
+`cerrarCampana` no la toca (`fotoEsUnidadDePago` deja afuera las fotos con
+`mision_id`). Quedaba `pendiente` + `retenido` para siempre.
+
+#### La decisión: una prórroga que la pone la CAMPAÑA
+
+`DIAS_GRACIA_RECAPTURA = 7` en `lib/campana-vigencia.ts`, con
+`puedeRecapturar(fechaFin, ahora)`.
+
+**Por qué hay plazo y no queda abierto para siempre:** porque la campaña tiene
+que poder cerrar. Una misión completable cualquier día de cualquier año
+significa que la distri o la marca nunca saben cuándo terminaron de pagar, y
+`cerrarCampana` puede liquidar una campaña que todavía debe trabajo.
+
+**Por qué se cuenta desde `fecha_fin` y no desde el rechazo:** una ventana por
+foto es más justa mirada de a una y hace **imposible saber cuándo cierra la
+campaña** — la fecha real de cierre pasaría a depender del último rechazo que
+alguien emita. Colgada de `fecha_fin`, el cierre es `fecha_fin + 7` y se puede
+calcular antes de que pase nada.
+
+**Y por qué NO sale de `DIAS_TTL_COLA`, aunque hoy los dos valgan 7:** aquéllos
+dos números son *la misma regla* mirada desde los dos lados, y por eso uno sale
+del otro. Éste responde otra pregunta —cuánto tarda una persona en volver a un
+comercio, contra cuánto sobrevive un payload en IndexedDB—. Aliasarlos haría
+que subir el TTL offline le cambie en silencio el plazo al gondolero.
+
+#### Las cuatro piezas
+
+| | Qué |
+|---|---|
+| `lib/campana-vigencia.ts` | `puedeRecapturar` — terminar algo abierto y empezar algo nuevo son dos permisos distintos |
+| `captura/page.tsx` | el gate usa `puedeRecapturar` cuando hay `?retake=`, y la pantalla avisa en rojo cuántos días quedan |
+| `captura/actions.ts` | **la misma guarda en `registrarRecaptura`**: la UI decide qué se muestra, no qué se puede escribir. `descartarRecaptura` NO la lleva, a propósito: bloquear la salida segura es lo que creó el problema |
+| `campanas-sections.tsx` | la tarjeta de "Finalizadas" muestra el aviso y el link, que antes vivían solo en la tarjeta activa y desaparecían justo cuando empezaba a correr el reloj |
+
+`scripts/probar-prorroga-recaptura.ts`, con TZ=UTC exigido. **El control de
+bordes encontró un off-by-one que la lectura no**: sin el `+ 1` del día de hoy
+—que vale entero, igual que `fecha_fin`— el corte se adelantaba un día y le
+comía la última jornada a alguien que volvió al comercio en plazo. Verificado
+que los dos bordes muerden, moviendo el plazo un día para cada lado.
+
+### Los puntos de una misión no aprobada, invisibles — arreglado el 26/9/2026
+
+En el detalle de campaña la línea de puntos salía **solo con `estado ===
+'aprobada'`**. Una misión en revisión o descartada mostraba su badge y **nada
+sobre su plata**: 50 puntos en dev que no aparecían en ninguna pantalla.
+
+El silencio no es neutro. "En camino", "trabados" y "perdidos" se veían igual,
+y son tres cosas distintas. Ahora `pendiente` dice "N pts en revisión · se
+acreditan cuando aprueben tus fotos" y `descartada` dice "N pts no acreditados"
+en gris — el resultado ya está decidido y fue él quien lo decidió.
 
 ## PARA LA SESIÓN DE SEGURIDAD — server actions que confían en el middleware
 

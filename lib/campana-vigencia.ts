@@ -112,6 +112,68 @@ export function puedeRegistrarMision(params: {
 }
 
 /**
+ * Días DESPUÉS de `fecha_fin` en que todavía se puede rehacer una foto
+ * rechazada de una misión abierta.
+ *
+ * ── POR QUÉ HAY PLAZO Y NO QUEDA ABIERTO PARA SIEMPRE ───────────────────────
+ * Porque **la campaña tiene que poder cerrar**. Una misión que se puede
+ * completar cualquier día de cualquier año significa que la distri o la marca
+ * nunca saben cuándo terminaron de pagar, y `cerrarCampana` puede liquidar una
+ * campaña que todavía debe trabajo. El que decide cuánto tiempo más hay es la
+ * campaña, no el gondolero.
+ *
+ * ── Y POR QUÉ SE CUENTA DESDE `fecha_fin` Y NO DESDE EL RECHAZO ─────────────
+ * Una ventana por foto —"siete días desde que te la rechazaron"— es más justa
+ * mirada de a una y hace **imposible saber cuándo cierra la campaña**: la fecha
+ * real de cierre pasaría a depender del último rechazo que alguien emita. Con
+ * el plazo colgado de `fecha_fin`, el cierre es `fecha_fin + N` y se puede
+ * calcular antes de que pase nada.
+ *
+ * ── NO ES `DIAS_GRACIA_COLA`, AUNQUE HOY VALGAN LO MISMO ────────────────────
+ * Aquéllos dos números **son la misma regla** mirada desde los dos lados, y por
+ * eso uno sale del otro. Éste responde otra pregunta: cuánto tarda una persona
+ * en poder volver a un comercio, contra cuánto sobrevive un payload en IndexedDB.
+ * Aliasarlos haría que subir el TTL offline le cambie en silencio el plazo al
+ * gondolero para volver a un negocio. Son 7 los dos por coincidencia —una
+ * semana es el ciclo de una recorrida— y se mueven por separado.
+ */
+export const DIAS_GRACIA_RECAPTURA = 7
+
+/**
+ * ¿Se puede todavía rehacer una foto rechazada de una misión ya abierta?
+ *
+ * NO es lo mismo que `puedeRegistrarMision`: acá el trabajo **ya se hizo** y la
+ * misión ya existe. Terminar algo abierto y empezar algo nuevo son dos
+ * permisos distintos, y confundirlos fue el bug: el gate de `estaVencida`
+ * bloqueaba el retake, y con él la pantalla que contiene el ÚNICO botón para
+ * descartar la misión. La salida quedaba tan cerrada como la entrada, y la
+ * misión sin forma de terminar.
+ *
+ * `diasRestantes` es cuántos días quedan de la prórroga, contando el día de hoy
+ * como uno: sirve para decirlo en pantalla. Con la campaña vigente es `null`,
+ * porque no hay prórroga corriendo.
+ */
+export function puedeRecapturar(
+  fechaFin: string | null | undefined,
+  ahora: Date = new Date(),
+): { ok: boolean; enProrroga: boolean; diasRestantes: number | null } {
+  // Sin fecha no vence (seguimiento, o legacy sin migrar).
+  if (!fechaFin) return { ok: true, enProrroga: false, diasRestantes: null }
+  if (!estaVencida(fechaFin, ahora)) return { ok: true, enProrroga: false, diasRestantes: null }
+
+  // `diasHastaFin` es negativo cuando la campaña ya terminó: -1 es "venció ayer".
+  const diasVencida = -diasHastaFin(fechaFin, ahora)
+
+  // El `+ 1` es el día de hoy, que vale ENTERO — igual que `fecha_fin`, que es
+  // inclusiva. Con `fecha_fin = 10` y plazo 7, el último día bueno es el 17 y
+  // ese día `diasRestantes` vale 1, no 0. Sin el +1 el corte se adelantaba un
+  // día y le comía la última jornada a alguien que volvió al comercio en plazo.
+  // Lo encontró el control de bordes, no la lectura.
+  const restantes = DIAS_GRACIA_RECAPTURA - diasVencida + 1
+  return { ok: restantes > 0, enProrroga: true, diasRestantes: Math.max(restantes, 0) }
+}
+
+/**
  * ¿Cerró la inscripción?
  *
  * `fecha_limite_inscripcion` es una columna `date` y es INCLUSIVA, igual que

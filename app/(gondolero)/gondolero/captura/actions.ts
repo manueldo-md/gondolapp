@@ -14,7 +14,7 @@ import {
 import { registrarChecksGPSInterno } from './actions-checks'
 import { resolverMisionDirecta } from '@/lib/misiones'
 import { sincronizarComerciosRelevados } from '@/lib/comercios-relevados'
-import { puedeRegistrarMision } from '@/lib/campana-vigencia'
+import { puedeRegistrarMision, puedeRecapturar, DIAS_GRACIA_RECAPTURA } from '@/lib/campana-vigencia'
 import type { CodigoRechazoMision } from '@/lib/rechazo-mision'
 import { accesoACampana } from '@/lib/acceso-campana'
 import { contextoAcceso } from '@/lib/utils-distri'
@@ -937,6 +937,24 @@ export async function registrarRecaptura(params: RegistrarRecapturaParams) {
 
   if (misionErr || !mision) throw new Error('No encontramos la misión a rehacer.')
   if (mision.gondolero_id !== user.id) throw new Error('Esta misión no es tuya.')
+
+  // 1b. El plazo de la prórroga, DEL LADO DEL SERVIDOR.
+  //
+  // La pantalla ya lo chequea y eso no alcanza: el gate de la UI decide qué se
+  // muestra, no qué se puede escribir. Acá se entra por un fetch directo tanto
+  // como por el botón, y sin esta guarda la prórroga sería una sugerencia.
+  //
+  // `descartarRecaptura` NO lleva este chequeo, y es deliberado: descartar es
+  // la salida segura —cierra sin pagar— y bloquearla es exactamente lo que
+  // dejaba a la misión sin ninguna forma de terminar.
+  const { data: campanaVig } = await db
+    .from('campanas').select('fecha_fin').eq('id', mision.campana_id).maybeSingle()
+  const permiso = puedeRecapturar((campanaVig as { fecha_fin: string | null } | null)?.fecha_fin)
+  if (!permiso.ok) {
+    throw new Error(
+      `Esta campaña terminó hace más de ${DIAS_GRACIA_RECAPTURA} días y ya no acepta fotos rehechas.`
+    )
+  }
 
   // 2. GPS contra el comercio de la misión.
   //

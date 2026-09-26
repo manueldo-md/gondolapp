@@ -615,27 +615,53 @@ export default async function CampanaDetallePage({
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${ESTADO_MISION[mision.estado]?.color ?? 'bg-gray-100 text-gray-500'}`}>
                           {ESTADO_MISION[mision.estado]?.label ?? mision.estado}
                         </span>
-                        {/* Estado de los puntos — solo cuando la misión está aprobada */}
-                        {mision.estado === 'aprobada' && mision.puntos_total > 0 && (
-                          mision.bounty_estado === 'acreditado' ? (
-                            <span className="text-xs font-semibold text-gondo-verde-400">
-                              +{formatearPuntos(mision.puntos_total)} pts acreditados
-                            </span>
-                          ) : (
+                        {/* ── Estado de los puntos ───────────────────────────
+                            Hasta el 26/9/2026 esta línea solo salía con la
+                            misión APROBADA, así que una en revisión o
+                            descartada mostraba el badge y **nada sobre su
+                            plata**: 50 puntos en dev que no aparecían en
+                            ninguna pantalla. El silencio no es neutro — el
+                            gondolero no sabe si están en camino, trabados o
+                            perdidos, y las tres cosas se veían igual. */}
+                        {mision.puntos_total > 0 && (
+                          mision.estado === 'aprobada' ? (
+                            mision.bounty_estado === 'acreditado' ? (
+                              <span className="text-xs font-semibold text-gondo-verde-400">
+                                +{formatearPuntos(mision.puntos_total)} pts acreditados
+                              </span>
+                            ) : (
+                              <div className="text-right">
+                                <span className="text-xs font-medium text-amber-600 block">
+                                  {formatearPuntos(mision.puntos_total)} pts retenidos
+                                </span>
+                                {/* Dice comercios, igual que el mínimo que se
+                                    compara. Decía "misiones" y en seguimiento eso
+                                    era otro número. */}
+                                {faltanParaCobrar > 0 && (
+                                  <span className="text-[10px] text-gray-400 block leading-tight">
+                                    a {faltanParaCobrar} {faltanParaCobrar === 1 ? 'comercio' : 'comercios'} de cobrar
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          ) : mision.estado === 'pendiente' ? (
                             <div className="text-right">
                               <span className="text-xs font-medium text-amber-600 block">
-                                {formatearPuntos(mision.puntos_total)} pts retenidos
+                                {formatearPuntos(mision.puntos_total)} pts en revisión
                               </span>
-                              {/* Dice comercios, igual que el mínimo que se
-                                  compara. Decía "misiones" y en seguimiento eso
-                                  era otro número. */}
-                              {faltanParaCobrar > 0 && (
-                                <span className="text-[10px] text-gray-400 block leading-tight">
-                                  a {faltanParaCobrar} {faltanParaCobrar === 1 ? 'comercio' : 'comercios'} de cobrar
-                                </span>
-                              )}
+                              <span className="text-[10px] text-gray-400 block leading-tight">
+                                se acreditan cuando aprueben tus fotos
+                              </span>
                             </div>
-                          )
+                          ) : mision.estado === 'descartada' ? (
+                            // Se dice, y se dice en gris: el resultado ya está
+                            // decidido y fue él quien lo decidió. Callarlo deja
+                            // los puntos flotando en su cabeza como si todavía
+                            // pudieran llegar.
+                            <span className="text-xs text-gray-400">
+                              {formatearPuntos(mision.puntos_total)} pts no acreditados
+                            </span>
+                          ) : null
                         )}
                       </div>
                     </div>
