@@ -7738,11 +7738,54 @@ borrar.
 
 ---
 
-## TRAMO legacy de zonas — PASO 1 HECHO el 26/9/2026 (ranking portado)
+## TRAMO legacy de zonas — PASOS 1 y 2 HECHOS el 26/9/2026
 
-Quedan **2 lectores de `gondolero_zonas`**, de los 5 que había:
-`gondolero/campanas/page.tsx:38` y `admin/zonas/page.tsx:19`. Los tres de
-Logros se fueron con el port. El detalle del tramo completo, abajo.
+**Cero lectores** de `zonas`, `campana_zonas` y `gondolero_zonas` en toda la
+app. Lo único que queda son comentarios que las nombran. **Falta el deploy, la
+verificación en prod y el DROP.**
+
+### Paso 2 — sacar los lectores
+
+Antes de sacar el panel de admin se relevaron las dos cosas que podían
+frenarlo, y ninguna frenó:
+
+**¿`zonas` tiene otro lector?** No. Solo el panel: `page.tsx` y las tres
+actions. El lector de Logros (`zonas.select('id, tipo')`, que existía únicamente
+para preguntar de qué tipo era cada uuid) se fue con el port del paso 1. En la
+base, las únicas dependencias son las dos FK de `campana_zonas` y
+`gondolero_zonas` — **cero funciones, cero vistas**, en las dos bases.
+
+> Y una que conviene no confundir: **`SelectorZona` NO usa `zonas`.** Usa el
+> padrón (`provincias`/`departamentos`/`localidades`). El nombre se parece y la
+> tabla no tiene nada que ver.
+
+**¿El panel tiene algo más que el ABM?** No. Es ABM puro de `zonas` en tres
+archivos, y las columnas "Campañas" y "Gondoleros" cuentan `campana_zonas` y
+`gondolero_zonas`, las dos en cero — o sea que cada fila mostraba 0 y 0.
+
+Lo que se sacó:
+
+| Dónde | Qué |
+|---|---|
+| `app/(admin)/admin/zonas/` | **borrado entero** — `page.tsx`, `actions.ts`, `zona-modal.tsx`. Un ABM de algo que nadie lee es lo que alguien usa creyendo que sirve |
+| `admin-shell.tsx` | el link "Zonas" del nav, y el icono que quedaba sin usar |
+| `gondolero/campanas/page.tsx` | la lectura de `gondolero_zonas`, el `\|\|` muerto de `tieneZonas`, y **las dos consultas en paralelo contra `campana_zonas`** que siempre aportaban el arreglo vacío |
+| `admin/repositoras/page.tsx` | el embed `campana_zonas(zona_id)`, que **se traía y no lo leía nadie** — de esa consulta solo se toma `.length` |
+| `supabase/seed.sql` | los dos `INSERT INTO campana_zonas ... FROM zonas`, que ya no insertaban nada porque el seed nunca cargó `zonas` |
+
+> **El embed de repositoras es el que más valía encontrar.** Una relación
+> embebida que no se lee no molesta hoy y **voltea la consulta ENTERA** el día
+> que la tabla no esté — PostgREST rechaza todo, no solo el embed. Es el mismo
+> modo de falla que `perfil/page.tsx` tiene documentado con una columna de más
+> en el `select`.
+
+> **Y el seed es la segunda vez en este tramo.** Mismo caso que el `zona_id` de
+> comercios el 25/9: un INSERT que ya no hacía nada y que después del DROP
+> sería un error duro que voltea el seed entero en cualquier base nueva.
+
+### Paso 1 — el ranking portado
+
+Los tres lectores de Logros se fueron acá.
 
 ### Lo primero: el ranking NO estaba vacío en pantalla, estaba AUSENTE
 

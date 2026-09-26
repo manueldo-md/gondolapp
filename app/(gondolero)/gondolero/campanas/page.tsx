@@ -34,9 +34,6 @@ export default async function CampanasPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth')
 
-  const gondoleroZonasRes = await supabase
-    .from('gondolero_zonas').select('zona_id').eq('gondolero_id', user.id)
-
   // Las zonas se guardan al NIVEL que eligió el gondolero —provincia,
   // departamento o localidad— y se EXPANDEN acá, contra el padrón de hoy. Antes
   // se guardaba la expansión, y eso dejaba a un gondolero sin cubrir un pueblo
@@ -53,8 +50,11 @@ export default async function CampanasPage() {
     console.error('[campanas] No se pudieron expandir las zonas de', user.id, '— se muestran todas.')
   }
 
-  const zonaIds = (gondoleroZonasRes.data ?? []).map((gz: { zona_id: string }) => gz.zona_id)
-  const tieneZonas = zonaIds.length > 0 || localidadIds.length > 0
+  // Se fue la mitad vieja de esto, que era
+  // `zonaIds.length > 0 || localidadIds.length > 0`. `gondolero_zonas` no tiene
+  // escritores desde el 25/9/2026 y se vació el 26, así que `zonaIds` era
+  // siempre `[]` y el `||` una rama muerta. Ver el tramo del legacy de zonas.
+  const tieneZonas = localidadIds.length > 0
 
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -251,22 +251,18 @@ export default async function CampanasPage() {
   let listaActivas: CampanaRow[] = []
 
   if (tieneZonas) {
-    // Campañas que coinciden con las zonas del gondolero (ambos sistemas)
-    const [campanaZonasOldRes, campanaZonasNewRes] = await Promise.all([
-      zonaIds.length > 0
-        ? supabase.from('campana_zonas').select('campana_id').in('zona_id', zonaIds)
-        : Promise.resolve({ data: [] as { campana_id: string }[] }),
-      localidadIds.length > 0
-        ? supabase.from('campana_localidades').select('campana_id').in('localidad_id', localidadIds)
-        : Promise.resolve({ data: [] as { campana_id: string }[] }),
-    ])
+    // ── Un solo sistema de zonas ─────────────────────────────────────────────
+    // Acá había DOS consultas en paralelo y una unión: una contra
+    // `campana_zonas` (el sistema viejo) y otra contra `campana_localidades`.
+    // `campana_zonas` tiene **cero filas en las dos bases** —nunca se llenó— y
+    // su otra punta, `gondolero_zonas`, ya no tiene escritores ni filas. La
+    // mitad vieja aportaba siempre el arreglo vacío.
+    const { data: campanaLocs } = await supabase
+      .from('campana_localidades').select('campana_id').in('localidad_id', localidadIds)
 
-    const campanaIdsConZona = [
-      ...(campanaZonasOldRes.data ?? []).map((cz: { campana_id: string }) => cz.campana_id),
-      ...(campanaZonasNewRes.data ?? [])
-        .map((cl: { campana_id: string | null }) => cl.campana_id)
-        .filter((id): id is string => id !== null),
-    ]
+    const campanaIdsConZona = (campanaLocs ?? [])
+      .map((cl: { campana_id: string | null }) => cl.campana_id)
+      .filter((id): id is string => id !== null)
 
     const { data: campanas, error } = await query
     if (error) console.error('Error fetching campanas:', error.message)
@@ -274,16 +270,13 @@ export default async function CampanasPage() {
     const todas = (campanas as CampanaRow[] | null) ?? []
 
     // Todas las campañas que tienen alguna zona asignada (para saber cuáles son "abiertas por default")
-    const [todasZonasOldRes, todasZonasNewRes] = await Promise.all([
-      supabase.from('campana_zonas').select('campana_id'),
-      supabase.from('campana_localidades').select('campana_id'),
-    ])
-    const campanasConAlgunaZona = new Set([
-      ...(todasZonasOldRes.data ?? []).map((cz: { campana_id: string }) => cz.campana_id),
-      ...(todasZonasNewRes.data ?? [])
+    const { data: todasLocs } = await supabase
+      .from('campana_localidades').select('campana_id')
+    const campanasConAlgunaZona = new Set(
+      (todasLocs ?? [])
         .map((cl: { campana_id: string | null }) => cl.campana_id)
-        .filter((id): id is string => id !== null),
-    ])
+        .filter((id): id is string => id !== null)
+    )
 
     listaActivas = todas.filter(c =>
       (c as unknown as { es_abierta: boolean }).es_abierta ||

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, Image, Megaphone,
-  Gift, Store, Menu, X, ChevronRight, Truck, Tag, MapPin, LogOut, Settings, AlertTriangle, Handshake, Bell, Ruler,
+  Gift, Store, Menu, X, ChevronRight, Truck, Tag, LogOut, Settings, AlertTriangle, Handshake, Bell, Ruler,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { NotifBell } from '@/components/notificaciones/notif-bell'
@@ -49,7 +49,6 @@ function buildNavSections(erroresNuevos: number, campanasPendientes: number): Na
         { href: '/admin/canjes',    label: 'Canjes',    icon: Gift },
         { href: '/admin/comercios', label: 'Comercios', icon: Store },
         { href: '/admin/comercios/pendientes', label: 'Comercios pendientes', icon: Store },
-        { href: '/admin/zonas',     label: 'Zonas',     icon: MapPin },
         { href: '/admin/metricas',  label: 'Métricas',  icon: Ruler },
       ],
     },

@@ -102,11 +102,11 @@ VALUES
   ('44444444-0000-0000-0000-000000000001', 2,
    'Sección golosinas · Georgalos surtido · encuadre completo de la sección');
 
--- Zona de la campaña
-INSERT INTO campana_zonas (campana_id, zona_id)
-SELECT '44444444-0000-0000-0000-000000000001', id
-FROM zonas
-WHERE nombre IN ('Entre Ríos', 'Concordia', 'Colón', 'Concepción del Uruguay');
+-- Sin zona de campaña: `campana_zonas` es del sistema viejo y se va en el
+-- tramo del legacy de zonas. Estos dos INSERT ya no insertaban nada — el seed
+-- nunca cargó `zonas`, así que el SELECT no matcheaba una sola fila— y
+-- después del DROP serían un error duro que voltea el seed entero. Es el mismo
+-- caso que el `zona_id` de comercios, sacado el 25/9/2026.
 
 -- Campaña de mapa (propia de GondolApp)
 INSERT INTO campanas (
@@ -131,9 +131,6 @@ VALUES (
   200
 );
 
-INSERT INTO campana_zonas (campana_id, zona_id)
-SELECT '44444444-0000-0000-0000-000000000002', id
-FROM zonas WHERE nombre = 'Concordia';
 
 -- =============================================================================
 -- USUARIOS DE PRUEBA

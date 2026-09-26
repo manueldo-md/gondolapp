@@ -32,7 +32,12 @@ export default async function RepositorasAdminPage() {
   if (repoIds.length > 0) {
     const [{ data: fixersData }, { data: campanasData }] = await Promise.all([
       admin.from('profiles').select('repositora_id').in('repositora_id', repoIds).eq('tipo_actor', 'fixer'),
-      admin.from('campanas').select('id, campana_zonas(zona_id)').eq('estado', 'activa').eq('actor_campana', 'fixer'),
+      // El embed `campana_zonas(zona_id)` salió el 26/9/2026: se traía y **no
+      // lo usaba nadie** —de esta consulta solo se toma `.length`—, y una
+      // relación embebida que no se lee es la forma más silenciosa de que la
+      // consulta ENTERA reviente el día que la tabla no esté. `campana_zonas`
+      // se va en el tramo del legacy de zonas.
+      admin.from('campanas').select('id').eq('estado', 'activa').eq('actor_campana', 'fixer'),
     ])
     fixerMap = ((fixersData ?? []) as { repositora_id: string }[]).reduce(
       (acc, p) => { acc[p.repositora_id] = (acc[p.repositora_id] ?? 0) + 1; return acc },
