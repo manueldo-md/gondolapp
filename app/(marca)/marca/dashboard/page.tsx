@@ -14,6 +14,16 @@ import {
   type FilaSerie, type FilaVisitas, type FilaPdv,
 } from '@/lib/panel-metricas'
 import { etiquetaTipo } from '@/lib/tipos-comercio'
+import { hrefMapa } from '@/lib/mapa-pdv'
+import {
+  provinciasDesde, serializarProvincias, provinciasDisponibles,
+  aplicarFiltroProvincia, resumenProvincias,
+} from '@/lib/filtro-provincia'
+import {
+  SelectorProvincia, AvisoExcluidos, KpiProvincias,
+} from '@/components/panel/filtro-provincia'
+
+const RUTA_DASHBOARD = '/marca/dashboard'
 import { campanasDe, idsDe, type CampanaDelPanel } from '@/lib/campanas-de'
 
 // ── Único dynamic import ─────────────────────────────────────────────────────
@@ -95,7 +105,7 @@ export default async function DashboardPage({
    * bloque de la serie siga siendo Server Component y para que el link se
    * pueda mandar. Ver el encabezado de serie-mensual.tsx.
    */
-  searchParams: { metrica?: string; mes?: string }
+  searchParams: { metrica?: string; mes?: string; prov?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -192,8 +202,18 @@ export default async function DashboardPage({
   // consultas encadenadas para terminar contando presencia con una sola fuente.
   // El RPC devuelve un comercio por fila con su localidad y su tipo pegados, y
   // agrupar por uno u otro eje es una suma del lado de acá.
-  const pdvs = (pdvRes.data ?? []) as FilaPdv[]
+  const pdvsTodos = (pdvRes.data ?? []) as FilaPdv[]
   if (pdvRes.error) console.error('[dashboard marca] panel_pdv:', pdvRes.error.message)
+
+  // ── El filtro de provincia ────────────────────────────────────────────────
+  // Una vez, acá, y todo lo de abajo trabaja sobre `pdvs`. Filtrar en cada
+  // consumidor sería la forma de que uno se olvide y la pantalla se contradiga.
+  const provincias = provinciasDisponibles(pdvsTodos)
+  const filtro = aplicarFiltroProvincia(pdvsTodos, provinciasDesde(searchParams.prov))
+  const pdvs = filtro.filas
+  const provResumen = resumenProvincias(pdvs)
+  const hrefConProvincias = (sel: number[]) =>
+    hrefMapa(RUTA_DASHBOARD, { prov: serializarProvincias(sel) })
 
   // Presencia por campaña, para la lista de campañas activas. Sale del
   // DESGLOSE del panel —que ya suma las dos fuentes— y no de contar
@@ -318,18 +338,32 @@ export default async function DashboardPage({
         <KpiCard label="Ciudades cubiertas" valor={totalCiudades}  icon={MapPin}   color="bg-blue-50 text-blue-600" />
         <KpiCard label="Campañas activas"  valor={campanasActivas} icon={Megaphone} color="bg-purple-50 text-purple-600" />
         <KpiCard label="Fotos recibidas"   valor={totalFotos}      icon={Camera}   color="bg-gray-100 text-gray-600"     sub="aprobadas" />
+        {/* Devuelve null con cero provincias: "0 de 0" no es un dato. */}
+        <KpiProvincias relevando={provResumen.relevando} conProducto={provResumen.conProducto} />
       </div>
+
+      <SelectorProvincia
+        provincias={provincias}
+        seleccion={filtro.seleccion}
+        href={hrefConProvincias}
+      />
+      <AvisoExcluidos filtro={filtro} totalSinFiltrar={pdvsTodos.length} />
 
       {/* Evolución mensual — server-rendered, SVG a mano, cero JS al cliente.
           Va acá arriba a propósito: es la pregunta que el panel vino a
           responder, y el resto son cortes de un momento. */}
-      <SerieMensual panel={panel} seleccion={seleccion} rutaBase="/marca/dashboard" />
+      <SerieMensual panel={panel} seleccion={seleccion}
+        // Con las provincias adentro: `SerieMensual` mergea `metrica` y `mes`
+        // sobre esta ruta, así que una base pelada borraría el filtro en cada
+        // clic del desglose.
+        rutaBase={hrefMapa(RUTA_DASHBOARD, { prov: serializarProvincias(filtro.seleccion) })} />
 
       {/* Visualizaciones — todo en un solo chunk cliente */}
       <Cobertura
         ciudades={ciudades}
         tipos={tipos}
-        rutaMapa="/marca/mapa"
+        // Con el filtro: cruzar al mapa no tiene que ensanchar la vista sin avisar.
+        rutaMapa={hrefMapa('/marca/mapa', { prov: serializarProvincias(filtro.seleccion) })}
         presencia={presencia && {
           valor:      presencia.valor,
           verdaderos: presencia.verdaderos,

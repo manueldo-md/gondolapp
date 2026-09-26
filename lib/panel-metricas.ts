@@ -80,6 +80,21 @@ export interface FilaPdv {
   comercio_tipo: string | null
   localidad_id: number | null
   localidad_nombre: string | null
+  /**
+   * La geografía completa, desde `20261008100000`. Los cuatro campos vienen en
+   * NULL para un comercio sin localidad — los JOIN de `panel_pdv` son LEFT a
+   * propósito, así que la fila llega igual.
+   *
+   * OJO con la ventana deploy/migración: si el código sube antes que la
+   * migración, estos campos llegan `undefined` en vez de `null`. Todo lo que
+   * los lee usa `== null`, que agarra los dos, así que el filtro queda inerte
+   * —selector escondido, KPI escondido— en vez de romperse. Es blando a
+   * propósito, pero el orden correcto sigue siendo migración y después deploy.
+   */
+  departamento_id: number | null
+  departamento_nombre: string | null
+  provincia_id: number | null
+  provincia_nombre: string | null
   misiones: number | string
   /** Visitas que MIDIERON presencia. Menor o igual que `misiones`. */
   con_valor: number | string
@@ -530,20 +545,33 @@ export interface GrupoCobertura {
  */
 export function agruparCobertura(
   filas: FilaPdv[],
-  por: 'localidad' | 'tipo',
+  // `provincia` entró el 26/9/2026 y fue agregar una clave, no escribir una
+  // segunda agrupación: esta función siempre trabajó sobre una clave y un
+  // nombre, no sobre ciudades. Lo mismo que `tramosContinuos`, que quedó
+  // genérico para el día que hubiera semanas.
+  por: 'localidad' | 'tipo' | 'provincia',
 ): GrupoCobertura[] {
   const grupos = new Map<string, GrupoCobertura>()
 
   for (const f of filas) {
-    // Un comercio sin localidad o sin tipo no se descarta: se agrupa aparte y
-    // se muestra. Esconderlo haría que los PDV del panel no sumen los que hay,
-    // y el que haga la resta va a desconfiar del resto de los números.
+    // Un comercio sin localidad, sin provincia o sin tipo no se descarta: se
+    // agrupa aparte y se muestra. Esconderlo haría que los PDV del panel no
+    // sumen los que hay, y el que haga la resta va a desconfiar del resto de
+    // los números.
+    //
+    // Y el "sin provincia" no es un residuo: el alta escribe
+    // `localidad_sugerida_id` y no `localidad_id`, así que todo comercio
+    // recién cargado cae acá hasta que la distri confirma la localidad.
     const clave = por === 'localidad'
-      ? (f.localidad_id !== null ? String(f.localidad_id) : 'sin-localidad')
-      : (f.comercio_tipo ?? 'sin-tipo')
+      ? (f.localidad_id != null ? String(f.localidad_id) : 'sin-localidad')
+      : por === 'provincia'
+        ? (f.provincia_id != null ? String(f.provincia_id) : 'sin-provincia')
+        : (f.comercio_tipo ?? 'sin-tipo')
     const nombre = por === 'localidad'
       ? (f.localidad_nombre ?? 'Sin ciudad asignada')
-      : (f.comercio_tipo ?? 'Sin clasificar')
+      : por === 'provincia'
+        ? (f.provincia_nombre ?? 'Esperando confirmación de localidad')
+        : (f.comercio_tipo ?? 'Sin clasificar')
 
     let g = grupos.get(clave)
     if (!g) {

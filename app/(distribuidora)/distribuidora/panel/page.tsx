@@ -33,6 +33,13 @@ import {
   SelectorAlcance, SinAlcanceElegido, SinCampanas,
 } from '@/components/panel/selector-alcance'
 import { hrefMapa } from '@/lib/mapa-pdv'
+import {
+  provinciasDesde, serializarProvincias, provinciasDisponibles,
+  aplicarFiltroProvincia, resumenProvincias,
+} from '@/lib/filtro-provincia'
+import {
+  SelectorProvincia, AvisoExcluidos, KpiProvincias,
+} from '@/components/panel/filtro-provincia'
 
 const RUTA = '/distribuidora/panel'
 
@@ -80,7 +87,7 @@ function KpiCard({ label, valor, icon: Icon, color, sub }: {
 export default async function PanelDistriPage({
   searchParams,
 }: {
-  searchParams: { alcance?: string; metrica?: string; mes?: string }
+  searchParams: { alcance?: string; metrica?: string; mes?: string; prov?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -181,9 +188,22 @@ export default async function PanelDistriPage({
     metricas: metricasRes.data ?? [],
   })
 
-  const pdvs = (pdvRes.data ?? []) as FilaPdv[]
+  // ── El filtro de provincia ────────────────────────────────────────────────
+  // Se aplica ACÁ, una vez, y todo lo de abajo trabaja sobre `pdvs`: cobertura,
+  // KPIs y el link al mapa. Filtrar en cada consumidor sería la forma de que
+  // uno se olvide y la pantalla se contradiga sola.
+  const pdvsTodos = (pdvRes.data ?? []) as FilaPdv[]
+  const provincias = provinciasDisponibles(pdvsTodos)
+  const filtro = aplicarFiltroProvincia(pdvsTodos, provinciasDesde(searchParams.prov))
+  const pdvs = filtro.filas
+
   const ciudades = agruparCobertura(pdvs, 'localidad')
   const tipos    = agruparCobertura(pdvs, 'tipo').map(g => ({ ...g, nombre: etiquetaTipo(g.clave) }))
+  // Sobre lo FILTRADO, igual que el resto de los KPIs. Un número de cabecera
+  // que ignorara el filtro contradiría al cuerpo de la pantalla, y de los dos
+  // errores posibles ése es el peor: el que mira no tiene forma de saber cuál
+  // de los dos le está hablando.
+  const provResumen = resumenProvincias(pdvs)
 
   // Presencia SÍ se puede resumir en un número: es el porcentaje de una
   // condición que significa lo mismo en cualquier campaña. Precio NO —cada
@@ -198,10 +218,28 @@ export default async function PanelDistriPage({
     ? { metrica: searchParams.metrica, mes: searchParams.mes }
     : undefined
 
+  // ── La ruta base, armada con `hrefMapa` y NO a mano ───────────────────────
+  //
+  // Era ``${RUTA}?alcance=${encodeURIComponent(searchParams.alcance!)}``, una
+  // URL escrita a mano con UNA clave adentro. `<SerieMensual>` mergea `metrica`
+  // y `mes` encima, así que con el filtro de provincia puesto **cada clic en el
+  // desglose de la serie habría borrado la selección**.
+  //
+  // Es la misma lista blanca implícita que ya mordió en `hrefDelMapa` con
+  // `campana`, y por eso mismo: no falla, no loguea y no se ve. Armarla con
+  // `hrefMapa` la vuelve una sola lista, la de este objeto.
+  //
   // `searchParams.alcance` es seguro acá: `alcanceDesde` ya lo validó contra
   // las opciones de esta distri, y si no fuera válido la función habría cortado
   // mucho más arriba.
-  const rutaConAlcance = `${RUTA}?alcance=${encodeURIComponent(searchParams.alcance!)}`
+  const estadoUrl = {
+    alcance: searchParams.alcance,
+    prov:    serializarProvincias(filtro.seleccion),
+  }
+  const rutaConAlcance = hrefMapa(RUTA, estadoUrl)
+  /** El mismo estado con OTRA selección de provincias: los chips del selector. */
+  const hrefConProvincias = (sel: number[]) =>
+    hrefMapa(RUTA, { ...estadoUrl, prov: serializarProvincias(sel) })
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -226,7 +264,16 @@ export default async function PanelDistriPage({
           color="bg-blue-50 text-blue-600" sub="en este alcance" />
         <KpiCard label="Ciudades cubiertas" valor={totalCiudades} icon={MapPin}
           color="bg-purple-50 text-purple-600" />
+        {/* Devuelve null con cero provincias: "0 de 0" no es un dato. */}
+        <KpiProvincias relevando={provResumen.relevando} conProducto={provResumen.conProducto} />
       </div>
+
+      <SelectorProvincia
+        provincias={provincias}
+        seleccion={filtro.seleccion}
+        href={hrefConProvincias}
+      />
+      <AvisoExcluidos filtro={filtro} totalSinFiltrar={pdvsTodos.length} />
 
       {/* La ruta base lleva el alcance adentro: sin eso, tocar un punto lo
           perdía y la pantalla volvía al estado sin elegir. */}
@@ -235,9 +282,14 @@ export default async function PanelDistriPage({
       <Cobertura
         ciudades={ciudades}
         tipos={tipos}
-        // Con el alcance puesto: el mapa tiene el mismo control obligatorio, y
-        // mandarlo sin él haría que la distri tenga que volver a elegir.
-        rutaMapa={hrefMapa('/distribuidora/mapa', { alcance: searchParams.alcance })}
+        // Con el alcance Y LAS PROVINCIAS: el mapa tiene el mismo control
+        // obligatorio, y mandarlo sin el filtro haría que cruzar al mapa
+        // ensanche la vista sin avisar — la misma clase de inconsistencia que
+        // la campaña que se perdía en cada clic del pintado.
+        rutaMapa={hrefMapa('/distribuidora/mapa', {
+          alcance: searchParams.alcance,
+          prov:    serializarProvincias(filtro.seleccion),
+        })}
         presencia={presencia && {
           valor:      presencia.valor,
           verdaderos: presencia.verdaderos,

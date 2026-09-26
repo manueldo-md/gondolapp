@@ -47,6 +47,15 @@ export type FilaPdvMapa = {
   lng: number | null
   localidad_id: number | null
   localidad_nombre: string | null
+  /**
+   * Desde `20261008100000`. El mapa no las pinta, pero las necesita para que
+   * el filtro de provincia que viene del panel se pueda aplicar sobre las
+   * mismas filas — es la misma función `panel_pdv` de los dos lados.
+   */
+  departamento_id: number | null
+  departamento_nombre: string | null
+  provincia_id: number | null
+  provincia_nombre: string | null
   misiones: number
   con_valor: number
   verdaderos: number
@@ -84,7 +93,7 @@ function Control({ titulo, opciones, activo, href }: {
 
 export function PantallaMapa({
   filas, campanas, campanaId, pintar, ruta, apiKey, alcanceClave, panel,
-  cobertura, visitasPorSemana,
+  cobertura, visitasPorSemana, prov,
 }: {
   filas: FilaPdvMapa[]
   /** Las campañas del alcance, para el control "qué se muestra". */
@@ -98,6 +107,8 @@ export function PantallaMapa({
   visitasPorSemana?: number | null
   campanaId: string | null
   pintar: ModoPintado
+  /** Las provincias elegidas, para que los controles del mapa no las pierdan. */
+  prov?: number[]
   /**
    * La ruta de ESTA pantalla, SIN query. Los links los arma `hrefDelMapa` con
    * el estado completo, así ningún control puede perder un parámetro que otro
@@ -143,7 +154,15 @@ export function PantallaMapa({
   // perdió la medición. Cae a presencia, que es lo que el mapa siempre sabe.
   // El estado completo de la pantalla, en un solo lugar. Cada control lo
   // recibe entero y solo dice qué cambia.
-  const estado: EstadoDelMapa = { alcance: alcanceClave, campana: campanaId, pintar }
+  //
+  // ── ÉSTA ES LA TERCERA LISTA, Y EL TIPO NO LA PROTEGE ────────────────────
+  // `hrefDelMapa` ya no puede olvidarse una clave —`Serializadores` la exige—
+  // pero eso protege cómo se ESCRIBE el estado, no cómo se CONSTRUYE. Todos
+  // los campos de `EstadoDelMapa` son opcionales, así que armarlo sin `prov`
+  // compila igual y el filtro se perdería en cada clic de los controles.
+  // El control de `scripts/probar-href-mapa.ts` recorre las claves del tipo y
+  // falla si alguna no sobrevive un ida y vuelta.
+  const estado: EstadoDelMapa = { alcance: alcanceClave, campana: campanaId, pintar, prov }
 
   const ofreceCobertura = (cobertura?.size ?? 0) > 0
   const descarta = pintar === 'cobertura' && !ofreceCobertura

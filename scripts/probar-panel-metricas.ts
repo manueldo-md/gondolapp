@@ -352,7 +352,8 @@ console.log('\n▸ La base de cálculo, en sus tres formas')
 {
   const base = (o: Partial<PuntoSerie>): PuntoSerie => ({
     mes: '2026-04', etiqueta: 'abr 2026', valor: 50,
-    observaciones: 56, basePdv: 56, pdvVisitados: null, desglose: [], ...o,
+    observaciones: 56, conValor: 56, verdaderos: 28,
+    basePdv: 56, pdvVisitados: null, desglose: [], ...o,
   })
   caso('sin brecha y sin revisitas',
     textoBase(base({})), 'sobre 56 PDV')
@@ -732,7 +733,7 @@ console.log('\n▸ COBERTURA — UN PDV QUE NO MIDIÓ NO ES UN PDV SIN PRESENCIA
   const pdv = (p: Partial<FilaPdv>): FilaPdv => ({
     comercio_id: Math.random().toString(36).slice(2),
     comercio_nombre: 'Comercio', comercio_tipo: 'kiosco',
-    localidad_id: 1, localidad_nombre: 'Concordia',
+    localidad_id: 1, localidad_nombre: 'Concordia', departamento_id: null, departamento_nombre: null, provincia_id: null, provincia_nombre: null,
     misiones: 1, con_valor: 1, verdaderos: 0, ultima_medicion: null, ...p,
   })
 
@@ -770,7 +771,7 @@ console.log('\n▸ Un PDV cuenta una vez, lo visiten las veces que lo visiten')
   const pdv = (con: number, ver: number, mis: number): FilaPdv => ({
     comercio_id: Math.random().toString(36).slice(2),
     comercio_nombre: 'C', comercio_tipo: 'almacen',
-    localidad_id: 1, localidad_nombre: 'Rosario',
+    localidad_id: 1, localidad_nombre: 'Rosario', departamento_id: null, departamento_nombre: null, provincia_id: null, provincia_nombre: null,
     misiones: mis, con_valor: con, verdaderos: ver, ultima_medicion: null,
   })
   const g = agruparCobertura([pdv(3, 3, 3), pdv(1, 0, 1)], 'localidad')[0]
@@ -784,7 +785,7 @@ console.log('\n▸ Sin localidad y sin tipo se agrupan aparte, no se esconden')
 {
   const base: FilaPdv = {
     comercio_id: 'x', comercio_nombre: 'X', comercio_tipo: null,
-    localidad_id: null, localidad_nombre: null,
+    localidad_id: null, localidad_nombre: null, departamento_id: null, departamento_nombre: null, provincia_id: null, provincia_nombre: null,
     misiones: 1, con_valor: 1, verdaderos: 1, ultima_medicion: null,
   }
   const porCiudad = agruparCobertura([base], 'localidad')
@@ -801,7 +802,7 @@ console.log('\n▸ La última visita es la más reciente del grupo')
 {
   const pdv = (id: string, ultima: string | null): FilaPdv => ({
     comercio_id: id, comercio_nombre: id, comercio_tipo: 'kiosco',
-    localidad_id: 1, localidad_nombre: 'Paraná',
+    localidad_id: 1, localidad_nombre: 'Paraná', departamento_id: null, departamento_nombre: null, provincia_id: null, provincia_nombre: null,
     misiones: 1, con_valor: 1, verdaderos: 1, ultima_medicion: ultima,
   })
   const g = agruparCobertura([
@@ -819,10 +820,51 @@ caso('sin filas, sin grupos', agruparCobertura([], 'localidad'), [])
   const mk = (loc: number, nom: string): FilaPdv => ({
     comercio_id: Math.random().toString(36).slice(2), comercio_nombre: 'C',
     comercio_tipo: 'kiosco', localidad_id: loc, localidad_nombre: nom,
+    departamento_id: null, departamento_nombre: null,
+    provincia_id: null, provincia_nombre: null,
     misiones: 1, con_valor: 1, verdaderos: 1, ultima_medicion: null,
   })
   const g = agruparCobertura([mk(1, 'Chica'), mk(2, 'Grande'), mk(2, 'Grande'), mk(2, 'Grande')], 'localidad')
   caso('ordena por PDV, de mayor a menor', g.map(x => x.nombre), ['Grande', 'Chica'])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agrupar por PROVINCIA, que entró el 26/9/2026.
+//
+// Fue agregar una clave, no escribir una segunda agrupación: esta función
+// siempre trabajó sobre una clave y un nombre, no sobre ciudades. Lo que sí
+// cambia es el nombre del grupo sin dato — ver abajo.
+console.log('\n▸ Agrupar por provincia')
+{
+  const mk = (prov: number | null, nom: string | null, ver: number): FilaPdv => ({
+    comercio_id: Math.random().toString(36).slice(2), comercio_nombre: 'C',
+    comercio_tipo: 'kiosco', localidad_id: 1, localidad_nombre: 'X',
+    departamento_id: null, departamento_nombre: null,
+    provincia_id: prov, provincia_nombre: nom,
+    misiones: 1, con_valor: 1, verdaderos: ver, ultima_medicion: null,
+  })
+
+  const g = agruparCobertura([
+    mk(2, 'Entre Ríos', 1), mk(2, 'Entre Ríos', 0), mk(6, 'Córdoba', 0), mk(null, null, 0),
+  ], 'provincia')
+
+  caso('agrupa por provincia y ordena por PDV',
+    g.map(x => [x.nombre, x.pdv]),
+    [['Entre Ríos', 2], ['Córdoba', 1], ['Esperando confirmación de localidad', 1]])
+
+  // El sin-provincia NO se esconde: si se escondiera, los PDV del panel no
+  // sumarían los que hay y el que haga la resta va a desconfiar del resto.
+  caso('el PDV sin provincia aparece, no se descarta',
+    g.find(x => x.clave === 'sin-provincia')?.pdv, 1)
+
+  // Y el nombre dice QUÉ HACER, no qué falta: el alta escribe
+  // `localidad_sugerida_id` y no `localidad_id`, así que este grupo es el de
+  // los comercios recién cargados esperando que la distri confirme.
+  caso('y se llama por lo que hay que hacer, no por el dato que falta',
+    g.find(x => x.clave === 'sin-provincia')?.nombre, 'Esperando confirmación de localidad')
+
+  caso('la presencia se calcula igual que por ciudad',
+    g.find(x => x.nombre === 'Entre Ríos')?.presenciaPct, 50)
 }
 
 console.log(fallos ? `\n✗ ${fallos} mal\n` : '\n✓ Todo como se esperaba.\n')

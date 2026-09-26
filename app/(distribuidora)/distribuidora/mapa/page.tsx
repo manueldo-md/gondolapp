@@ -23,6 +23,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { PantallaMapa, type FilaPdvMapa } from '@/components/panel/pantalla-mapa'
 import { modoDesde } from '@/lib/mapa-pdv'
+import { provinciasDesde, aplicarFiltroProvincia } from '@/lib/filtro-provincia'
 import {
   SelectorAlcance, SinAlcanceElegido, SinCampanas,
 } from '@/components/panel/selector-alcance'
@@ -35,7 +36,7 @@ const RUTA = '/distribuidora/mapa'
 export default async function MapaDistriPage({
   searchParams,
 }: {
-  searchParams: { alcance?: string; campana?: string; pintar?: string }
+  searchParams: { alcance?: string; campana?: string; pintar?: string; prov?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -80,6 +81,7 @@ export default async function MapaDistriPage({
 
   const campanaId = searchParams.campana || null
   const pintar = modoDesde(searchParams.pintar)
+  const provElegidas = provinciasDesde(searchParams.prov)
 
   const campanas = await campanasDe(alcance, admin)
   const pdvRes = await admin.rpc('panel_pdv', { _campanas: idsDe(campanas, campanaId) })
@@ -98,7 +100,10 @@ export default async function MapaDistriPage({
     <div className="space-y-6 max-w-5xl">
       {encabezado}
       <PantallaMapa
-        filas={(pdvRes.data ?? []) as FilaPdvMapa[]}
+        filas={aplicarFiltroProvincia((pdvRes.data ?? []) as FilaPdvMapa[], provElegidas).filas}
+      // El filtro viene del panel por la URL: cruzar al mapa no tiene que
+      // ensanchar la vista sin avisar.
+      prov={provElegidas}
         campanas={campanas.map(c => ({ id: c.id, nombre: c.nombre }))}
         campanaId={campanaId}
         pintar={pintar}

@@ -10,6 +10,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { PantallaMapa, type FilaPdvMapa } from '@/components/panel/pantalla-mapa'
 import { modoDesde } from '@/lib/mapa-pdv'
+import { provinciasDesde, aplicarFiltroProvincia } from '@/lib/filtro-provincia'
 import { campanasDe, idsDe } from '@/lib/campanas-de'
 import { coberturaDeCampana } from '@/lib/cobertura-mapa'
 
@@ -18,7 +19,7 @@ const RUTA = '/marca/mapa'
 export default async function MapaPage({
   searchParams,
 }: {
-  searchParams: { campana?: string; pintar?: string }
+  searchParams: { campana?: string; pintar?: string; prov?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -37,6 +38,7 @@ export default async function MapaPage({
 
   const campanaId = searchParams.campana || null
   const pintar = modoDesde(searchParams.pintar)
+  const provElegidas = provinciasDesde(searchParams.prov)
 
   // El arreglo NO se arma con lo que viene en la URL: `idsDe` intersecta el
   // pedido contra las campañas de esta marca y devuelve vacío si no es suya.
@@ -59,7 +61,10 @@ export default async function MapaPage({
 
   return (
     <PantallaMapa
-      filas={(pdvRes.data ?? []) as FilaPdvMapa[]}
+      filas={aplicarFiltroProvincia((pdvRes.data ?? []) as FilaPdvMapa[], provElegidas).filas}
+      // El filtro viene del panel por la URL: cruzar al mapa no tiene que
+      // ensanchar la vista sin avisar.
+      prov={provElegidas}
       campanas={campanas.map(c => ({ id: c.id, nombre: c.nombre }))}
       campanaId={campanaId}
       pintar={pintar}

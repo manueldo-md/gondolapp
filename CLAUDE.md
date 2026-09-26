@@ -7969,3 +7969,129 @@ en los controles y no en la lib:**
    que ordenar por nombre daba el mismo resultado que ordenar por tamaño.
    **Verificado rompiendo el sort a propósito: quedaban en verde.** Con los
    nombres invertidos, la misma mutación pone tres en rojo.
+
+---
+
+## Filtro de provincia y KPI de provincias — HECHO el 26/9/2026
+
+### La migración `20261008100000` — `panel_pdv` con geografía completa
+
+Devuelve además `departamento_id/nombre` y `provincia_id/nombre`. La cadena es
+de cuatro niveles porque **`localidades` no tiene `provincia_id`** —la
+divergencia del dump que ya costó un embed a una columna inexistente—:
+
+```
+comercios.localidad_id → localidades.departamento_id
+                       → departamentos.provincia_id → provincias
+```
+
+Resuelve **106/106 en dev y 98/98 en prod**. Los JOIN son LEFT: un comercio sin
+localidad llega con las cuatro columnas en NULL, no desaparece.
+
+> **Lo caro no fue el JOIN: fue el DROP.** `CREATE OR REPLACE` no puede cambiar
+> el tipo de retorno, así que agregar columnas obliga a dropear. Y **con el
+> DROP se van los permisos**: Supabase tiene un `ALTER DEFAULT PRIVILEGES` que
+> le da EXECUTE a `anon` y `authenticated` sobre cada función nueva, de forma
+> explícita. Recrear sin revocar **no deja la función como estaba: la deja
+> abierta**, y el parámetro es una lista de campañas, un dato que varias
+> pantallas muestran.
+>
+> El dry-run corre la migración **sin los REVOKE** para probar que el peligro
+> es real. Encontró algo mejor de lo que el control esperaba: no llega a dejar
+> la función abierta porque **el bloque de verificación de la propia migración
+> la aborta** con `anon=t authenticated=t`.
+
+### El parámetro: un string separado por comas
+
+`?prov=2,6`. No por estética: **`hrefMapa` borra la clave cuando el valor es
+`''`**, así que deseleccionar todo deja la URL sin la clave y la ausencia
+vuelve a ser "todas". El invariante *"no existe forma de escribir «ninguna»"*
+**sale del código que ya hay** en vez de depender de que cada llamador se
+acuerde. Con claves repetidas habría que cambiar la firma de `hrefMapa` y cada
+lector de Next pasaría a recibir `string | string[]`.
+
+La selección se normaliza —ordenada y sin repetidos— para que la URL sea
+canónica: sin eso, elegir dos provincias en distinto orden da links distintos
+para la misma pantalla.
+
+### LAS TRES LISTAS BLANCAS, que era el riesgo real
+
+No era la serialización. Eran los lugares que **enumeran las claves** y tiran
+en silencio la que no conocen. Es la tercera vez que un href que no conserva lo
+que ya estaba muerde, y el modo de falla es el peor: **no rompe nada visible**.
+
+| Dónde | Qué era | Cómo quedó |
+|---|---|---|
+| `hrefDelMapa` | el cuerpo listaba `alcance`, `campana`, `pintar` | recorre `SERIALIZAR`, una tabla que **el tipo obliga a tener completa** |
+| `panel/page.tsx` | `` `${RUTA}?alcance=${...}` `` a mano, y `<SerieMensual>` mergea encima | armada con `hrefMapa` |
+| `pantalla-mapa.tsx` | construye el `EstadoDelMapa` a mano | pasa `prov`, y el control lo verifica |
+
+```ts
+type Serializadores = {
+  [K in keyof Required<EstadoDelMapa>]: (v: EstadoDelMapa[K]) => string | null
+}
+```
+
+`Required<>` es lo que hace el trabajo. **Verificado agregando una clave al
+tipo sin agregarla a la tabla: no compila** —*"Property 'claveNueva' is missing
+in type ... but required in type 'Serializadores'"*—.
+
+> **Pero el tipo protege cómo se ESCRIBE el estado, no cómo se CONSTRUYE.**
+> Todos los campos de `EstadoDelMapa` son opcionales, así que armarlo sin
+> `prov` compila igual — que es justo lo que hace `pantalla-mapa.tsx`. Para eso
+> está el caso 7 de `probar-filtro-provincia.ts`: arma un estado con **todas**
+> las claves del tipo (con un `satisfies` que impide que la fixture se quede
+> vieja) y verifica que cada una sobreviva un ida y vuelta.
+
+### Los dos números del KPI
+
+Salen de `panel_pdv` sola: provincias distintas sobre todas las filas, y
+provincias distintas donde `verdaderos > 0`. **`verdaderos > 0` es el mismo
+predicado que `agruparCobertura` usa para `conPresencia`**, así que el KPI y la
+tabla de cobertura no pueden divergir.
+
+Se calcula sobre lo FILTRADO, igual que el resto de los KPIs: un número de
+cabecera que ignorara el filtro contradiría al cuerpo, y de los dos errores
+posibles ése es el peor —el que mira no sabe cuál de los dos le habla—.
+
+**Con cero provincias el componente devuelve `null`**, no "0 de 0". Mismo
+criterio que las métricas sin datos, que muestran "—" con "no se está
+midiendo".
+
+Y lo que cuenta el denominador, dicho sin vueltas: **provincias con una visita
+viva, no con una medición**. Una provincia donde nadie contestó la pregunta de
+presencia suma ahí y no en el otro número, que es lo que hace informativa la
+pareja. El texto del KPI lo aclara.
+
+### El aviso de excluidos, y por qué NO es para el cero de hoy
+
+```
+comercios sin localidad    dev 0 de 106    prod 0 de 98
+```
+
+El tramo de geocoding lo cerró entero. **Pero el cero es una foto, no una
+propiedad**: el alta escribe `localidad_sugerida_id`, **no** `localidad_id`, así
+que un comercio recién cargado no tiene provincia hasta que la distri confirma
+la sugerencia en su bandeja.
+
+O sea que el aviso se va a disparar seguido y **sobre los comercios más
+nuevos**, que son los que la marca mira. Por eso el texto dice *"esperando que
+la distribuidora confirme su localidad"* y no "sin localidad": lo primero es
+accionable —alguien tiene algo que hacer y se sabe quién— y lo segundo suena a
+dato roto.
+
+El grupo equivalente de `agruparCobertura` se llama igual, por lo mismo.
+
+> **Y el caso que evita la conclusión errónea:** si TODO lo pedido en la URL
+> está fuera de los datos —un link viejo, una provincia donde se dejó de
+> relevar— **no se filtra por nada**. Filtrar por un conjunto vacío daría una
+> pantalla en blanco, y una pantalla en blanco se lee como "no hay datos", que
+> es justo la lectura que este tramo vino a evitar. Se devuelve el universo y
+> el aviso explica que ese pedazo del link no se aplicó.
+
+### Una cosa que arreglé de paso y no era mía
+
+`npm run typecheck:scripts` **ya estaba en rojo** antes de este tramo, por una
+fixture de `PuntoSerie` sin `conValor` ni `verdaderos` en
+`probar-panel-metricas.ts`. Verificado con el árbol limpio. Queda arreglada:
+un typecheck que siempre falla es una guarda apagada.

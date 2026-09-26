@@ -31,6 +31,8 @@
  * agrupamiento miente igual que uno que lo tapa, y en silencio.
  */
 
+import { serializarProvincias } from './filtro-provincia'
+
 /** Un PDV dibujable. `presente: null` = visitado sin medir presencia. */
 export interface PuntoMapa {
   id: string
@@ -502,6 +504,42 @@ export type EstadoDelMapa = {
   alcance?: string | null
   campana?: string | null
   pintar?: ModoPintado | null
+  /** Las provincias elegidas. Vacío o ausente = todas. */
+  prov?: number[] | null
+}
+
+/**
+ * Cómo se escribe cada clave en la URL. **Una entrada por clave de
+ * `EstadoDelMapa`, y el tipo lo exige.**
+ *
+ * ── POR QUÉ EXISTE ESTA TABLA ───────────────────────────────────────────────
+ * Porque `hrefDelMapa` ENUMERABA las claves en su cuerpo, y es la tercera vez
+ * que un href que no conserva lo que ya estaba nos muerde. La primera fue
+ * `campana`, que se perdía en cada clic del control de pintado y pasó
+ * desapercibida desde el 24/9/2026 **justamente porque no rompe nada
+ * visible**: el mapa se ensancha y parece una decisión.
+ *
+ * Y ése es el argumento para atarlo al TIPO y no a la disciplina: un olvido
+ * acá no falla, no loguea y no se ve. No hay forma de enterarse revisando.
+ *
+ * `Required<>` es lo que hace el trabajo: obliga a que estén TODAS las claves,
+ * no solo las que alguien se acordó. Agregar una a `EstadoDelMapa` sin
+ * agregarla acá **no compila**, y el cuerpo de `hrefDelMapa` recorre esta
+ * tabla en vez de una lista escrita a mano.
+ */
+type Serializadores = {
+  [K in keyof Required<EstadoDelMapa>]: (v: EstadoDelMapa[K]) => string | null
+}
+
+const SERIALIZAR: Serializadores = {
+  alcance: v => v || null,
+  campana: v => v || null,
+  // `presencia` es el default y no se escribe: si se escribiera habría dos
+  // URLs para la misma pantalla y la de arriba sería la más larga.
+  pintar:  v => (v && v !== 'presencia' ? v : null),
+  // Separado por comas y canónico. El `null` de la lista vacía es lo que hace
+  // que "ninguna seleccionada" borre la clave y vuelva a significar "todas".
+  prov:    v => serializarProvincias(v),
 }
 
 /**
@@ -521,6 +559,13 @@ export type EstadoDelMapa = {
  * Por eso la firma pide el ESTADO COMPLETO y no una ruta ya armada: no hay
  * forma de olvidarse una clave, que es lo único que hacía falta para romperlo.
  * Cada control dice qué cambia y el resto se conserva solo.
+ *
+ * ── Y POR ESO EL CUERPO YA NO ENUMERA ───────────────────────────────────────
+ * Hasta el 26/9/2026 esta función listaba `alcance`, `campana` y `pintar` a
+ * mano. La firma pedía el estado completo, sí, pero **el cuerpo decidía qué
+ * parte de ese estado sobrevivía**, así que agregar una clave al tipo y
+ * olvidarla acá reproducía el bug exacto que el docstring de arriba describe.
+ * Ahora recorre `SERIALIZAR`, que el tipo obliga a tener completo.
  */
 export function hrefDelMapa(
   /** La ruta sin query. */
@@ -529,13 +574,15 @@ export function hrefDelMapa(
   cambio: EstadoDelMapa = {},
 ): string {
   const final = { ...estado, ...cambio }
-  return hrefMapa(ruta, {
-    alcance: final.alcance ?? null,
-    campana: final.campana ?? null,
-    // `presencia` es el default y no se escribe: si se escribiera habría dos
-    // URLs para la misma pantalla y la de arriba sería la más larga.
-    pintar: final.pintar && final.pintar !== 'presencia' ? final.pintar : null,
-  })
+  const params: Record<string, string | null> = {}
+  for (const clave of Object.keys(SERIALIZAR) as (keyof EstadoDelMapa)[]) {
+    // El cast es inevitable —cada serializador toma su propio tipo y TS no
+    // puede correlacionarlos en un loop— pero lo que importa ya está probado
+    // en la declaración de `SERIALIZAR`: que estén todas las claves.
+    const escribir = SERIALIZAR[clave] as (v: unknown) => string | null
+    params[clave] = escribir(final[clave])
+  }
+  return hrefMapa(ruta, params)
 }
 
 export function hrefMapa(
