@@ -15,6 +15,7 @@ import {
 } from '@/lib/nivel-mensual'
 import { mejorMesDeMisiones, nivelDeMejorMes } from '@/lib/nivel-maximo'
 import { getDistrisDeGondolero } from '@/lib/utils-distri'
+import { provinciasDeGondoleros, nombresDeProvincias } from '@/lib/zonas-gondolero'
 import { CanjeCatalogo } from '../perfil/canje-catalogo'
 import { LogrosYRanking, type LogroUI, type RankingEntry } from '../actividad/logros-y-ranking'
 import { MarcarLogrosVistos } from './marcar-vistos'
@@ -78,7 +79,6 @@ export default async function LogrosPage() {
     comerciosRes,
     config,
     misionesDelMes,
-    misZonasRes,
     todosLogrosRes,
     gondoleroLogrosRes,
     retenidos,
@@ -110,9 +110,6 @@ export default async function LogrosPage() {
     // El nivel y el ranking cuentan MISIONES aprobadas del mes, no fotos: una
     // campaña de solo preguntas también es trabajo. Ver lib/nivel-mensual.ts.
     contarMisionesAprobadasDelMes(admin, ahora),
-    admin.from('gondolero_zonas')
-      .select('zona_id')
-      .eq('gondolero_id', user.id),
     admin.from('logros')
       .select('clave, nombre, descripcion, emoji')
       .order('created_at', { ascending: true }),
@@ -201,7 +198,18 @@ export default async function LogrosPage() {
   const nombreMostrar = profile?.alias ?? profile?.nombre ?? 'Gondolero'
 
   // ── FASE 2: Ranking ───────────────────────────────────────────────────────
-  const misZonaIds = (misZonasRes.data ?? []).map((z: { zona_id: string }) => z.zona_id)
+  //
+  // ── SE FUE "MI ZONA", Y QUEDA "PROVINCIA" ─────────────────────────────────
+  // Desde que la zona se guarda POR NIVEL, "zona" dejó de significar algo
+  // estable: para uno es una provincia entera y para otro un pueblo, así que
+  // dos gondoleros comparando "su zona" no están comparando lo mismo. La
+  // provincia sí es una unidad que todos entienden igual.
+  //
+  // Y con la superposición de alcances las dos solapas COLAPSABAN: el que
+  // declaró una provincia veía la misma lista en las dos. Dos pestañas
+  // idénticas es peor que una.
+  //
+  // El ranking queda en Mi Distri + Provincia (y Nacional, escondida).
 
   // El ranking usa el mismo conteo que el nivel: si ordenara por fotos y la
   // insignia saliera de misiones, la fila mostraría dos medidas que no cuadran.
@@ -212,19 +220,28 @@ export default async function LogrosPage() {
   // dos le escondía el ranking de la segunda. Ver lib/utils-distri.ts.
   const misDistriIds = await getDistrisDeGondolero(user.id, admin)
 
-  const [perfilesRankingRes, zonaColegasRes, zonasDataRes, vinculosRes, distrisRes] = await Promise.all([
+  // ── La provincia de cada uno, en UNA llamada ──────────────────────────────
+  // Antes eran tres consultas y dos tablas: `gondolero_zonas` para mis zonas,
+  // `zonas` para preguntar cuáles de ésas eran de tipo provincia, y
+  // `gondolero_zonas` de nuevo para los colegas. **El paso del medio existía
+  // solo porque un uuid de zona no dice de qué nivel es.** Ahora el nivel
+  // viaja en la fila y ese paso desaparece.
+  //
+  // Se pide para TODO el universo del ranking de una vez —yo incluido— en vez
+  // de una consulta para mí y otra para los demás: es la misma pregunta.
+  const [perfilesRankingRes, provPorGondolero, vinculosRes, distrisRes] = await Promise.all([
     todosIds.length > 0
       ? admin.from('profiles')
           .select('id, alias')
           .in('id', todosIds)
           .eq('tipo_actor', 'gondolero')
       : Promise.resolve({ data: [] }),
-    misZonaIds.length > 0
-      ? admin.from('gondolero_zonas').select('gondolero_id').in('zona_id', misZonaIds)
-      : Promise.resolve({ data: [] }),
-    misZonaIds.length > 0
-      ? admin.from('zonas').select('id, tipo').in('id', misZonaIds)
-      : Promise.resolve({ data: [] }),
+    // Falla CERRADA: si no se pueden leer las zonas, el ranking provincial no
+    // se muestra en vez de mostrarse incompleto. Un ranking al que le faltan
+    // colegas es peor que uno que no está — el que lo mira saca conclusiones
+    // sobre su posición.
+    provinciasDeGondoleros([...new Set([user.id, ...todosIds])], admin)
+      .catch(() => new Map<string, Set<number>>()),
     // A qué distribuidoras pertenece cada gondolero del ranking. Antes salía de
     // `profiles.distri_id`, que traía una sola: un colega vinculado a dos
     // aparecía en el ranking de una y faltaba en el de la otra.
@@ -240,13 +257,7 @@ export default async function LogrosPage() {
       : Promise.resolve({ data: [] }),
   ])
 
-  const misProvincias = (zonasDataRes.data ?? [])
-    .filter((z: { tipo: string }) => z.tipo === 'provincia')
-    .map((z: { id: string }) => z.id)
-
-  const provColegasRes = misProvincias.length > 0
-    ? await admin.from('gondolero_zonas').select('gondolero_id').in('zona_id', misProvincias)
-    : { data: [] }
+  const misProvincias = [...(provPorGondolero.get(user.id) ?? new Set<number>())]
 
   type PerfilRanking = { id: string; alias: string | null }
   const perfiles = (perfilesRankingRes.data ?? []) as PerfilRanking[]
@@ -300,22 +311,36 @@ export default async function LogrosPage() {
     }
   }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 
-  const zonaIds2       = new Set((zonaColegasRes.data ?? []).map((z: { gondolero_id: string }) => z.gondolero_id))
-  const perfilesZona   = perfiles.filter(p => zonaIds2.has(p.id))
-  const provIds        = new Set((provColegasRes.data ?? []).map((z: { gondolero_id: string }) => z.gondolero_id))
-  const perfilesProv   = perfiles.filter(p => provIds.has(p.id))
+  // Colega de provincia = el que cubre alguna de las mías. La pertenencia ya
+  // está resuelta en el Map, así que es una intersección de Sets y no otra
+  // consulta — y **el que declaró una localidad suelta entra**, porque
+  // `provinciasDeGondoleros` sube la jerarquía. Ver su comentario: la versión
+  // literal dejaba afuera justo al que se tomó el trabajo de declarar.
+  const mias = new Set(misProvincias)
+  const perfilesProv = misProvincias.length > 0
+    ? perfiles.filter(p => {
+        const suyas = provPorGondolero.get(p.id)
+        return !!suyas && [...suyas].some(id => mias.has(id))
+      })
+    : []
 
   const rankings = {
     nacional:  buildRanking(perfiles),
     distris:   rankingsDistri,
-    zona:      buildRanking(perfilesZona),
     provincia: buildRanking(perfilesProv),
   }
   const misPosiciones = {
     nacional:  getPosicion(perfiles),
-    zona:      misZonaIds.length > 0 ? getPosicion(perfilesZona) : null,
     provincia: misProvincias.length > 0 ? getPosicion(perfilesProv) : null,
   }
+
+  // El rótulo de la solapa. Con una sola provincia dice su nombre —"Entre
+  // Ríos" es más claro que "Provincia" y no cuesta nada—; con varias se queda
+  // en el genérico, porque listarlas no entra.
+  const nombresProv = await nombresDeProvincias(misProvincias, admin)
+  const etiquetaProvincia = misProvincias.length === 1
+    ? (nombresProv.get(misProvincias[0]) ?? 'Provincia')
+    : 'Provincia'
 
   // ── Logros UI ─────────────────────────────────────────────────────────────
   const logrosDesbloqueados = new Map(
@@ -511,8 +536,8 @@ export default async function LogrosPage() {
           misPosiciones={misPosiciones}
           gondoleroId={user.id}
           mesLabel={mesLabel}
-          hayZona={misZonaIds.length > 0}
           hayProvincia={misProvincias.length > 0}
+          etiquetaProvincia={etiquetaProvincia}
           codigoGondolero={profile?.codigo_gondolero ?? null}
         />
 

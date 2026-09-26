@@ -196,3 +196,138 @@ export function departamentoYaAgregado(grupos: ZonaConNivel[], departamentoId: n
   if (departamentoId === '') return false
   return grupos.some(g => g.nivel !== 'provincia' && g.departamentoId === departamentoId)
 }
+
+// ── La provincia de cada gondolero, SUBIENDO la jerarquía ────────────────────
+//
+// Para el ranking provincial de Logros. Es la operación INVERSA a
+// `expandirZonas`: aquélla baja —de provincia a sus localidades— y ésta sube,
+// de lo que cada uno declaró a la provincia que lo contiene.
+//
+// ── POR QUÉ SUBE, Y NO SE QUEDA CON EL NIVEL 'provincia' ────────────────────
+// Porque quedarse con lo declarado explícitamente deja afuera justo al que
+// hizo el trabajo. Medido en dev el 26/9/2026, los únicos dos gondoleros con
+// zonas cargadas:
+//
+//   Gabriel   Entre Ríos y Corrientes (provincia) + Gualeguay (departamento)
+//   Raúl      21 LOCALIDADES, todas de Entre Ríos
+//
+//   subiendo la jerarquía   →  Entre Ríos: 2 gondoleros
+//   solo el nivel provincia →  Entre Ríos: 1  ← Raúl no entra en la suya
+//
+// Y no es una casualidad de estos datos: **21 de las 24 filas son de nivel
+// localidad**. La versión literal nace vacía.
+//
+// ── LOS DOS SALTOS SON POR EL PADRÓN, NO POR CAPRICHO ───────────────────────
+// `localidades` NO tiene `provincia_id`: hay que pasar por `departamentos`. Es
+// la misma divergencia que `expandirZonas` documenta un poco más arriba y que
+// ya costó un embed apuntando a una columna inexistente.
+//
+// Dos consultas como mucho, y CERO si todos declararon a nivel provincia.
+
+/**
+ * `gondoleroId → provincias que cubre`.
+ *
+ * Los que no declararon nada no aparecen en el Map. Un `Set` vacío y la
+ * ausencia significan lo mismo para el llamador, pero no inventar la clave
+ * hace que `.has()` conteste la pregunta que importa: si declaró o no.
+ */
+export async function provinciasDeGondoleros(
+  gondoleroIds: string[],
+  admin: SupabaseClient,
+): Promise<Map<string, Set<number>>> {
+  const salida = new Map<string, Set<number>>()
+  if (gondoleroIds.length === 0) return salida
+
+  const { data, error } = await admin
+    .from('gondolero_localidades')
+    .select('gondolero_id, nivel, ref_id')
+    .in('gondolero_id', gondoleroIds)
+
+  if (error) {
+    // Falla CERRADA y ruidosa, igual que `zonasDelGondolero`: un Map vacío se
+    // lee río abajo como "nadie declaró zonas", que es exactamente lo que pasa
+    // hoy de verdad — así que en silencio sería indistinguible del estado
+    // normal y nadie se enteraría nunca.
+    console.error('[zonas] No se pudieron leer las zonas de los gondoleros:', error.message)
+    throw new Error('No se pudieron leer las zonas de los gondoleros')
+  }
+
+  const filas = (data ?? []) as { gondolero_id: string; nivel: NivelZona; ref_id: number }[]
+  if (filas.length === 0) return salida
+
+  const agregar = (g: string, p: number) => {
+    const s = salida.get(g)
+    if (s) s.add(p)
+    else salida.set(g, new Set([p]))
+  }
+
+  // Nivel provincia: ya está, sin consultar nada.
+  for (const f of filas) if (f.nivel === 'provincia') agregar(f.gondolero_id, f.ref_id)
+
+  // Nivel localidad: primero a departamento.
+  const locIds = [...new Set(filas.filter(f => f.nivel === 'localidad').map(f => f.ref_id))]
+  const deptoDeLocalidad = new Map<number, number>()
+  if (locIds.length > 0) {
+    const { data: locs, error: errLoc } = await admin
+      .from('localidades').select('id, departamento_id').in('id', locIds)
+    if (errLoc) {
+      console.error('[zonas] No se pudieron resolver las localidades:', errLoc.message)
+      throw new Error('No se pudieron leer las zonas de los gondoleros')
+    }
+    for (const l of (locs ?? []) as { id: number; departamento_id: number | null }[]) {
+      if (l.departamento_id != null) deptoDeLocalidad.set(l.id, l.departamento_id)
+    }
+  }
+
+  // Y los departamentos —los declarados y los que salieron del paso anterior—
+  // a provincia. Una sola consulta para los dos orígenes: son la misma
+  // pregunta y partirla en dos sería un round-trip de más.
+  const deptoIds = [...new Set([
+    ...filas.filter(f => f.nivel === 'departamento').map(f => f.ref_id),
+    ...deptoDeLocalidad.values(),
+  ])]
+  const provDeDepto = new Map<number, number>()
+  if (deptoIds.length > 0) {
+    const { data: deptos, error: errDep } = await admin
+      .from('departamentos').select('id, provincia_id').in('id', deptoIds)
+    if (errDep) {
+      console.error('[zonas] No se pudieron resolver los departamentos:', errDep.message)
+      throw new Error('No se pudieron leer las zonas de los gondoleros')
+    }
+    for (const d of (deptos ?? []) as { id: number; provincia_id: number | null }[]) {
+      if (d.provincia_id != null) provDeDepto.set(d.id, d.provincia_id)
+    }
+  }
+
+  for (const f of filas) {
+    if (f.nivel === 'departamento') {
+      const p = provDeDepto.get(f.ref_id)
+      if (p != null) agregar(f.gondolero_id, p)
+    } else if (f.nivel === 'localidad') {
+      const d = deptoDeLocalidad.get(f.ref_id)
+      const p = d != null ? provDeDepto.get(d) : undefined
+      if (p != null) agregar(f.gondolero_id, p)
+    }
+  }
+
+  return salida
+}
+
+/** Los nombres, para rotular el ranking. Vacío si no hay ninguna. */
+export async function nombresDeProvincias(
+  ids: number[],
+  admin: SupabaseClient,
+): Promise<Map<number, string>> {
+  const m = new Map<number, string>()
+  if (ids.length === 0) return m
+  const { data, error } = await admin
+    .from('provincias').select('id, nombre').in('id', [...new Set(ids)])
+  if (error) {
+    // Acá sí se sigue: sin los nombres el ranking se puede rotular con un
+    // genérico, y quedarse sin ranking por un rótulo sería peor.
+    console.error('[zonas] No se pudieron leer los nombres de provincia:', error.message)
+    return m
+  }
+  for (const p of (data ?? []) as { id: number; nombre: string }[]) m.set(p.id, p.nombre)
+  return m
+}

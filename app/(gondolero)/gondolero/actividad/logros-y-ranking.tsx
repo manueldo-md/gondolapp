@@ -46,18 +46,20 @@ export interface LogrosYRankingProps {
     nacional:  RankingEntry[]
     /** Una por cada distribuidora con vínculo aprobado. Puede venir vacío. */
     distris:   RankingDistri[]
-    zona:      RankingEntry[]
     provincia: RankingEntry[]
   }
   misPosiciones: {
     nacional:  number | null
-    zona:      number | null
     provincia: number | null
   }
   gondoleroId: string
   mesLabel: string
-  hayZona: boolean
   hayProvincia: boolean
+  /**
+   * El nombre de la provincia cuando hay UNA sola. "Entre Ríos" dice más que
+   * "Provincia" y no cuesta nada; con varias vuelve al genérico.
+   */
+  etiquetaProvincia?: string
   /** Para el vacío: es lo único que el gondolero sin distri puede hacer. */
   codigoGondolero: string | null
 }
@@ -208,7 +210,7 @@ function RankingTab({
 const MOSTRAR_RANKING_NACIONAL = false
 
 /** `distri:<uuid>` para las solapas por distribuidora. */
-type TabRanking = 'nacional' | 'zona' | 'provincia' | `distri:${string}`
+type TabRanking = 'nacional' | 'provincia' | `distri:${string}`
 
 export function LogrosYRanking({
   logros,
@@ -216,8 +218,8 @@ export function LogrosYRanking({
   misPosiciones,
   gondoleroId,
   mesLabel,
-  hayZona,
   hayProvincia,
+  etiquetaProvincia,
   codigoGondolero,
 }: LogrosYRankingProps) {
   const distris = rankings.distris
@@ -231,8 +233,7 @@ export function LogrosYRanking({
       label:  distris.length === 1 ? 'Mi Distri' : d.nombre,
       activo: true,
     })),
-    { key: 'zona',      label: 'Mi Zona',   activo: hayZona },
-    { key: 'provincia', label: 'Provincia', activo: hayProvincia },
+    { key: 'provincia', label: etiquetaProvincia ?? 'Provincia', activo: hayProvincia },
     { key: 'nacional',  label: 'Nacional',  activo: MOSTRAR_RANKING_NACIONAL },
   ]
 
@@ -305,9 +306,15 @@ export function LogrosYRanking({
 
         {/* Contenido */}
         {tabsActivos.length === 0 && (
-          // Sin distribuidora y sin zona no queda ningún ranking que mostrar
-          // desde que el nacional está oculto. Decir por qué es mejor que dejar
-          // la tarjeta vacía, que se lee como una pantalla rota.
+          // Sin distribuidora y sin provincia declarada no queda ningún ranking
+          // que mostrar, desde que el nacional está oculto. Decir por qué es
+          // mejor que dejar la tarjeta vacía, que se lee como una pantalla rota.
+          //
+          // El texto habla SOLO del vínculo y no también de declarar zonas, a
+          // propósito: para el que cae acá el vínculo es el bloqueante grande
+          // —sin él no ve campañas, no releva y no cobra— y pedirle dos cosas a
+          // la vez diluye la que importa. Las zonas ya se piden donde
+          // corresponde: el aviso del onboarding y los badges del perfil.
           //
           // Y lo que se le pide tiene que ser algo que PUEDA hacer. "Pedí la
           // vinculación desde tu perfil" sonaba razonable y no existe:
@@ -342,15 +349,6 @@ export function LogrosYRanking({
                 ? 'No hay otros gondoleros de tu distribuidora todavía.'
                 : `No hay otros gondoleros de ${distriActiva.nombre} todavía.`
             }
-          />
-        )}
-        {tabRanking === 'zona' && (
-          <RankingTab
-            entries={rankings.zona}
-            miPosicion={misPosiciones.zona}
-            gondoleroId={gondoleroId}
-            mesLabel={mesLabel}
-            vacio="No hay gondoleros en tu zona todavía."
           />
         )}
         {tabRanking === 'provincia' && (

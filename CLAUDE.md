@@ -7738,6 +7738,114 @@ borrar.
 
 ---
 
+## TRAMO legacy de zonas — PASO 1 HECHO el 26/9/2026 (ranking portado)
+
+Quedan **2 lectores de `gondolero_zonas`**, de los 5 que había:
+`gondolero/campanas/page.tsx:38` y `admin/zonas/page.tsx:19`. Los tres de
+Logros se fueron con el port. El detalle del tramo completo, abajo.
+
+### Lo primero: el ranking NO estaba vacío en pantalla, estaba AUSENTE
+
+`activo: hayZona` con `hayZona = misZonaIds.length > 0`, y `tabsActivos` filtra
+por `activo`. Con `gondolero_zonas` vacía las dos solapas **desaparecen**: no
+se ve un ranking vacío, se ve una solapa menos.
+
+Lo que sí estuvo muerto en pantalla fue **antes** de vaciar la tabla: el único
+usuario con filas veía la solapa "Mi Zona" con un ranking de **una persona, él
+mismo**, porque nadie más tenía filas. Eso lo sacó la limpieza del 25/9.
+
+### Se fue "Mi Zona". El ranking queda en Mi Distri + Provincia
+
+**Con niveles, "zona" dejó de significar algo estable**: para uno es una
+provincia entera y para otro un pueblo, así que dos gondoleros comparando "su
+zona" no están comparando lo mismo. La provincia sí es una unidad que todos
+entienden igual.
+
+Y había un problema mecánico además del conceptual: definiendo zona como
+superposición de alcances, **las dos solapas colapsaban** para cualquiera que
+hubiera declarado a nivel provincia — su "zona" ES una provincia, así que las
+dos listas eran idénticas.
+
+La solapa de provincia se rotula con el NOMBRE cuando hay una sola: "Entre
+Ríos" dice más que "Provincia" y no cuesta nada.
+
+### `provinciasDeGondoleros` SUBE la jerarquía, y eso fue la decisión
+
+La operación inversa a `expandirZonas`: aquélla baja de provincia a
+localidades, ésta sube de lo declarado a la provincia que lo contiene.
+
+**Lo decidió la medición, no la teoría.** Los únicos dos gondoleros con zonas
+cargadas en dev:
+
+```
+Gabriel   Entre Ríos y Corrientes (provincia) + Gualeguay (departamento)
+Raúl      21 LOCALIDADES, todas de Entre Ríos
+
+subiendo la jerarquía    →  Entre Ríos: 2 gondoleros
+solo el nivel provincia  →  Entre Ríos: 1   ← Raúl no entra en la suya
+```
+
+**La versión literal deja afuera justo al que hizo el trabajo de declarar.** Y
+no es casualidad de estos datos: **21 de las 24 filas son de nivel localidad**,
+así que nace vacía.
+
+Los dos saltos son por el padrón: `localidades` no tiene `provincia_id`. Dos
+consultas como mucho, y cero si todos declararon a nivel provincia.
+
+### De tres consultas y dos tablas, a una llamada
+
+```
+ANTES  gondolero_zonas  →  mis zonas (uuids)
+       zonas            →  ¿cuáles son de tipo provincia?   ← este paso existía
+       gondolero_zonas  →  quiénes más las tienen             solo porque un
+                                                              uuid no dice de
+                                                              qué nivel es
+AHORA  provinciasDeGondoleros([yo, ...todosIds])
+```
+
+Se pide para **todo el universo del ranking de una vez**, yo incluido: es la
+misma pregunta, y partirla en dos era un round-trip de más. La pertenencia
+sale después de intersectar dos `Set`, sin otra consulta.
+
+Falla **cerrada**: si no se pueden leer las zonas, el ranking provincial no se
+muestra en vez de mostrarse incompleto. Un ranking al que le faltan colegas es
+peor que uno que no está — el que lo mira saca conclusiones sobre su posición.
+
+### El control, y que muerde
+
+`scripts/probar-provincias-gondolero.mts`, contra dev, creando y restaurando
+filas. El caso que fija la decisión de producto se llama así en la salida:
+**"LA DECISIÓN DEL TRAMO: el de la localidad suelta comparte ranking"**.
+
+Verificado revirtiendo la función a la versión literal —solo nivel
+provincia—: **pone cuatro en rojo**, incluido ése.
+
+### PERO: en producción esto no se ve, y hay que saberlo
+
+```
+gondoleros/fixers        dev 25    prod 31
+…con zonas declaradas    dev  2    prod  0
+```
+
+**`gondolero_localidades` tiene cero filas en producción.** Después del port,
+la solapa de provincia sigue sin aparecer para los 31, exactamente como antes.
+
+Lo que la enciende no es este paso: es que la gente declare sus zonas, que ya
+está empujado por el aviso del onboarding y los badges en ámbar del perfil.
+
+> **Entonces por qué va primero igual:** porque es **el bloqueante del DROP**.
+> Mientras los lectores sigan ahí, la tabla no se puede borrar. Su efecto
+> visible hoy es cero, y eso tiene una ventaja: **el riesgo de este paso es
+> casi todo de regresión, no de estreno**, así que se puede verificar con
+> calma.
+
+### Lo que NO se tocó, a propósito
+
+El vacío del ranking sigue hablando solo del vínculo y no también de declarar
+zonas. Para el que cae ahí —sin distri y sin provincia— el vínculo es el
+bloqueante grande: sin él no ve campañas, no releva y no cobra. Pedirle dos
+cosas a la vez diluye la que importa.
+
 ## TRAMO PROPIO — dropear el sistema de zonas legacy
 
 Anotado el 25/9/2026. Sin empezar. **No urgente y no trivial**: hay una feature
