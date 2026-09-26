@@ -12,7 +12,33 @@ import { generarAlias } from '@/lib/aliases'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
-type Fase = 'bienvenida' | 'login' | 'registro' | 'zonas'
+/**
+ * `avisoZonas` reemplazó a la fase `zonas`, que se sacó el 25/9/2026.
+ *
+ * Aquella pantalla ofrecía SEIS ciudades —la tabla legacy `zonas` entera,
+ * filtrada por `tipo='ciudad'`— contra un padrón que tiene 143 localidades
+ * solo en Entre Ríos, y guardaba lo elegido en `gondolero_zonas`, que **no es
+ * la tabla que lee el perfil**: el perfil lee `gondolero_localidades`.
+ *
+ * O sea que sí guardaba, pero en el sistema viejo, y el resultado era peor que
+ * no guardar nada:
+ *
+ *   · el perfil quedaba en blanco, porque mira la otra tabla;
+ *   · el aviso de la lista de campañas —"seleccioná tus localidades"— se
+ *     APAGABA, porque `tieneZonas` mira las dos;
+ *   · y el filtro corría contra `campana_zonas`, que tiene cero filas en las
+ *     dos bases, así que se le caían las campañas con localidades.
+ *
+ * Un gondolero que pasaba por acá terminaba con MENOS campañas que uno que
+ * apretaba "Omitir por ahora". Pasó con un usuario real en producción.
+ *
+ * No se arregló en el lugar porque no era un arreglo de una línea: la pantalla
+ * tiene uuids de `zonas` y la tabla nueva quiere `(nivel, ref_id)` del padrón,
+ * y convertir uno en otro es buscar por nombre — el `ilike` que ya mordió y
+ * que `lib/geocoding.ts` mató. El selector del perfil ya hace esto bien, y
+ * además deja elegir provincia y departamento, que acá no se podía.
+ */
+type Fase = 'bienvenida' | 'login' | 'registro' | 'avisoZonas'
 
 const OPCIONES_TIPO: Array<{
   tipo: Exclude<TipoActor, 'admin' | 'repositora'>
@@ -54,10 +80,6 @@ function AuthContent() {
   const [mostrarPassword, setMostrarPassword] = useState(false)
   const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [distribuidoras, setDistribuidoras] = useState<{ id: string; razon_social: string }[]>([])
-  const [zonas, setZonas] = useState<{ id: string; nombre: string }[]>([])
-  const [zonasSeleccionadas, setZonasSeleccionadas] = useState<string[]>([])
-  const [userId, setUserId] = useState<string | null>(null)
-  const [guardandoZonas, setGuardandoZonas] = useState(false)
 
   const formLogin = useForm<LoginForm>({
     resolver: zodResolver(schemaLogin),
@@ -148,21 +170,12 @@ function AuthContent() {
 
     // Si email confirmation está desactivado en Supabase → sesión inmediata
     if (signUpData.session) {
-      // Para gondoleros → mostrar paso de selección de zonas
+      // Para gondoleros → contarles dónde se configuran las zonas. No se
+      // configuran acá: ver el comentario del tipo `Fase`.
       if (data.tipo_actor === 'gondolero') {
-        const { data: zonasData } = await supabase
-          .from('zonas')
-          .select('id, nombre')
-          .eq('tipo', 'ciudad')
-          .order('nombre')
-        const ciudades = zonasData ?? []
-        if (ciudades.length > 0) {
-          setUserId(signUpData.session.user.id)
-          setZonas(ciudades)
-          setCargando(false)
-          setFase('zonas')
-          return
-        }
+        setCargando(false)
+        setFase('avisoZonas')
+        return
       }
       router.push(redirect)
       router.refresh()
@@ -298,61 +311,37 @@ function AuthContent() {
           </form>
         )}
 
-        {/* ── ZONAS ── */}
-        {fase === 'zonas' && (
+        {/* ── AVISO DE ZONAS ──────────────────────────────────────────────
+            Reemplaza a la pantalla de selección, que guardaba en la tabla
+            equivocada. Ver el comentario del tipo `Fase`.
+
+            Es un AVISO y no un paso: los dos botones siguen de largo, y el que
+            manda al perfil no es obligatorio. La lista de campañas tiene su
+            propio cartel para el que aprieta "Ahora no" —el amarillo de
+            `gondolero/campanas/page.tsx`, que aparece mientras no haya zonas
+            declaradas— así que esto no es la única vía. */}
+        {fase === 'avisoZonas' && (
           <div className="space-y-4">
             <div className="text-center mb-2">
-              <p className="text-base font-bold text-gray-900">¿En qué ciudades trabajás?</p>
+              <p className="text-base font-bold text-gray-900">¡Listo, ya tenés cuenta!</p>
               <p className="text-sm text-gray-500 mt-1">
-                Seleccioná tus zonas para ver las campañas de tu área. Podés cambiarlo después desde tu Perfil.
+                Falta una cosa: elegí dónde trabajás para ver solo las campañas de tu
+                zona. Se configura desde tu Perfil, y podés marcar una localidad, un
+                departamento entero o toda una provincia.
               </p>
             </div>
-            <div className="max-h-64 overflow-y-auto space-y-2 border border-gray-200 rounded-xl p-3">
-              {zonas.map(zona => (
-                <label
-                  key={zona.id}
-                  className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={zonasSeleccionadas.includes(zona.id)}
-                    onChange={() => setZonasSeleccionadas(prev =>
-                      prev.includes(zona.id) ? prev.filter(z => z !== zona.id) : [...prev, zona.id]
-                    )}
-                    className="w-4 h-4 accent-gondo-verde-400 shrink-0"
-                  />
-                  <span className="text-sm text-gray-800">{zona.nombre}</span>
-                </label>
-              ))}
-            </div>
             <button
-              onClick={async () => {
-                setGuardandoZonas(true)
-                if (zonasSeleccionadas.length > 0 && userId) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  await (supabase as any).from('gondolero_zonas').insert(
-                    zonasSeleccionadas.map(zona_id => ({ gondolero_id: userId, zona_id }))
-                  )
-                }
-                router.push(redirect)
-                router.refresh()
-              }}
-              disabled={guardandoZonas}
-              className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl disabled:opacity-50 hover:bg-gondo-verde-600 transition-colors min-h-touch"
+              onClick={() => { router.push('/gondolero/perfil'); router.refresh() }}
+              className="w-full py-3 bg-gondo-verde-400 text-white font-semibold rounded-xl hover:bg-gondo-verde-600 transition-colors min-h-touch"
             >
-              {guardandoZonas
-                ? 'Guardando...'
-                : zonasSeleccionadas.length > 0
-                  ? `Guardar y empezar (${zonasSeleccionadas.length})`
-                  : 'Guardar y empezar'}
+              Configurar mis zonas
             </button>
             <button
               type="button"
-              disabled={guardandoZonas}
               onClick={() => { router.push(redirect); router.refresh() }}
               className="w-full py-2 text-gray-400 text-sm hover:text-gray-600 transition-colors"
             >
-              Omitir por ahora
+              Ahora no
             </button>
           </div>
         )}

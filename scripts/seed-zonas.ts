@@ -795,13 +795,35 @@ const DATA: Record<string, Record<string, string[]>> = {
 async function seed() {
   console.log('🌱  Iniciando seed de zonas geográficas...\n')
 
-  // Limpiar datos previos (en orden inverso de FK)
+  // ── Limpiar datos previos (en orden inverso de FK) ────────────────────────
+  //
+  // `gondolero_localidades` se filtraba por `localidad_id`, que la migración
+  // 20261002100000 borró: la tabla pasó a guardar `(nivel, ref_id)`. PostgREST
+  // rechaza la consulta ENTERA cuando una columna no existe, así que ese
+  // delete **fallaba en silencio** —nadie miraba el `.error`— y dejaba la
+  // tabla sin limpiar. En una base nueva eso es peor que un error: el seed
+  // sigue, borra el padrón y las filas viejas quedan apuntando a ids que ya no
+  // significan lo mismo.
+  //
+  // Por eso ahora cada borrado mira su error y corta, igual que los inserts de
+  // más abajo. Un seed que dice "limpiando" y no limpia es exactamente la
+  // clase de verificación que puede decir OK sin haber verificado.
   console.log('🗑   Limpiando datos previos...')
-  await admin.from('campana_localidades').delete().neq('localidad_id', 0)
-  await admin.from('gondolero_localidades').delete().neq('localidad_id', 0)
-  await admin.from('localidades').delete().neq('id', 0)
-  await admin.from('departamentos').delete().neq('id', 0)
-  await admin.from('provincias').delete().neq('id', 0)
+  // PostgREST exige un filtro para borrar. Se usa `not(col, 'is', null)` sobre
+  // una columna NOT NULL de cada tabla: matchea TODAS las filas y no depende
+  // del tipo, al revés que el `.neq(col, 0)` de antes —que además se saltea en
+  // silencio las filas donde la columna es NULL, como `localidad_id`—.
+  const limpiezas = [
+    { tabla: 'campana_localidades',   col: 'id' },
+    { tabla: 'gondolero_localidades', col: 'gondolero_id' },
+    { tabla: 'localidades',           col: 'id' },
+    { tabla: 'departamentos',         col: 'id' },
+    { tabla: 'provincias',            col: 'id' },
+  ] as const
+  for (const { tabla, col } of limpiezas) {
+    const { error } = await admin.from(tabla).delete().not(col, 'is', null)
+    if (error) { console.error(`❌ Error limpiando ${tabla}:`, error.message); process.exit(1) }
+  }
 
   // Insertar provincias
   const provNames = Object.keys(DATA)

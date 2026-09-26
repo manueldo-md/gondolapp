@@ -7454,3 +7454,139 @@ escrito como si la decisión estuviera tomada y no lo está.
 - **Las dos escrituras no chequean el `.error`.** Ni la resta ni el insert del
   movimiento. Son dos de las 137 anotadas, pero éstas mueven saldo: el caso
   caro es la campaña creada sin que se descuente nada.
+
+---
+
+## La pantalla de zonas del onboarding (sacada el 25/9/2026)
+
+Reportado como "no guarda nada". **Guardaba** — en la tabla equivocada, que es
+peor.
+
+`app/auth/page.tsx` insertaba en `gondolero_zonas`; el perfil lee
+`gondolero_localidades`. Dos sistemas paralelos, y el onboarding escribía en el
+viejo. Medido antes de tocar nada:
+
+| | dev | prod |
+|---|---|---|
+| `gondolero_zonas` (viejo, `zona_id`) | 0 | **5** |
+| `gondolero_localidades` (nuevo, `nivel`+`ref_id`) | 24 | **0** |
+
+Las 5 de prod eran de un usuario real, todas del 25/9/2026.
+
+### El daño no era que no se vieran: era que APAGABAN el aviso
+
+`gondolero/campanas/page.tsx` calcula `tieneZonas` mirando **las dos** tablas.
+Con esas filas puestas, la cuenta quedaba así:
+
+1. el perfil en blanco, porque mira la otra tabla;
+2. el cartel amarillo "seleccioná tus localidades en tu Perfil" **no aparecía**,
+   porque para esa cuenta ya "había zonas";
+3. y el filtro corría con esos `zona_id` contra `campana_zonas`, que tiene
+   **cero filas en las dos bases**: quedaban solo las campañas abiertas o sin
+   zona, y se caían las 7 que tienen localidades.
+
+**El que pasaba por la pantalla veía MENOS campañas que el que apretaba "Omitir
+por ahora".**
+
+### Por qué no se arregló en el lugar
+
+No era una línea. La pantalla tiene **uuids de `zonas`** y la tabla nueva quiere
+**`(nivel, ref_id)` del padrón**; convertir uno en otro es buscar por nombre, el
+`ilike` que ya mordió y que `lib/geocoding.ts` mató. El selector del perfil ya
+lo hace bien y además deja elegir provincia y departamento, que ahí no se podía.
+
+Y el catálogo tampoco servía: **seis ciudades** —la tabla legacy `zonas` entera,
+`tipo='ciudad'`— contra un padrón con 143 localidades solo en Entre Ríos. Un
+gondolero de Villaguay no tenía cómo decirlo.
+
+En su lugar quedó la fase `avisoZonas`: un aviso con "Configurar mis zonas" y
+"Ahora no". No es un paso obligatorio, y el cartel amarillo de la lista de
+campañas sigue siendo la segunda vía para el que lo saltea.
+
+### La diferencia dev/prod era si la pantalla llegaba a APARECER
+
+El código es el mismo. La fase solo se muestra si `signUpData.session` viene con
+sesión, o sea **con la confirmación de email desactivada**.
+
+```
+confirmados al instante (0 s)    dev 33 de 34    prod 45 de 45
+el alta de gondolero del 25/9    dev 84 s        prod 0 s
+```
+
+Prod nunca tardó: la pantalla aparecía siempre. En dev, el alta de ese día tardó
+84 segundos, que es lo que se ve cuando alguien va al mail. **Es la explicación
+más probable de que dev tuviera cero filas, pero es UN dato**: se confirma en
+*Auth → Email → Confirm email* de cada proyecto, que no se lee por SQL.
+
+### La limpieza: migración `20261006100000`
+
+Borra las filas de `gondolero_zonas`. **Va DESPUÉS del deploy**, al revés que la
+migración de avisos y por la razón inversa: acá el que escribe es el código
+viejo, así que si corre primero, un registro en la ventana vuelve a crearlas.
+
+Dry-run verde en dev y prod: `probar-migracion-limpiar-gondolero-zonas.mjs`. El
+control que importa no es que la tabla quede en cero: es que **`tieneZonas`
+pase de `true` a `false`** para los afectados, calculado en SQL igual que lo
+calcula la página. Y como en dev la tabla estaba vacía —donde un "quedó en
+cero" no prueba nada—, el caso 6 crea la fila a propósito para tener algo que
+borrar.
+
+---
+
+## TRAMO PROPIO — dropear el sistema de zonas legacy
+
+Anotado el 25/9/2026. Sin empezar. **No urgente y no trivial**: hay una feature
+viva adentro.
+
+Después de `20261006100000`, `gondolero_zonas` queda **sin un solo escritor**.
+Pero le quedan **cinco lecturas en cuatro archivos**, y todas leen una tabla que
+ahora está vacía en las dos bases:
+
+| Dónde | Qué hace | Qué pasa con la tabla vacía |
+|---|---|---|
+| `gondolero/campanas/page.tsx:36` | `zonaIds` para `tieneZonas` y el filtro | inocuo: `tieneZonas` pasa a depender solo de localidades, que es lo correcto |
+| `gondolero/logros/page.tsx:113` | `misZonaIds` del gondolero | **el ranking por zona queda siempre vacío** |
+| `gondolero/logros/page.tsx:223` | colegas de la misma zona | ídem |
+| `gondolero/logros/page.tsx:248` | colegas de la misma provincia | ídem |
+| `admin/zonas/page.tsx:19` | contar gondoleros por zona | la columna muestra 0 en las 8 zonas |
+
+### Lo que hace que esto NO sea un borrado
+
+**El ranking por zona y por provincia de Logros es una feature, y está muerta en
+silencio.** No se cae: se muestra vacía. Dropear la tabla no la rompe más de lo
+que ya está, pero el tramo tiene que **portarla a `gondolero_localidades`** —que
+guarda por nivel, así que "colegas de mi provincia" sale más directo que hoy—,
+no borrarla junto con la tabla.
+
+### El resto del sistema legacy, para dimensionarlo
+
+Son tres tablas y todas están vacías o casi:
+
+```
+zonas              8 filas (6 ciudades + 2 provincias), en las dos bases
+campana_zonas      0 filas en las dos
+gondolero_zonas    0 después de 20261006100000
+```
+
+`comercios.zona_id` ya se fue en `20261005100000`. Los lectores que quedan de
+`campana_zonas` son `gondolero/campanas/page.tsx` (dos), `admin/zonas/` (página
+y actions) y `admin/repositoras/page.tsx`. El panel `admin/zonas` entero es
+legacy: es el ABM de una tabla que ya no alimenta nada.
+
+**El orden es el de siempre**, y esta vez con un paso más adelante: portar el
+ranking → sacar los lectores → deploy → verificar en prod → DROP. Con el grep
+DESPUÉS de escribir el código, no antes — que en el DROP de `comercios.zona_id`
+encontró dos escritores que la verificación previa había dado por limpios.
+
+### Y un arreglo que salió del mismo relevamiento (hecho)
+
+`scripts/seed-zonas.ts` limpiaba `gondolero_localidades` con
+`.delete().neq('localidad_id', 0)`, y esa columna la borró `20261002100000`.
+PostgREST rechaza la consulta entera, nadie miraba el `.error`, y **la limpieza
+fallaba en silencio**: el seed seguía, borraba el padrón, y las filas viejas
+quedaban apuntando a ids que ya no significan lo mismo.
+
+Ahora los cinco borrados van por una lista, filtran con `not(col, 'is', null)`
+sobre una columna NOT NULL —matchea todas las filas y no depende del tipo— y
+cada uno **mira su error y corta**. El `.neq(col, 0)` anterior además se salteaba
+en silencio las filas donde la columna es NULL, como `campana_localidades.localidad_id`.
