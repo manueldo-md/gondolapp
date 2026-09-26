@@ -7620,3 +7620,88 @@ Ahora los cinco borrados van por una lista, filtran con `not(col, 'is', null)`
 sobre una columna NOT NULL —matchea todas las filas y no depende del tipo— y
 cada uno **mira su error y corta**. El `.neq(col, 0)` anterior además se salteaba
 en silencio las filas donde la columna es NULL, como `campana_localidades.localidad_id`.
+
+---
+
+## DECIDIDO — el registro queda abierto: el VÍNCULO es la aprobación
+
+25/9/2026. No hay moderación de altas y no hace falta.
+
+**El argumento.** Un gondolero sin vínculo no ve campañas, no releva y no cobra.
+Cualquier cosa que pudiera hacer un registro malicioso ya está cortada por el
+vínculo, así que una aprobación previa sería una segunda puerta delante de una
+que ya está cerrada. **El vínculo ES la aprobación**, y la toma quien tiene el
+dato para tomarla: la distribuidora que lo conoce, no un admin mirando un mail.
+
+Y el que aprueba ya es el que paga. Sumar un filtro antes no agrega criterio:
+agrega una cola.
+
+### Pero el que entra por primera vez no se entera
+
+Relevado el 25/9/2026 sobre las cuatro pantallas, para un gondolero recién
+registrado, **sin vínculo y sin zonas**. Aterriza en `/gondolero/campanas`
+(`middleware.ts:23`).
+
+Primero, lo que efectivamente ve, que no es una app vacía:
+
+```
+campañas activas de gondolero        dev 19    prod  6
+las que puede ver SIN vínculo         dev  1    prod  1   ← "Alta comercios zona norte"
+gondoleros sin vínculo aprobado       dev  2    prod  3
+```
+
+Una sola, financiada por `gondolapp`, que pasa por el paso 2 de
+`accesoACampana`. **Las otras cinco de prod no aparecen: ni tarjeta, ni
+contador, ni mensaje.** `disponibles` exige `tieneAcceso`, y `ofertas` exige
+`postulable`, que pide `esFixer`. Un gondolero no ve ninguna de las dos cosas.
+
+### Las cuatro pantallas, una por una
+
+| Pantalla | Qué ve | ¿Dice que le falta vincularse? | ¿Dice cómo? |
+|---|---|---|---|
+| **Campañas** | 1 campaña, y el cartel amarillo de zonas | **No — y desvía** | No |
+| **Actividad** | "Sin notificaciones nuevas" · "Todavía no hay movimientos." | No | No |
+| **Logros** | El vacío del ranking con su código y el botón de WhatsApp | Sí, pero como límite del ranking | **Sí** |
+| **Perfil** | "Sin distribuidora vinculada" + el código | Sí, textual | **Sí** |
+
+**Campañas es la peor, y es la primera.** El único cartel que muestra habla de
+zonas —"Seleccioná tus localidades de trabajo en tu Perfil"— y el vacío de
+`campanas-sections.tsx:693` dice *"Cuando haya campañas disponibles en tu zona
+van a aparecer acá"*. Los dos **explican la escasez por la geografía**, que no
+es la causa: aunque declare sus zonas, sin vínculo va a seguir viendo una.
+No es que falte el mensaje: es que hay uno que apunta al lado equivocado.
+
+**Logros lo dice bien pero por la razón chica.** `logros-y-ranking.tsx:320`:
+"El ranking aparece cuando una distribuidora te vincule", con el código y el
+WhatsApp que ya manda el texto correcto. Es el camino completo —copiar, mandar,
+que la distri lo cargue— pero enmarcado como una limitación **del ranking**, no
+como la razón por la que la app entera está vacía. Y está en la sección 3+4,
+scrolleando.
+
+**Perfil lo dice textual y lo esconde.** `distri-section.tsx:392`: "Sin
+distribuidora vinculada · Pedile a tu distribuidora que te invite por link o
+que ingrese tu código personal para vincularte", con `CodigoGondolero` arriba.
+Es exactamente el mensaje que hace falta. El problema es dónde está:
+
+> **Las dos secciones son `ColapsableSection` con `defaultOpen={false}`**, y el
+> `badge` es `null` cuando hay cero. O sea que el gondolero recién registrado ve
+> dos títulos cerrados —"Mis zonas de trabajo" y "Mi distribuidora"— **sin una
+> sola marca de que adentro hay algo que le falta**. El badge solo aparece con
+> invitaciones pendientes o con más de una distri activa: justo los casos en que
+> ya está resuelto.
+
+### Lo que sigue
+
+El camino existe y funciona; lo que falta es que lo encuentre el que entra por
+primera vez. Tres cosas, por orden de impacto y sin empezar:
+
+1. **Que Campañas diga la causa real.** Hoy tiene un cartel que culpa a la
+   geografía. Con cero vínculos el mensaje tiene que ser el del vínculo, con el
+   código a mano; el de zonas va después, o los dos, pero no el de zonas solo.
+2. **Que el Perfil se note.** Un badge en las dos secciones colapsadas cuando
+   están en cero —o abrirlas por defecto mientras falte lo de adentro— alcanza.
+3. **Decidir si las campañas bloqueadas se muestran.** Hoy son invisibles: cinco
+   de seis en prod. `accesoACampana` ya devuelve el `mensaje` exacto de cada una
+   ("Esta campaña es exclusiva para gondoleros vinculados a esa distribuidora"),
+   así que mostrarlas apagadas con su motivo es barato. **Y ese texto explica de
+   una la escasez mucho mejor que cualquier cartel genérico.**
